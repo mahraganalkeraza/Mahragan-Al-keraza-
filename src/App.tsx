@@ -138,14 +138,16 @@ function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carous
           title: item.title,
           subtitle: 'إعلان',
           image: item.url,
-          content: ''
+          content: '',
+          isLogo: false
         }))
       : news.filter(n => n.imageUrl).map(n => ({
           id: n.id,
           title: n.title,
           subtitle: 'خبر جديد',
           image: n.imageUrl,
-          content: n.content
+          content: n.content,
+          isLogo: false
         }));
 
     if (appLogo) {
