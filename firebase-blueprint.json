@@ -1,0 +1,194 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile information and role",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "churchName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "church"] },
+        "dashboardBg": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Order": {
+      "title": "Book Order",
+      "description": "Order for books by a church",
+      "type": "object",
+      "properties": {
+        "churchName": { "type": "string" },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stage": { "type": "string" },
+              "study": { "type": "number" },
+              "memo": { "type": "number" },
+              "coptic": { "type": "number" },
+              "activity": { "type": "number" },
+              "total": { "type": "number" }
+            }
+          }
+        },
+        "grandTotal": { "type": "number" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["churchName", "details", "grandTotal", "timestamp"]
+    },
+    "Participant": {
+      "title": "Participant",
+      "description": "Student participating in competitions",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "stage": { "type": "string" },
+        "churchName": { "type": "string" },
+        "competitions": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["name", "stage", "churchName", "competitions"]
+    },
+    "Inquiry": {
+      "title": "Inquiry",
+      "description": "Question or complaint from a church",
+      "type": "object",
+      "properties": {
+        "churchName": { "type": "string" },
+        "message": { "type": "string" },
+        "reply": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["churchName", "message", "timestamp"]
+    },
+    "News": {
+      "title": "News Item",
+      "description": "Official news or announcement",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string", "format": "uri" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["title", "content", "imageUrl", "timestamp"]
+    },
+    "ExamLink": {
+      "title": "Exam Link",
+      "description": "Link to an electronic exam for a stage",
+      "type": "object",
+      "properties": {
+        "stage": { "type": "string" },
+        "url": { "type": "string", "format": "uri" }
+      },
+      "required": ["stage", "url"]
+    },
+    "Result": {
+      "title": "Exam Result",
+      "description": "Result of an exam for a student",
+      "type": "object",
+      "properties": {
+        "studentName": { "type": "string" },
+        "churchName": { "type": "string" },
+        "stage": { "type": "string" },
+        "score": { "type": "number" },
+        "grade": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["studentName", "churchName", "stage", "score", "grade", "timestamp"]
+    },
+    "Schedule": {
+      "title": "Exam Schedule",
+      "description": "Exam date, time and location",
+      "type": "object",
+      "properties": {
+        "examName": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "location": { "type": "string" }
+      },
+      "required": ["examName", "date", "time", "location"]
+    },
+    "SiteSettings": {
+      "title": "Site Settings",
+      "description": "Global settings for the website",
+      "type": "object",
+      "properties": {
+        "phone": { "type": "string" },
+        "facebook": { "type": "string" },
+        "telegram": { "type": "string" },
+        "copyright": { "type": "string" }
+      },
+      "required": ["phone", "facebook", "telegram", "copyright"]
+    },
+    "AboutContent": {
+      "title": "About Content",
+      "description": "Content for the About page",
+      "type": "object",
+      "properties": {
+        "vision": { "type": "string" },
+        "mission": { "type": "string" },
+        "aboutText": { "type": "string" }
+      },
+      "required": ["vision", "mission", "aboutText"]
+    },
+    "CarouselItem": {
+      "title": "Carousel Item",
+      "description": "Image and title for the home slider",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "title": { "type": "string" },
+        "order": { "type": "number" }
+      },
+      "required": ["url", "title"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Book orders"
+    },
+    "/participants/{participantId}": {
+      "schema": "Participant",
+      "description": "Registered participants"
+    },
+    "/inquiries/{inquiryId}": {
+      "schema": "Inquiry",
+      "description": "Church inquiries"
+    },
+    "/news/{newsId}": {
+      "schema": "News",
+      "description": "Announcements"
+    },
+    "/examLinks/{examLinkId}": {
+      "schema": "ExamLink",
+      "description": "Links to exams"
+    },
+    "/results/{resultId}": {
+      "schema": "Result",
+      "description": "Student results"
+    },
+    "/schedules/{scheduleId}": {
+      "schema": "Schedule",
+      "description": "Exam schedules"
+    },
+    "/settings/footer": {
+      "schema": "SiteSettings",
+      "description": "Footer and global settings"
+    },
+    "/settings/about": {
+      "schema": "AboutContent",
+      "description": "About page content"
+    },
+    "/carousel/{carouselId}": {
+      "schema": "CarouselItem",
+      "description": "Home slider items"
+    }
+  }
+}

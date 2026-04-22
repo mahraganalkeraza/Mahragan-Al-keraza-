@@ -1,0 +1,308 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "kareemsame77esoyam@gmail.com" ||
+        request.auth.token.email == "mahraganalkeraza7esoyam@gmail.com" ||
+        request.auth.token.email == "admin@mafk.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isChurch(churchName) {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'church' &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.churchName == churchName;
+    }
+
+    function isValidUrl(url) {
+      return url is string && url.size() < 2000 && (url.matches('^https?://.*') || url.matches('^data:image/.*'));
+    }
+
+    // ===============================================================
+    // Entity Validations
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.keys().size() <= 5 &&
+             data.uid == request.auth.uid &&
+             data.email is string && data.email.size() < 256 &&
+             data.role in ['admin', 'church'] &&
+             (!('churchName' in data) || (data.churchName is string && data.churchName.size() < 200)) &&
+             (!('dashboardBg' in data) || (data.dashboardBg is string && data.dashboardBg.size() < 2000));
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['churchName', 'details', 'grandTotal', 'timestamp']) &&
+             data.keys().size() <= 6 &&
+             data.churchName is string && data.churchName.size() < 200 &&
+             data.details is list && data.details.size() <= 100 &&
+             data.grandTotal is number &&
+             data.timestamp is string &&
+             (!('location' in data) || data.location is string) &&
+             (!('year' in data) || data.year is string);
+    }
+
+    function isValidParticipant(data) {
+      return data.keys().hasAll(['name', 'stage', 'churchName', 'competitions']) &&
+             data.keys().size() <= 8 &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.stage is string && data.stage.size() < 100 &&
+             data.churchName is string && data.churchName.size() < 200 &&
+             data.competitions is list && data.competitions.size() <= 10 &&
+             (!('timestamp' in data) || data.timestamp is string) &&
+             (!('year' in data) || data.year is string) &&
+             (!('country' in data) || data.country is string);
+    }
+
+    function isValidInquiry(data) {
+      return data.keys().hasAll(['churchName', 'message', 'timestamp']) &&
+             data.keys().size() <= 5 &&
+             data.churchName is string && data.churchName.size() < 200 &&
+             data.message is string && data.message.size() > 0 && data.message.size() < 5000 &&
+             data.timestamp is string &&
+             (!('reply' in data) || (data.reply is string && data.reply.size() < 5000)) &&
+             (!('year' in data) || data.year is string);
+    }
+
+    function isValidNews(data) {
+      return data.keys().hasAll(['title', 'content', 'imageUrl', 'timestamp']) &&
+             data.keys().size() <= 5 &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 10000 &&
+             isValidUrl(data.imageUrl) &&
+             data.timestamp is number &&
+             (!('year' in data) || data.year is string);
+    }
+
+    function isValidExamLink(data) {
+      return data.keys().hasAll(['stage', 'url']) &&
+             data.keys().size() <= 3 &&
+             data.stage is string && data.stage.size() < 100 &&
+             isValidUrl(data.url) &&
+             (!('year' in data) || data.year is string);
+    }
+
+    function isValidResult(data) {
+      return data.keys().hasAll(['studentName', 'churchName', 'stage', 'score', 'grade', 'timestamp']) &&
+             data.keys().size() <= 12 &&
+             data.studentName is string && data.studentName.size() > 0 && data.studentName.size() < 200 &&
+             data.churchName is string && data.churchName.size() < 200 &&
+             data.stage is string && data.stage.size() < 100 &&
+             data.score is number &&
+             data.grade is string &&
+             data.timestamp is string &&
+             (!('year' in data) || data.year is string) &&
+             (!('serial' in data) || data.serial is string) &&
+             (!('academicScore' in data) || data.academicScore is number) &&
+             (!('memorizationScore' in data) || data.memorizationScore is number) &&
+             (!('q1Score' in data) || data.q1Score is number) &&
+             (!('qScore' in data) || data.qScore is number);
+    }
+
+    function isValidSchedule(data) {
+      return data.keys().hasAll(['examName', 'date', 'time', 'location']) &&
+             data.keys().size() <= 6 &&
+             data.examName is string && data.examName.size() < 500 &&
+             data.date is string &&
+             data.time is string &&
+             data.location is string &&
+             (!('year' in data) || data.year is string) &&
+             (!('id' in data) || data.id is string);
+    }
+
+    function isValidCarouselItem(data) {
+      return data.keys().hasAll(['url', 'title']) &&
+             data.keys().size() <= 4 &&
+             isValidUrl(data.url) &&
+             data.title is string && data.title.size() < 500 &&
+             (!('order' in data) || data.order is number) &&
+             (!('year' in data) || data.year is string);
+    }
+
+    function isValidCalculatorSetting(data) {
+      return data.keys().hasAll(['stage', 'material', 'price', 'id', 'timestamp']) &&
+             data.keys().size() <= 6 &&
+             data.stage is string &&
+             data.material is string &&
+             data.price is number &&
+             data.id is string &&
+             data.timestamp is string &&
+             (!('year' in data) || data.year is string);
+    }
+
+    function isValidActivityTeam(data) {
+      return data.keys().hasAll(['churchName', 'activityType', 'members', 'maleCount', 'femaleCount', 'timestamp']) &&
+             data.keys().size() <= 9 &&
+             data.churchName is string &&
+             data.activityType is string &&
+             data.members is list &&
+             data.maleCount is number &&
+             data.femaleCount is number &&
+             data.timestamp is string &&
+             (!('choirLevel' in data) || data.choirLevel is string) &&
+             (!('instrumentType' in data) || data.instrumentType is string) &&
+             (!('year' in data) || data.year is string);
+    }
+
+    function isValidAppConfig(data) {
+      return data.keys().hasAll(['activeYear']) &&
+             data.keys().size() <= 2 &&
+             data.activeYear is string;
+    }
+
+    // ===============================================================
+    // Rules Matching
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if (isOwner(userId) || isAdmin()) && 
+                    isValidUser(incoming()) && 
+                    (isAdmin() || (incoming().role == existing().role && incoming().diff(existing()).affectedKeys().hasOnly(['churchName', 'dashboardBg'])));
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
+      allow create: if isValidId(orderId) && 
+                    isValidOrder(incoming()) && 
+                    (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
+      allow delete: if isAdmin();
+    }
+
+    match /participants/{participantId} {
+      allow read: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
+      allow create: if isValidId(participantId) && 
+                    isValidParticipant(incoming()) && 
+                    (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
+      allow update: if (isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName))) && 
+                    isValidParticipant(incoming()) &&
+                    (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'stage', 'competitions']));
+      allow delete: if isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName));
+    }
+
+    match /inquiries/{inquiryId} {
+      allow read: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
+      allow create: if isValidId(inquiryId) && 
+                    isValidInquiry(incoming()) && 
+                    (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
+      allow update: if isAdmin() && isValidInquiry(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['reply']);
+      allow delete: if isAdmin();
+    }
+
+    match /news/{newsId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidNews(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /examLinks/{examLinkId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidExamLink(incoming());
+    }
+
+    match /results/{resultId} {
+      allow read: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
+      allow write: if isAdmin() && isValidResult(incoming());
+    }
+
+    match /schedules/{scheduleId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidSchedule(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /activityTeams/{teamId} {
+      allow read: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
+      allow create: if isValidId(teamId) && 
+                    isValidActivityTeam(incoming()) && 
+                    (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
+      allow delete: if isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName));
+    }
+
+    match /calculator_settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidCalculatorSetting(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /churches/{churchId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /levels/{levelId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /competitions/{compId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/footer {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/about {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/app_config {
+      allow read: if true;
+      allow write: if isAdmin() && isValidAppConfig(incoming());
+    }
+
+    match /carousel/{carouselId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidCarouselItem(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

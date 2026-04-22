@@ -1,0 +1,74 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Tajawal", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-primary: #800000;
+  --color-accent: #D4AF37;
+  --color-bg-soft: #F3F4F6;
+  
+  /* Redefine used colors as hex to avoid oklch errors in html2canvas/html2pdf */
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  
+  --color-stone-50: #fafaf9;
+  --color-stone-100: #f5f5f4;
+}
+
+@layer base {
+  body {
+    @apply bg-bg-soft text-slate-900 antialiased;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-xl;
+  }
+  .glass-dark {
+    @apply bg-black/10 backdrop-blur-md border border-white/10 shadow-xl;
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #800000;
+    border-radius: 10px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #D4AF37;
+  }
+}
+
+.coptic-pattern {
+  background-image: radial-gradient(#D4AF37 0.5px, transparent 0.5px);
+  background-size: 10px 10px;
+}
+
+/* كود لتغيير إطار كل الزراير في الموقع */
+button {
+  border: 2px solid #D4AF37 !important; /* لون ذهبي للإطار */
+  color: #800000 !important; /* لون الخط برغندي */
+  font-weight: bold;
+}
+
+button:hover {
+  background-color: #800000 !important; /* عند الوقوف بالماوس الخلفية تبقى برغندي */
+  color: #ffffff !important; /* والخط يقلب أبيض */
+}
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

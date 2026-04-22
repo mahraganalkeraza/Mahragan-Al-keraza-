@@ -1,0 +1,92 @@
+import { BookItem } from './types';
+
+export const PRICING_DATA: BookItem[] = [
+  { stage: "حضانة", studyPrice: 11, memoPrice: 5, copticPrice: 5, activityPrice: 10 },
+  { stage: "تعليم الكبار", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "أولى وثانية", studyPrice: 15, memoPrice: 5, copticPrice: 5, activityPrice: 10 },
+  { stage: "ثالثة ورابعة", studyPrice: 18, memoPrice: 10, copticPrice: 0, activityPrice: 11 },
+  { stage: "خامسة وسادسة", studyPrice: 18, memoPrice: 11, copticPrice: 0, activityPrice: 10 },
+  { stage: "إعدادي", studyPrice: 20, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "ثانوي", studyPrice: 20, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "جامعة", studyPrice: 20, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "خريجون", studyPrice: 20, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "حرفيون", studyPrice: 20, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "خدام وإعداد الخدام", studyPrice: 20, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "قانا الجليل", studyPrice: 20, memoPrice: 0, activityPrice: 0, copticPrice: 0 },
+  { stage: " صم وبكم", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "سمعان الشيخ", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "ذوي القدرات", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "ديديموس", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "بولس وسيلا", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+];
+
+export const CAROUSEL_IMAGES = [
+  { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR8bzr21AT2qsavhSTiRBeo31HS1xbYyleEBg&s", title: "نيافة الحبر الجليل الأنبا أغاثون" },
+  { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSkkt7y0FjD9toZ5ROTyINBTiB5qnB686HnOQ&s", title: "الألحان والتسبحة" },
+];
+
+export const CHURCH_CREDENTIALS: Record<string, string> = {
+  "عزبة مهدي": "MAFK01_2026",
+  "آبا البلد": "MAFK02_2026",
+  "صعايدة الكوم الأخضر": "MAFK03_2026",
+  "صفانية": "MAFK04_2026",
+  "الساوي": "MAFK05_2026",
+  "عزبة سمعان": "MAFK06_2026",
+  "الجزيرة": "MAFK07_2026",
+  "عزبة رزق": "MAFK08_2026",
+  "عزبة إسحق": "MAFK09_2026",
+  "برطباط": "MAFK10_2026",
+  "الشيخ مسعود": "MAFK11_2026",
+  "الزورة": "MAFK12_2026",
+  "العباسية": "MAFK13_2026",
+  "القديسة دميانة": "MAFK14_2026",
+  "قفادة": "MAFK15_2026",
+  "بلهاسة": "MAFK16_2026",
+  "كوم الحاصل": "MAFK17_2026",
+  "بني واللمس": "MAFK18_2026",
+  "شارونة": "MAFK19_2026",
+  "المطرانية": "MAFK20_2026",
+  "عزبة بطرس": "MAFK21_2026",
+  "العذراء مغاغة": "MAFK22_2026",
+  "عباد شارونة": "MAFK23_2026",
+  "قرية خامسة": "MAFK24_2026",
+  "الكوم الأخضر": "MAFK25_2026",
+  "القايات": "MAFK26_2026",
+  "كفر عبد الخالق": "MAFK27_2026",
+  "أبو غطاس": "MAFK28_2026",
+  "الشيخ زياد": "MAFK29_2026",
+  "دهروط": "MAFK30_2026",
+  "الملاك ميخائيل - مغاغة": "MAFK31_2026",
+  "مارمينا مغاغة": "MAFK32_2026",
+  "دير الجرنوس": "MAFK33_2026",
+  "محمد بيه": "MAFK34_2026",
+  "برمشا": "MAFK35_2026",
+  "البسقلون": "MAFK36_2026",
+  "ميانة": "MAFK37_2026",
+  "علي باشا": "MAFK38_2026",
+  "نزلة رمضان": "MAFK39_2026",
+  "بني عامر": "MAFK40_2026",
+  "إبراهيم عبد السيد": "MAFK41_2026",
+  "شم القبلية": "MAFK42_2026",
+  "صعايدة الساوي": "MAFK43_2026",
+  "عطف حيدر": "MAFK44_2026",
+  "المداور": "MAFK45_2026",
+  "طنبدي": "MAFK46_2026",
+  "شمس الدين": "MAFK47_2026",
+  "إشنين": "MAFK48_2026",
+  "العدوة": "MAFK49_2026",
+  "نزلة عصر": "MAFK50_2026",
+  "بني خالد": "MAFK51_2026"
+};
+
+export const ADMIN_PASSWORD = "ADMIN_MAFK_2026";
+
+export const STAGE_LABELS: Record<string, string> = {
+  nursery: 'حضانة',
+  stage12: 'أولى وثانية',
+  stage34: 'ثالثة ورابعة',
+  stage56: 'خامسة وسادسة',
+  adults: 'تعليم كبار',
+  seniors: 'سمعان الشيخ',
+  special_needs: 'ذوي القدرات'
+};
