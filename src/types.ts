@@ -127,3 +127,8 @@ export interface CarouselItem {
   order?: number;
   year?: string;
 }
+
+export interface AppConfig {
+  activeYear: string;
+  appLogo?: string;
+}

@@ -143,9 +143,23 @@
         "order": { "type": "number" }
       },
       "required": ["url", "title"]
+    },
+    "AppConfig": {
+      "title": "App Configuration",
+      "description": "Global application configuration like active year and logo",
+      "type": "object",
+      "properties": {
+        "activeYear": { "type": "string" },
+        "appLogo": { "type": "string", "format": "uri" }
+      },
+      "required": ["activeYear"]
     }
   },
   "firestore": {
+    "/settings/app_config": {
+      "schema": "AppConfig",
+      "description": "Global app configuration"
+    },
     "/users/{userId}": {
       "schema": "User",
       "description": "User profiles"

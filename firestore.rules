@@ -185,8 +185,9 @@ service cloud.firestore {
 
     function isValidAppConfig(data) {
       return data.keys().hasAll(['activeYear']) &&
-             data.keys().size() <= 2 &&
-             data.activeYear is string;
+             data.keys().size() <= 3 &&
+             data.activeYear is string &&
+             (!('appLogo' in data) || isValidUrl(data.appLogo));
     }
 
     // ===============================================================

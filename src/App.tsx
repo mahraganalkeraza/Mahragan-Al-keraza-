@@ -127,12 +127,12 @@ import DynamicAdminSettings from './components/DynamicAdminSettings';
 // @ts-ignore
 import logo from './by-logo.jpeg';
 
-function NewsHeroSlider({ news, carouselItems }: { news: News[], carouselItems: CarouselItem[] }) {
+function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carouselItems: CarouselItem[], appLogo: string | null }) {
   const [selectedSlide, setSelectedSlide] = useState<any>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const slides = useMemo(() => {
-    return carouselItems && carouselItems.length > 0 
+    const baseSlides = carouselItems && carouselItems.length > 0 
       ? carouselItems.map(item => ({
           id: item.id,
           title: item.title,
@@ -147,7 +147,19 @@ function NewsHeroSlider({ news, carouselItems }: { news: News[], carouselItems: 
           image: n.imageUrl,
           content: n.content
         }));
-  }, [news, carouselItems]);
+
+    if (appLogo) {
+      return [{
+        id: 'theme-logo',
+        title: 'شعار المهرجان السنوي',
+        subtitle: 'الشعار الرسمي',
+        image: appLogo,
+        content: '',
+        isLogo: true
+      }, ...baseSlides];
+    }
+    return baseSlides;
+  }, [news, carouselItems, appLogo]);
 
   // Keyboard controls for Lightbox
   useEffect(() => {
@@ -242,7 +254,7 @@ function NewsHeroSlider({ news, carouselItems }: { news: News[], carouselItems: 
               <img 
                 src={item.image} 
                 alt={item.title} 
-                className="w-full h-full object-cover transition-transform duration-[10s] group-hover:scale-110"
+                className={`w-full h-full ${item.isLogo ? 'object-contain bg-slate-900/10 p-12' : 'object-cover'} transition-transform duration-[10s] group-hover:scale-110`}
                 referrerPolicy="no-referrer"
               />
               <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/40" />
@@ -389,13 +401,16 @@ function App() {
   const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest'>('guest');
   const [notification, setNotification] = useState<string | null>(null);
   const [activeYear, setActiveYear] = useState(CURRENT_YEAR);
+  const [appLogo, setAppLogo] = useState<string | null>(null);
   const [isUpdatingYear, setIsUpdatingYear] = useState(false);
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
 
   useEffect(() => {
     const unsubAppConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
       if (snapshot.exists()) {
-        setActiveYear(snapshot.data().activeYear || CURRENT_YEAR);
+        const data = snapshot.data();
+        setActiveYear(data.activeYear || CURRENT_YEAR);
+        setAppLogo(data.appLogo || null);
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
 
@@ -1991,7 +2006,7 @@ function App() {
                 </div>
               ) : (
                 <>
-                  <img src={logo} alt="Logo" className="h-10 w-10 rounded-full object-cover shadow-md border border-slate-100" />
+                  <img src={appLogo || logo} alt="Logo" className="h-10 w-10 rounded-full object-cover shadow-md border border-slate-100" />
                   <div className="hidden sm:block">
                     <h1 className="text-xl font-black text-primary leading-none">مهرجان الكرازة {activeYear}</h1>
                     <p className="text-accent text-xs font-bold mt-1">يعظم انتصارنا بالذي أحبنا</p>
@@ -2040,7 +2055,7 @@ function App() {
             className="bg-white p-10 rounded-xl shadow-sm border border-slate-100"
           >
             <div className="text-center mb-10">
-              <img src={logo} alt="Logo" className="w-20 h-20 rounded-full mx-auto mb-6 object-cover shadow-sm border border-slate-50" />
+              <img src={appLogo || logo} alt="Logo" className="w-20 h-20 rounded-full mx-auto mb-6 object-cover shadow-sm border border-slate-50" />
               <h2 className="text-2xl font-black text-slate-800">تسجيل الدخول</h2>
               <p className="text-slate-500 text-sm mt-2 font-bold">يرجى اختيار الكنيسة وإدخال الكود الخاص بها</p>
             </div>
@@ -2140,7 +2155,7 @@ function App() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <NewsHeroSlider news={news} carouselItems={carouselItems} />
+            <NewsHeroSlider news={news} carouselItems={carouselItems} appLogo={appLogo} />
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
               <div 
@@ -2254,13 +2269,21 @@ function App() {
         {activeSection === 'news' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
             <BackButton />
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center">
-                <Newspaper className="text-emerald-600" size={32} />
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden relative">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-bl-[100%] z-0" />
+              <div className="flex items-center gap-6 relative z-10">
+                <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-lg border border-slate-100 p-2 overflow-hidden transform hover:rotate-3 transition-transform">
+                  <img src={appLogo || logo} alt="Logo" className="w-full h-full object-contain" />
+                </div>
+                <div>
+                  <h3 className="text-3xl font-black text-coptic-blue">أخبار المهرجان</h3>
+                  <p className="text-emerald-600 font-bold mt-1">تابع كافة التنبيهات والأخبار الرسمية لعام {activeYear}</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-2xl font-black text-coptic-blue">أخبار المهرجان</h3>
-                <p className="text-slate-400 font-bold">تابع كافة التنبيهات والأخبار الرسمية</p>
+              <div className="relative z-10 hidden lg:block">
+                <div className="px-6 py-3 bg-emerald-50 text-emerald-600 rounded-2xl font-black border border-emerald-100 animate-pulse">
+                  تحديثات لحظية ⚡
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -4866,7 +4889,7 @@ function App() {
             <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 relative overflow-hidden">
               <div className="flex items-center gap-4 mb-10 relative z-10">
                 <div className="w-16 h-16 bg-primary/5 rounded-2xl flex items-center justify-center overflow-hidden shadow-inner border border-primary/10">
-                  <img src={logo} alt="Logo" className="w-full h-full object-cover" />
+                  <img src={appLogo || logo} alt="Logo" className="w-full h-full object-cover" />
                 </div>
                 <div>
                   <h3 className="text-2xl font-black text-primary">تسجيل المشتركين - كنيسة {churchName}</h3>
@@ -5466,8 +5489,8 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-16 relative z-10">
           <div className="space-y-10">
             <div className="flex items-center gap-5">
-              <div className="w-16 h-16 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white shadow-2xl border border-white/20">
-                <Church size={36} />
+              <div className="w-16 h-16 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white shadow-2xl border border-white/20 p-2 overflow-hidden">
+                <img src={appLogo || logo} alt="Logo" className="w-full h-full object-contain" />
               </div>
               <div>
                 <h4 className="text-3xl font-black tracking-tighter">مهرجان ٢٠٢٦</h4>

@@ -18,7 +18,7 @@ import {
   orderBy,
   limit
 } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // Import the Firebase configuration
 import firebaseConfig from '../firebase-applet-config.json';
@@ -113,5 +113,8 @@ export {
   deleteDoc,
   writeBatch,
   orderBy,
-  limit
+  limit,
+  ref,
+  uploadBytes,
+  getDownloadURL
 };

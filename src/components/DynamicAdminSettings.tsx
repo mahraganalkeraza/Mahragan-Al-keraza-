@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '../firebase';
-import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X } from 'lucide-react';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc } from 'firebase/firestore';
+import { db, storage, ref, uploadBytes, getDownloadURL } from '../firebase';
+import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as ImageIcon, Upload, Loader2 } from 'lucide-react';
 
 export default function DynamicAdminSettings() {
   const [churches, setChurches] = useState<any[]>([]);
   const [levels, setLevels] = useState<any[]>([]);
   const [competitions, setCompetitions] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'churches' | 'levels' | 'competitions' | 'purge'>('churches');
+  const [activeTab, setActiveTab] = useState<'churches' | 'levels' | 'competitions' | 'logo' | 'purge'>('churches');
+
+  const [appLogo, setAppLogo] = useState<string | null>(null);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
   // Input states
   const [newChurchName, setNewChurchName] = useState('');
@@ -32,6 +35,11 @@ export default function DynamicAdminSettings() {
 
       const compSnap = await getDocs(collection(db, 'competitions'));
       setCompetitions(compSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+      const configSnap = await getDoc(doc(db, 'settings', 'app_config'));
+      if (configSnap.exists()) {
+        setAppLogo(configSnap.data().appLogo || null);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -117,6 +125,27 @@ export default function DynamicAdminSettings() {
     }
   };
 
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingLogo(true);
+    try {
+      const storageRef = ref(storage, `app/logo_${Date.now()}_${file.name}`);
+      await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      await setDoc(doc(db, 'settings', 'app_config'), { appLogo: downloadURL }, { merge: true });
+      setAppLogo(downloadURL);
+      alert('تم تحديث شعار المهرجان بنجاح!');
+    } catch (error) {
+      console.error("Error uploading logo:", error);
+      alert('حدث خطأ أثناء رفع الشعار.');
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  };
+
   if (isLoading) return <div className="p-8">جاري التحميل...</div>;
 
   return (
@@ -134,6 +163,7 @@ export default function DynamicAdminSettings() {
           { id: 'churches', label: 'إدارة الكنائس وحساباتها' },
           { id: 'competitions', label: 'بنك المسابقات' },
           { id: 'levels', label: 'إدارة المراحل وتخصيص مسابقاتها' },
+          { id: 'logo', label: 'شعار المهرجان السنوي' },
           { id: 'purge', label: 'تنظيف البيانات القديمة (Wipe)' }
         ].map(tab => (
           <button
@@ -248,6 +278,42 @@ export default function DynamicAdminSettings() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: LOGO */}
+        {activeTab === 'logo' && (
+          <div className="space-y-8 max-w-2xl mx-auto py-8">
+            <div className="bg-slate-50 p-8 rounded-3xl border-2 border-dashed border-slate-200 text-center">
+              <div className="relative inline-block mb-6">
+                <div className="w-48 h-48 rounded-full bg-white shadow-2xl flex items-center justify-center p-4 border-4 border-white overflow-hidden">
+                  {appLogo ? (
+                    <img 
+                      src={appLogo} 
+                      alt="App Logo" 
+                      className="w-full h-full object-contain"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <ImageIcon size={64} className="text-slate-300" />
+                  )}
+                </div>
+                <label className="absolute bottom-2 right-2 p-3 bg-primary text-white rounded-full shadow-lg cursor-pointer hover:scale-110 transition-transform">
+                  <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                  {isUploadingLogo ? <Loader2 className="animate-spin" size={20} /> : <Upload size={20} />}
+                </label>
+              </div>
+              
+              <h3 className="text-xl font-black text-slate-800 mb-2">شعار المهرجان السنوي الرئيسي</h3>
+              <p className="text-slate-500 font-bold text-sm mb-6">
+                هذا الشعار سيظهر في شاشة الدخول، رأس الصفحة، والتقارير الرسمية. 
+                <br />يفضل استخدام صورة مفرغة (PNG) وبأبعاد مربعة.
+              </p>
+              
+              <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-amber-700 text-xs font-bold">
+                * عند تحديث الشعار، سيتم استبدال الشعار القديم تلقائياً في كافة أنحاء التطبيق.
+              </div>
             </div>
           </div>
         )}
