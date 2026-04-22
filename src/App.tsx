@@ -99,7 +99,6 @@ import {
 } from './firebase';
 import ErrorBoundary from './components/ErrorBoundary';
 
-import ChurchSettings from './components/ChurchSettings';
 import UserManagement from './components/UserManagement';
 import { 
   Inquiry, 
@@ -416,26 +415,33 @@ function App() {
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
 
-    const fetchDynamicData = async () => {
-      try {
-        const churchesSnap = await getDocs(collection(db, 'churches'));
-        setPublicChurches(churchesSnap.docs.map(d => ({ name: d.data().name, email: '' })));
-        
-        const levelsSnap = await getDocs(collection(db, 'levels'));
-        if (!levelsSnap.empty) {
-          const fetchedLevels = levelsSnap.docs.map(d => ({ 
-            name: d.data().name, 
-            comps: d.data().allowedCompetitions || [] 
-          }));
-          setDynamicLevels(fetchedLevels);
-        }
-      } catch (error) {
-        console.error("Error fetching dynamic data:", error);
-      }
-    };
-    fetchDynamicData();
+    const unsubscribeChurches = onSnapshot(collection(db, 'churches'), (snapshot) => {
+      setPublicChurches(snapshot.docs
+        .map(d => ({ 
+          name: d.data().name, 
+          email: '', 
+          isEnabled: d.data().isEnabled !== false,
+          logoUrl: d.data().logoUrl || ''
+        }))
+        .filter(c => c.isEnabled)
+      );
+    }, (error) => console.error("Error syncing churches:", error));
 
-    return () => unsubAppConfig();
+    const unsubscribeLevels = onSnapshot(collection(db, 'levels'), (snapshot) => {
+      if (!snapshot.empty) {
+        const fetchedLevels = snapshot.docs.map(d => ({ 
+          name: d.data().name, 
+          comps: d.data().allowedCompetitions || [] 
+        }));
+        setDynamicLevels(fetchedLevels);
+      }
+    }, (error) => console.error("Error syncing levels:", error));
+
+    return () => {
+      unsubAppConfig();
+      unsubscribeChurches();
+      unsubscribeLevels();
+    };
   }, []);
 
   useEffect(() => {
@@ -460,7 +466,6 @@ function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [adminFilterChurch, setAdminFilterChurch] = useState('الكل');
-  const [selectedChurchUserId, setSelectedChurchUserId] = useState<string | null>(null);
   const [adminActiveTab, setAdminActiveTab] = useState('dashboard');
   const [newsSearch, setNewsSearch] = useState('');
   const [newsFilterDate, setNewsFilterDate] = useState('');
@@ -488,7 +493,7 @@ function App() {
   const [examLinks, setExamLinks] = useState<Record<string, string>>({});
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
-  const [publicChurches, setPublicChurches] = useState<{name: string, email: string}[]>([]);
+  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxImages, setLightboxImages] = useState<{src: string}[]>([]);
@@ -570,34 +575,46 @@ function App() {
   }, [activeSection]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubscribeProfile: (() => void) | null = null;
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        try {
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        // Use real-time listener for current user profile to enforce blocking instantly
+        unsubscribeProfile = onSnapshot(doc(db, 'users', firebaseUser.uid), async (userDoc) => {
           if (userDoc.exists()) {
             const profile = userDoc.data();
+            if (profile.isEnabled === false) {
+              await signOut(auth);
+              setNotification("تم تعطيل حسابك بقرار من الإدارة. يرجى التواصل مع المسئول.");
+              setIsLoggedIn(false);
+              setUser(null);
+              setUserProfile(null);
+              setChurchName('');
+              return;
+            }
             setUserProfile(profile);
             setUserRole(profile.role);
             setChurchName(profile.churchName || '');
             setLocation(profile.country || '');
             setDashboardBg(profile.dashboardBg || '');
             setIsLoggedIn(true);
+            setIsAuthReady(true);
           } else if (firebaseUser.email === 'admin@mafk.com' || firebaseUser.email === 'mahraganalkeraza7esoyam@gmail.com') {
-            // Admin fallback if doc doesn't exist yet
             setUserRole('admin');
             setChurchName(firebaseUser.displayName || 'اللجنة المركزية منطقة18');
             setIsLoggedIn(true);
+            setIsAuthReady(true);
           } else {
-            // New user or profile missing - allow them to stay logged in while profile is being created
             setIsLoggedIn(true);
             if (firebaseUser.email?.endsWith('@mafk.com')) {
               setUserRole('church');
             }
+            setIsAuthReady(true);
           }
-        } catch (error) {
-          handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
-        }
+        }, (error) => {
+          console.error("Error watching user profile:", error);
+          setIsAuthReady(true);
+        });
       } else {
         setUser(null);
         setUserProfile(null);
@@ -605,10 +622,17 @@ function App() {
         setUserRole('guest');
         setChurchName('');
         setDashboardBg('');
+        setIsAuthReady(true);
+        if (unsubscribeProfile) {
+          unsubscribeProfile();
+          unsubscribeProfile = null;
+        }
       }
-      setIsAuthReady(true);
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProfile) unsubscribeProfile();
+    };
   }, []);
 
   // Firestore Listeners
@@ -1183,6 +1207,12 @@ function App() {
         }
 
         const churchData = churchDocs.docs[0].data();
+        if (churchData.isEnabled === false) {
+          setLoginError('تم تعطيل هذا الحساب بقرار من إدارة المهرجان. يرجى التواصل مع المسئول.');
+          setIsLoading(false);
+          return;
+        }
+
         if (code !== churchData.loginCode) {
           setLoginError('كود الكنيسة غير صحيح');
           setIsLoading(false);
@@ -1345,16 +1375,6 @@ function App() {
     }
   };
 
-  const handleDeleteChurchAccount = async (id: string) => {
-    confirmAction('تأكيد الحذف', 'هل أنت متأكد من حذف حساب هذه الكنيسة؟ سيتم حذف بيانات الحساب فقط، ولن يتم حذف بيانات المشتركين أو الطلبات.', async () => {
-      try {
-        await deleteDoc(doc(db, 'users', id));
-        setSelectedChurchUserId(null);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `users/${id}`);
-      }
-    });
-  };
   const handleYearChange = async (newYear: string) => {
     if (!newYear) return;
     setIsUpdatingYear(true);
@@ -1910,7 +1930,7 @@ function App() {
       <div 
         className="fixed inset-0 pointer-events-none z-0 opacity-[0.03]"
         style={{
-          backgroundImage: `url(${logo})`,
+          backgroundImage: `url(${appLogo || logo})`,
           backgroundRepeat: 'no-repeat',
           backgroundPosition: 'center',
           backgroundAttachment: 'fixed',
@@ -2075,10 +2095,30 @@ function App() {
                 >
                   <option value="">اختر الكنيسة</option>
                   <option value="مسئول">دخول مسئول (Admin)</option>
-                  {publicChurches.map((c: any) => c.name).sort().map(church => (
-                    <option key={church} value={church}>{church}</option>
+                  {[...publicChurches].sort((a, b) => a.name.localeCompare(b.name)).map(church => (
+                    <option key={church.name} value={church.name}>{church.name}</option>
                   ))}
                 </select>
+                {loginChurch && loginChurch !== 'مسئول' && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-3 mt-4 p-2 bg-slate-50 rounded-xl border border-slate-200"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center overflow-hidden border border-slate-200 shrink-0">
+                      {publicChurches.find(c => c.name === loginChurch)?.logoUrl ? (
+                        <img 
+                          src={publicChurches.find(c => c.name === loginChurch)?.logoUrl} 
+                          alt="Church Logo" 
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Church size={20} className="text-slate-300" />
+                      )}
+                    </div>
+                    <span className="text-xs font-black text-slate-700">{loginChurch}</span>
+                  </motion.div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -2396,8 +2436,8 @@ function App() {
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue font-bold appearance-none"
                   >
                     <option value="الكل">كل المراحل</option>
-                    {Array.from(new Set(results.map(r => r.stage))).map(s => (
-                      <option key={s} value={s}>{s}</option>
+                    {([...dynamicLevels]).sort((a, b) => a.name.localeCompare(b.name)).map(level => (
+                      <option key={level.name} value={level.name}>{level.name}</option>
                     ))}
                   </select>
                 </div>
@@ -3545,11 +3585,11 @@ function App() {
                       onChange={(e) => setNewSchedule({...newSchedule, examName: e.target.value})}
                       className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold"
                     >
+                      <option value="">-- اختر المسابقة --</option>
                       <option value="دراسي ومحفوظات وقبطي">دراسي ومحفوظات وقبطي</option>
-                      <option value="رياضي">رياضي</option>
-                      <option value="كورال">كورال</option>
-                      <option value="مسرح">مسرح</option>
-                      <option value="أنشطة">أنشطة</option>
+                      {Array.from(new Set(dynamicLevels.flatMap(l => l.comps || []))).sort().map(comp => (
+                        <option key={comp} value={comp}>{comp}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -3848,42 +3888,6 @@ function App() {
                   </div>
                 </section>
 
-                <section className="p-8 bg-white rounded-3xl border border-slate-200 shadow-sm">
-                  <h4 className="text-xl font-black text-slate-800 mb-8">إدارة إعدادات الكنائس</h4>
-                  <div className="mb-8">
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">اختر الكنيسة</label>
-                    <div className="flex gap-4">
-                      <select 
-                        value={selectedChurchUserId || ''}
-                        onChange={(e) => setSelectedChurchUserId(e.target.value)}
-                        className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                      >
-                        <option value="">اختر كنيسة...</option>
-                        {allUsers.filter(u => u.role === 'church').map(user => (
-                          <option key={user.id} value={user.id}>{user.churchName}</option>
-                        ))}
-                      </select>
-                      {selectedChurchUserId && (
-                        <button 
-                          onClick={() => handleDeleteChurchAccount(selectedChurchUserId)}
-                          className="px-6 py-3 bg-red-50 text-red-600 rounded-xl font-black flex items-center gap-2 hover:bg-red-100 transition-all"
-                          title="حذف حساب الكنيسة"
-                        >
-                          <Trash2 size={20} /> حذف الحساب
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {selectedChurchUserId && (
-                    <ChurchSettings 
-                      userId={selectedChurchUserId} 
-                      churchName={allUsers.find(u => u.id === selectedChurchUserId)?.churchName || ''} 
-                      country={allUsers.find(u => u.id === selectedChurchUserId)?.country || ''}
-                      logoUrl={allUsers.find(u => u.id === selectedChurchUserId)?.logoUrl} 
-                      email={allUsers.find(u => u.id === selectedChurchUserId)?.email}
-                    />
-                  )}
-                </section>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
                     <h4 className="text-xl font-black text-slate-800 flex items-center gap-2 mb-8">
@@ -4980,6 +4984,8 @@ function App() {
                       {[0, 1, 2, 3].map((idx) => {
                         const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي'].includes(newParticipant.stage);
                         const selectedComps = newParticipant.competitions;
+                        const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
+                        const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
                         
                         const isOptionDisabled = (val: string) => {
                           if (!val) return false;
@@ -5004,10 +5010,15 @@ function App() {
                               className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
                             >
                               <option value="">-- اختر المسابقة --</option>
-                              <option value="دراسي" disabled={isOptionDisabled('دراسي')}>دراسي</option>
-                              <option value="محفوظات" disabled={isOptionDisabled('محفوظات')}>محفوظات</option>
-                              <option value="قبطي مستوى أول" disabled={isOptionDisabled('قبطي مستوى أول')}>قبطي مستوى أول</option>
-                              {isCopticLevel2Allowed && <option value="قبطي مستوى ثانٍ" disabled={isOptionDisabled('قبطي مستوى ثانٍ')}>قبطي مستوى ثانٍ</option>}
+                              {availableCompsForLevel.map((comp: string) => (
+                                <option 
+                                  key={comp} 
+                                  value={comp} 
+                                  disabled={isOptionDisabled(comp)}
+                                >
+                                  {comp}
+                                </option>
+                              ))}
                             </select>
                           </div>
                         );

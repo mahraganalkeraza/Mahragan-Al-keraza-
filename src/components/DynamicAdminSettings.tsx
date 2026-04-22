@@ -1,7 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc } from 'firebase/firestore';
-import { db, storage, ref, uploadBytes, getDownloadURL } from '../firebase';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, writeBatch } from 'firebase/firestore';
+import { initializeApp, getApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { db, storage, ref, uploadBytesResumable, getDownloadURL, handleFirestoreError, OperationType, firebaseConfig } from '../firebase';
 import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as ImageIcon, Upload, Loader2 } from 'lucide-react';
+
+// Initialize secondary app for creating user accounts from the bank
+const getSecondaryAuth = () => {
+  try {
+    const app = getApp("SecondaryBank");
+    return getAuth(app);
+  } catch (e) {
+    const app = initializeApp(firebaseConfig, "SecondaryBank");
+    return getAuth(app);
+  }
+};
 
 export default function DynamicAdminSettings() {
   const [churches, setChurches] = useState<any[]>([]);
@@ -21,8 +34,10 @@ export default function DynamicAdminSettings() {
 
   const [newCompName, setNewCompName] = useState('');
 
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [purgeStatus, setPurgeStatus] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string, type: 'church' | 'level' | 'comp' | 'purge' } | null>(null);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -52,21 +67,29 @@ export default function DynamicAdminSettings() {
 
   // PURGE LOGIC
   const handlePurge = async () => {
-    if (!window.confirm("تحذير: سيتم مسح الكنائس، والمراحل، والمسابقات القديمة بشكل لا رجعة فيه. هل أنت متأكد؟")) return;
     setPurgeStatus('جاري مسح البيانات القديمة...');
     try {
-      const collectionsToPurge = ['public_churches', 'churches', 'levels', 'competitions'];
+      const collectionsToPurge = ['public_churches', 'churches', 'levels', 'competitions', 'users'];
       for (const col of collectionsToPurge) {
-        const snap = await getDocs(collection(db, col));
-        for (const document of snap.docs) {
-          await deleteDoc(doc(db, col, document.id));
+        try {
+          const snap = await getDocs(collection(db, col));
+          const batch = snap.docs.slice(0, 500);
+          for (const document of batch) {
+            // Don't purge current admin
+            if (col === 'users' && document.data().role === 'admin') continue;
+            await deleteDoc(doc(db, col, document.id));
+          }
+        } catch (innerErr) {
+          console.error(`Error purging ${col}:`, innerErr);
         }
       }
-      setPurgeStatus('تم تنظيف قواعد البيانات القديمة والكاملة بنجاح!');
+      setPurgeStatus('تم تنظيف قواعد البيانات بنجاح!');
+      setDeleteConfirmation(null);
       fetchData();
     } catch (e) {
       console.error(e);
       setPurgeStatus('حدث خطأ أثناء المسح.');
+      handleFirestoreError(e, OperationType.DELETE, 'purge_all');
     }
   };
 
@@ -74,16 +97,70 @@ export default function DynamicAdminSettings() {
   const addChurch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newChurchName || !newChurchCode) return;
+    
+    // Firebase Auth requires password to be at least 6 characters
+    if (newChurchCode.length < 6) {
+      alert("يرجى إدخال رمز دخول (كلمة مرور) لا يقل عن 6 أحرف حتى يعمل حساب الدخول بشكل صحيح.");
+      return;
+    }
+
+    setIsSaving(true);
     try {
-      await addDoc(collection(db, 'churches'), { name: newChurchName, loginCode: newChurchCode });
+      // 1. Create entry in churches bank
+      const newChurchRef = doc(collection(db, 'churches'));
+      const churchData = { 
+        name: newChurchName, 
+        loginCode: newChurchCode, 
+        isEnabled: true,
+        createdAt: new Date().toISOString()
+      };
+
+      // 2. Create corresponding Auth account and user profile if it doesn't exist
+      // Generate standard email
+      const emailSlug = encodeURIComponent(newChurchName).replace(/%/g, "");
+      const email = `${emailSlug}_${Date.now()}@mafk.com`;
+      
+      const secondsAuth = getSecondaryAuth();
+      const userCredential = await createUserWithEmailAndPassword(
+        secondsAuth,
+        email,
+        newChurchCode
+      );
+      const newUid = userCredential.user.uid;
+      await signOut(secondsAuth);
+
+      const batch = writeBatch(db);
+      batch.set(newChurchRef, churchData);
+      batch.set(doc(db, 'users', newUid), {
+        uid: newUid,
+        email: email,
+        role: "church",
+        churchName: newChurchName,
+        password: newChurchCode,
+        isEnabled: true,
+        logoUrl: ""
+      });
+
+      await batch.commit();
+
       setNewChurchName(''); setNewChurchCode('');
       fetchData();
-    } catch (e) { console.error(e); }
+      alert('تمت إضافة الكنيسة وتنشيط حساب الدخول بنجاح!');
+    } catch (e) { 
+      console.error("Add Church Bank error:", e);
+      handleFirestoreError(e, OperationType.CREATE, 'churches');
+    } finally {
+      setIsSaving(false);
+    }
   };
   const deleteChurch = async (id: string) => {
-    if (!window.confirm("متأكد من الحذف؟")) return;
-    await deleteDoc(doc(db, 'churches', id));
-    fetchData();
+    try {
+      await deleteDoc(doc(db, 'churches', id));
+      setDeleteConfirmation(null);
+      fetchData();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `churches/${id}`);
+    }
   };
 
   // COMPETITIONS
@@ -94,12 +171,19 @@ export default function DynamicAdminSettings() {
       await addDoc(collection(db, 'competitions'), { name: newCompName });
       setNewCompName('');
       fetchData();
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error(e);
+      handleFirestoreError(e, OperationType.CREATE, 'competitions');
+    }
   };
   const deleteCompetition = async (id: string) => {
-    if (!window.confirm("متأكد من الحذف؟")) return;
-    await deleteDoc(doc(db, 'competitions', id));
-    fetchData();
+    try {
+      await deleteDoc(doc(db, 'competitions', id));
+      setDeleteConfirmation(null);
+      fetchData();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `competitions/${id}`);
+    }
   };
 
   // LEVELS
@@ -110,12 +194,19 @@ export default function DynamicAdminSettings() {
       await addDoc(collection(db, 'levels'), { name: newLevelName, allowedCompetitions: selectedCompetitions });
       setNewLevelName(''); setSelectedCompetitions([]);
       fetchData();
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+      console.error(e);
+      handleFirestoreError(e, OperationType.CREATE, 'levels');
+    }
   };
   const deleteLevel = async (id: string) => {
-    if (!window.confirm("متأكد من الحذف؟")) return;
-    await deleteDoc(doc(db, 'levels', id));
-    fetchData();
+    try {
+      await deleteDoc(doc(db, 'levels', id));
+      setDeleteConfirmation(null);
+      fetchData();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `levels/${id}`);
+    }
   };
   const toggleCompForLevel = (compName: string) => {
     if (selectedCompetitions.includes(compName)) {
@@ -129,19 +220,38 @@ export default function DynamicAdminSettings() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Reject huge files directly to stay within reasonable limits
+    if (file.size > 800000) { // ~800KB
+      alert('حجم الصورة كبير جداً. يرجى رفع صورة أقل من 800 كيلوبايت.');
+      return;
+    }
+
     setIsUploadingLogo(true);
     try {
-      const storageRef = ref(storage, `app/logo_${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64String = reader.result as string;
+        try {
+          await setDoc(doc(db, 'settings', 'app_config'), { appLogo: base64String }, { merge: true });
+          setAppLogo(base64String);
+          alert('تم تحديث شعار المهرجان بنجاح!');
+        } catch (innerError) {
+          console.error("Firestore write error for logo:", innerError);
+          alert('حدث خطأ أثناء حفظ الشعار في قاعدة البيانات.');
+        } finally {
+          setIsUploadingLogo(false);
+        }
+      };
       
-      await setDoc(doc(db, 'settings', 'app_config'), { appLogo: downloadURL }, { merge: true });
-      setAppLogo(downloadURL);
-      alert('تم تحديث شعار المهرجان بنجاح!');
+      reader.onerror = () => {
+        alert("حدث خطأ أثناء قراءة الملف");
+        setIsUploadingLogo(false);
+      };
+
+      reader.readAsDataURL(file);
     } catch (error) {
       console.error("Error uploading logo:", error);
       alert('حدث خطأ أثناء رفع الشعار.');
-    } finally {
       setIsUploadingLogo(false);
     }
   };
@@ -194,7 +304,14 @@ export default function DynamicAdminSettings() {
                   <input type="text" value={newChurchCode} onChange={e => setNewChurchCode(e.target.value)} required className="w-full p-3 rounded-lg border border-slate-200" placeholder="رمز الدخول الفريد..." />
                 </div>
               </div>
-              <button type="submit" className="mt-4 px-6 py-3 bg-primary text-white rounded-lg font-black flex items-center gap-2">إضافة الكنيسة</button>
+              <button 
+                type="submit" 
+                disabled={isSaving}
+                className="mt-4 px-6 py-3 bg-primary text-white rounded-lg font-black flex items-center gap-2 disabled:opacity-50"
+              >
+                {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
+                إضافة الكنيسة
+              </button>
             </form>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -204,7 +321,7 @@ export default function DynamicAdminSettings() {
                     <h4 className="font-black text-slate-800">{church.name}</h4>
                     <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded mt-1 inline-block">Code: {church.loginCode}</span>
                   </div>
-                  <button onClick={() => deleteChurch(church.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                  <button onClick={() => setDeleteConfirmation({ id: church.id, type: 'church' })} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
                 </div>
               ))}
             </div>
@@ -227,7 +344,7 @@ export default function DynamicAdminSettings() {
               {competitions.map(comp => (
                 <div key={comp.id} className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2 rounded-full font-bold">
                   {comp.name}
-                  <button onClick={() => deleteCompetition(comp.id)} className="text-indigo-400 hover:text-red-500"><X size={16} /></button>
+                  <button onClick={() => setDeleteConfirmation({ id: comp.id, type: 'comp' })} className="text-indigo-400 hover:text-red-500"><X size={16} /></button>
                 </div>
               ))}
             </div>
@@ -269,7 +386,7 @@ export default function DynamicAdminSettings() {
                 <div key={level.id} className="p-5 border border-slate-200 rounded-xl flex flex-col justify-between shadow-sm">
                   <div className="flex justify-between items-start mb-4">
                     <h4 className="font-black text-lg text-slate-800">{level.name}</h4>
-                    <button onClick={() => deleteLevel(level.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                    <button onClick={() => setDeleteConfirmation({ id: level.id, type: 'level' })} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {level.allowedCompetitions?.map((c: string, idx: number) => (
@@ -325,7 +442,7 @@ export default function DynamicAdminSettings() {
             <h3 className="text-2xl font-black text-red-700 mb-2">أداة مسح البيانات القديمة</h3>
             <p className="text-red-600 font-bold mb-8">استخدم هذه الأداة بحذر. سيتم تفريغ كافة قواعد البيانات القديمة للكنائس الثابتة لتهيئة النظام لمرحلة الإدارة الديناميكية.</p>
             <button 
-              onClick={handlePurge}
+              onClick={() => setDeleteConfirmation({ id: 'all', type: 'purge' })}
               className="bg-red-600 text-white px-8 py-4 rounded-xl font-black text-lg shadow-lg hover:bg-red-700 transition"
             >
               تشغيل كود التنظيف Wipe Out
@@ -335,6 +452,39 @@ export default function DynamicAdminSettings() {
         )}
 
       </div>
+
+      {/* Confirmation Modal */}
+      {deleteConfirmation && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-slate-200">
+            <h3 className="text-2xl font-black text-slate-800 mb-4">تأكيد الحذف</h3>
+            <p className="text-slate-600 font-bold mb-8">
+              {deleteConfirmation.type === 'purge' 
+                ? 'تحذير: سيتم مسح الكنائس، والمراحل، والمسابقات القديمة بشكل نهائي. هل أنت متأكد؟'
+                : 'هل أنت متأكد من حذف هذا العنصر؟ لا يمكن التراجع عن هذا الإجراء.'}
+            </p>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => {
+                  if (deleteConfirmation.type === 'church') deleteChurch(deleteConfirmation.id);
+                  else if (deleteConfirmation.type === 'comp') deleteCompetition(deleteConfirmation.id);
+                  else if (deleteConfirmation.type === 'level') deleteLevel(deleteConfirmation.id);
+                  else if (deleteConfirmation.type === 'purge') handlePurge();
+                }}
+                className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black hover:bg-red-700 transition-all"
+              >
+                تأكيد الحذف
+              </button>
+              <button 
+                onClick={() => setDeleteConfirmation(null)}
+                className="flex-1 py-4 bg-slate-100 text-slate-700 rounded-2xl font-black hover:bg-slate-200 transition-all"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

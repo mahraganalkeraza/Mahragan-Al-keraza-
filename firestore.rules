@@ -53,26 +53,29 @@ service cloud.firestore {
     }
 
     function isValidUrl(url) {
-      return url is string && url.size() < 2000 && (url.matches('^https?://.*') || url.matches('^data:image/.*'));
+      return url is string && url.size() < 1048576 && (url == '' || url.matches('^https?://.*') || url.matches('^data:image/.*'));
     }
 
     // ===============================================================
     // Entity Validations
     // ===============================================================
 
-    function isValidUser(data) {
+    function isValidUser(data, userId) {
       return data.keys().hasAll(['uid', 'email', 'role']) &&
-             data.keys().size() <= 5 &&
-             data.uid == request.auth.uid &&
+             data.keys().size() <= 10 &&
+             data.uid == userId &&
              data.email is string && data.email.size() < 256 &&
              data.role in ['admin', 'church'] &&
              (!('churchName' in data) || (data.churchName is string && data.churchName.size() < 200)) &&
+             (!('isEnabled' in data) || (data.isEnabled is bool)) &&
+             (!('password' in data) || (data.password is string)) &&
+             (!('logoUrl' in data) || isValidUrl(data.logoUrl)) &&
              (!('dashboardBg' in data) || (data.dashboardBg is string && data.dashboardBg.size() < 2000));
     }
 
     function isValidOrder(data) {
       return data.keys().hasAll(['churchName', 'details', 'grandTotal', 'timestamp']) &&
-             data.keys().size() <= 6 &&
+             data.keys().size() <= 10 &&
              data.churchName is string && data.churchName.size() < 200 &&
              data.details is list && data.details.size() <= 100 &&
              data.grandTotal is number &&
@@ -184,9 +187,8 @@ service cloud.firestore {
     }
 
     function isValidAppConfig(data) {
-      return data.keys().hasAll(['activeYear']) &&
-             data.keys().size() <= 3 &&
-             data.activeYear is string &&
+      return data.keys().size() <= 7 &&
+             (!('activeYear' in data) || data.activeYear is string) &&
              (!('appLogo' in data) || isValidUrl(data.appLogo));
     }
 
@@ -196,9 +198,9 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow create: if (isOwner(userId) || isAdmin()) && isValidUser(incoming(), userId);
       allow update: if (isOwner(userId) || isAdmin()) && 
-                    isValidUser(incoming()) && 
+                    isValidUser(incoming(), userId) && 
                     (isAdmin() || (incoming().role == existing().role && incoming().diff(existing()).affectedKeys().hasOnly(['churchName', 'dashboardBg'])));
     }
 
@@ -207,6 +209,7 @@ service cloud.firestore {
       allow create: if isValidId(orderId) && 
                     isValidOrder(incoming()) && 
                     (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
+      allow update: if isAdmin() && isValidOrder(incoming());
       allow delete: if isAdmin();
     }
 
@@ -226,7 +229,7 @@ service cloud.firestore {
       allow create: if isValidId(inquiryId) && 
                     isValidInquiry(incoming()) && 
                     (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
-      allow update: if isAdmin() && isValidInquiry(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['reply']);
+      allow update: if isAdmin() && isValidInquiry(incoming()) && (incoming().diff(existing()).affectedKeys().hasOnly(['reply']) || incoming().diff(existing()).affectedKeys().hasOnly(['churchName']));
       allow delete: if isAdmin();
     }
 
@@ -257,6 +260,7 @@ service cloud.firestore {
       allow create: if isValidId(teamId) && 
                     isValidActivityTeam(incoming()) && 
                     (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
+      allow update: if isAdmin() && isValidActivityTeam(incoming());
       allow delete: if isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName));
     }
 
@@ -269,16 +273,25 @@ service cloud.firestore {
     match /churches/{churchId} {
       allow read: if true;
       allow write: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /levels/{levelId} {
       allow read: if true;
       allow write: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /competitions/{compId} {
       allow read: if true;
       allow write: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /public_churches/{churchId} {
+      allow read: if true;
+      allow write: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /settings/footer {

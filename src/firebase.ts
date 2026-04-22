@@ -18,16 +18,17 @@ import {
   orderBy,
   limit
 } from 'firebase/firestore';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 // Import the Firebase configuration
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase SDK
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
-export const storage = getStorage(app);
+export const firebaseApp = initializeApp(firebaseConfig);
+export const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+export const auth = getAuth(firebaseApp);
+export const storage = getStorage(firebaseApp);
+export { firebaseConfig };
 
 export const CURRENT_YEAR = '2026';
 
@@ -115,6 +116,6 @@ export {
   orderBy,
   limit,
   ref,
-  uploadBytes,
+  uploadBytesResumable,
   getDownloadURL
 };
