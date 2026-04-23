@@ -184,29 +184,13 @@ function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carous
 
   if (slides.length === 0) {
     return (
-      <div className="relative h-[400px] md:h-[600px] w-full overflow-hidden rounded-[2rem] shadow-2xl mb-12 group border-4 border-white/10">
-        <div className="absolute inset-0">
-          <img 
-            src="https://picsum.photos/seed/festival/1920/1080" 
-            alt="Welcome" 
-            className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
-          />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-center justify-center text-center p-8">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 1 }}
-              className="max-w-3xl"
-            >
-              <h1 className="text-4xl md:text-8xl font-black text-white mb-6 drop-shadow-2xl tracking-tighter">
-                مرحباً بكم في <span className="text-[#D4AF37]">مهرجان ٢٠٢٦</span>
-              </h1>
-              <p className="text-xl md:text-3xl text-slate-200 font-bold drop-shadow-lg opacity-80">
-                إيبارشية مغاغة والعدوة - "يعظم انتصارنا بالذي أحبنا"
-              </p>
-            </motion.div>
+      <div className="relative h-[250px] md:h-[400px] w-full overflow-hidden rounded-[2rem] shadow-xl mb-12 flex items-center justify-center bg-slate-50 border border-slate-200">
+        <div className="text-center p-8">
+          <div className="w-20 h-20 bg-slate-200 rounded-2xl mx-auto mb-6 flex items-center justify-center animate-pulse">
+            <ImageIcon size={32} className="text-slate-400" />
           </div>
+          <h2 className="text-2xl font-black text-slate-500 mb-2">في انتظار التحديثات</h2>
+          <p className="text-slate-400 font-bold">لا يوجد أخبار أو إعلانات حالياً.</p>
         </div>
       </div>
     );
@@ -498,15 +482,15 @@ function App() {
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxImages, setLightboxImages] = useState<{src: string}[]>([]);
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({
-    phone: '0123456789',
-    facebook: 'https://facebook.com',
-    telegram: 'https://t.me',
-    copyright: 'جميع الحقوق محفوظة © مهرجان الكرازة المرقسية منطقة 18 - 2026'
+    phone: '',
+    facebook: '',
+    telegram: '',
+    copyright: 'جميع الحقوق محفوظة © مهرجان الكرازة المرقسية'
   });
   const [aboutContent, setAboutContent] = useState<AboutContent>({
-    vision: 'رؤية المهرجان...',
-    mission: 'هدف المهرجان...',
-    aboutText: 'عن المهرجان...'
+    vision: '',
+    mission: '',
+    aboutText: ''
   });
   const [editingCalculatorSetting, setEditingCalculatorSetting] = useState<any>(null);
   const [editingTeam, setEditingTeam] = useState<any>(null);
@@ -1993,10 +1977,12 @@ function App() {
               <div className="absolute bottom-8 right-6 left-6">
                 <div className="p-4 bg-bg-soft rounded-2xl border border-slate-100">
                   <p className="text-xs text-slate-400 mb-2">للتواصل السريع</p>
-                  <a href="tel:01200019020" className="flex items-center gap-2 text-primary font-bold text-sm">
-                    <Phone size={14} />
-                    <span>01200019020</span>
-                  </a>
+                  {siteSettings.phone && (
+                    <a href={`tel:${siteSettings.phone}`} className="flex items-center gap-2 text-primary font-bold text-sm">
+                      <Phone size={14} />
+                      <span dir="ltr">{siteSettings.phone}</span>
+                    </a>
+                  )}
                 </div>
               </div>
             </motion.aside>
@@ -2740,61 +2726,67 @@ function App() {
         {activeSection === 'admin_dashboard' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
             <BackButton />
-            <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 bg-coptic-red/10 rounded-2xl flex items-center justify-center">
-                    <ShieldCheck className="text-coptic-red" size={32} />
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden min-h-[700px] flex flex-col lg:flex-row">
+              {/* Sidebar Navigation */}
+              <div className="w-full lg:w-72 bg-slate-50 border-b lg:border-b-0 lg:border-l border-slate-200 flex flex-col">
+                <div className="p-6 border-b border-slate-200">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="w-12 h-12 bg-coptic-red text-white rounded-xl flex items-center justify-center shadow-lg">
+                      <ShieldCheck size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-800 leading-tight">لوحة الإدارة</h3>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">المنطقة ١٨</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-2xl font-black text-coptic-blue">لوحة تحكم المسئول</h3>
-                    <p className="text-slate-400 font-bold">إدارة كافة الطلبات والاستفسارات الواردة</p>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase">تصفية حسب الكنيسة</label>
+                    <select 
+                      value={adminFilterChurch}
+                      onChange={(e) => setAdminFilterChurch(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary font-bold shadow-sm"
+                    >
+                      <option value="الكل">عرض الكل</option>
+                      {publicChurches.map((c: any) => c.name).sort().map(church => (
+                        <option key={church} value={church}>{church}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase">تصفية حسب الكنيسة</label>
-                  <select 
-                    value={adminFilterChurch}
-                    onChange={(e) => setAdminFilterChurch(e.target.value)}
-                    className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue font-bold min-w-[200px]"
-                  >
-                    <option value="الكل">عرض الكل</option>
-                    {publicChurches.map((c: any) => c.name).sort().map(church => (
-                      <option key={church} value={church}>{church}</option>
-                    ))}
-                  </select>
+                <div className="p-4 flex gap-2 lg:flex-col lg:space-y-1 h-auto lg:h-full overflow-x-auto lg:overflow-y-auto no-scrollbar lg:custom-scrollbar">
+                  {[
+                    { id: 'dashboard', label: 'الملخص والمؤشرات', icon: LayoutDashboard },
+                    { id: 'news', label: 'الأخبار والسلايدر', icon: Newspaper },
+                    { id: 'participants', label: 'إدارة المشتركين', icon: Users },
+                    { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
+                    { id: 'results', label: 'النتائج', icon: Award },
+                    { id: 'omr', label: 'بابل شيت OMR', icon: FileScan },
+                    { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
+                    { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
+                    { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
+                    { id: 'calculator', label: 'حاسبة الكتب', icon: Calculator },
+                    { id: 'exams_management', label: 'روابط الامتحانات', icon: BookOpen },
+                    { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
+                    { id: 'dynamic_management', label: 'النظام الديناميكي', icon: Settings },
+                    { id: 'system_settings', label: 'إعدادات المنصة', icon: Settings }
+                  ].map(tab => (
+                    <button 
+                      key={tab.id}
+                      onClick={() => setAdminActiveTab(tab.id)}
+                      className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm text-right ${adminActiveTab === tab.id ? 'bg-primary text-white shadow-md transform lg:scale-[1.02]' : 'bg-white lg:bg-transparent text-slate-600 hover:bg-slate-200 hover:text-slate-900 border lg:border-none border-slate-200'}`}
+                    >
+                      <tab.icon size={18} className={adminActiveTab === tab.id ? 'text-white' : 'text-slate-400'} />
+                      <span className="flex-1 whitespace-nowrap">{tab.label}</span>
+                      {adminActiveTab === tab.id && <ChevronLeft size={16} className="text-white/50 hidden lg:block" />}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Admin Tabs */}
-              <div className="flex border-b border-slate-100 mb-8 overflow-x-auto no-scrollbar">
-                {[
-                  { id: 'dashboard', label: 'الملخص', icon: LayoutDashboard },
-                  { id: 'news', label: 'الأخبار والسلايدر', icon: Newspaper },
-                  { id: 'participants', label: 'المشتركين', icon: Users },
-                  { id: 'activity_teams', label: 'الفرق', icon: Users },
-                  { id: 'results', label: 'النتائج', icon: Award },
-                  { id: 'omr', label: 'بابل شيت OMR', icon: FileScan },
-                  { id: 'orders', label: 'الطلبات', icon: ShoppingCart },
-                  { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
-                  { id: 'schedules', label: 'الجداول', icon: Calendar },
-                  { id: 'calculator', label: 'حاسبة الكتب', icon: Calculator },
-                  { id: 'exams_management', label: 'روابط الامتحانات', icon: BookOpen },
-                  { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
-                  { id: 'dynamic_management', label: 'إدارة النظام الديناميكية', icon: Settings },
-                  { id: 'system_settings', label: 'إعدادات النظام', icon: Settings }
-                ].map(tab => (
-                  <button 
-                    key={tab.id}
-                    onClick={() => setAdminActiveTab(tab.id)}
-                    className={`px-6 py-4 text-sm font-black transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${adminActiveTab === tab.id ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                  >
-                    <tab.icon size={18} />
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              {/* Main Content Area */}
+              <div className="flex-1 p-6 md:p-10 min-w-0 bg-white overflow-y-auto">
 
               {adminActiveTab === 'dashboard' && (
                 <>
@@ -4553,6 +4545,7 @@ function App() {
                 </section>
               </div>
             )}
+            </div>
           </div>
         </motion.div>
       )}
@@ -5542,12 +5535,14 @@ function App() {
             <div className="text-slate-400 text-base space-y-6">
               <p className="font-bold leading-relaxed">لأي استفسارات بخصوص التسجيل أو المسابقات، يرجى التواصل مع أمناء الخدمة بكنيستكم أو عبر الأرقام التالية:</p>
               <div className="space-y-4">
-                <a href={`tel:${siteSettings.phone || '01200019020'}`} className="flex items-center gap-4 text-white hover:text-primary transition-all group">
-                  <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center group-hover:bg-primary/20 transition-colors shadow-lg border border-white/5">
-                    <Phone size={20} />
-                  </div>
-                  <span className="font-mono text-xl tracking-wider">{siteSettings.phone || '01200019020'}</span>
-                </a>
+                {siteSettings.phone && (
+                  <a href={`tel:${siteSettings.phone}`} className="flex items-center gap-4 text-white hover:text-primary transition-all group">
+                    <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center group-hover:bg-primary/20 transition-colors shadow-lg border border-white/5">
+                      <Phone size={20} />
+                    </div>
+                    <span className="font-mono text-xl tracking-wider" dir="ltr">{siteSettings.phone}</span>
+                  </a>
+                )}
               </div>
             </div>
             <div className="pt-8 border-t border-white/5 text-xs font-black text-slate-500 uppercase tracking-[0.2em]">

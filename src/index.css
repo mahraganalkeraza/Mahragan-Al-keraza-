@@ -59,13 +59,13 @@
 /* كود لتغيير إطار كل الزراير في الموقع */
 button {
   border: 2px solid #D4AF37 !important; /* لون ذهبي للإطار */
-  color: #800000 !important; /* لون الخط برغندي */
+  color: #800000; /* شلنا ال !important علشان Tailwind يشتغل */
   font-weight: bold;
 }
 
 button:hover {
-  background-color: #800000 !important; /* عند الوقوف بالماوس الخلفية تبقى برغندي */
-  color: #ffffff !important; /* والخط يقلب أبيض */
+  background-color: #800000 !important; 
+  color: #ffffff !important; 
 }
 @media print {
   .no-print {
