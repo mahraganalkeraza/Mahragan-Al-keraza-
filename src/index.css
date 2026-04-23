@@ -1,13 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap');
 @import "tailwindcss";
 
+   /*ألوان الموقع الرئيسية */
 @theme {
   --font-sans: "Tajawal", "Inter", ui-sans-serif, system-ui, sans-serif;
   --color-primary: #800000;
   --color-accent: #D4AF37;
   --color-bg-soft: #F3F4F6;
   
-  /* Redefine used colors as hex to avoid oklch errors in html2canvas/html2pdf */
+  /* حافظ على الالوان كده عشان تظهر في الطباعة تمام */
   --color-slate-50: #f8fafc;
   --color-slate-100: #f1f5f9;
   --color-slate-200: #e2e8f0;
@@ -59,12 +60,15 @@
 /* كود لتغيير إطار كل الزراير في الموقع */
 button {
   border: 2px solid #D4AF37 !important; /* لون ذهبي للإطار */
-  color: #800000; /* شلنا ال !important علشان Tailwind يشتغل */
+  color: #dfab02; /* شلنا ال !important علشان Tailwind يشتغل */
   font-weight: bold;
-}
+  };
+  .text-shadow-SAFE{
+    text-shadow: 1xp 1xp 2xp rgba(0, 0, 0, 0.5),0 0 1xp rgba(0, 0, 0, 0.8);
+  }
 
 button:hover {
-  background-color: #800000 !important; 
+  background-color: #000000 !important; 
   color: #ffffff !important; 
 }
 @media print {
