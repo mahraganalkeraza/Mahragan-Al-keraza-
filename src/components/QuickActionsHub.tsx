@@ -8,11 +8,14 @@ interface QuickActionsHubProps {
 
 const QuickActionsHub: React.FC<QuickActionsHubProps> = ({ userRole, onAction }) => {
   const actions = [
-    { id: 'registration', title: 'تسجيل المشتركين', description: 'سجل بيانات المخدومين هنا', icon: Users },
     { id: 'schedule', title: 'جداول الامتحانات', description: 'عرض مواعيد الامتحانات', icon: Calendar },
     { id: 'results', title: 'نتائج المسابقات', description: 'عرض نتائج المسابقات', icon: Award },
     { id: 'calculator', title: 'حاسبة الكتب', description: 'حساب تكلفة الكتب', icon: Calculator },
   ];
+
+  if (userRole === 'church' || userRole === 'admin') {
+    actions.unshift({ id: 'registration', title: 'تسجيل المشتركين', description: 'سجل بيانات المخدومين هنا', icon: Users });
+  }
 
   if (userRole === 'admin') {
     actions.push({ id: 'admin_dashboard', title: 'إدارة الكنائس', description: 'إدارة الكنائس وكلمات المرور', icon: ShieldCheck });

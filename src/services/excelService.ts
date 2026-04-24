@@ -167,29 +167,76 @@ export const exportParticipantsReport = async (participants: Participant[], titl
 export const exportAllDataReport = async (participants: Participant[], activityTeams: ActivityTeam[], orders: Order[]) => {
   const workbook = new ExcelJS.Workbook();
   
-  // Participants Sheet
+  // Participants Unified Sheet
   const pSheet = workbook.addWorksheet('المشتركين');
-  const pHeaders = ['م', 'اسم الكنيسة', 'البلد/القرية', 'الاسم', 'المرحلة', 'المسابقة 1', 'المسابقة 2', 'المسابقة 3', 'المسابقة 4', 'تاريخ التسجيل'];
-  applyProfessionalStyles(pSheet, 'بيانات المشتركين التفصيلية', pHeaders);
+  const pHeaders = ['الكنيسة', 'اسم المشترك', 'المرحلة', 'دراسي', 'محفوظات', 'قبطي (مستوى ١ أو ٢)', 'النشاط (فردي/كورال/عزف)'];
+  applyProfessionalStyles(pSheet, 'بيانات المشتركين المجمعة (النسخة الإدارية)', pHeaders);
   
-  participants.forEach((p, index) => {
+  // Map all participants to unified structure
+  const unifiedMap = new Map<string, any>();
+  
+  participants.forEach(p => {
+    const key = `${p.churchName}-${p.name.trim()}`;
+    const study = p.competitions?.find(c => c && c.includes('دراس')) ? '١' : '-';
+    const memo = p.competitions?.find(c => c && c.includes('محفوظات')) ? '١' : '-';
+    const copticVal = p.competitions?.find(c => c && c.includes('قبطي'));
+    const coptic = copticVal ? (copticVal.includes('١') ? '١' : '٢') : '-';
+    const activities = p.competitions?.filter(c => c && !c.includes('دراس') && !c.includes('محفوظات') && !c.includes('قبطي')) || [];
+    
+    unifiedMap.set(key, {
+      churchName: p.churchName || '-',
+      name: p.name || '-',
+      stage: p.stage || '-',
+      study,
+      memo,
+      coptic,
+      activityList: activities
+    });
+  });
+
+  // Cross-reference teams into unified participants
+  activityTeams.forEach(t => {
+    t.members?.forEach(m => {
+      if (!m.name) return;
+      const key = `${t.churchName}-${m.name.trim()}`;
+      const specificActivity = [t.activityType, t.choirLevel || t.instrumentType || ''].filter(Boolean).join(' ').trim();
+      
+      if (unifiedMap.has(key)) {
+        if (!unifiedMap.get(key).activityList.includes(specificActivity)) {
+          unifiedMap.get(key).activityList.push(specificActivity);
+        }
+      } else {
+        unifiedMap.set(key, {
+          churchName: t.churchName || '-',
+          name: m.name.trim(),
+          stage: m.stage || '-',
+          study: '-',
+          memo: '-',
+          coptic: '-',
+          activityList: [specificActivity]
+        });
+      }
+    });
+  });
+
+  const finalParticipants = Array.from(unifiedMap.values()).sort((a, b) => a.churchName.localeCompare(b.churchName));
+  
+  finalParticipants.forEach((p) => {
     pSheet.addRow([
-      index + 1,
       p.churchName,
-      p.country,
       p.name,
       p.stage,
-      p.competitions[0] || '-',
-      p.competitions[1] || '-',
-      p.competitions[2] || '-',
-      p.competitions[3] || '-',
-      new Date(p.timestamp).toLocaleDateString('ar-EG')
+      p.study,
+      p.memo,
+      p.coptic,
+      p.activityList.length > 0 ? p.activityList.join(' - ') : '-'
     ]);
   });
+  
   applyDataStyles(pSheet);
   autoFitColumns(pSheet);
 
-  // Teams Sheet
+  // Teams Sheet (For detailed admin metrics)
   const tSheet = workbook.addWorksheet('فرق الأنشطة');
   const tHeaders = ['م', 'اسم الكنيسة', 'نوع النشاط', 'المستوى/الآلة', 'عدد البنين', 'عدد البنات', 'اسم العضو', 'النوع', 'المرحلة', 'تاريخ التسجيل'];
   applyProfessionalStyles(tSheet, 'بيانات فرق الأنشطة التفصيلية', tHeaders);

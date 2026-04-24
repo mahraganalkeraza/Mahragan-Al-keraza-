@@ -128,6 +128,29 @@ export interface CarouselItem {
   year?: string;
 }
 
+export interface MasterTemplate {
+  filename: string;
+  headers: string[];
+}
+
+export interface AgeStageMapping {
+  stage: string;
+  minYear: number;
+  maxYear: number;
+}
+
+export interface ValidationRules {
+  nameLength: boolean;
+  genderMatch: boolean;
+  mandatoryRows: boolean;
+}
+
+export interface ValidationSettings {
+  templates: MasterTemplate[];
+  ageMappings: AgeStageMapping[];
+  rules: ValidationRules;
+}
+
 export interface AppConfig {
   activeYear: string;
   appLogo?: string;

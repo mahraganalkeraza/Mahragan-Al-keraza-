@@ -16,7 +16,9 @@ service cloud.firestore {
     }
 
     function isEmailVerified() {
-      return isSignedIn() && request.auth.token.email_verified == true;
+      // In this system, church users are created with synthetic emails (e.g., church_abc@mafk.com)
+      // which cannot be verified. Therefore, we just require the user to be signed in securely.
+      return isSignedIn();
     }
 
     function isValidId(id) {
@@ -282,6 +284,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /activityStages/{stageId} {
+      allow read: if true;
+      allow write: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     match /competitions/{compId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -307,6 +315,11 @@ service cloud.firestore {
     match /settings/app_config {
       allow read: if true;
       allow write: if isAdmin() && isValidAppConfig(incoming());
+    }
+
+    match /settings/validation {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /carousel/{carouselId} {

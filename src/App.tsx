@@ -49,7 +49,8 @@ import {
   Loader2,
   Save,
   ShoppingCart,
-  FileScan
+  FileScan,
+  FileSpreadsheet
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import Notification from './components/Notification';
@@ -374,6 +375,7 @@ function App() {
   const [user, setUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
+  const [activityStages, setActivityStages] = useState<any[]>([]);
 
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
@@ -389,6 +391,11 @@ function App() {
   const [appLogo, setAppLogo] = useState<string | null>(null);
   const [isUpdatingYear, setIsUpdatingYear] = useState(false);
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
+  const [validationSettings, setValidationSettings] = useState<any>({
+    templates: [],
+    ageMappings: [],
+    rules: { nameLength: true, genderMatch: false, mandatoryRows: true }
+  });
 
   useEffect(() => {
     const unsubAppConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
@@ -421,10 +428,28 @@ function App() {
       }
     }, (error) => console.error("Error syncing levels:", error));
 
+    const unsubscribeActivityStages = onSnapshot(collection(db, 'activityStages'), (snapshot) => {
+      const fetchedStages = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setActivityStages(fetchedStages);
+    }, (error) => console.error("Error syncing activity stages:", error));
+
+    const unsubscribeValidation = onSnapshot(doc(db, 'settings', 'validation'), (snapshot) => {
+      if (snapshot.exists()) {
+        const valData = snapshot.data();
+        setValidationSettings({
+          templates: valData.templates || [],
+          ageMappings: valData.ageMappings || [],
+          rules: valData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
+        });
+      }
+    }, (error) => console.error("Error syncing validation settings:", error));
+
     return () => {
       unsubAppConfig();
       unsubscribeChurches();
       unsubscribeLevels();
+      unsubscribeActivityStages();
+      unsubscribeValidation();
     };
   }, []);
 
@@ -515,6 +540,10 @@ function App() {
     country: '',
     competitions: ['', '', '', ''] 
   });
+  const [batchUploadStatus, setBatchUploadStatus] = useState<string | null>(null);
+  const [batchUploadErrors, setBatchUploadErrors] = useState<{row: number, error: string}[]>([]);
+  const [isUploadingBatch, setIsUploadingBatch] = useState(false);
+
   const [registrationStep, setRegistrationStep] = useState(1);
   const [newTeam, setNewTeam] = useState<Partial<ActivityTeam>>({
     activityType: '',
@@ -531,6 +560,42 @@ function App() {
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [newCarousel, setNewCarousel] = useState({ title: '', image: null as File | null, order: 0 });
   const [editingCarousel, setEditingCarousel] = useState<CarouselItem | null>(null);
+
+  // Global Filtration States
+  const [globalNameFilter, setGlobalNameFilter] = useState('');
+  const [globalStageFilter, setGlobalStageFilter] = useState('الكل');
+  const [globalChurchFilter, setGlobalChurchFilter] = useState('الكل');
+  const [globalCompetitionFilter, setGlobalCompetitionFilter] = useState('الكل');
+
+  const filteredParticipantsList = useMemo(() => {
+    return (participants || []).filter(p => {
+      const matchChurch = (userRole === 'admin' || (userRole === 'church' && churchName)) ? (globalChurchFilter === 'الكل' || p.churchName === (userRole === 'admin' ? globalChurchFilter : churchName)) : true;
+      const matchName = p.name.toLowerCase().includes(globalNameFilter.toLowerCase());
+      const matchStage = globalStageFilter === 'الكل' || p.stage === globalStageFilter;
+      const matchComp = globalCompetitionFilter === 'الكل' || (p.competitions && p.competitions.some(c => c === globalCompetitionFilter));
+      return (userRole === 'admin' ? true : p.churchName === churchName) && matchChurch && matchName && matchStage && matchComp;
+    });
+  }, [participants, globalNameFilter, globalStageFilter, globalChurchFilter, globalCompetitionFilter, churchName, userRole]);
+
+  const filteredTeamsList = useMemo(() => {
+    return (activityTeams || []).filter(t => {
+      const matchChurch = (userRole === 'admin' || (userRole === 'church' && churchName)) ? (globalChurchFilter === 'الكل' || t.churchName === (userRole === 'admin' ? globalChurchFilter : churchName)) : true;
+      const matchName = t.members.some(m => m.name.toLowerCase().includes(globalNameFilter.toLowerCase())) || t.activityType.includes(globalNameFilter);
+      const matchStage = globalStageFilter === 'الكل' || t.choirLevel === globalStageFilter || t.members.some(m => m.stage === globalStageFilter);
+      const matchType = globalCompetitionFilter === 'الكل' || t.activityType === globalCompetitionFilter;
+      return (userRole === 'admin' ? true : t.churchName === churchName) && matchChurch && matchName && matchStage && matchType;
+    });
+  }, [activityTeams, globalNameFilter, globalStageFilter, globalChurchFilter, globalCompetitionFilter, churchName, userRole]);
+
+  const filteredResultsList = useMemo(() => {
+    return (results || []).filter(r => {
+      const matchChurch = (userRole === 'admin' || (userRole === 'church' && churchName)) ? (globalChurchFilter === 'الكل' || r.churchName === (userRole === 'admin' ? globalChurchFilter : churchName)) : true;
+      const matchName = r.studentName.toLowerCase().includes(globalNameFilter.toLowerCase());
+      const matchStage = globalStageFilter === 'الكل' || r.stage === globalStageFilter;
+      const matchGrade = resultsFilterGrade === 'الكل' || r.grade === resultsFilterGrade;
+      return (userRole === 'admin' ? true : r.churchName === churchName) && matchChurch && matchName && matchStage && matchGrade;
+    });
+  }, [results, globalNameFilter, globalStageFilter, globalChurchFilter, resultsFilterGrade, churchName, userRole]);
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -1055,6 +1120,153 @@ function App() {
     reader.readAsBinaryString(file);
   };
 
+  const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setBatchUploadStatus("جاري الفحص (Firewall)...");
+    setBatchUploadErrors([]);
+    setIsUploadingBatch(true);
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const headers = XLSX.utils.sheet_to_json(worksheet, { header: 1 })[0] as string[];
+      const rawData = XLSX.utils.sheet_to_json(worksheet);
+
+      const templates = validationSettings.templates || [];
+      const ageMappings = validationSettings.ageMappings || [];
+      const rules = validationSettings.rules || { nameLength: true, genderMatch: false, mandatoryRows: true };
+
+      // 1. Filename Enforcement
+      const matchedTemplate = templates.find((t: any) => t.filename === file.name);
+      if (!matchedTemplate) {
+        setBatchUploadStatus("خطأ: تم الرفض! (Wrong File Name)");
+        setBatchUploadErrors([{ row: 0, error: `الاسم غير مطابق للقوالب الأساسية. اسم الملف هو: ${file.name}` }]);
+        setIsUploadingBatch(false);
+        e.target.value = '';
+        return;
+      }
+
+      // 2. Validate Headers
+      const templateHeaders = matchedTemplate.headers;
+      const headersMatch = templateHeaders.every((th: string) => headers.map(h=>String(h).trim()).includes(th));
+      if (!headersMatch) {
+         setBatchUploadStatus("خطأ: تم الرفض! (Header Mismatch)");
+         setBatchUploadErrors([{ row: 0, error: `أعمدة الملف غير مطابقة للقالب الأساسي.` }]);
+         setIsUploadingBatch(false);
+         e.target.value = '';
+         return;
+      }
+
+      const errors: {row: number, error: string}[] = [];
+      const parsedParticipants: any[] = [];
+
+      // Helper to detect generic gender Arabic (basic)
+      const isLikelyMale = (namePart: string) => !['ة', 'اء'].some(suffix => namePart.endsWith(suffix));
+
+      // Validate each row
+      rawData.forEach((row: any, idx: number) => {
+        const rowNum = idx + 2; // +1 for 0-index, +1 for header
+        const name = String(row['الاسم'] || row['Participant Name'] || row['اسم المشترك'] || '').trim();
+        const stage = String(row['المرحلة'] || row['Stage'] || '').trim();
+        const birthYearRaw = row['سنة الميلاد'] || row['تاريخ الميلاد'] || row['Birth Year'];
+        const birthYear = parseInt(birthYearRaw);
+        
+        let comps: string[] = [];
+        if (row['دراسي']) comps.push('دراسي');
+        if (row['محفوظات']) comps.push('محفوظات');
+        if (row['قبطي ١']) comps.push('قبطي مستوى ١');
+        if (row['قبطي ٢']) comps.push('قبطي مستوى ٢');
+
+        // Rule: Mandatory Rows
+        if (rules.mandatoryRows) {
+           if (!name || !stage || !birthYearRaw) {
+             errors.push({ row: rowNum, error: 'البيانات غير مكتملة (Null Check Failed).' });
+           }
+        }
+
+        // Rule: Name Length
+        if (rules.nameLength && name) {
+          const words = name.split(' ');
+          if (words.length < 3 || words.length > 5) {
+            errors.push({ row: rowNum, error: `الاسم يجب أن يكون من 3 إلى 5 كلمات (الاسم الحالي فيه ${words.length} كلمات).` });
+          }
+        }
+
+        // Rule: Gender Matching (Basic fallback using first name)
+        if (rules.genderMatch && name) {
+           const firstName = name.split(' ')[0];
+           const gender = row['الجنس'] || row['النوع'] || row['Gender'];
+           if (gender === 'ذكر' && !isLikelyMale(firstName)) {
+               // Soft warning, but let's make it an error per requirements
+               errors.push({ row: rowNum, error: `عدم تطابق الجنس: الاسم الأول ${firstName} يبدو كأنثى ولكن تم اختيار 'ذكر'.` });
+           }
+        }
+
+        // Cross-validation: Age-to-Stage
+        if (birthYear && stage) {
+          const mapping = ageMappings.find((m: any) => m.stage === stage);
+          if (mapping) {
+            if (birthYear < mapping.minYear || birthYear > mapping.maxYear) {
+              errors.push({ row: rowNum, error: `سنة الميلاد (${birthYear}) غير متوافقة مع المرحلة (${stage}). النطاق المسموح: ${mapping.minYear}-${mapping.maxYear}.` });
+            }
+          }
+        }
+
+        // Cross-validation: Competition-to-Stage
+        if (stage) {
+           const levelConfig = dynamicLevels.find(l => l.name === stage);
+           if (levelConfig) {
+             comps.forEach(c => {
+               if (!levelConfig.comps.includes(c)) {
+                 errors.push({ row: rowNum, error: `المسابقة (${c}) غير متاحة للمرحلة (${stage}).` });
+               }
+             });
+           }
+        }
+
+        if (name && stage) {
+           parsedParticipants.push({
+             name,
+             stage,
+             competitions: comps,
+             churchName: churchName,
+             country: 'مصر',
+             year: activeYear,
+             timestamp: new Date().toISOString()
+           });
+        }
+      });
+
+      if (errors.length > 0) {
+        setBatchUploadStatus(`تم الرفض! الملف يحتوي على اخطاء.`);
+        setBatchUploadErrors(errors);
+        setIsUploadingBatch(false);
+      } else {
+        setBatchUploadStatus("تم اجتياز الفحص بنجاح! جاري الحفظ...");
+        const batch = writeBatch(db);
+        parsedParticipants.forEach(p => {
+           const newRef = doc(collection(db, 'participants'));
+           batch.set(newRef, p);
+        });
+        await batch.commit();
+        setBatchUploadStatus("تم رفع البيانات بنجاح!");
+        setTimeout(() => setBatchUploadStatus(null), 3000);
+        setIsUploadingBatch(false);
+      }
+
+    } catch (err) {
+      console.error(err);
+      setBatchUploadStatus("فشل في قراءة الملف. تأكد من صحة الملف.");
+      setIsUploadingBatch(false);
+    }
+
+    e.target.value = '';
+  };
+
   const handleUpdateExamLink = async (stage: string, url: string) => {
     try {
       const q = query(collection(db, 'examLinks'), where('stage', '==', stage), where('year', '==', activeYear));
@@ -1443,12 +1655,42 @@ function App() {
 
   const handleAddTeam = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTeam.activityType || !newTeam.members || newTeam.members.length === 0) return;
+    if (!newTeam.activityType || !newTeam.choirLevel) {
+      alert('يرجى اختيار نوع النشاط والمرحلة');
+      return;
+    }
+
+    // Strict limit of TWO teams per stage per church
+    const stageTeams = activityTeams.filter(t => t.churchName === churchName && t.choirLevel === newTeam.choirLevel && t.activityType === newTeam.activityType);
+    if (!editingTeam && stageTeams.length >= 2) {
+      alert('Limit Reached: Only 2 teams per stage allowed.');
+      return;
+    }
+
+    // Validation: Participation Restriction (Teams vs Core Competitions)
+    for (const member of (newTeam.members || [])) {
+      const dbParticipant = participants.find(p => p.name.trim() === member.name.trim() && p.churchName === churchName);
+      if (dbParticipant) {
+        const hasCoreComp = dbParticipant.competitions.some(c => 
+          c.includes('دراسي') || c.includes('محفوظات') || c.includes('قبطي')
+        );
+        if (hasCoreComp) {
+          alert(`العضو ${member.name} مسجل بالفعل في مسابقات أساسية (دراسي/محفوظات/قبطي). لا يمكن إضافته لفريق نشاط حسب القواعد.`);
+          setIsSubmittingTeam(false);
+          return;
+        }
+      }
+    }
+
+    if (!newTeam.members || newTeam.members.length === 0) {
+      alert('يرجى إضافة أعضاء للفريق');
+      return;
+    }
     
     setIsSubmittingTeam(true);
 
-    const maleCount = newTeam.members.filter(m => m.gender === 'ذكر').length;
-    const femaleCount = newTeam.members.filter(m => m.gender === 'أنثى').length;
+    const maleCount = Number(newTeam.maleCount) || 0;
+    const femaleCount = Number(newTeam.femaleCount) || 0;
 
     const team = {
       churchName,
@@ -1571,7 +1813,6 @@ function App() {
       } else {
         const participantData = {
           churchName,
-          country: location, // Using the location state which is now country
           name: newParticipant.name,
           stage: newParticipant.stage,
           competitions: newParticipant.competitions.filter(c => c !== ''),
@@ -1693,8 +1934,8 @@ function App() {
   }, [orders, adminFilterChurch]);
 
   const handleSubmitOrder = async () => {
-    if (!churchName || !location) {
-      alert('يرجى إدخال اسم الكنيسة والبلد أولاً');
+    if (!churchName) {
+      alert('اسم الكنيسة مفقود');
       return;
     }
 
@@ -1708,7 +1949,6 @@ function App() {
     try {
       const newOrder = {
         churchName,
-        location,
         grandTotal: calculations.grandTotal,
         timestamp: new Date().toLocaleString('ar-EG'),
         details: activeRows.map(r => ({
@@ -2222,17 +2462,6 @@ function App() {
               </div>
 
               <div 
-                onClick={() => setActiveSection('results')}
-                className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all cursor-pointer group"
-              >
-                <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                  <Award className="text-indigo-600" size={32} />
-                </div>
-                <h3 className="text-xl font-black text-coptic-blue mb-2">نظام النتائج</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">استعلم عن نتائج مخدوميك في المسابقات المختلفة.</p>
-              </div>
-
-              <div 
                 onClick={() => setActiveSection('inquiries')}
                 className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all cursor-pointer group"
               >
@@ -2349,47 +2578,6 @@ function App() {
           </motion.div>
         )}
 
-        {activeSection === 'exams' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-            <BackButton />
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-16 h-16 bg-coptic-gold/10 rounded-2xl flex items-center justify-center">
-                <BookOpen className="text-coptic-gold" size={32} />
-              </div>
-              <div>
-                <h3 className="text-2xl font-black text-coptic-blue">قسم الامتحانات</h3>
-                <p className="text-slate-400 font-bold">روابط الامتحانات الإلكترونية للمراحل المختلفة</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {Object.entries(examLinks).map(([stage, url]) => (
-                <a 
-                  key={stage}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-white p-6 rounded-3xl shadow-lg border border-slate-100 hover:shadow-xl transition-all group"
-                >
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-lg font-black text-slate-800">{stage}</h4>
-                    <ExternalLink className="text-slate-300 group-hover:text-coptic-blue transition-colors" size={20} />
-                  </div>
-                  <div className="flex items-center gap-2 text-coptic-blue font-bold text-sm">
-                    <span>دخول الامتحان</span>
-                    <ChevronLeft size={16} />
-                  </div>
-                </a>
-              ))}
-              {Object.keys(examLinks).length === 0 && (
-                <div className="col-span-full text-center py-20 bg-white rounded-3xl shadow-xl border border-slate-100">
-                  <BookOpen className="mx-auto text-slate-200 mb-4" size={64} />
-                  <p className="text-slate-400 font-bold text-lg">لا توجد امتحانات متاحة حالياً</p>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-
         {activeSection === 'results' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
             <BackButton />
@@ -2404,34 +2592,34 @@ function App() {
             </div>
 
             <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
-              <div className="flex flex-col md:flex-row gap-4 mb-8">
-                <div className="relative flex-1">
-                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                  <input 
-                    type="text"
-                    placeholder="ابحث عن نتيجة بالاسم..."
-                    className="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
-                    value={resultSearch}
-                    onChange={(e) => setResultSearch(e.target.value)}
-                  />
+              {/* Universal Filter Engine - Results View */}
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8">
+                <div className="flex items-center gap-2 mb-4">
+                  <Search size={20} className="text-primary" />
+                  <h4 className="font-black text-slate-800 text-sm italic uppercase">محرك البحث الشامل</h4>
                 </div>
-                <div className="w-full md:w-48">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="relative">
+                    <input 
+                      type="text"
+                      placeholder="ابحث بالاسم..."
+                      value={globalNameFilter}
+                      onChange={(e) => setGlobalNameFilter(e.target.value)}
+                      className="w-full pr-4 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
+                    />
+                  </div>
                   <select 
-                    value={resultsFilterStage}
-                    onChange={(e) => setResultsFilterStage(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue font-bold appearance-none"
+                    value={globalStageFilter}
+                    onChange={(e) => setGlobalStageFilter(e.target.value)}
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
                   >
                     <option value="الكل">كل المراحل</option>
-                    {([...dynamicLevels]).sort((a, b) => a.name.localeCompare(b.name)).map(level => (
-                      <option key={level.name} value={level.name}>{level.name}</option>
-                    ))}
+                    {dynamicLevels.sort((a,b)=>a.name.localeCompare(b.name)).map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
                   </select>
-                </div>
-                <div className="w-full md:w-48">
                   <select 
                     value={resultsFilterGrade}
                     onChange={(e) => setResultsFilterGrade(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue font-bold appearance-none"
+                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
                   >
                     <option value="الكل">كل التقديرات</option>
                     {['ممتاز', 'جيد جداً', 'جيد', 'مقبول'].map(g => (
@@ -2456,9 +2644,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredResults
-                      .filter(r => userRole === 'admin' || r.churchName === churchName)
-                      .map(result => (
+                    {filteredResultsList.map(result => (
                         <tr key={result.id} className="hover:bg-slate-50 transition-colors">
                           <td className="p-4 font-bold text-slate-800">{result.studentName}</td>
                           <td className="p-4 text-slate-600">{result.stage}</td>
@@ -2479,7 +2665,7 @@ function App() {
                           </td>
                         </tr>
                       ))}
-                    {filteredResults.filter(r => userRole === 'admin' || r.churchName === churchName).length === 0 && (
+                    {filteredResultsList.length === 0 && (
                       <tr>
                         <td colSpan={8} className="p-12 text-center text-slate-400 font-bold italic">
                           لا توجد نتائج مطابقة للبحث
@@ -2496,6 +2682,44 @@ function App() {
         {activeSection === 'church_dashboard' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
             <BackButton />
+            
+            {/* Universal Filter Engine - Church View */}
+            <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 space-y-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Search size={20} className="text-primary" />
+                <h4 className="font-black text-slate-800 text-lg">محرك البحث الشامل</h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="relative">
+                  <input 
+                    type="text"
+                    placeholder="ابحث بالاسم..."
+                    value={globalNameFilter}
+                    onChange={(e) => setGlobalNameFilter(e.target.value)}
+                    className="w-full pr-4 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
+                  />
+                </div>
+                <select 
+                  value={globalStageFilter}
+                  onChange={(e) => setGlobalStageFilter(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
+                >
+                  <option value="الكل">كل المراحل</option>
+                  {dynamicLevels.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+                </select>
+                <select 
+                  value={globalCompetitionFilter}
+                  onChange={(e) => setGlobalCompetitionFilter(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
+                >
+                  <option value="الكل">كل المسابقات / الأنشطة</option>
+                  {['دراسي', 'محفوظات', 'قبطي مستوى ١', 'قبطي مستوى ٢', 'كورال', 'ألحان', 'عزف'].map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <QuickActionsHub userRole={userRole} onAction={setActiveSection} />
             <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -2510,38 +2734,11 @@ function App() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button 
-                    onClick={() => exportChurchReport(churchName, results, orders)}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center gap-2 hover:bg-emerald-700 transition-colors shadow-md"
+                    onClick={() => exportAllDataReport(filteredParticipantsList, filteredTeamsList, orders.filter(o => o.churchName === churchName))}
+                    className="px-6 py-3 bg-emerald-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-xl hover:scale-105 active:scale-95"
                   >
-                    <Download size={14} /> تصدير النتائج والطلبات (Excel)
+                    <Download size={18} /> التصدير الشامل الموحد (Excel)
                   </button>
-                  <label className="cursor-pointer px-4 py-2 bg-slate-50 text-slate-600 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-slate-100 transition-colors border border-slate-200">
-                    <ImageIcon size={14} /> تخصيص الخلفية
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      className="hidden" 
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onloadend = () => {
-                            setDashboardBg(reader.result as string);
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                  </label>
-                  {dashboardBg && (
-                    <button 
-                      onClick={() => setDashboardBg('')}
-                      className="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors border border-red-100"
-                      title="إزالة الخلفية"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
                 </div>
               </div>
 
@@ -2609,6 +2806,8 @@ function App() {
                             if (!val) return false;
                             // Check if selected in other slots
                             if (selectedComps.some((c, i) => i !== idx && c === val)) return true;
+                            // Mutual exclusivity for Coptic Levels
+                            if (val.includes('قبطي مستوى') && selectedComps.some((c, i) => i !== idx && c.includes('قبطي مستوى'))) return true;
                             return false;
                           };
 
@@ -2655,11 +2854,10 @@ function App() {
                       />
                     </div>
 
-                    <div className="max-h-[400px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                      {(participants || [])
-                        .filter(p => p.churchName === churchName && p.name.toLowerCase().includes(participantSearch.toLowerCase()))
-                        .map(p => (
-                        <div key={p.id} className="group relative p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                      <div className="max-h-[400px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                        {filteredParticipantsList
+                          .map(p => (
+                          <div key={p.id} className="group relative p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-all">
                         <div className="flex justify-between items-start mb-2">
                           <div>
                             <p className="text-sm font-black text-slate-800">{p.name}</p>
@@ -2678,7 +2876,7 @@ function App() {
                         </div>
                       </div>
                     ))}
-                    {participants.filter(p => p.churchName === churchName).length === 0 && (
+                    {filteredParticipantsList.length === 0 && (
                       <div className="text-center py-12 bg-slate-50 rounded-3xl border border-dashed border-slate-200">
                         <UserPlus className="mx-auto text-slate-300 mb-2" size={32} />
                         <p className="text-xs text-slate-400 font-bold">لا يوجد مشتركين مسجلين بعد</p>
@@ -2743,8 +2941,8 @@ function App() {
                   <div className="flex flex-col gap-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase">تصفية حسب الكنيسة</label>
                     <select 
-                      value={adminFilterChurch}
-                      onChange={(e) => setAdminFilterChurch(e.target.value)}
+                      value={globalChurchFilter}
+                      onChange={(e) => setGlobalChurchFilter(e.target.value)}
                       className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary font-bold shadow-sm"
                     >
                       <option value="الكل">عرض الكل</option>
@@ -2752,6 +2950,24 @@ function App() {
                         <option key={church} value={church}>{church}</option>
                       ))}
                     </select>
+                  </div>
+                  <div className="flex flex-col gap-2 mt-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase">بحث بالاسم</label>
+                    <input 
+                      type="text"
+                      placeholder="ابحث بالاسم..."
+                      value={globalNameFilter}
+                      onChange={(e) => setGlobalNameFilter(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary font-bold shadow-sm"
+                    />
+                  </div>
+                  <div className="mt-6">
+                    <button 
+                      onClick={() => exportAllDataReport(filteredParticipantsList, filteredTeamsList, orders.filter(o => globalChurchFilter === 'الكل' || o.churchName === globalChurchFilter))}
+                      className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-md active:scale-95"
+                    >
+                      <Download size={14} /> التصدير الشامل (Excel)
+                    </button>
                   </div>
                 </div>
 
@@ -2792,27 +3008,27 @@ function App() {
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
                 <div className="p-6 bg-coptic-blue/5 rounded-3xl border border-coptic-blue/10">
-                  <p className="text-[10px] font-black text-coptic-blue uppercase mb-1">المشتركين ({adminFilterChurch})</p>
+                  <p className="text-[10px] font-black text-coptic-blue uppercase mb-1">المشتركين ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
-                    {(participants || []).filter(p => adminFilterChurch === 'الكل' || p.churchName === adminFilterChurch).length}
+                    {filteredParticipantsList.length}
                   </p>
                 </div>
                 <div className="p-6 bg-coptic-gold/5 rounded-3xl border border-coptic-gold/10">
-                  <p className="text-[10px] font-black text-coptic-gold uppercase mb-1">طلبات الكتب ({adminFilterChurch})</p>
+                  <p className="text-[10px] font-black text-coptic-gold uppercase mb-1">طلبات الكتب ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
-                    {(orders || []).filter(o => adminFilterChurch === 'الكل' || o.churchName === adminFilterChurch).length}
+                    {(orders || []).filter(o => globalChurchFilter === 'الكل' || o.churchName === globalChurchFilter).length}
                   </p>
                 </div>
                 <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100">
-                  <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">الفرق ({adminFilterChurch})</p>
+                  <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">الفرق ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
-                    {(activityTeams || []).filter(t => adminFilterChurch === 'الكل' || t.churchName === adminFilterChurch).length}
+                    {filteredTeamsList.length}
                   </p>
                 </div>
                 <div className="p-6 bg-coptic-red/5 rounded-3xl border border-coptic-red/10">
-                  <p className="text-[10px] font-black text-coptic-red uppercase mb-1">الاستفسارات ({adminFilterChurch})</p>
+                  <p className="text-[10px] font-black text-coptic-red uppercase mb-1">الاستفسارات ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
-                    {(inquiries || []).filter(i => adminFilterChurch === 'الكل' || i.churchName === adminFilterChurch).length}
+                    {(inquiries || []).filter(i => globalChurchFilter === 'الكل' || i.churchName === globalChurchFilter).length}
                   </p>
                 </div>
               </div>
@@ -2830,10 +3046,10 @@ function App() {
                         <Award size={20} /> تصدير تقرير النتائج المجمع (Excel)
                       </button>
                       <button 
-                        onClick={exportAllRegistrationsToExcel}
+                        onClick={() => exportAllDataReport(filteredParticipantsList, filteredTeamsList, orders.filter(o => globalChurchFilter === 'الكل' || o.churchName === globalChurchFilter))}
                         className="px-6 py-3 bg-coptic-blue text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                       >
-                        <Download size={20} /> تصدير كل بيانات التسجيل (Excel)
+                        <Download size={20} /> تصدير كل بيانات التسجيل الموحد (Excel)
                       </button>
                     </div>
                   </div>
@@ -3161,9 +3377,7 @@ function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {participants
-                        .filter(p => adminFilterChurch === 'الكل' || p.churchName === adminFilterChurch)
-                        .filter(p => p.name.toLowerCase().includes(participantSearch.toLowerCase()))
+                      {filteredParticipantsList
                         .map(p => (
                           <tr key={p.id} className="bg-white hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-slate-800 text-sm">{p.name}</td>
@@ -3228,8 +3442,7 @@ function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {(activityTeams || [])
-                        .filter(t => adminFilterChurch === 'الكل' || t.churchName === adminFilterChurch)
+                      {filteredTeamsList
                         .map(t => (
                           <tr key={t.id} className="bg-white hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-slate-800 text-sm">{t.activityType}</td>
@@ -3418,8 +3631,7 @@ function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {(results || [])
-                        .filter(r => adminFilterChurch === 'الكل' || r.churchName === adminFilterChurch)
+                      {filteredResultsList
                         .map(r => (
                           <tr key={r.id} className="bg-white hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-slate-800 text-sm">{r.studentName}</td>
@@ -4077,11 +4289,11 @@ function App() {
                 <section>
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                      <UserPlus className="text-coptic-blue" /> المشتركين المسجلين ({(participants || []).filter(p => adminFilterChurch === 'الكل' || p.churchName === adminFilterChurch).length})
+                      <UserPlus className="text-coptic-blue" /> المشتركين المسجلين ({filteredParticipantsList.length})
                     </h4>
                     <div className="flex items-center gap-2">
                       <button 
-                        onClick={() => exportToExcel((participants || []).filter(p => adminFilterChurch === 'الكل' || p.churchName === adminFilterChurch), 'participants')}
+                        onClick={() => exportToExcel(filteredParticipantsList, 'participants')}
                         className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-emerald-100 transition-colors"
                       >
                         <Download size={14} /> Excel
@@ -4107,8 +4319,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {(participants || [])
-                          .filter(p => adminFilterChurch === 'الكل' || p.churchName === adminFilterChurch)
+                        {filteredParticipantsList
                           .map(p => (
                           <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-coptic-blue">{p.churchName}</td>
@@ -4155,11 +4366,11 @@ function App() {
                 <section>
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                      <Users className="text-coptic-gold" /> فرق الأنشطة المسجلة ({(activityTeams || []).filter(t => adminFilterChurch === 'الكل' || t.churchName === adminFilterChurch).length})
+                      <Users className="text-coptic-gold" /> فرق الأنشطة المسجلة ({filteredTeamsList.length})
                     </h4>
                     <div className="flex items-center gap-2">
                       <button 
-                        onClick={() => exportToExcel((activityTeams || []).filter(t => adminFilterChurch === 'الكل' || t.churchName === adminFilterChurch), 'activity_teams')}
+                        onClick={() => exportToExcel(filteredTeamsList, 'activity_teams')}
                         className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-emerald-100 transition-colors"
                       >
                         <Download size={14} /> Excel
@@ -4180,8 +4391,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {(activityTeams || [])
-                          .filter(t => adminFilterChurch === 'الكل' || t.churchName === adminFilterChurch)
+                        {filteredTeamsList
                           .map(t => (
                           <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-coptic-blue">{t.churchName}</td>
@@ -4458,8 +4668,8 @@ function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredResults
-                          .filter(r => adminFilterChurch === 'الكل' || r.churchName === adminFilterChurch)
+                        {filteredResultsList
+                          .sort((a, b) => resultsSortOrder === 'rank' ? b.score - a.score : 0)
                           .map((r, index) => (
                           <tr key={r.id} className="bg-white hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-slate-400">{index + 1}</td>
@@ -4640,29 +4850,15 @@ function App() {
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
+                <div className="space-y-2 md:col-span-2">
                   <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
                     اسم الكنيسة
                   </label>
                   <input 
                     type="text" 
                     value={churchName}
-                    onChange={(e) => setChurchName(e.target.value)}
-                    readOnly={false}
-                    placeholder="مثال: كنيسة القديس مارجرجس"
-                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                    اسم البلد أو القرية
-                  </label>
-                  <input 
-                    type="text" 
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    placeholder="مثال: المطرانية"
-                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none"
+                    readOnly={true}
+                    className="w-full px-5 py-4 bg-slate-100/50 border border-slate-200 rounded-lg text-sm outline-none text-slate-500 cursor-not-allowed transition-all shadow-none"
                   />
                 </div>
               </div>
@@ -4772,15 +4968,22 @@ function App() {
 
             {/* Print-only Invoice Template */}
             <div className="hidden">
-              <div ref={invoiceRef} className="p-10 bg-white text-slate-900 font-sans" dir="rtl">
-                <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-8">
+              <div ref={invoiceRef} className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl">
+                <style>{`
+                  @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
+                  .font-arabic { font-family: 'Tajawal', sans-serif !important; }
+                  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                  th { background-color: #f1f5f9; font-weight: 900; }
+                  td, th { padding: 16px 12px !important; line-height: 2.2 !important; border-bottom: 1px solid #e2e8f0; text-align: right; }
+                  .text-primary { color: #0F172A; }
+                `}</style>
+                <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-10">
                   <div>
-                    <h1 className="text-3xl font-black text-coptic-blue mb-1">مهرجان الكرازة ٢٠٢٦</h1>
-                    <p className="text-coptic-gold font-bold uppercase tracking-widest text-sm">فاتورة طلب كتب رسمية</p>
+                    <h1 className="text-4xl font-black text-coptic-blue mb-2">مهرجان الكرازة ٢٠٢٦</h1>
+                    <p className="text-coptic-gold font-black uppercase tracking-widest text-sm">فاتورة طلب كتب رسمية - نسخة إدارية</p>
                   </div>
                   <div className="text-left">
                     <p className="font-bold text-lg">{churchName || '________________'}</p>
-                    <p className="text-slate-500">{location || '________________'}</p>
                     <p className="text-xs text-slate-400 mt-2">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
                   </div>
                 </div>
@@ -4831,15 +5034,22 @@ function App() {
               </div>
 
               {/* Detailed Orders Report for Admin PDF */}
-              <div id="detailed-orders-report-admin" className="p-10 bg-white text-slate-900 font-sans" dir="rtl">
-                <div className="text-center border-b-4 border-coptic-blue pb-6 mb-8">
-                  <h1 className="text-3xl font-black text-coptic-blue mb-1">تقرير طلبات الكتب التفصيلي</h1>
-                  <p className="text-coptic-gold font-bold uppercase tracking-widest text-sm">مهرجان الكرازة ٢٠٢٦ - منطقة ١٨</p>
-                  <p className="text-xs text-slate-400 mt-2">تاريخ التقرير: {new Date().toLocaleString('ar-EG')}</p>
+              <div id="detailed-orders-report-admin" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl">
+                <style>{`
+                  @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
+                  .font-arabic { font-family: 'Tajawal', sans-serif !important; }
+                  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                  th { background-color: #f1f5f9; font-weight: 900; }
+                  td, th { padding: 16px 12px !important; line-height: 2.2 !important; border-bottom: 1px solid #e2e8f0; text-align: right; }
+                `}</style>
+                <div className="text-center border-b-4 border-coptic-blue pb-8 mb-10">
+                  <h1 className="text-4xl font-black text-coptic-blue mb-2">تقرير طلبات الكتب التفصيلي المجمع</h1>
+                  <p className="text-coptic-gold font-black uppercase tracking-widest text-sm">مهرجان الكرازة ٢٠٢٦ - منطقة مغاغة والعدوة</p>
+                  <p className="text-xs text-slate-400 mt-4">تاريخ استخراج التقرير: {new Date().toLocaleString('ar-EG')}</p>
                 </div>
 
                 {(orders || [])
-                  .filter(o => adminFilterChurch === 'الكل' || o.churchName === adminFilterChurch)
+                  .filter(o => globalChurchFilter === 'الكل' || o.churchName === globalChurchFilter)
                   .map((order, idx) => (
                   <div key={order.id} className={`mb-12 ${idx !== 0 ? 'pt-12 border-t border-slate-200' : ''}`}>
                     <div className="flex justify-between items-end mb-4">
@@ -4896,26 +5106,47 @@ function App() {
                 </div>
               </div>
 
-              {/* Progress Bar */}
-              <div className="mb-10 px-4">
-                <div className="flex justify-between mb-2">
-                  {['البيانات الأساسية', 'المسابقات', 'المراجعة'].map((label, i) => (
-                    <div key={i} className="flex flex-col items-center">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm transition-all duration-500 ${registrationStep > i + 1 ? 'bg-green-500 text-white' : registrationStep === i + 1 ? 'bg-primary text-white shadow-lg scale-110' : 'bg-slate-100 text-slate-400'}`}>
-                        {registrationStep > i + 1 ? <Check size={20} /> : i + 1}
-                      </div>
-                      <span className={`text-[10px] font-bold mt-2 ${registrationStep === i + 1 ? 'text-primary' : 'text-slate-400'}`}>{label}</span>
-                    </div>
-                  ))}
+              {/* Team Registration form content starts below directly */}
+
+              {/* BATCH UPLOAD FIREWALL SECTION */}
+              <div className="bg-slate-50 border-2 border-dashed border-slate-300 p-8 rounded-3xl mb-12">
+                <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
+                  <div>
+                    <h4 className="font-black text-xl text-slate-800 flex items-center gap-2 mb-2">
+                      <FileSpreadsheet className="text-primary" /> رفع ملف المشتركين (Batch Upload)
+                    </h4>
+                    <p className="text-sm font-bold text-slate-500 max-w-xl">
+                      يتم فحص الملفات المرفوعة عن طريق <span className="text-primary">محرك التحقق الجداري (Firewall)</span> للتأكد من مطابقة الاسم مع القالب المعتمد المخصص للكنيسة.
+                      تتم مطابقة الأعمدة تلقائياً والتأكد من المراحل الدراسية وسنوات الميلاد لتجنب الأخطاء. لم يتم حفظ أي داتا إذا إحتوى الملف أخطاء.
+                    </p>
+                  </div>
+                  <label className="shrink-0 flex items-center gap-2 px-8 py-4 bg-primary text-white rounded-xl font-black cursor-pointer hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 hover:scale-105 active:scale-95">
+                    {isUploadingBatch ? <Loader2 size={24} className="animate-spin" /> : <Upload size={24} />}
+                    <span>تصفح ورفع الملف (Excel)</span>
+                    <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleBatchUpload} disabled={isUploadingBatch} />
+                  </label>
                 </div>
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                  <motion.div 
-                    className="h-full bg-primary"
-                    initial={{ width: '0%' }}
-                    animate={{ width: `${((registrationStep - 1) / 2) * 100}%` }}
-                    transition={{ duration: 0.5 }}
-                  />
-                </div>
+
+                {batchUploadStatus && (
+                  <div className={`mt-6 p-4 rounded-xl font-bold flex items-center gap-3 ${batchUploadErrors.length > 0 ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                    {batchUploadErrors.length > 0 ? <X size={20} /> : <Check size={20} />}
+                    {batchUploadStatus}
+                  </div>
+                )}
+
+                {batchUploadErrors.length > 0 && (
+                  <div className="mt-4 max-h-[300px] overflow-y-auto bg-white border border-red-100 rounded-xl p-4 shadow-inner">
+                     <h5 className="font-black text-red-600 mb-4 border-b border-red-100 pb-2">تقرير أخطاء القبول (Rejection Report)</h5>
+                     <ul className="space-y-3">
+                       {batchUploadErrors.map((err, idx) => (
+                         <li key={idx} className="flex items-start gap-2 text-sm">
+                           <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold shrink-0 mt-0.5">صف {err.row}</span>
+                           <span className="text-slate-700 font-bold">{err.error}</span>
+                         </li>
+                       ))}
+                     </ul>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-8">
@@ -4983,8 +5214,7 @@ function App() {
                         const isOptionDisabled = (val: string) => {
                           if (!val) return false;
                           if (selectedComps.some((c, i) => i !== idx && c === val)) return true;
-                          if (val === 'قبطي مستوى أول' && selectedComps.some((c, i) => i !== idx && c === 'قبطي مستوى ثانٍ')) return true;
-                          if (val === 'قبطي مستوى ثانٍ' && selectedComps.some((c, i) => i !== idx && c === 'قبطي مستوى أول')) return true;
+                          if (val.includes('قبطي مستوى') && selectedComps.some((c, i) => i !== idx && c.includes('قبطي مستوى'))) return true;
                           return false;
                         };
 
@@ -5168,18 +5398,19 @@ function App() {
                           </select>
                         </div>
 
-                        {newTeam.activityType === 'كورال' && (
+                        {newTeam.activityType && (
                           <div className="space-y-2">
-                            <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">المستوى</label>
+                            <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">مرحلة النشاط (للفرق)</label>
                             <select 
                               value={newTeam.choirLevel || ''}
                               onChange={e => setNewTeam({...newTeam, choirLevel: e.target.value})}
                               className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
                               required
                             >
-                              <option value="">-- اختر المستوى --</option>
-                              <option value="مستوى أول">مستوى أول</option>
-                              <option value="مستوى ثانٍ">مستوى ثانٍ</option>
+                              <option value="">-- اختر المرحلة --</option>
+                              {activityStages.map((stage: any) => (
+                                <option key={stage.id} value={stage.name}>{stage.name}</option>
+                              ))}
                             </select>
                           </div>
                         )}
@@ -5212,21 +5443,38 @@ function App() {
                           <div className="space-y-4">
                             {newTeam.members?.map((member, idx) => (
                               <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                <div className="md:col-span-5 space-y-1">
-                                  <label className="text-[9px] font-black text-slate-400 uppercase">الاسم</label>
-                                  <input 
-                                    type="text"
-                                    placeholder="الاسم الثلاثي"
-                                    value={member.name}
-                                    onChange={e => {
-                                      const updated = [...(newTeam.members || [])];
-                                      updated[idx].name = e.target.value;
-                                      setNewTeam({...newTeam, members: updated});
-                                    }}
-                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold"
-                                    required
-                                  />
-                                </div>
+                    <div className="md:col-span-12 space-y-1">
+                                    <label className="text-[9px] font-black text-slate-400 uppercase">الاسم (بحث في المشتركين الذين لم يسجلوا في مسابقات أساسية)</label>
+                                    <div className="relative">
+                                      <input 
+                                        type="text"
+                                        list={`participantsList-${idx}`}
+                                        placeholder="ابحث عن الاسم أو أضف جديد"
+                                        value={member.name}
+                                        onChange={e => {
+                                          const val = e.target.value;
+                                          const updated = [...(newTeam.members || [])];
+                                          updated[idx].name = val;
+                                          
+                                          // Auto-fill stage and gender if found
+                                          const existingParticipant = participants.find(p => p.name === val);
+                                          if (existingParticipant) {
+                                            updated[idx].stage = existingParticipant.stage;
+                                          }
+                                          setNewTeam({...newTeam, members: updated});
+                                        }}
+                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold"
+                                        required
+                                      />
+                                      <datalist id={`participantsList-${idx}`}>
+                                        {participants
+                                          .filter(p => !p.competitions || !p.competitions.some(c => c.includes('دراسي') || c.includes('محفوظات') || c.includes('قبطي')))
+                                          .map((p, pIdx) => (
+                                          <option key={pIdx} value={p.name}>{p.stage} - {p.churchName}</option>
+                                        ))}
+                                      </datalist>
+                                    </div>
+                                  </div>
                                 <div className="md:col-span-3 space-y-1">
                                   <label className="text-[9px] font-black text-slate-400 uppercase">النوع</label>
                                   <select 
@@ -5274,15 +5522,30 @@ function App() {
                           </div>
                         </div>
 
-                        <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 flex justify-around text-center">
-                          <div>
+                        <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                          <div className="space-y-2">
                             <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الذكور</p>
-                            <p className="text-2xl font-black text-primary">{newTeam.members?.filter(m => m.gender === 'ذكر').length}</p>
+                            <input 
+                              type="number"
+                              min="0"
+                              value={newTeam.maleCount || 0}
+                              onChange={e => setNewTeam({...newTeam, maleCount: parseInt(e.target.value) || 0})}
+                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                            />
                           </div>
-                          <div className="w-px bg-slate-200 h-10 self-center"></div>
-                          <div>
+                          <div className="space-y-2">
                             <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الإناث</p>
-                            <p className="text-2xl font-black text-primary">{newTeam.members?.filter(m => m.gender === 'أنثى').length}</p>
+                            <input 
+                              type="number"
+                              min="0"
+                              value={newTeam.femaleCount || 0}
+                              onChange={e => setNewTeam({...newTeam, femaleCount: parseInt(e.target.value) || 0})}
+                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                            />
+                          </div>
+                          <div className="space-y-2 flex flex-col justify-center">
+                            <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي العدد</p>
+                            <p className="text-2xl font-black text-primary">{(Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0)}</p>
                           </div>
                         </div>
 
@@ -5303,8 +5566,7 @@ function App() {
                         <h4 className="font-black text-xl text-slate-800">الفرق المسجلة</h4>
                       </div>
                       <div className="max-h-[800px] overflow-y-auto space-y-6 pr-2 custom-scrollbar">
-                        {(activityTeams || [])
-                          .filter(t => t.churchName === churchName)
+                        {filteredTeamsList
                           .map(t => (
                           <div key={t.id} className="p-6 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-md transition-all relative group overflow-hidden">
                             <div className="absolute top-0 right-0 w-1 h-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -5342,7 +5604,7 @@ function App() {
                           </div>
                         ))}
                         
-                        {(activityTeams || []).filter(t => t.churchName === churchName).length === 0 && (
+                        {filteredTeamsList.length === 0 && (
                           <div className="text-center py-20 bg-white rounded-xl border border-dashed border-slate-200">
                             <Users size={48} className="text-slate-200 mx-auto mb-4" />
                             <p className="text-slate-400 font-bold">لا يوجد فرق مسجلة حالياً</p>
