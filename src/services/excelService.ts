@@ -167,93 +167,44 @@ export const exportParticipantsReport = async (participants: Participant[], titl
 export const exportAllDataReport = async (participants: Participant[], activityTeams: ActivityTeam[], orders: Order[]) => {
   const workbook = new ExcelJS.Workbook();
   
-  // Participants Unified Sheet
+  // 1. Participants Sheet
   const pSheet = workbook.addWorksheet('المشتركين');
-  const pHeaders = ['الكنيسة', 'اسم المشترك', 'المرحلة', 'دراسي', 'محفوظات', 'قبطي (مستوى ١ أو ٢)', 'النشاط (فردي/كورال/عزف)'];
-  applyProfessionalStyles(pSheet, 'بيانات المشتركين المجمعة (النسخة الإدارية)', pHeaders);
+  const pHeaders = ['م', 'اسم الكنيسة', 'المكان/القرية', 'اسم المشترك', 'المرحلة', 'المسابقات', 'تاريخ التسجيل'];
+  applyProfessionalStyles(pSheet, 'كافة بيانات المشتركين', pHeaders);
   
-  // Map all participants to unified structure
-  const unifiedMap = new Map<string, any>();
-  
-  participants.forEach(p => {
-    const key = `${p.churchName}-${p.name.trim()}`;
-    const study = p.competitions?.find(c => c && c.includes('دراس')) ? '١' : '-';
-    const memo = p.competitions?.find(c => c && c.includes('محفوظات')) ? '١' : '-';
-    const copticVal = p.competitions?.find(c => c && c.includes('قبطي'));
-    const coptic = copticVal ? (copticVal.includes('١') ? '١' : '٢') : '-';
-    const activities = p.competitions?.filter(c => c && !c.includes('دراس') && !c.includes('محفوظات') && !c.includes('قبطي')) || [];
-    
-    unifiedMap.set(key, {
-      churchName: p.churchName || '-',
-      name: p.name || '-',
-      stage: p.stage || '-',
-      study,
-      memo,
-      coptic,
-      activityList: activities
-    });
-  });
-
-  // Cross-reference teams into unified participants
-  activityTeams.forEach(t => {
-    t.members?.forEach(m => {
-      if (!m.name) return;
-      const key = `${t.churchName}-${m.name.trim()}`;
-      const specificActivity = [t.activityType, t.choirLevel || t.instrumentType || ''].filter(Boolean).join(' ').trim();
-      
-      if (unifiedMap.has(key)) {
-        if (!unifiedMap.get(key).activityList.includes(specificActivity)) {
-          unifiedMap.get(key).activityList.push(specificActivity);
-        }
-      } else {
-        unifiedMap.set(key, {
-          churchName: t.churchName || '-',
-          name: m.name.trim(),
-          stage: m.stage || '-',
-          study: '-',
-          memo: '-',
-          coptic: '-',
-          activityList: [specificActivity]
-        });
-      }
-    });
-  });
-
-  const finalParticipants = Array.from(unifiedMap.values()).sort((a, b) => a.churchName.localeCompare(b.churchName));
-  
-  finalParticipants.forEach((p) => {
+  participants.forEach((p, index) => {
     pSheet.addRow([
-      p.churchName,
-      p.name,
-      p.stage,
-      p.study,
-      p.memo,
-      p.coptic,
-      p.activityList.length > 0 ? p.activityList.join(' - ') : '-'
+      index + 1,
+      p.churchName || '-',
+      p.country || '-',
+      p.name || '-',
+      p.stage || '-',
+      p.competitions ? p.competitions.join(' - ') : '-',
+      new Date(p.timestamp).toLocaleDateString('ar-EG')
     ]);
   });
   
   applyDataStyles(pSheet);
   autoFitColumns(pSheet);
 
-  // Teams Sheet (For detailed admin metrics)
-  const tSheet = workbook.addWorksheet('فرق الأنشطة');
+  // 2. Teams Sheet
+  const tSheet = workbook.addWorksheet('الفرق');
   const tHeaders = ['م', 'اسم الكنيسة', 'نوع النشاط', 'المستوى/الآلة', 'عدد البنين', 'عدد البنات', 'اسم العضو', 'النوع', 'المرحلة', 'تاريخ التسجيل'];
-  applyProfessionalStyles(tSheet, 'بيانات فرق الأنشطة التفصيلية', tHeaders);
+  applyProfessionalStyles(tSheet, 'كافة بيانات الفرق والأنشطة', tHeaders);
   
   let tIndex = 1;
   activityTeams.forEach(t => {
     t.members.forEach((m: any) => {
       tSheet.addRow([
         tIndex++,
-        t.churchName,
-        t.activityType,
+        t.churchName || '-',
+        t.activityType || '-',
         t.choirLevel || t.instrumentType || '-',
         t.maleCount || 0,
         t.femaleCount || 0,
-        m.name,
-        m.gender,
-        m.stage,
+        m.name || '-',
+        m.gender || '-',
+        m.stage || '-',
         new Date(t.timestamp).toLocaleDateString('ar-EG')
       ]);
     });
@@ -261,25 +212,24 @@ export const exportAllDataReport = async (participants: Participant[], activityT
   applyDataStyles(tSheet);
   autoFitColumns(tSheet);
 
-  // Orders Sheet
-  const oSheet = workbook.addWorksheet('طلبات الكتب');
-  const oHeaders = ['م', 'اسم الكنيسة', 'البلد/القرية', 'المرحلة', 'دراسي', 'محفوظات', 'قبطي', 'أنشطة', 'الإجمالي للمرحلة', 'الإجمالي الكلي للطلب', 'تاريخ الطلب'];
-  applyProfessionalStyles(oSheet, 'بيانات طلبات الكتب التفصيلية', oHeaders);
+  // 3. Orders Sheet
+  const oSheet = workbook.addWorksheet('الطلبات');
+  const oHeaders = ['م', 'اسم الكنيسة', 'البلد/القرية', 'المرحلة', 'المادة', 'الكمية', 'السعر', 'الإجمالي للمرحلة', 'الإجمالي الكلي للطلب', 'تاريخ الطلب'];
+  applyProfessionalStyles(oSheet, 'كافة بيانات طلبات الكتب', oHeaders);
   
   let oIndex = 1;
   orders.forEach(o => {
     o.details.forEach(d => {
       oSheet.addRow([
         oIndex++,
-        o.churchName,
-        o.country,
-        d.stage,
-        d.study || 0,
-        d.memo || 0,
-        d.coptic || 0,
-        d.activity || 0,
-        d.subtotal,
-        o.grandTotal,
+        o.churchName || '-',
+        o.country || '-',
+        d.stage || '-',
+        d.material || '-',
+        d.quantity || ((d.study || 0) + (d.memo || 0) + (d.coptic || 0) + (d.activity || 0)) || 0,
+        d.price || (d.subtotal / ((d.study || 0) + (d.memo || 0) + (d.coptic || 0) + (d.activity || 0)) || 0).toFixed(2),
+        d.subtotal || 0,
+        o.grandTotal || 0,
         new Date(o.timestamp).toLocaleDateString('ar-EG')
       ]);
     });
@@ -287,10 +237,10 @@ export const exportAllDataReport = async (participants: Participant[], activityT
   applyDataStyles(oSheet);
   autoFitColumns(oSheet);
 
-  // Summary Sheet
-  const sSheet = workbook.addWorksheet('ملخص الإحصائيات');
+  // 4. Summary Sheet
+  const sSheet = workbook.addWorksheet('الملخص');
   const sHeaders = ['البيان', 'العدد/القيمة'];
-  applyProfessionalStyles(sSheet, 'ملخص إحصائيات المهرجان', sHeaders);
+  applyProfessionalStyles(sSheet, 'ملخص الإحصائيات الشامل', sHeaders);
   
   sSheet.addRow(['إجمالي عدد المشتركين', participants.length]);
   sSheet.addRow(['إجمالي عدد الفرق', activityTeams.length]);
@@ -301,7 +251,7 @@ export const exportAllDataReport = async (participants: Participant[], activityT
   autoFitColumns(sSheet);
 
   const buffer = await workbook.xlsx.writeBuffer();
-  saveAs(new Blob([buffer]), `All_Registrations_Report_${new Date().getTime()}.xlsx`);
+  saveAs(new Blob([buffer]), `Comprehensive_Report_${new Date().getTime()}.xlsx`);
 };
 
 export const exportResultsToExcel = async (results: Result[], title: string = 'نتائج المهرجان') => {

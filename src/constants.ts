@@ -81,6 +81,31 @@ export const CHURCH_CREDENTIALS: Record<string, string> = {
 
 export const ADMIN_PASSWORD = "ADMIN_MAFK_2026";
 
+export const STAGE_ORDER = [
+  'حضانة',
+  'أولى وثانية',
+  'ثالثة ورابعة',
+  'خامسة وسادسة',
+  'إعدادي',
+  'ثانوي',
+  'جامعة',
+  'خريجون',
+  'خدام وإعداد الخدام',
+  'قانا الجليل',
+  'سمعان الشيخ',
+  'تعليم كبار',
+  'حرفيون'
+];
+
+export const sortStages = (a: string, b: string) => {
+  const indexA = STAGE_ORDER.indexOf(a);
+  const indexB = STAGE_ORDER.indexOf(b);
+  if (indexA === -1 && indexB === -1) return a.localeCompare(b);
+  if (indexA === -1) return 1;
+  if (indexB === -1) return -1;
+  return indexA - indexB;
+};
+
 export const STAGE_LABELS: Record<string, string> = {
   nursery: 'حضانة',
   stage12: 'أولى وثانية',

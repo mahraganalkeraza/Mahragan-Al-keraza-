@@ -50,7 +50,10 @@ import {
   Save,
   ShoppingCart,
   FileScan,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Sliders,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import Notification from './components/Notification';
@@ -120,6 +123,7 @@ import {
   PRICING_DATA, 
   CAROUSEL_IMAGES, 
   ADMIN_PASSWORD,
+  sortStages
   } from './constants';
 
 import { exportFullDioceseReport, exportChurchReport, exportParticipantsReport, exportAllDataReport, exportResultsToExcel } from './services/excelService';
@@ -370,12 +374,33 @@ function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carous
   );
 }
 
+const ALL_ADMIN_TABS = [
+  { id: 'dashboard', label: 'الملخص والمؤشرات', icon: LayoutDashboard },
+  { id: 'news', label: 'الأخبار والسلايدر', icon: Newspaper },
+  { id: 'participants', label: 'إدارة المشتركين', icon: Users },
+  { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
+  { id: 'results', label: 'النتائج', icon: Award },
+  { id: 'omr', label: 'بابل شيت OMR', icon: FileScan },
+  { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
+  { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
+  { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
+  { id: 'calculator', label: 'حاسبة الكتب', icon: Calculator },
+  { id: 'exams_management', label: 'روابط الامتحانات', icon: BookOpen },
+  { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
+  { id: 'dynamic_management', label: 'النظام الديناميكي', icon: Settings },
+  { id: 'system_settings', label: 'إعدادات المنصة', icon: Settings }
+];
+
 function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
   const [activityStages, setActivityStages] = useState<any[]>([]);
+
+  // Customization State
+  const [isCustomizeTabsModalOpen, setIsCustomizeTabsModalOpen] = useState(false);
+  const [tempTabsConfig, setTempTabsConfig] = useState<{order: string[], hidden: string[]}>({order: [], hidden: []});
 
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
@@ -424,7 +449,7 @@ function App() {
           name: d.data().name, 
           comps: d.data().allowedCompetitions || [] 
         }));
-        setDynamicLevels(fetchedLevels);
+        setDynamicLevels(fetchedLevels.sort((a, b) => sortStages(a.name, b.name)));
       }
     }, (error) => console.error("Error syncing levels:", error));
 
@@ -616,6 +641,54 @@ function App() {
       message,
       onConfirm
     });
+  };
+
+  const visibleAdminTabs = useMemo(() => {
+    const customConfig = userProfile?.adminTabsConfig;
+    let tabs = [...ALL_ADMIN_TABS];
+
+    if (customConfig) {
+      if (customConfig.hidden && Array.isArray(customConfig.hidden)) {
+        tabs = tabs.filter(t => !customConfig.hidden.includes(t.id));
+      }
+      if (customConfig.order && Array.isArray(customConfig.order)) {
+         tabs.sort((a, b) => {
+           const idxA = customConfig.order.indexOf(a.id);
+           const idxB = customConfig.order.indexOf(b.id);
+           if (idxA === -1 && idxB === -1) return 0;
+           if (idxA === -1) return 1;
+           if (idxB === -1) return -1;
+           return idxA - idxB;
+         });
+      }
+    }
+    return tabs;
+  }, [userProfile]);
+
+  const openCustomizeModal = () => {
+    const currentOrder = userProfile?.adminTabsConfig?.order || ALL_ADMIN_TABS.map(t => t.id);
+    const currentHidden = userProfile?.adminTabsConfig?.hidden || [];
+    const missingTabs = ALL_ADMIN_TABS.map(t => t.id).filter(id => !currentOrder.includes(id));
+    
+    setTempTabsConfig({
+      order: [...currentOrder, ...missingTabs].filter(id => ALL_ADMIN_TABS.some(t => t.id === id)),
+      hidden: currentHidden
+    });
+    setIsCustomizeTabsModalOpen(true);
+  };
+
+  const handleSaveTabsConfig = async () => {
+    if (!user || userRole !== 'admin') return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { adminTabsConfig: tempTabsConfig });
+      setIsCustomizeTabsModalOpen(false);
+      if (tempTabsConfig.hidden.includes(adminActiveTab)) {
+        const firstVisible = tempTabsConfig.order.find((id: string) => !tempTabsConfig.hidden.includes(id));
+        if (firstVisible) setAdminActiveTab(firstVisible);
+      }
+    } catch (error) {
+      console.error("Error saving tabs config", error);
+    }
   };
 
   // Firebase Auth Listener
@@ -2614,7 +2687,7 @@ function App() {
                     className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
                   >
                     <option value="الكل">كل المراحل</option>
-                    {dynamicLevels.sort((a,b)=>a.name.localeCompare(b.name)).map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+                    {dynamicLevels.sort((a,b)=>sortStages(a.name, b.name)).map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
                   </select>
                   <select 
                     value={resultsFilterGrade}
@@ -2971,33 +3044,30 @@ function App() {
                   </div>
                 </div>
 
-                <div className="p-4 flex gap-2 lg:flex-col lg:space-y-1 h-auto lg:h-full overflow-x-auto lg:overflow-y-auto no-scrollbar lg:custom-scrollbar">
-                  {[
-                    { id: 'dashboard', label: 'الملخص والمؤشرات', icon: LayoutDashboard },
-                    { id: 'news', label: 'الأخبار والسلايدر', icon: Newspaper },
-                    { id: 'participants', label: 'إدارة المشتركين', icon: Users },
-                    { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
-                    { id: 'results', label: 'النتائج', icon: Award },
-                    { id: 'omr', label: 'بابل شيت OMR', icon: FileScan },
-                    { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
-                    { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
-                    { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
-                    { id: 'calculator', label: 'حاسبة الكتب', icon: Calculator },
-                    { id: 'exams_management', label: 'روابط الامتحانات', icon: BookOpen },
-                    { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
-                    { id: 'dynamic_management', label: 'النظام الديناميكي', icon: Settings },
-                    { id: 'system_settings', label: 'إعدادات المنصة', icon: Settings }
-                  ].map(tab => (
+                <div className="p-4 flex flex-col gap-2 h-auto lg:h-full overflow-x-auto lg:overflow-y-auto no-scrollbar lg:custom-scrollbar">
+                  <div className="flex gap-2 lg:flex-col lg:space-y-1">
+                    {visibleAdminTabs.map(tab => (
+                      <button 
+                        key={tab.id}
+                        onClick={() => setAdminActiveTab(tab.id)}
+                        className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm text-right ${adminActiveTab === tab.id ? 'bg-primary text-white shadow-md transform lg:scale-[1.02]' : 'bg-white lg:bg-transparent text-slate-600 hover:bg-slate-200 hover:text-slate-900 border lg:border-none border-slate-200'}`}
+                      >
+                        <tab.icon size={18} className={adminActiveTab === tab.id ? 'text-white' : 'text-slate-400'} />
+                        <span className="flex-1 whitespace-nowrap">{tab.label}</span>
+                        {adminActiveTab === tab.id && <ChevronLeft size={16} className="text-white/50 hidden lg:block" />}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* Customization Button */}
+                  <div className="border-t border-slate-100 lg:border-none mt-auto pt-4 pb-2 lg:pt-8 w-full flex justify-center">
                     <button 
-                      key={tab.id}
-                      onClick={() => setAdminActiveTab(tab.id)}
-                      className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm text-right ${adminActiveTab === tab.id ? 'bg-primary text-white shadow-md transform lg:scale-[1.02]' : 'bg-white lg:bg-transparent text-slate-600 hover:bg-slate-200 hover:text-slate-900 border lg:border-none border-slate-200'}`}
+                      onClick={openCustomizeModal}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 hover:text-slate-900 transition-colors font-black text-xs min-w-[200px] lg:min-w-0"
                     >
-                      <tab.icon size={18} className={adminActiveTab === tab.id ? 'text-white' : 'text-slate-400'} />
-                      <span className="flex-1 whitespace-nowrap">{tab.label}</span>
-                      {adminActiveTab === tab.id && <ChevronLeft size={16} className="text-white/50 hidden lg:block" />}
+                      <Sliders size={16} /> خصص لوحة التحكم
                     </button>
-                  ))}
+                  </div>
                 </div>
               </div>
 
@@ -4000,12 +4070,7 @@ function App() {
                           </tr>
                         ) : (
                           calculatorSettings
-                            .sort((a, b) => {
-                              const indexA = dynamicLevels.findIndex((p: any) => p.name);
-                              const indexB = dynamicLevels.findIndex((p: any) => p.name);
-                              if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                              return a.stage.localeCompare(b.stage);
-                            })
+                            .sort((a, b) => sortStages(a.stage, b.stage))
                             .map((setting) => (
                             <tr key={setting.id} className="hover:bg-slate-50/50 transition-colors">
                               <td className="px-6 py-4 font-bold text-slate-800">{setting.stage}</td>
@@ -4909,14 +4974,7 @@ function App() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {Object.keys(groupedSettings)
-                      .sort((a, b) => {
-                        const indexA = dynamicLevels.findIndex((p: any) => p.name);
-                        const indexB = dynamicLevels.findIndex((p: any) => p.name);
-                        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                        if (indexA !== -1) return -1;
-                        if (indexB !== -1) return 1;
-                        return a.localeCompare(b);
-                      })
+                      .sort(sortStages)
                       .map((stage) => {
                         const stageTotal = Object.values(groupedSettings[stage])
                           .flat()
@@ -5868,6 +5926,76 @@ function App() {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isCustomizeTabsModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                  <Sliders className="text-primary" /> تخصيص لوحة التحكم
+                </h3>
+                <button onClick={() => setIsCustomizeTabsModalOpen(false)} className="text-slate-400 hover:text-red-500">
+                  <X size={24} />
+                </button>
+              </div>
+              <div className="p-6 max-h-[60vh] overflow-y-auto space-y-2">
+                {tempTabsConfig.order.map((tabId, index) => {
+                  const tabInfo = ALL_ADMIN_TABS.find(t => t.id === tabId);
+                  if (!tabInfo) return null;
+                  const isHidden = tempTabsConfig.hidden.includes(tabId);
+                  
+                  return (
+                    <div key={tabId} className={`flex items-center justify-between p-3 rounded-xl border ${isHidden ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-200 shadow-sm'}`}>
+                      <div className="flex items-center gap-3">
+                         <button 
+                           onClick={() => {
+                             const newHidden = isHidden ? tempTabsConfig.hidden.filter(id => id !== tabId) : [...tempTabsConfig.hidden, tabId];
+                             setTempTabsConfig({...tempTabsConfig, hidden: newHidden});
+                           }}
+                           className={`p-2 rounded-lg ${isHidden ? 'text-slate-400 bg-slate-100' : 'text-primary bg-primary/10'}`}
+                         >
+                           {isHidden ? <EyeOff size={18} /> : <Eye size={18} />}
+                         </button>
+                         <span className="font-bold text-sm text-slate-700">{tabInfo.label}</span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <button 
+                          disabled={index === 0}
+                          onClick={() => {
+                            const newOrder = [...tempTabsConfig.order];
+                            [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+                            setTempTabsConfig({...tempTabsConfig, order: newOrder});
+                          }}
+                          className="text-slate-400 hover:text-primary disabled:opacity-30 disabled:hover:text-slate-400"
+                        >
+                          <ChevronUp size={16} />
+                        </button>
+                        <button 
+                          disabled={index === tempTabsConfig.order.length - 1}
+                          onClick={() => {
+                            const newOrder = [...tempTabsConfig.order];
+                            [newOrder[index + 1], newOrder[index]] = [newOrder[index], newOrder[index + 1]];
+                            setTempTabsConfig({...tempTabsConfig, order: newOrder});
+                          }}
+                          className="text-slate-400 hover:text-primary disabled:opacity-30 disabled:hover:text-slate-400"
+                        >
+                          <ChevronDown size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="p-6 border-t border-slate-100">
+                <button onClick={handleSaveTabsConfig} className="w-full py-3 bg-primary text-white font-black rounded-xl hover:bg-primary/90 transition-colors shadow-lg active:scale-95">
+                  حفظ التخصيص
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </AnimatePresence>
 

@@ -5,6 +5,7 @@ import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth'
 import { db, storage, ref, uploadBytesResumable, getDownloadURL, handleFirestoreError, OperationType, firebaseConfig } from '../firebase';
 import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as ImageIcon, Upload, Loader2, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { sortStages } from '../constants';
 
 // Initialize secondary app for creating user accounts from the bank
 const getSecondaryAuth = () => {
@@ -56,7 +57,7 @@ export default function DynamicAdminSettings() {
       setChurches(churchesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
       const levelsSnap = await getDocs(collection(db, 'levels'));
-      setLevels(levelsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLevels(levelsSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => sortStages(a.name, b.name)));
 
       const compSnap = await getDocs(collection(db, 'competitions'));
       setCompetitions(compSnap.docs.map(d => ({ id: d.id, ...d.data() })));
