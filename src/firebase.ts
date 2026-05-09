@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { 
   getFirestore, 
+  enableIndexedDbPersistence,
   collection, 
   doc, 
   setDoc, 
@@ -16,7 +17,9 @@ import {
   getDocFromServer,
   writeBatch,
   orderBy,
-  limit
+  limit,
+  runTransaction,
+  serverTimestamp
 } from 'firebase/firestore';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
@@ -26,6 +29,15 @@ import firebaseConfig from '../firebase-applet-config.json';
 // Initialize Firebase SDK
 export const firebaseApp = initializeApp(firebaseConfig);
 export const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+
+enableIndexedDbPersistence(db).catch((err) => {
+  if (err.code == 'failed-precondition') {
+    console.warn('Multiple tabs open, persistence can only be enabled in one tab at a a time.');
+  } else if (err.code == 'unimplemented') {
+    console.warn('The current browser does not support all of the features required to enable persistence');
+  }
+});
+
 export const auth = getAuth(firebaseApp);
 export const storage = getStorage(firebaseApp);
 export { firebaseConfig };
@@ -115,6 +127,8 @@ export {
   writeBatch,
   orderBy,
   limit,
+  runTransaction,
+  serverTimestamp,
   ref,
   uploadBytesResumable,
   getDownloadURL

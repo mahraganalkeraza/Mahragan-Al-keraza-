@@ -99,7 +99,9 @@ import {
   OperationType,
   orderBy,
   limit,
-  CURRENT_YEAR
+  CURRENT_YEAR,
+  runTransaction,
+  serverTimestamp
 } from './firebase';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -130,6 +132,24 @@ import { exportFullDioceseReport, exportChurchReport, exportParticipantsReport, 
 import DynamicAdminSettings from './components/DynamicAdminSettings';
 // @ts-ignore
 import logo from './by-logo.jpeg';
+
+export const withExponentialBackoff = async <T,>(operation: () => Promise<T>, maxRetries = 5, baseDelayMs = 1000): Promise<T> => {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      if (error?.code !== 'unavailable' && error?.code !== 'deadline-exceeded' && attempt === maxRetries - 1) {
+        throw error;
+      }
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      console.warn(`Operation failed, retrying in ${delay}ms... (Attempt ${attempt + 1}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      attempt++;
+    }
+  }
+  throw new Error('Maximum retries exceeded');
+};
 
 function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carouselItems: CarouselItem[], appLogo: string | null }) {
   const [selectedSlide, setSelectedSlide] = useState<any>(null);
@@ -1374,12 +1394,22 @@ function App() {
         setIsUploadingBatch(false);
       } else {
         setBatchUploadStatus("تم اجتياز الفحص بنجاح! جاري الحفظ...");
-        const batch = writeBatch(db);
-        parsedParticipants.forEach(p => {
-           const newRef = doc(collection(db, 'participants'));
-           batch.set(newRef, p);
-        });
-        await batch.commit();
+        
+        // Chunk parsedParticipants into groups of 400
+        const chunks = [];
+        for (let i = 0; i < parsedParticipants.length; i += 400) {
+          chunks.push(parsedParticipants.slice(i, i + 400));
+        }
+
+        for (const chunk of chunks) {
+          const batch = writeBatch(db);
+          chunk.forEach(p => {
+             const newRef = doc(collection(db, 'participants'));
+             batch.set(newRef, p);
+          });
+          await batch.commit();
+        }
+
         setBatchUploadStatus("تم رفع البيانات بنجاح!");
         setTimeout(() => setBatchUploadStatus(null), 3000);
         setIsUploadingBatch(false);
@@ -1717,9 +1747,17 @@ function App() {
       try {
         const q = query(collection(db, 'results'), where('year', '==', activeYear));
         const snapshot = await getDocs(q);
-        const batch = writeBatch(db);
-        snapshot.docs.forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
+        
+        const chunks = [];
+        for (let i = 0; i < snapshot.docs.length; i += 400) {
+          chunks.push(snapshot.docs.slice(i, i + 400));
+        }
+
+        for (const chunk of chunks) {
+          const batch = writeBatch(db);
+          chunk.forEach(doc => batch.delete(doc.ref));
+          await batch.commit();
+        }
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, 'results');
       }
@@ -1832,11 +1870,23 @@ function App() {
 
     try {
       if (editingTeam) {
-        await updateDoc(doc(db, 'activityTeams', editingTeam.id), team);
+        await withExponentialBackoff(() => updateDoc(doc(db, 'activityTeams', editingTeam.id), team));
         setEditingTeam(null);
         alert('تم تحديث الفريق بنجاح.');
       } else {
-        await addDoc(collection(db, 'activityTeams'), { ...team, year: activeYear });
+        const teamRef = doc(collection(db, 'activityTeams'));
+        await withExponentialBackoff(() => runTransaction(db, async (transaction) => {
+          transaction.set(teamRef, { ...team, year: activeYear });
+          
+          const activityLogRef = doc(collection(db, 'activity_logs'));
+          transaction.set(activityLogRef, {
+            type: 'TEAM_REGISTRATION',
+            teamId: teamRef.id,
+            churchName,
+            year: activeYear,
+            timestamp: serverTimestamp()
+          });
+        }));
         alert('تم تسجيل الفريق بنجاح.');
       }
       setNewTeam({
@@ -1913,40 +1963,47 @@ function App() {
     e.preventDefault();
     if (!newParticipant.name || !newParticipant.stage) return;
     
-    if (!editingParticipant) {
-      const isDuplicate = participants.some(p => 
-        p.churchName === churchName && 
-        p.name.trim() === newParticipant.name.trim()
-      );
-
-      if (isDuplicate) {
-        alert('هذا الاسم مسجل بالفعل في كنيستك. يرجى التأكد من الاسم ثلاثياً.');
-        return;
-      }
-    }
-
     setIsSubmittingParticipant(true);
 
     try {
       if (editingParticipant) {
-        await updateDoc(doc(db, 'participants', editingParticipant.id), {
+        await withExponentialBackoff(() => updateDoc(doc(db, 'participants', editingParticipant.id), {
           name: newParticipant.name,
           stage: newParticipant.stage,
           competitions: newParticipant.competitions.filter(c => c !== ''),
           timestamp: new Date().toLocaleString('ar-EG')
-        });
+        }));
         setEditingParticipant(null);
         alert('تم تحديث بيانات المشترك بنجاح.');
       } else {
-        const participantData = {
-          churchName,
-          name: newParticipant.name,
-          stage: newParticipant.stage,
-          competitions: newParticipant.competitions.filter(c => c !== ''),
-          timestamp: new Date().toLocaleString('ar-EG'),
-          year: activeYear
-        };
-        await addDoc(collection(db, 'participants'), participantData);
+        const participantId = `reg_${churchName.replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, '')}_${activeYear}_${newParticipant.name.trim().replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, '')}`;
+        const participantRef = doc(db, 'participants', participantId);
+        
+        await withExponentialBackoff(() => runTransaction(db, async (transaction) => {
+          const participantDoc = await transaction.get(participantRef);
+          if (participantDoc.exists()) {
+            throw new Error('DUPLICATE_REGISTRATION');
+          }
+          const participantData = {
+            churchName,
+            name: newParticipant.name,
+            stage: newParticipant.stage,
+            competitions: newParticipant.competitions.filter(c => c !== ''),
+            timestamp: new Date().toLocaleString('ar-EG'),
+            year: activeYear
+          };
+          transaction.set(participantRef, participantData);
+          
+          const activityLogRef = doc(collection(db, 'activity_logs'));
+          transaction.set(activityLogRef, {
+            type: 'USER_REGISTRATION',
+            participantId,
+            churchName,
+            year: activeYear,
+            timestamp: serverTimestamp()
+          });
+        }));
+        
         alert('تم تسجيل المشترك بنجاح.');
       }
       
@@ -1955,8 +2012,12 @@ function App() {
         name: '', 
         competitions: ['دراسي', '', '', ''] 
       });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'participants');
+    } catch (error: any) {
+      if (error.message === 'DUPLICATE_REGISTRATION') {
+        alert('هذا الاسم مسجل بالفعل في كنيستك. يرجى التأكد من الاسم ثلاثياً.');
+      } else {
+        handleFirestoreError(error, OperationType.WRITE, 'participants');
+      }
     } finally {
       setIsSubmittingParticipant(false);
     }
@@ -2087,7 +2148,19 @@ function App() {
         }))
       };
 
-      await addDoc(collection(db, 'orders'), { ...newOrder, year: activeYear });
+      const orderRef = doc(collection(db, 'orders'));
+      await withExponentialBackoff(() => runTransaction(db, async (transaction) => {
+        transaction.set(orderRef, { ...newOrder, country: location, year: activeYear });
+        
+        const activityLogRef = doc(collection(db, 'activity_logs'));
+        transaction.set(activityLogRef, {
+          type: 'ORDER_SUBMITTED',
+          orderId: orderRef.id,
+          churchName,
+          year: activeYear,
+          timestamp: serverTimestamp()
+        });
+      }));
       
       setSubmitStatus('success');
       alert('تم إرسال طلب الكتب للجنة بنجاح!');
@@ -5406,11 +5479,11 @@ function App() {
                   <div className="flex flex-col md:flex-row gap-4 pt-4">
                     <button 
                       onClick={handleAddParticipant}
-                      disabled={isSubmitting}
-                      className={`flex-1 py-4 text-white rounded-lg font-black text-base shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-3 ${isSubmitting ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary'}`}
+                      disabled={isSubmittingParticipant}
+                      className={`flex-1 py-4 text-white rounded-lg font-black text-base shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-3 ${isSubmittingParticipant ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary'}`}
                     >
-                      {isSubmitting ? <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <UserPlus size={20} />}
-                      {isSubmitting ? 'جاري التسجيل...' : 'تسجيل المشترك'}
+                      {isSubmittingParticipant ? <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <UserPlus size={20} />}
+                      {isSubmittingParticipant ? 'جاري التسجيل...' : 'تسجيل المشترك'}
                     </button>
                     <button 
                       onClick={() => {
