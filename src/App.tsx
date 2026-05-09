@@ -391,10 +391,29 @@ const ALL_ADMIN_TABS = [
   { id: 'system_settings', label: 'إعدادات المنصة', icon: Settings }
 ];
 
+const getValidLogoUrl = (url: string | null | undefined, fallback: string | null = null): string => {
+  let finalUrl = url || fallback;
+  if (!finalUrl) return logo;
+  if (finalUrl.startsWith('data:image')) {
+    // Clean base64 string
+    finalUrl = finalUrl.replace(/[\n\r\s]/g, '');
+  }
+  return finalUrl;
+};
+
 function App() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [userProfile, setUserProfile] = useState<any>(null);
+
+  const getInitialProfile = () => {
+    try {
+      const stored = localStorage.getItem('userProfileCache');
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  };
+  const initialProfile = getInitialProfile();
+  
+  const [userProfile, setUserProfile] = useState<any>(initialProfile);
   const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
   const [activityStages, setActivityStages] = useState<any[]>([]);
 
@@ -404,16 +423,16 @@ function App() {
 
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
-  const [churchName, setChurchName] = useState('');
-  const [location, setLocation] = useState('');
+  const [churchName, setChurchName] = useState(initialProfile?.churchName || '');
+  const [location, setLocation] = useState(initialProfile?.country || '');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [loginError, setLoginError] = useState('');
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest'>('guest');
+  const [isLoggedIn, setIsLoggedIn] = useState(!!initialProfile);
+  const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest'>(initialProfile?.role || 'guest');
   const [notification, setNotification] = useState<string | null>(null);
   const [activeYear, setActiveYear] = useState(CURRENT_YEAR);
-  const [appLogo, setAppLogo] = useState<string | null>(null);
+  const [appLogo, setAppLogo] = useState<string | null>(() => localStorage.getItem('appLogoCache'));
   const [isUpdatingYear, setIsUpdatingYear] = useState(false);
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
   const [validationSettings, setValidationSettings] = useState<any>({
@@ -427,7 +446,13 @@ function App() {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setActiveYear(data.activeYear || CURRENT_YEAR);
-        setAppLogo(data.appLogo || null);
+        if (data.appLogo) {
+          localStorage.setItem('appLogoCache', data.appLogo);
+          setAppLogo(data.appLogo);
+        } else {
+          localStorage.removeItem('appLogoCache');
+          setAppLogo(null);
+        }
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
 
@@ -711,10 +736,12 @@ function App() {
               setIsLoggedIn(false);
               setUser(null);
               setUserProfile(null);
+              localStorage.removeItem('userProfileCache');
               setChurchName('');
               return;
             }
             setUserProfile(profile);
+            localStorage.setItem('userProfileCache', JSON.stringify(profile));
             setUserRole(profile.role);
             setChurchName(profile.churchName || '');
             setLocation(profile.country || '');
@@ -740,6 +767,7 @@ function App() {
       } else {
         setUser(null);
         setUserProfile(null);
+        localStorage.removeItem('userProfileCache');
         setIsLoggedIn(false);
         setUserRole('guest');
         setChurchName('');
@@ -1388,7 +1416,7 @@ function App() {
       margin: 10,
       filename: `participants_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2 },
+      html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
     };
     html2pdf().set(opt).from(element).save();
@@ -1401,7 +1429,7 @@ function App() {
       margin: 10,
       filename: `orders_summary_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2 },
+      html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
     };
     html2pdf().set(opt).from(element).save();
@@ -1414,7 +1442,7 @@ function App() {
       margin: 10,
       filename: `detailed_orders_report_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2 },
+      html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
     };
     html2pdf().set(opt).from(element).save();
@@ -1427,7 +1455,7 @@ function App() {
       margin: 10,
       filename: `inquiries_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2 },
+      html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
     };
     html2pdf().set(opt).from(element).save();
@@ -2081,7 +2109,7 @@ function App() {
       margin: 10,
       filename: `طلب_كتب_مهرجان_${churchName || 'المهرجان'}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2 },
+      html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     } as any;
 
@@ -2342,9 +2370,10 @@ function App() {
               {userRole === 'church' ? (
                 <div className="flex items-center gap-3">
                   <img 
-                    src={userProfile?.logoUrl || '/default-placeholder.png'} 
+                    src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} 
                     alt="Church Logo" 
-                    className="h-10 w-10 rounded-full object-cover shadow-md border border-slate-100" 
+                    className="h-10 w-10 rounded-full object-contain shadow-md border border-slate-100 bg-white" 
+                    onError={(e) => { e.currentTarget.src = logo; }}
                   />
                   <span className="text-sm font-black text-primary">{churchName}</span>
                   <button onClick={() => setActiveSection('settings')} className="p-2 text-primary hover:bg-slate-100 rounded-full">
@@ -2353,7 +2382,7 @@ function App() {
                 </div>
               ) : (
                 <>
-                  <img src={appLogo || logo} alt="Logo" className="h-10 w-10 rounded-full object-cover shadow-md border border-slate-100" />
+                  <img src={getValidLogoUrl(null, appLogo)} alt="Logo" onError={(e) => { e.currentTarget.src = logo; }} className="h-10 w-10 rounded-full object-contain shadow-md border border-slate-100 bg-white" />
                   <div className="hidden sm:block">
                     <h1 className="text-xl font-black text-primary leading-none">مهرجان الكرازة {activeYear}</h1>
                     <p className="text-accent text-xs font-bold mt-1">يعظم انتصارنا بالذي أحبنا</p>
@@ -2402,7 +2431,7 @@ function App() {
             className="bg-white p-10 rounded-xl shadow-sm border border-slate-100"
           >
             <div className="text-center mb-10">
-              <img src={appLogo || logo} alt="Logo" className="w-20 h-20 rounded-full mx-auto mb-6 object-cover shadow-sm border border-slate-50" />
+              <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-20 h-20 rounded-full mx-auto mb-6 object-contain shadow-sm border border-slate-50 bg-white" />
               <h2 className="text-2xl font-black text-slate-800">تسجيل الدخول</h2>
               <p className="text-slate-500 text-sm mt-2 font-bold">يرجى اختيار الكنيسة وإدخال الكود الخاص بها</p>
             </div>
@@ -2433,9 +2462,10 @@ function App() {
                     <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center overflow-hidden border border-slate-200 shrink-0">
                       {publicChurches.find(c => c.name === loginChurch)?.logoUrl ? (
                         <img 
-                          src={publicChurches.find(c => c.name === loginChurch)?.logoUrl} 
+                          src={getValidLogoUrl(publicChurches.find(c => c.name === loginChurch)?.logoUrl, null)} 
+                          onError={(e) => { e.currentTarget.src = logo; }}
                           alt="Church Logo" 
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain bg-white"
                         />
                       ) : (
                         <Church size={20} className="text-slate-300" />
@@ -2629,7 +2659,7 @@ function App() {
               <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-bl-[100%] z-0" />
               <div className="flex items-center gap-6 relative z-10">
                 <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-lg border border-slate-100 p-2 overflow-hidden transform hover:rotate-3 transition-transform">
-                  <img src={appLogo || logo} alt="Logo" className="w-full h-full object-contain" />
+                  <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-full h-full object-contain" />
                 </div>
                 <div>
                   <h3 className="text-3xl font-black text-coptic-blue">أخبار المهرجان</h3>
@@ -4342,7 +4372,7 @@ function App() {
                   <div className="overflow-x-auto" id="orders-table-admin">
                     <div className="p-4 mb-4 bg-white border-b-4 border-coptic-blue relative">
                       <div className="absolute top-4 right-4 flex items-center justify-center">
-                        <img src={appLogo || logo} alt="Logo" className="w-12 h-12 object-contain" />
+                        <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-12 h-12 object-contain" />
                       </div>
                       <h2 className="text-3xl font-black text-coptic-blue text-center mb-1">تقرير طلبات الكتب العام</h2>
                       <p className="text-coptic-gold font-black uppercase tracking-widest text-xs text-center">مهرجان الكرازة {activeYear}</p>
@@ -4408,7 +4438,7 @@ function App() {
                   <div className="overflow-x-auto" id="participants-table-admin">
                     <div className="p-4 mb-4 bg-white border-b-4 border-coptic-blue relative">
                       <div className="absolute top-4 right-4 flex items-center justify-center">
-                        <img src={appLogo || logo} alt="Logo" className="w-12 h-12 object-contain" />
+                        <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-12 h-12 object-contain" />
                       </div>
                       <h2 className="text-3xl font-black text-coptic-blue text-center mb-1">تقارير التقييم والمشتركين</h2>
                       <p className="text-coptic-gold font-black uppercase tracking-widest text-xs text-center">مهرجان الكرازة {activeYear}</p>
@@ -4568,7 +4598,7 @@ function App() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="inquiries-list-admin">
                     <div className="col-span-full p-4 mb-4 bg-white border-b-4 border-coptic-blue relative">
                       <div className="absolute top-4 right-4 flex items-center justify-center">
-                        <img src={appLogo || logo} alt="Logo" className="w-12 h-12 object-contain" />
+                        <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-12 h-12 object-contain" />
                       </div>
                       <h2 className="text-3xl font-black text-coptic-blue text-center mb-1">تقرير الاستفسارات</h2>
                       <p className="text-coptic-gold font-black uppercase tracking-widest text-xs text-center">مهرجان الكرازة {activeYear}</p>
@@ -5087,7 +5117,7 @@ function App() {
                 `}</style>
                 <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-10">
                   <div className="flex items-center gap-4">
-                    {userRole === 'church' && <img src={userProfile?.logoUrl || appLogo || logo} alt="Logo" className="w-16 h-16 rounded-full object-cover shadow-sm border border-slate-100" />}
+                    {userRole === 'church' && <img src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-16 h-16 rounded-full object-contain shadow-sm border border-slate-100 bg-white" />}
                     <div>
                       <h1 className="text-4xl font-black text-coptic-blue mb-2">مهرجان الكرازة {activeYear}</h1>
                       <p className="text-coptic-gold font-black uppercase tracking-widest text-sm">فاتورة طلب كتب رسمية - نسخة إدارية</p>
@@ -5155,7 +5185,7 @@ function App() {
                 `}</style>
                 <div className="text-center border-b-4 border-coptic-blue pb-8 mb-10 relative">
                   <div className="absolute top-0 right-0 flex items-center justify-center">
-                    <img src={appLogo || logo} alt="Logo" className="w-16 h-16 object-contain" />
+                    <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-16 h-16 object-contain" />
                   </div>
                   <h1 className="text-4xl font-black text-coptic-blue mb-2">تقرير طلبات الكتب التفصيلي المجمع</h1>
                   <p className="text-coptic-gold font-black uppercase tracking-widest text-sm">مهرجان الكرازة {activeYear}</p>
@@ -5212,7 +5242,7 @@ function App() {
             <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 relative overflow-hidden">
               <div className="flex items-center gap-4 mb-10 relative z-10">
                 <div className="w-16 h-16 bg-primary/5 rounded-2xl flex items-center justify-center overflow-hidden shadow-inner border border-primary/10">
-                  <img src={appLogo || logo} alt="Logo" className="w-full h-full object-cover" />
+                  <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-full h-full object-contain bg-white" />
                 </div>
                 <div>
                   <h3 className="text-2xl font-black text-primary">تسجيل المشتركين - كنيسة {churchName}</h3>
@@ -5872,7 +5902,7 @@ function App() {
           <div className="space-y-10">
             <div className="flex items-center gap-5">
               <div className="w-16 h-16 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white shadow-2xl border border-white/20 p-2 overflow-hidden">
-                <img src={appLogo || logo} alt="Logo" className="w-full h-full object-contain" />
+                <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-full h-full object-contain bg-white" />
               </div>
               <div>
                 <h4 className="text-3xl font-black tracking-tighter">مهرجان ٢٠٢٦</h4>
