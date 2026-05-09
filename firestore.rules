@@ -128,7 +128,7 @@ service cloud.firestore {
 
     function isValidResult(data) {
       return data.keys().hasAll(['studentName', 'churchName', 'stage', 'score', 'grade', 'timestamp']) &&
-             data.keys().size() <= 12 &&
+             data.keys().size() <= 15 &&
              data.studentName is string && data.studentName.size() > 0 && data.studentName.size() < 200 &&
              data.churchName is string && data.churchName.size() < 200 &&
              data.stage is string && data.stage.size() < 100 &&
@@ -243,12 +243,15 @@ service cloud.firestore {
 
     match /examLinks/{examLinkId} {
       allow read: if true;
-      allow write: if isAdmin() && isValidExamLink(incoming());
+      allow create, update: if isAdmin() && isValidExamLink(incoming());
+      allow delete: if isAdmin();
     }
 
     match /results/{resultId} {
       allow read: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
-      allow write: if isAdmin() && isValidResult(incoming());
+      allow create, update: if isAdmin() && isValidResult(incoming());
+      allow delete: if isAdmin();
+      allow write: if isAdmin();
     }
 
     match /schedules/{scheduleId} {
@@ -268,7 +271,7 @@ service cloud.firestore {
 
     match /calculator_settings/{settingId} {
       allow read: if true;
-      allow write: if isAdmin() && isValidCalculatorSetting(incoming());
+      allow create, update: if isAdmin() && isValidCalculatorSetting(incoming());
       allow delete: if isAdmin();
     }
 
@@ -314,7 +317,8 @@ service cloud.firestore {
 
     match /settings/app_config {
       allow read: if true;
-      allow write: if isAdmin() && isValidAppConfig(incoming());
+      allow create, update: if isAdmin() && isValidAppConfig(incoming());
+      allow delete: if isAdmin();
     }
 
     match /settings/validation {

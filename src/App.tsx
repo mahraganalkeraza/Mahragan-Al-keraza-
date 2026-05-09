@@ -1144,53 +1144,79 @@ function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      const bstr = evt.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws);
-      
-      try {
-        const batch = writeBatch(db);
-        data.forEach((row: any) => {
-          const resultRef = doc(collection(db, 'results'));
+    try {
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        try {
+          const bstr = evt.target?.result;
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wsname = wb.SheetNames[0];
+          const ws = wb.Sheets[wsname];
+          const data = XLSX.utils.sheet_to_json(ws);
           
-          // Map fields based on the provided Excel structure
-          const churchNameVal = row['اسم البلد'] || row['الكنيسة'] || row['churchName'] || '';
-          const studentNameVal = row['اسم المشترك رباعي'] || row['الاسم'] || row['studentName'] || '';
-          const stageVal = row['نوع المرحلة'] || row['المرحلة'] || row['stage'] || '';
-          const academicScore = Number(row['دراسي'] || 0);
-          const memorizationScore = Number(row['محفوظ'] || 0);
-          const q1Score = Number(row['ق١'] || 0);
-          const qScore = Number(row['ق'] || 0);
-          
-          // Calculate total score if not provided
-          const totalScore = row['المجموع'] || row['الدرجة'] || row['score'] || (academicScore + memorizationScore + q1Score + qScore);
-          
-          batch.set(resultRef, {
-            serial: row['م'] || '',
-            churchName: churchNameVal,
-            studentName: studentNameVal,
-            stage: stageVal,
-            academicScore,
-            memorizationScore,
-            q1Score,
-            qScore,
-            score: totalScore,
-            grade: row['التقدير'] || row['grade'] || '',
-            timestamp: new Date().toISOString(),
-            year: activeYear
-          });
-        });
-        await batch.commit();
-        alert('تم رفع النتائج بنجاح!');
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, 'results');
-      }
-    };
-    reader.readAsBinaryString(file);
+          const chunks = [];
+          for (let i = 0; i < data.length; i += 400) {
+            chunks.push(data.slice(i, i + 400));
+          }
+
+          for (const chunk of chunks) {
+            const batch = writeBatch(db);
+            chunk.forEach((row: any) => {
+              const studentNameVal = row['اسم المشترك رباعي'] || row['الاسم'] || row['studentName'] || '';
+              if (!studentNameVal || String(studentNameVal).trim() === '') return;
+              
+              const resultRef = doc(collection(db, 'results'));
+              
+              const churchNameVal = row['اسم البلد'] || row['الكنيسة'] || row['churchName'] || '';
+              const stageVal = row['نوع المرحلة'] || row['المرحلة'] || row['stage'] || '';
+              const sanitizeNum = (val: any) => {
+                const num = Number(val);
+                return isNaN(num) ? 0 : num;
+              };
+              
+              const academicScore = sanitizeNum(row['دراسي']);
+              const memorizationScore = sanitizeNum(row['محفوظ']);
+              const q1Score = sanitizeNum(row['ق١']);
+              const qScore = sanitizeNum(row['ق']);
+              
+              let rawTotal = row['المجموع'] || row['الدرجة'] || row['score'];
+              let finalScore = 0;
+              if (rawTotal !== undefined && rawTotal !== null) {
+                 finalScore = sanitizeNum(rawTotal);
+              } else {
+                 finalScore = academicScore + memorizationScore + q1Score + qScore;
+              }
+              const totalScore = finalScore;
+              
+              batch.set(resultRef, {
+                serial: row['م'] ? String(row['م']) : '',
+                churchName: String(churchNameVal),
+                studentName: String(studentNameVal),
+                stage: String(stageVal),
+                academicScore,
+                memorizationScore,
+                q1Score,
+                qScore,
+                score: totalScore,
+                grade: row['التقدير'] ? String(row['التقدير']) : (row['grade'] ? String(row['grade']) : ''),
+                timestamp: new Date().toISOString(),
+                year: String(activeYear)
+              });
+            });
+            await batch.commit();
+          }
+          alert('تم رفع النتائج بنجاح!');
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, 'results');
+        } finally {
+          e.target.value = ''; // Reset input
+        }
+      };
+      reader.readAsBinaryString(file);
+    } catch (e) {
+      console.error(e);
+      e.target.value = '';
+    }
   };
 
   const handleBatchUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2316,7 +2342,7 @@ function App() {
               {userRole === 'church' ? (
                 <div className="flex items-center gap-3">
                   <img 
-                    src={userProfile?.logoUrl || 'https://picsum.photos/seed/church/50/50'} 
+                    src={userProfile?.logoUrl || '/default-placeholder.png'} 
                     alt="Church Logo" 
                     className="h-10 w-10 rounded-full object-cover shadow-md border border-slate-100" 
                   />
@@ -4314,6 +4340,14 @@ function App() {
                     </div>
                   </div>
                   <div className="overflow-x-auto" id="orders-table-admin">
+                    <div className="p-4 mb-4 bg-white border-b-4 border-coptic-blue relative">
+                      <div className="absolute top-4 right-4 flex items-center justify-center">
+                        <img src={appLogo || logo} alt="Logo" className="w-12 h-12 object-contain" />
+                      </div>
+                      <h2 className="text-3xl font-black text-coptic-blue text-center mb-1">تقرير طلبات الكتب العام</h2>
+                      <p className="text-coptic-gold font-black uppercase tracking-widest text-xs text-center">مهرجان الكرازة {activeYear}</p>
+                      <p className="text-[10px] text-slate-400 mt-2 text-center">تاريخ التقرير: {new Date().toLocaleDateString('ar-EG')}</p>
+                    </div>
                     <table className="w-full text-right border-collapse">
                       <thead>
                         <tr className="bg-slate-50 text-xs font-black text-slate-500 uppercase">
@@ -4372,6 +4406,14 @@ function App() {
                     </div>
                   </div>
                   <div className="overflow-x-auto" id="participants-table-admin">
+                    <div className="p-4 mb-4 bg-white border-b-4 border-coptic-blue relative">
+                      <div className="absolute top-4 right-4 flex items-center justify-center">
+                        <img src={appLogo || logo} alt="Logo" className="w-12 h-12 object-contain" />
+                      </div>
+                      <h2 className="text-3xl font-black text-coptic-blue text-center mb-1">تقارير التقييم والمشتركين</h2>
+                      <p className="text-coptic-gold font-black uppercase tracking-widest text-xs text-center">مهرجان الكرازة {activeYear}</p>
+                      <p className="text-[10px] text-slate-400 mt-2 text-center">تاريخ التقرير: {new Date().toLocaleDateString('ar-EG')}</p>
+                    </div>
                     <table className="w-full text-right border-collapse">
                       <thead>
                         <tr className="bg-slate-50 text-xs font-black text-slate-500 uppercase">
@@ -4524,6 +4566,14 @@ function App() {
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6" id="inquiries-list-admin">
+                    <div className="col-span-full p-4 mb-4 bg-white border-b-4 border-coptic-blue relative">
+                      <div className="absolute top-4 right-4 flex items-center justify-center">
+                        <img src={appLogo || logo} alt="Logo" className="w-12 h-12 object-contain" />
+                      </div>
+                      <h2 className="text-3xl font-black text-coptic-blue text-center mb-1">تقرير الاستفسارات</h2>
+                      <p className="text-coptic-gold font-black uppercase tracking-widest text-xs text-center">مهرجان الكرازة {activeYear}</p>
+                      <p className="text-[10px] text-slate-400 mt-2 text-center">تاريخ التقرير: {new Date().toLocaleDateString('ar-EG')}</p>
+                    </div>
                     {(inquiries || [])
                       .filter(inq => adminFilterChurch === 'الكل' || inq.churchName === adminFilterChurch)
                       .map(inq => (
@@ -5036,9 +5086,12 @@ function App() {
                   .text-primary { color: #0F172A; }
                 `}</style>
                 <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-10">
-                  <div>
-                    <h1 className="text-4xl font-black text-coptic-blue mb-2">مهرجان الكرازة ٢٠٢٦</h1>
-                    <p className="text-coptic-gold font-black uppercase tracking-widest text-sm">فاتورة طلب كتب رسمية - نسخة إدارية</p>
+                  <div className="flex items-center gap-4">
+                    {userRole === 'church' && <img src={userProfile?.logoUrl || appLogo || logo} alt="Logo" className="w-16 h-16 rounded-full object-cover shadow-sm border border-slate-100" />}
+                    <div>
+                      <h1 className="text-4xl font-black text-coptic-blue mb-2">مهرجان الكرازة {activeYear}</h1>
+                      <p className="text-coptic-gold font-black uppercase tracking-widest text-sm">فاتورة طلب كتب رسمية - نسخة إدارية</p>
+                    </div>
                   </div>
                   <div className="text-left">
                     <p className="font-bold text-lg">{churchName || '________________'}</p>
@@ -5100,9 +5153,12 @@ function App() {
                   th { background-color: #f1f5f9; font-weight: 900; }
                   td, th { padding: 16px 12px !important; line-height: 2.2 !important; border-bottom: 1px solid #e2e8f0; text-align: right; }
                 `}</style>
-                <div className="text-center border-b-4 border-coptic-blue pb-8 mb-10">
+                <div className="text-center border-b-4 border-coptic-blue pb-8 mb-10 relative">
+                  <div className="absolute top-0 right-0 flex items-center justify-center">
+                    <img src={appLogo || logo} alt="Logo" className="w-16 h-16 object-contain" />
+                  </div>
                   <h1 className="text-4xl font-black text-coptic-blue mb-2">تقرير طلبات الكتب التفصيلي المجمع</h1>
-                  <p className="text-coptic-gold font-black uppercase tracking-widest text-sm">مهرجان الكرازة ٢٠٢٦ - منطقة مغاغة والعدوة</p>
+                  <p className="text-coptic-gold font-black uppercase tracking-widest text-sm">مهرجان الكرازة {activeYear}</p>
                   <p className="text-xs text-slate-400 mt-4">تاريخ استخراج التقرير: {new Date().toLocaleString('ar-EG')}</p>
                 </div>
 
