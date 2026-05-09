@@ -619,8 +619,32 @@ function App() {
     activityType: '',
     members: [{ name: '', gender: 'ذكر', stage: '' }],
     choirLevel: '',
-    instrumentType: ''
+    instrumentType: '',
+    maleCount: 0,
+    femaleCount: 0
   });
+
+  const [activeActivityPath, setActiveActivityPath] = useState<'new' | 'existing'>('existing');
+  const [activitySearchTerm, setActivitySearchTerm] = useState('');
+  const [activityLinkSuccess, setActivityLinkSuccess] = useState('');
+
+  const debouncedActivitySearch = useMemo(() => {
+    let timeoutId: NodeJS.Timeout;
+    return (value: string) => {
+      setActivitySearchTerm(value);
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        const found = participants.find(p => p.name.trim() === value.trim() && p.churchName === churchName);
+        if (found) {
+          const updatedMembers = [...(newTeam.members || [])];
+          updatedMembers[0] = { ...updatedMembers[0], name: found.name, stage: found.stage };
+          setNewTeam({ ...newTeam, members: updatedMembers });
+          setActivityLinkSuccess(`تم ربط بيانات المشترك بنجاح: ${found.name}`);
+          setTimeout(() => setActivityLinkSuccess(''), 3000);
+        }
+      }, 500);
+    };
+  }, [participants, churchName, newTeam]);
   const [resultSearch, setResultSearch] = useState('');
   const [dashboardBg, setDashboardBg] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1825,6 +1849,8 @@ function App() {
       return;
     }
 
+    const isGroupActivity = newTeam.activityType === 'كورال' || newTeam.activityType === 'ألحان';
+
     // Strict limit of TWO teams per stage per church
     const stageTeams = activityTeams.filter(t => t.churchName === churchName && t.choirLevel === newTeam.choirLevel && t.activityType === newTeam.activityType);
     if (!editingTeam && stageTeams.length >= 2) {
@@ -1832,24 +1858,11 @@ function App() {
       return;
     }
 
-    // Validation: Participation Restriction (Teams vs Core Competitions)
-    for (const member of (newTeam.members || [])) {
-      const dbParticipant = participants.find(p => p.name.trim() === member.name.trim() && p.churchName === churchName);
-      if (dbParticipant) {
-        const hasCoreComp = dbParticipant.competitions.some(c => 
-          c.includes('دراسي') || c.includes('محفوظات') || c.includes('قبطي')
-        );
-        if (hasCoreComp) {
-          alert(`العضو ${member.name} مسجل بالفعل في مسابقات أساسية (دراسي/محفوظات/قبطي). لا يمكن إضافته لفريق نشاط حسب القواعد.`);
-          setIsSubmittingTeam(false);
-          return;
-        }
+    if (!isGroupActivity) {
+      if (!newTeam.members || newTeam.members.length === 0 || !newTeam.members[0].name) {
+        alert('يرجى إدخال اسم المشترك');
+        return;
       }
-    }
-
-    if (!newTeam.members || newTeam.members.length === 0) {
-      alert('يرجى إضافة أعضاء للفريق');
-      return;
     }
     
     setIsSubmittingTeam(true);
@@ -1860,9 +1873,9 @@ function App() {
     const team = {
       churchName,
       activityType: newTeam.activityType,
-      members: newTeam.members as TeamMember[],
-      maleCount,
-      femaleCount,
+      members: isGroupActivity ? [] : (newTeam.members as TeamMember[]),
+      maleCount: isGroupActivity ? maleCount : 0,
+      femaleCount: isGroupActivity ? femaleCount : 0,
       choirLevel: newTeam.choirLevel || '',
       instrumentType: newTeam.instrumentType || '',
       timestamp: new Date().toLocaleString('ar-EG')
@@ -1872,29 +1885,39 @@ function App() {
       if (editingTeam) {
         await withExponentialBackoff(() => updateDoc(doc(db, 'activityTeams', editingTeam.id), team));
         setEditingTeam(null);
-        alert('تم تحديث الفريق بنجاح.');
+        alert('تم تحديث النشاط بنجاح.');
       } else {
-        const teamRef = doc(collection(db, 'activityTeams'));
-        await withExponentialBackoff(() => runTransaction(db, async (transaction) => {
-          transaction.set(teamRef, { ...team, year: activeYear });
-          
-          const activityLogRef = doc(collection(db, 'activity_logs'));
-          transaction.set(activityLogRef, {
-            type: 'TEAM_REGISTRATION',
-            teamId: teamRef.id,
-            churchName,
-            year: activeYear,
-            timestamp: serverTimestamp()
-          });
-        }));
-        alert('تم تسجيل الفريق بنجاح.');
+        await withExponentialBackoff(() => addDoc(collection(db, 'activityTeams'), { ...team, year: activeYear }));
+        
+        // Auto-register new student in the main participants collection if they don't exist
+        if (!isGroupActivity && activeActivityPath === 'new' && newTeam.members?.[0]?.name) {
+          const memberName = newTeam.members[0].name.trim();
+          const dbParticipant = participants.find(p => p.name.trim() === memberName && p.churchName === churchName);
+          if (!dbParticipant) {
+             const newParticipant = {
+               churchName,
+               country: 'Egypt', // default to church's country if we had it, fallback to Egypt
+               name: memberName,
+               stage: newTeam.members[0].stage,
+               competitions: [],
+               timestamp: new Date().toLocaleString('ar-EG'),
+               year: activeYear
+             };
+             await withExponentialBackoff(() => addDoc(collection(db, 'participants'), newParticipant));
+          }
+        }
+
+        alert('تم تسجيل النشاط بنجاح.');
       }
       setNewTeam({
         activityType: '',
         members: [{ name: '', gender: 'ذكر', stage: '' }],
         choirLevel: '',
-        instrumentType: ''
+        instrumentType: '',
+        maleCount: 0,
+        femaleCount: 0
       });
+      setActivitySearchTerm('');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'activityTeams');
     } finally {
@@ -1914,9 +1937,11 @@ function App() {
   const handleEditTeam = (team: ActivityTeam) => {
     setNewTeam({
       activityType: team.activityType,
-      members: team.members,
+      members: team.members?.length ? team.members : [{ name: '', gender: 'ذكر', stage: '' }],
       choirLevel: team.choirLevel || '',
-      instrumentType: team.instrumentType || ''
+      instrumentType: team.instrumentType || '',
+      maleCount: team.maleCount || 0,
+      femaleCount: team.femaleCount || 0
     });
     setEditingTeam(team);
     setActiveSection('activities');
@@ -1963,6 +1988,18 @@ function App() {
     e.preventDefault();
     if (!newParticipant.name || !newParticipant.stage) return;
     
+    if (!editingParticipant) {
+      const isDuplicate = participants.some(p => 
+        p.churchName === churchName && 
+        p.name.trim() === newParticipant.name.trim()
+      );
+
+      if (isDuplicate) {
+        alert('هذا الاسم مسجل بالفعل في كنيستك. يرجى التأكد من الاسم ثلاثياً.');
+        return;
+      }
+    }
+
     setIsSubmittingParticipant(true);
 
     try {
@@ -1976,34 +2013,15 @@ function App() {
         setEditingParticipant(null);
         alert('تم تحديث بيانات المشترك بنجاح.');
       } else {
-        const participantId = `reg_${churchName.replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, '')}_${activeYear}_${newParticipant.name.trim().replace(/[^a-zA-Z0-9\u0600-\u06FF]/g, '')}`;
-        const participantRef = doc(db, 'participants', participantId);
-        
-        await withExponentialBackoff(() => runTransaction(db, async (transaction) => {
-          const participantDoc = await transaction.get(participantRef);
-          if (participantDoc.exists()) {
-            throw new Error('DUPLICATE_REGISTRATION');
-          }
-          const participantData = {
-            churchName,
-            name: newParticipant.name,
-            stage: newParticipant.stage,
-            competitions: newParticipant.competitions.filter(c => c !== ''),
-            timestamp: new Date().toLocaleString('ar-EG'),
-            year: activeYear
-          };
-          transaction.set(participantRef, participantData);
-          
-          const activityLogRef = doc(collection(db, 'activity_logs'));
-          transaction.set(activityLogRef, {
-            type: 'USER_REGISTRATION',
-            participantId,
-            churchName,
-            year: activeYear,
-            timestamp: serverTimestamp()
-          });
-        }));
-        
+        const participantData = {
+          churchName,
+          name: newParticipant.name,
+          stage: newParticipant.stage,
+          competitions: newParticipant.competitions.filter(c => c !== ''),
+          timestamp: new Date().toLocaleString('ar-EG'),
+          year: activeYear
+        };
+        await withExponentialBackoff(() => addDoc(collection(db, 'participants'), participantData));
         alert('تم تسجيل المشترك بنجاح.');
       }
       
@@ -2013,11 +2031,7 @@ function App() {
         competitions: ['دراسي', '', '', ''] 
       });
     } catch (error: any) {
-      if (error.message === 'DUPLICATE_REGISTRATION') {
-        alert('هذا الاسم مسجل بالفعل في كنيستك. يرجى التأكد من الاسم ثلاثياً.');
-      } else {
-        handleFirestoreError(error, OperationType.WRITE, 'participants');
-      }
+      handleFirestoreError(error, OperationType.WRITE, 'participants');
     } finally {
       setIsSubmittingParticipant(false);
     }
@@ -2148,19 +2162,7 @@ function App() {
         }))
       };
 
-      const orderRef = doc(collection(db, 'orders'));
-      await withExponentialBackoff(() => runTransaction(db, async (transaction) => {
-        transaction.set(orderRef, { ...newOrder, country: location, year: activeYear });
-        
-        const activityLogRef = doc(collection(db, 'activity_logs'));
-        transaction.set(activityLogRef, {
-          type: 'ORDER_SUBMITTED',
-          orderId: orderRef.id,
-          churchName,
-          year: activeYear,
-          timestamp: serverTimestamp()
-        });
-      }));
+      await withExponentialBackoff(() => addDoc(collection(db, 'orders'), { ...newOrder, year: activeYear }));
       
       setSubmitStatus('success');
       alert('تم إرسال طلب الكتب للجنة بنجاح!');
@@ -5612,12 +5614,13 @@ function App() {
                             <option value="كورال">كورال</option>
                             <option value="ألحان">ألحان</option>
                             <option value="عزف">عزف</option>
+                            <option value="ترنيم فردي">ترنيم فردي</option>
                           </select>
                         </div>
 
                         {newTeam.activityType && (
                           <div className="space-y-2">
-                            <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">مرحلة النشاط (للفرق)</label>
+                            <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">المرحلة</label>
                             <select 
                               value={newTeam.choirLevel || ''}
                               onChange={e => setNewTeam({...newTeam, choirLevel: e.target.value})}
@@ -5646,125 +5649,136 @@ function App() {
                           </div>
                         )}
 
-                        <div className="space-y-4">
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                            <h5 className="text-sm font-black text-slate-800">أعضاء الفريق</h5>
-                            <button 
-                              type="button"
-                              onClick={handleAddTeamMember}
-                              className="text-primary font-black text-xs hover:underline"
-                            >
-                              + إضافة عضو
-                            </button>
+                        {newTeam.activityType === 'كورال' || newTeam.activityType === 'ألحان' ? (
+                          <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الذكور</p>
+                              <input 
+                                type="number"
+                                min="0"
+                                value={newTeam.maleCount || 0}
+                                onChange={e => setNewTeam({...newTeam, maleCount: parseInt(e.target.value) || 0})}
+                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الإناث</p>
+                              <input 
+                                type="number"
+                                min="0"
+                                value={newTeam.femaleCount || 0}
+                                onChange={e => setNewTeam({...newTeam, femaleCount: parseInt(e.target.value) || 0})}
+                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                              />
+                            </div>
+                            <div className="space-y-2 flex flex-col justify-center">
+                              <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي العدد</p>
+                              <p className="text-2xl font-black text-primary">{(Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0)}</p>
+                            </div>
                           </div>
+                        ) : newTeam.activityType && (
                           <div className="space-y-4">
-                            {newTeam.members?.map((member, idx) => (
-                              <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-slate-50 p-4 rounded-xl border border-slate-100">
-                    <div className="md:col-span-12 space-y-1">
-                                    <label className="text-[9px] font-black text-slate-400 uppercase">الاسم (بحث في المشتركين الذين لم يسجلوا في مسابقات أساسية)</label>
-                                    <div className="relative">
-                                      <input 
-                                        type="text"
-                                        list={`participantsList-${idx}`}
-                                        placeholder="ابحث عن الاسم أو أضف جديد"
-                                        value={member.name}
-                                        onChange={e => {
-                                          const val = e.target.value;
-                                          const updated = [...(newTeam.members || [])];
-                                          updated[idx].name = val;
-                                          
-                                          // Auto-fill stage and gender if found
-                                          const existingParticipant = participants.find(p => p.name === val);
-                                          if (existingParticipant) {
-                                            updated[idx].stage = existingParticipant.stage;
-                                          }
-                                          setNewTeam({...newTeam, members: updated});
-                                        }}
-                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold"
-                                        required
-                                      />
-                                      <datalist id={`participantsList-${idx}`}>
-                                        {participants
-                                          .filter(p => !p.competitions || !p.competitions.some(c => c.includes('دراسي') || c.includes('محفوظات') || c.includes('قبطي')))
-                                          .map((p, pIdx) => (
-                                          <option key={pIdx} value={p.name}>{p.stage} - {p.churchName}</option>
-                                        ))}
-                                      </datalist>
-                                    </div>
-                                  </div>
-                                <div className="md:col-span-3 space-y-1">
-                                  <label className="text-[9px] font-black text-slate-400 uppercase">النوع</label>
-                                  <select 
-                                    value={member.gender}
-                                    onChange={e => {
-                                      const updated = [...(newTeam.members || [])];
-                                      updated[idx].gender = e.target.value as 'ذكر' | 'أنثى';
-                                      setNewTeam({...newTeam, members: updated});
-                                    }}
-                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold"
-                                    required
-                                  >
-                                    <option value="ذكر">ذكر</option>
-                                    <option value="أنثى">أنثى</option>
-                                  </select>
-                                </div>
-                                <div className="md:col-span-3 space-y-1">
-                                  <label className="text-[9px] font-black text-slate-400 uppercase">المرحلة</label>
-                                  <select 
-                                    value={member.stage}
-                                    onChange={e => {
-                                      const updated = [...(newTeam.members || [])];
-                                      updated[idx].stage = e.target.value;
-                                      setNewTeam({...newTeam, members: updated});
-                                    }}
-                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold"
-                                    required
-                                  >
-                                    <option value="">المرحلة</option>
-                                    {dynamicLevels.map((p: any) => <option key={p.name} value={p.name}>{p.name}</option>)}
-                                  </select>
-                                </div>
-                                <div className="md:col-span-1 flex justify-center pb-1">
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleRemoveTeamMember(idx)}
-                                    disabled={newTeam.members?.length === 1}
-                                    className="p-1 text-slate-300 hover:text-red-500 disabled:opacity-30"
-                                  >
-                                    <X size={16} />
-                                  </button>
-                                </div>
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                              <h5 className="text-sm font-black text-slate-800">بيانات المشترك</h5>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveActivityPath('existing')}
+                                  className={`px-3 py-1 text-xs font-black rounded-full ${activeActivityPath === 'existing' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500'}`}
+                                >
+                                  مشترك مسجل
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveActivityPath('new')}
+                                  className={`px-3 py-1 text-xs font-black rounded-full ${activeActivityPath === 'new' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500'}`}
+                                >
+                                  مشترك جديد
+                                </button>
                               </div>
-                            ))}
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-slate-50 p-4 rounded-xl border border-slate-100">
+                              {activeActivityPath === 'existing' ? (
+                                <div className="md:col-span-12 space-y-1">
+                                  <label className="text-[9px] font-black text-slate-400 uppercase">الاسم (بحث في المشتركين المسجلين)</label>
+                                  <div className="relative">
+                                    <input 
+                                      type="text"
+                                      list={`activityParticipantsList`}
+                                      placeholder="أدخل اسم المشترك للبحث..."
+                                      value={activitySearchTerm}
+                                      onChange={e => debouncedActivitySearch(e.target.value)}
+                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold"
+                                    />
+                                    <datalist id={`activityParticipantsList`}>
+                                      {participants
+                                        .filter(p => p.churchName === churchName)
+                                        .map((p, pIdx) => (
+                                        <option key={pIdx} value={p.name}>{p.stage} - {p.churchName}</option>
+                                      ))}
+                                    </datalist>
+                                    {activityLinkSuccess && (
+                                      <p className="text-xs text-green-600 font-bold mt-2">{activityLinkSuccess}</p>
+                                    )}
+                                    {newTeam.members?.[0]?.name && !activityLinkSuccess && activitySearchTerm && (
+                                      <p className="text-xs text-primary font-bold mt-2">محدد: {newTeam.members[0].name} ({newTeam.members[0].stage})</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="md:col-span-6 space-y-1">
+                                    <label className="text-[9px] font-black text-slate-400 uppercase">الاسم</label>
+                                    <input 
+                                      type="text"
+                                      placeholder="الاسم الثلاثي"
+                                      value={newTeam.members?.[0]?.name || ''}
+                                      onChange={e => {
+                                        const updated = [...(newTeam.members || [{ name: '', gender: 'ذكر', stage: '' }])];
+                                        updated[0].name = e.target.value;
+                                        setNewTeam({...newTeam, members: updated});
+                                      }}
+                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold"
+                                      required
+                                    />
+                                  </div>
+                                  <div className="md:col-span-3 space-y-1">
+                                    <label className="text-[9px] font-black text-slate-400 uppercase">النوع</label>
+                                    <select 
+                                      value={newTeam.members?.[0]?.gender || 'ذكر'}
+                                      onChange={e => {
+                                        const updated = [...(newTeam.members || [{ name: '', gender: 'ذكر', stage: '' }])];
+                                        updated[0].gender = e.target.value as 'ذكر' | 'أنثى';
+                                        setNewTeam({...newTeam, members: updated});
+                                      }}
+                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold"
+                                      required
+                                    >
+                                      <option value="ذكر">ذكر</option>
+                                      <option value="أنثى">أنثى</option>
+                                    </select>
+                                  </div>
+                                  <div className="md:col-span-3 space-y-1">
+                                    <label className="text-[9px] font-black text-slate-400 uppercase">المرحلة</label>
+                                    <select 
+                                      value={newTeam.members?.[0]?.stage || ''}
+                                      onChange={e => {
+                                        const updated = [...(newTeam.members || [{ name: '', gender: 'ذكر', stage: '' }])];
+                                        updated[0].stage = e.target.value;
+                                        setNewTeam({...newTeam, members: updated});
+                                      }}
+                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold"
+                                      required
+                                    >
+                                      <option value="">المرحلة</option>
+                                      {activityStages.map((p: any) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                                    </select>
+                                  </div>
+                                </>
+                              )}
+                            </div>
                           </div>
-                        </div>
-
-                        <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الذكور</p>
-                            <input 
-                              type="number"
-                              min="0"
-                              value={newTeam.maleCount || 0}
-                              onChange={e => setNewTeam({...newTeam, maleCount: parseInt(e.target.value) || 0})}
-                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الإناث</p>
-                            <input 
-                              type="number"
-                              min="0"
-                              value={newTeam.femaleCount || 0}
-                              onChange={e => setNewTeam({...newTeam, femaleCount: parseInt(e.target.value) || 0})}
-                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
-                            />
-                          </div>
-                          <div className="space-y-2 flex flex-col justify-center">
-                            <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي العدد</p>
-                            <p className="text-2xl font-black text-primary">{(Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0)}</p>
-                          </div>
-                        </div>
+                        )}
 
                         <button 
                           type="submit" 
@@ -5801,21 +5815,32 @@ function App() {
                             </div>
 
                             <div className="space-y-3">
-                              <p className="text-[10px] font-black text-slate-400 uppercase">أعضاء الفريق ({t.members.length})</p>
-                              <div className="flex flex-wrap gap-2">
-                                {t.members.map((m, i) => (
-                                  <div key={i} className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold text-slate-600">
-                                    {m.name} <span className="text-slate-300 mx-1">|</span> {m.stage}
+                              {t.activityType === 'كورال' || t.activityType === 'ألحان' ? null : (
+                                <>
+                                  <p className="text-[10px] font-black text-slate-400 uppercase">المشترك</p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {t.members.map((m, i) => (
+                                      <div key={i} className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold text-slate-600">
+                                        {m.name} <span className="text-slate-300 mx-1">|</span> {m.stage}
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                              </div>
+                                </>
+                              )}
                             </div>
 
                             <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
-                              <div className="flex gap-4">
-                                <span className="text-[10px] font-black text-primary">ذكور: {t.members.filter(m => m.gender === 'ذكر').length}</span>
-                                <span className="text-[10px] font-black text-primary">إناث: {t.members.filter(m => m.gender === 'أنثى').length}</span>
-                              </div>
+                              {t.activityType === 'كورال' || t.activityType === 'ألحان' ? (
+                                <div className="flex gap-4">
+                                  <span className="text-[10px] font-black text-primary">ذكور: {t.maleCount || 0}</span>
+                                  <span className="text-[10px] font-black text-primary">إناث: {t.femaleCount || 0}</span>
+                                  <span className="text-[10px] font-black text-slate-500">إجمالي: {(t.maleCount || 0) + (t.femaleCount || 0)}</span>
+                                </div>
+                              ) : (
+                                <div className="flex gap-4">
+                                  <span className="text-[10px] font-black text-primary">النوع: {t.members[0]?.gender || '-'}</span>
+                                </div>
+                              )}
                               <span className="text-[10px] font-bold text-slate-400">{new Date(t.timestamp).toLocaleDateString('ar-EG')}</span>
                             </div>
                           </div>

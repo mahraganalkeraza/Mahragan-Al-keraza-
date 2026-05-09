@@ -222,7 +222,7 @@ service cloud.firestore {
                     (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
       allow update: if (isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName))) && 
                     isValidParticipant(incoming()) &&
-                    (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'stage', 'competitions']));
+                    (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'stage', 'competitions', 'timestamp']));
       allow delete: if isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName));
     }
 
@@ -265,7 +265,7 @@ service cloud.firestore {
       allow create: if isValidId(teamId) && 
                     isValidActivityTeam(incoming()) && 
                     (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
-      allow update: if isAdmin() && isValidActivityTeam(incoming());
+      allow update: if (isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName))) && isValidActivityTeam(incoming());
       allow delete: if isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName));
     }
 
