@@ -102,11 +102,27 @@ const createOMRSheetElement = async (
   header.appendChild(logoImg);
 
   const qrImg = document.createElement('img');
-  const qrPayload = student.id; // Just the UID to save space and be readable as Barcode
-  const qrDataUrl = await QRCode.toDataURL(qrPayload, { errorCorrectionLevel: 'H', margin: 0 });
+  const qrPayload = JSON.stringify({
+    id: student.id,
+    name: student.name,
+    church: student.churchName,
+    stage: student.stage
+  });
+  
+  // Set width to 600 for high resolution source, margin 4 for quiet zone, EC Level H for 30% recovery
+  const qrDataUrl = await QRCode.toDataURL(qrPayload, { 
+    errorCorrectionLevel: 'H', 
+    margin: 4,
+    width: 600,
+    color: {
+      dark: '#000000',
+      light: '#ffffff'
+    }
+  });
+  
   qrImg.src = qrDataUrl;
-  qrImg.style.width = '25mm';
-  qrImg.style.height = '25mm';
+  qrImg.style.width = '28mm'; // Slightly larger for better readability of high-density QR
+  qrImg.style.height = '28mm';
   header.appendChild(qrImg);
 
   wrapper.appendChild(header);
@@ -411,7 +427,7 @@ export default function OmrGenerator() {
         <ul className="list-disc pl-5 rtl:pr-5 text-sm font-bold text-indigo-600 space-y-1">
           <li><strong>معمارية رياضية:</strong> يتم توزيع الأسئلة في أعمدة متساوية استناداً إلى العدد، لتوسيط النطاق كلياً.</li>
           <li><strong>المحاذاة الميكانيكية:</strong> توفير 4 نقاط ارتكاء حادة (Reference Marks) لتوجيه برامج الماسح الضوئي (FormScanner) بشكل موثوق.</li>
-          <li>يتم حقن كود الطالب (UID) في <strong>شفرة QR</strong> عالية التباين يميناً، لسهولة وسرعة التعرّف على الطالب الكترونياً.</li>
+          <li>يتم حقن بيانات الطالب الكاملة (JSON) في <strong>شفرة QR</strong> معيارية (Level H) يميناً، لسهولة وسرعة التعرّف على الطالب الكترونياً عبر محركات OMR.</li>
         </ul>
       </div>
 

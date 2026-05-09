@@ -1205,11 +1205,54 @@ function App() {
     });
   };
 
-  const exportToExcel = (data: any[], fileName: string) => {
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
-    XLSX.writeFile(workbook, `${fileName}.xlsx`);
+  const exportToExcel = async (data: any[], fileName: string) => {
+    if (fileName === 'participants') {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = await import('file-saver');
+      const workbook = new ExcelJS.Workbook();
+      
+      const churches = Array.from(new Set(data.map(p => p.churchName || 'Unknown')));
+      
+      for (const church of churches) {
+        const safeSheetName = church.replace(/[\\\/?*\[\]]/g, '').substring(0, 31);
+        const sheet = workbook.addWorksheet(safeSheetName);
+        sheet.views = [{ rightToLeft: true }];
+        
+        sheet.columns = [
+          { header: 'Student ID', key: 'id', width: 25 },
+          { header: 'Triple Name', key: 'name', width: 30 },
+          { header: 'Stage/Level', key: 'stage', width: 20 },
+          { header: 'Church Name', key: 'churchName', width: 25 },
+          { header: 'Competition Type', key: 'competitions', width: 30 },
+          { header: 'Registration Date', key: 'timestamp', width: 20 },
+        ];
+        
+        const headerRow = sheet.getRow(1);
+        headerRow.font = { bold: true };
+        headerRow.alignment = { horizontal: 'center' };
+
+        const churchData = data.filter(p => (p.churchName || 'Unknown') === church);
+        
+        churchData.forEach(p => {
+          sheet.addRow({
+            id: String(p.id),
+            name: p.name || '',
+            stage: p.stage || '',
+            churchName: p.churchName || '',
+            competitions: Array.isArray(p.competitions) ? p.competitions.join(' - ') : (p.competitions || ''),
+            timestamp: p.timestamp ? new Date(p.timestamp).toLocaleDateString('ar-EG') : ''
+          });
+        });
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([buffer]), `${fileName}_${new Date().getTime()}.xlsx`);
+    } else {
+      const worksheet = XLSX.utils.json_to_sheet(data);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+      XLSX.writeFile(workbook, `${fileName}.xlsx`);
+    }
   };
 
   const handleResultsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -141,24 +141,32 @@ export const exportChurchReport = async (churchName: string, results: Result[], 
 
 export const exportParticipantsReport = async (participants: Participant[], title: string = 'بيانات المشتركين') => {
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('المشتركين');
+  
+  // Group by church name to support Multi-Sheet explicitly as requested
+  const churches = Array.from(new Set(participants.map(p => p.churchName || 'Unknown')));
+  for (const church of churches) {
+    const safeSheetName = church.replace(/[\\\/?*\[\]]/g, '').substring(0, 31);
+    const sheet = workbook.addWorksheet(safeSheetName);
+    
+    // [Student ID] | [Triple Name] | [Stage/Level] | [Church Name] | [Competition Type] | [Registration Date]
+    const headers = ['Student ID', 'Triple Name', 'Stage/Level', 'Church Name', 'Competition Type', 'Registration Date'];
+    applyProfessionalStyles(sheet, `${title} - ${church}`, headers);
 
-  const headers = ['م', 'الاسم', 'المرحلة', 'المسابقات', 'اسم الكنيسة', 'تاريخ التسجيل'];
-  applyProfessionalStyles(sheet, title, headers);
+    const churchParticipants = participants.filter(p => (p.churchName || 'Unknown') === church);
+    churchParticipants.forEach((p) => {
+      sheet.addRow([
+        String(p.id),
+        p.name || '-',
+        p.stage || '-',
+        p.churchName || '-',
+        p.competitions ? p.competitions.join(' - ') : '-',
+        p.timestamp ? new Date(p.timestamp).toLocaleDateString('ar-EG') : '-'
+      ]);
+    });
 
-  participants.forEach((p, index) => {
-    sheet.addRow([
-      index + 1,
-      p.name,
-      p.stage,
-      p.competitions.join(' - '),
-      p.churchName,
-      new Date(p.timestamp).toLocaleDateString('ar-EG')
-    ]);
-  });
-
-  applyDataStyles(sheet);
-  autoFitColumns(sheet);
+    applyDataStyles(sheet);
+    autoFitColumns(sheet);
+  }
 
   const buffer = await workbook.xlsx.writeBuffer();
   saveAs(new Blob([buffer]), `Participants_Report_${new Date().getTime()}.xlsx`);
@@ -168,24 +176,29 @@ export const exportAllDataReport = async (participants: Participant[], activityT
   const workbook = new ExcelJS.Workbook();
   
   // 1. Participants Sheet
-  const pSheet = workbook.addWorksheet('المشتركين');
-  const pHeaders = ['م', 'اسم الكنيسة', 'المكان/القرية', 'اسم المشترك', 'المرحلة', 'المسابقات', 'تاريخ التسجيل'];
-  applyProfessionalStyles(pSheet, 'كافة بيانات المشتركين', pHeaders);
-  
-  participants.forEach((p, index) => {
-    pSheet.addRow([
-      index + 1,
-      p.churchName || '-',
-      p.country || '-',
-      p.name || '-',
-      p.stage || '-',
-      p.competitions ? p.competitions.join(' - ') : '-',
-      new Date(p.timestamp).toLocaleDateString('ar-EG')
-    ]);
-  });
-  
-  applyDataStyles(pSheet);
-  autoFitColumns(pSheet);
+  // Group by church to support Multi-Sheet
+  const churches = Array.from(new Set(participants.map(p => p.churchName || 'Unknown')));
+  for (const church of churches) {
+    const safeSheetName = `المشتركين - ${church.replace(/[\\\/?*\[\]]/g, '').substring(0, 18)}`;
+    const pSheet = workbook.addWorksheet(safeSheetName);
+    const pHeaders = ['Student ID', 'Triple Name', 'Stage/Level', 'Church Name', 'Competition Type', 'Registration Date'];
+    applyProfessionalStyles(pSheet, `كافة بيانات المشتركين - ${church}`, pHeaders);
+    
+    const churchParticipants = participants.filter(p => (p.churchName || 'Unknown') === church);
+    churchParticipants.forEach((p) => {
+      pSheet.addRow([
+        String(p.id),
+        p.name || '-',
+        p.stage || '-',
+        p.churchName || '-',
+        p.competitions ? p.competitions.join(' - ') : '-',
+        p.timestamp ? new Date(p.timestamp).toLocaleDateString('ar-EG') : '-'
+      ]);
+    });
+    
+    applyDataStyles(pSheet);
+    autoFitColumns(pSheet);
+  }
 
   // 2. Teams Sheet
   const tSheet = workbook.addWorksheet('الفرق');
