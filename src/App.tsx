@@ -409,7 +409,7 @@ const ALL_ADMIN_TABS = [
   { id: 'participants', label: 'إدارة المشتركين', icon: Users },
   { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
   { id: 'results', label: 'النتائج', icon: Award },
-  { id: 'omr', label: 'بابل شيت OMR', icon: FileScan },
+  { id: 'omr', label: 'البابل شيت والكيو أر', icon: FileScan },
   { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
   { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
   { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },

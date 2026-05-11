@@ -400,9 +400,21 @@ export const LiveExamGateway: React.FC = () => {
     setDeviceInfo(prev => ({ ...prev, type }));
   }, []);
 
-  const fetchStudentAndExam = async (studentId: string) => {
+  const fetchStudentAndExam = async (input: string) => {
     try {
       setIsLoading(true);
+      let studentId = input;
+      
+      // Attempt to parse JSON if it looks like our payload
+      try {
+        if (input.startsWith('{')) {
+          const payload = JSON.parse(input);
+          studentId = payload.studentID || payload.id || input;
+        }
+      } catch (e) {
+        console.warn('QR scan not a JSON payload or parsing failed, using raw string');
+      }
+
       const resultsRef = collection(db, 'results');
       const rSnap = await getDocs(resultsRef);
       const st = rSnap.docs.find(d => d.data().serial === studentId || d.id === studentId);
