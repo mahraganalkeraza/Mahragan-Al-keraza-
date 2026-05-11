@@ -236,6 +236,96 @@ const createOMRSheetElement = async (
   return wrapper;
 };
 
+const createQRCardPageElement = async (students: Participant[]) => {
+  const wrapper = document.createElement('div');
+  wrapper.style.width = '210mm'; // A4 width
+  wrapper.style.height = '297mm'; // A4 height
+  wrapper.style.backgroundColor = 'white';
+  wrapper.style.position = 'fixed'; // offscreen
+  wrapper.style.top = '-9999px';
+  wrapper.style.left = '-10000px';
+  wrapper.style.padding = '10mm';
+  wrapper.style.display = 'grid';
+  wrapper.style.gridTemplateColumns = 'repeat(4, 1fr)';
+  wrapper.style.gridTemplateRows = 'repeat(5, 1fr)';
+  wrapper.style.gap = '4mm';
+  wrapper.style.direction = 'rtl';
+  wrapper.style.boxSizing = 'border-box';
+  wrapper.style.fontFamily = 'Arial, sans-serif';
+  wrapper.style.zIndex = '-9999';
+
+  for (const s of students) {
+    const card = document.createElement('div');
+    card.style.border = '1px solid #e2e8f0';
+    card.style.borderRadius = '4mm';
+    card.style.padding = '3mm';
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.alignItems = 'center';
+    card.style.justifyContent = 'center';
+    card.style.backgroundColor = 'white';
+    card.style.boxSizing = 'border-box';
+    card.style.overflow = 'hidden';
+    card.style.height = '100%';
+
+    // QR
+    const qrImg = document.createElement('img');
+    const qrPayload = JSON.stringify({
+        studentID: s.id,
+        fullName: s.name,
+        churchName: s.churchName,
+        stage: s.stage
+    });
+    qrImg.src = await QRCode.toDataURL(qrPayload, { margin: 1, width: 300 });
+    qrImg.style.width = '32mm';
+    qrImg.style.height = '32mm';
+    qrImg.style.marginBottom = '2mm';
+    card.appendChild(qrImg);
+
+    // Name with scaling logic approximate
+    const nameLabel = document.createElement('div');
+    nameLabel.innerText = s.name;
+    nameLabel.style.fontSize = s.name.length > 20 ? '10px' : '13px';
+    nameLabel.style.fontWeight = '900';
+    nameLabel.style.textAlign = 'center';
+    nameLabel.style.width = '100%';
+    nameLabel.style.whiteSpace = 'nowrap';
+    nameLabel.style.overflow = 'hidden';
+    nameLabel.style.textOverflow = 'ellipsis';
+    nameLabel.style.color = '#1e293b';
+    card.appendChild(nameLabel);
+
+    // ID
+    const idLabel = document.createElement('div');
+    idLabel.innerText = `ID: ${s.serial || s.id.substring(0, 8)}`;
+    idLabel.style.fontSize = '9px';
+    idLabel.style.fontWeight = 'bold';
+    idLabel.style.color = '#64748b';
+    idLabel.style.marginTop = '1mm';
+    card.appendChild(idLabel);
+
+    // Details (Church & Stage)
+    const detailsLabel = document.createElement('div');
+    detailsLabel.innerText = `${s.churchName} - ${s.stage}`;
+    detailsLabel.style.fontSize = '8px';
+    detailsLabel.style.fontWeight = 'bold';
+    detailsLabel.style.color = '#94a3b8';
+    detailsLabel.style.textAlign = 'center';
+    detailsLabel.style.width = '100%';
+    detailsLabel.style.whiteSpace = 'nowrap';
+    detailsLabel.style.overflow = 'hidden';
+    detailsLabel.style.textOverflow = 'ellipsis';
+    detailsLabel.style.marginTop = '1mm';
+    card.appendChild(detailsLabel);
+
+    wrapper.appendChild(card);
+  }
+
+  document.body.appendChild(wrapper);
+  await new Promise(r => setTimeout(r, 200)); 
+  return wrapper;
+};
+
 export default function OmrGenerator() {
   const [mode, setMode] = useState<'omr' | 'qr'>('omr');
   const [churches, setChurches] = useState<string[]>([]);
@@ -363,61 +453,36 @@ export default function OmrGenerator() {
   const generateQRPDF = async (students: Participant[]) => {
     const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
     const totalStudents = students.length;
+    const cardsPerPage = 20; // 4x5
+    const totalPagesNum = Math.ceil(totalStudents / cardsPerPage);
+    
     setProgress({ current: 0, total: totalStudents, batch: 1, totalBatches: 1 });
 
-    const cols = 4;
-    const rows = 5;
-    const cardWidth = 45;
-    const cardHeight = 55;
-    const marginX = 10;
-    const marginY = 10;
-
-    for (let i = 0; i < students.length; i++) {
-        const s = students[i];
-        const pageIdx = i % (cols * rows);
-        const col = pageIdx % cols;
-        const row = Math.floor(pageIdx / cols);
-
-        if (i > 0 && pageIdx === 0) doc.addPage();
-
-        const x = marginX + col * (cardWidth + 2);
-        const y = marginY + row * (cardHeight + 2);
-
-        // Card Border
-        doc.setDrawColor(220, 220, 220);
-        doc.roundedRect(x, y, cardWidth, cardHeight, 3, 3);
-
-        // QR
-        const qrPayload = JSON.stringify({
-            studentID: s.id,
-            fullName: s.name,
-            churchName: s.churchName,
-            stage: s.stage
+    for (let pIdx = 0; pIdx < totalPagesNum; pIdx++) {
+        const batch = students.slice(pIdx * cardsPerPage, (pIdx + 1) * cardsPerPage);
+        const domElement = await createQRCardPageElement(batch);
+        
+        // Use html2canvas to render the entire page of cards
+        const canvas = await html2canvas(domElement, { 
+            scale: 2, // 2x for good quality without huge file size
+            useCORS: true, 
+            allowTaint: true,
+            logging: false
         });
-        const qrDataUrl = await QRCode.toDataURL(qrPayload, { margin: 1, width: 200 });
-        doc.addImage(qrDataUrl, 'PNG', x + 7.5, y + 5, 30, 30);
+        
+        const imgData = canvas.toDataURL('image/jpeg', 0.9);
+        doc.addImage(imgData, 'JPEG', 0, 0, 210, 297);
 
-        // Text labels
-        doc.setR2L(true);
-        doc.setFontSize(8);
-        doc.setFont('Arial', 'bold');
-        doc.setTextColor(50, 50, 50);
-        doc.text(s.name.substring(0, 25), x + cardWidth/2, y + 40, { align: 'center' });
-        doc.setFontSize(6);
-        doc.text(`ID: ${s.serial || s.id.substring(0, 8)}`, x + cardWidth/2, y + 44, { align: 'center' });
-        doc.setFontSize(6);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`${s.churchName} - ${s.stage}`, x + cardWidth/2, y + 48, { align: 'center' });
+        document.body.removeChild(domElement);
 
-        if (i % 10 === 0) {
-            setProgress(p => ({ ...p, current: i + 1 }));
-            await new Promise(r => setTimeout(r, 0));
-        }
+        if (pIdx < totalPagesNum - 1) doc.addPage();
+        
+        setProgress(prev => ({ ...prev, current: Math.min((pIdx + 1) * cardsPerPage, totalStudents) }));
+        await new Promise(r => setTimeout(r, 100)); // UI responsiveness
     }
 
-    setProgress(p => ({ ...p, current: totalStudents }));
     const timeStamp = new Date().getTime();
-    doc.save(`Student_QRs_${selectedChurch}_${timeStamp}.pdf`);
+    doc.save(`QR_Cards_${selectedChurch === 'الكل' ? 'All' : selectedChurch}_${timeStamp}.pdf`);
   };
 
   return (

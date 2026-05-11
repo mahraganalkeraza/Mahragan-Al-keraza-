@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where } from 'firebase/firestore';
 import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet } from 'lucide-react';
 import { QRScanner } from './QRScanner';
 
@@ -401,29 +401,68 @@ export const LiveExamGateway: React.FC = () => {
   }, []);
 
   const fetchStudentAndExam = async (input: string) => {
+    console.log('--- SCANNER DEBUG: Input Received ---', input);
     try {
       setIsLoading(true);
-      let studentId = input;
+      let studentId = input.trim();
+      let studentNameFromPayload = '';
       
       // Attempt to parse JSON if it looks like our payload
       try {
-        if (input.startsWith('{')) {
+        if (input.includes('{')) {
           const payload = JSON.parse(input);
-          studentId = payload.studentID || payload.id || input;
+          studentId = (payload.studentID || payload.id || input).toString().trim();
+          studentNameFromPayload = payload.fullName || '';
+          console.log('--- SCANNER DEBUG: JSON Payload Parsed ---', payload);
         }
       } catch (e) {
         console.warn('QR scan not a JSON payload or parsing failed, using raw string');
       }
 
-      const resultsRef = collection(db, 'results');
-      const rSnap = await getDocs(resultsRef);
-      const st = rSnap.docs.find(d => d.data().serial === studentId || d.id === studentId);
-      if (!st) {
+      console.log('--- SCANNER DEBUG: Searching for studentId ---', studentId);
+
+      let studentData: any = null;
+
+      // Step 1: Try direct ID match in participants (Source of Truth)
+      const partDocRef = doc(db, 'participants', studentId);
+      const partSnap = await getDoc(partDocRef);
+      
+      if (partSnap.exists()) {
+        studentData = { id: partSnap.id, ...(partSnap.data() as object) };
+        console.log('--- SCANNER DEBUG: Found in participants by ID ---', studentData);
+      } else {
+        // Step 2: Try serial match in participants
+        const partRef = collection(db, 'participants');
+        const qSerial = query(partRef, where('serial', '==', studentId));
+        const qSnap = await getDocs(qSerial);
+        
+        if (!qSnap.empty) {
+          const docFound = qSnap.docs[0];
+          studentData = { id: docFound.id, ...(docFound.data() as object) };
+          console.log('--- SCANNER DEBUG: Found in participants by Serial ---', studentData);
+        }
+      }
+
+      // Step 3: Check Results collection for existing scores (Sync identity)
+      if (studentData) {
+        const resDocRef = doc(db, 'results', studentData.id);
+        const resSnap = await getDoc(resDocRef);
+        
+        if (resSnap.exists()) {
+           // Merge result data (scores) into student data
+           studentData = { ...studentData, ...(resSnap.data() as object) };
+           console.log('--- SCANNER DEBUG: Merged with existing results ---', resSnap.data());
+        } else {
+           console.log('--- SCANNER DEBUG: No results doc yet, will create on submission ---');
+        }
+      }
+
+      if (!studentData) {
         setIsLoading(false);
-        return alert('طالب غير موجود');
+        console.error('--- SCANNER DEBUG: NOT FOUND ---');
+        return alert(`لم يتم العثور على طالب بالكود: ${studentId}\nتأكد من صحة الكود أو تواصل مع المسئول.`);
       }
       
-      const data = {id: st.id, ...st.data()} as any;
       const deviceId = localStorage.getItem('coptic_device_id');
       
       // Log access with fingerprint
@@ -431,21 +470,24 @@ export const LiveExamGateway: React.FC = () => {
         ip: deviceInfo.ip,
         userAgent: navigator.userAgent,
         timestamp: new Date().toISOString(),
-        studentId: data.id,
-        studentName: data.studentName,
-        churchName: data.churchName,
+        studentId: studentData.id,
+        studentName: studentData.name || studentData.studentName || studentNameFromPayload,
+        churchName: studentData.churchName,
         deviceId: deviceId,
         deviceType: deviceInfo.type,
         action: 'IDENTIFIED'
       });
 
-      setActiveStudent(data);
+      // Normalize studentName field
+      if (!studentData.studentName) studentData.studentName = studentData.name;
+
+      setActiveStudent(studentData);
       setIsScanning(false);
       setIsLoading(false);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      console.error('--- SCANNER DEBUG: ERROR ---', e);
       setIsLoading(false);
-      alert('خطأ في استرجاع البيانات');
+      alert('خطأ في استرجاع البيانات: ' + (e.message || 'Error occurred'));
     }
   };
 
@@ -556,7 +598,14 @@ export const LiveExamGateway: React.FC = () => {
     const field = scoreFieldMap[selectedCompetition];
 
     try {
-      await updateDoc(doc(db, 'results', activeStudent.id), {
+      // Use setDoc with merge: true to handle missing results documents
+      await setDoc(doc(db, 'results', activeStudent.id), {
+        studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
+        churchName: activeStudent.churchName || 'غير محدد',
+        stage: activeExam.stage,
+        score: totalScore, // Default main score, might be overwritten by specific competitions
+        grade: '--',
+        timestamp: new Date().toISOString(),
         [field]: totalScore,
         [`data.${selectedCompetition}`]: totalScore,
         submissionInfo: {
@@ -566,14 +615,15 @@ export const LiveExamGateway: React.FC = () => {
           userAgent: navigator.userAgent,
           competitionType: selectedCompetition
         }
-      });
+      }, { merge: true });
+      
       setIsExamCompleted(true);
       setIsLoading(false);
       localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      console.error('Submission error:', e);
       setIsLoading(false);
-      alert('فشل في حفظ الدرجة');
+      alert('فشل في حفظ الدرجة: ' + (e.message || 'Error occurred'));
     }
   };
 
