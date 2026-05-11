@@ -60,6 +60,7 @@ export interface ActivityTeam {
   femaleCount: number;
   choirLevel?: string;
   instrumentType?: string;
+  performanceType?: string;
   timestamp: string;
   year?: string;
 }
@@ -72,13 +73,35 @@ export interface Result {
   stage: string;
   academicScore?: number;
   memorizationScore?: number;
+  copticL1Score?: number;
+  copticL2Score?: number;
   q1Score?: number;
   qScore?: number;
-  score: number;
-  grade: string;
-  attendance?: string;
-  notes?: string;
+  score?: number;
+  grade?: string;
+  data?: Record<string, any>;
   timestamp: string;
+  year?: string;
+}
+
+export interface Question {
+  id: string;
+  type: 'mcq' | 'boolean' | 'matching' | 'fill';
+  text: string;
+  options: string[];
+  matchingPairs?: { left: string, right: string }[];
+  correctAnswers: string[];
+  points: number;
+}
+
+export interface Exam {
+  id: string;
+  stage: string;
+  competitionType: 'دراسي' | 'محفوظات' | 'قبطي مستوى أول' | 'قبطي مستوى ثاني';
+  model: string; // A, B, C
+  questions: Question[];
+  isActive: boolean;
+  updatedAt: string;
   year?: string;
 }
 

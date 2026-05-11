@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, Calendar, Award, Calculator, ShieldCheck } from 'lucide-react';
+import { Users, BookOpen, Award, Calculator, ShieldCheck } from 'lucide-react';
 
 interface QuickActionsHubProps {
   userRole: 'admin' | 'church' | 'guest';
@@ -8,7 +8,7 @@ interface QuickActionsHubProps {
 
 const QuickActionsHub: React.FC<QuickActionsHubProps> = ({ userRole, onAction }) => {
   const actions = [
-    { id: 'schedule', title: 'جداول الامتحانات', description: 'عرض مواعيد الامتحانات', icon: Calendar },
+    { id: 'exams_portal', title: 'امتحانات الأونلاين', description: 'بوابة دخول الامتحانات الإلكترونية', icon: BookOpen },
     { id: 'results', title: 'نتائج المسابقات', description: 'عرض نتائج المسابقات', icon: Award },
     { id: 'calculator', title: 'حاسبة الكتب', description: 'حساب تكلفة الكتب', icon: Calculator },
   ];

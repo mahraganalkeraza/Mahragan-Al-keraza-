@@ -290,12 +290,15 @@ export default function OmrGenerator() {
       const q = conditions.length > 0 ? query(participantsRef, ...conditions) : query(participantsRef);
       
       const snap = await getDocs(q);
-      const students = snap.docs.map(doc => ({
+      const allStudents = snap.docs.map(doc => ({
         id: doc.id,
         name: doc.data().name || 'بدون اسم',
         churchName: doc.data().churchName || 'غير محدد',
         stage: doc.data().stage || 'غير محدد'
       })) as Participant[];
+
+      // Filter to only include Middle School and above to secure OMR logic
+      const students = allStudents.filter(s => /إعدادي|اعدادي|إعدادى|اعدادى|ثانوي|ثانوى|خريجين|جامعة|جامعه/i.test(s.stage));
 
       if (students.length === 0) {
         setError("لا يوجد طلاب يطابقون خيارات البحث.");
@@ -399,8 +402,10 @@ export default function OmrGenerator() {
             value={selectedStage}
             onChange={(e) => setSelectedStage(e.target.value)}
           >
-            <option value="الكل">كل المراحل</option>
-            {levels.map((s, i) => <option key={i} value={s}>{s}</option>)}
+            <option value="الكل">كل المراحل المسموح لها</option>
+            {levels
+              .filter(s => /إعدادي|اعدادي|إعدادى|اعدادى|ثانوي|ثانوى|خريجين|جامعة|جامعه/i.test(s))
+              .map((s, i) => <option key={i} value={s}>{s}</option>)}
           </select>
         </div>
 

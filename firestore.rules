@@ -110,7 +110,7 @@ service cloud.firestore {
 
     function isValidNews(data) {
       return data.keys().hasAll(['title', 'content', 'imageUrl', 'timestamp']) &&
-             data.keys().size() <= 5 &&
+             data.keys().size() <= 10 &&
              data.title is string && data.title.size() > 0 && data.title.size() < 500 &&
              data.content is string && data.content.size() > 0 && data.content.size() < 10000 &&
              isValidUrl(data.imageUrl) &&
@@ -120,7 +120,7 @@ service cloud.firestore {
 
     function isValidExamLink(data) {
       return data.keys().hasAll(['stage', 'url']) &&
-             data.keys().size() <= 3 &&
+             data.keys().size() <= 6 &&
              data.stage is string && data.stage.size() < 100 &&
              isValidUrl(data.url) &&
              (!('year' in data) || data.year is string);
@@ -152,6 +152,28 @@ service cloud.firestore {
              data.location is string &&
              (!('year' in data) || data.year is string) &&
              (!('id' in data) || data.id is string);
+    }
+
+    function isValidExam(data) {
+      return data.keys().hasAll(['stage', 'model', 'questions']) &&
+             data.keys().size() <= 10 &&
+             data.stage is string && data.stage.size() < 100 &&
+             data.model is string && data.model.size() < 10 &&
+             data.questions is list && data.questions.size() <= 100 &&
+             (!('isActive' in data) || data.isActive is bool) &&
+             (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
+    function isValidExamLog(data) {
+      return data.keys().hasAll(['studentId', 'timestamp']) &&
+             data.keys().size() <= 15 &&
+             data.studentId is string && data.timestamp is string &&
+             (!('churchName' in data) || data.churchName is string) &&
+             (!('userAgent' in data) || data.userAgent is string) &&
+             (!('ip' in data) || data.ip is string) &&
+             (!('studentName' in data) || data.studentName is string) &&
+             (!('deviceId' in data) || data.deviceId is string) &&
+             (!('deviceType' in data) || data.deviceType is string);
     }
 
     function isValidCarouselItem(data) {
@@ -249,9 +271,23 @@ service cloud.firestore {
 
     match /results/{resultId} {
       allow read: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
-      allow create, update: if isAdmin() && isValidResult(incoming());
-      allow delete: if isAdmin();
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        // Restricted update for exam submissions
+        (!('academicScore' in existing()) || existing().academicScore == null || existing().academicScore == 0) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['academicScore', 'data', 'submissionInfo']) &&
+        incoming().academicScore is number
+      );
+    }
+
+    match /exams/{examId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidExam(incoming());
+    }
+
+    match /exam_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isValidExamLog(incoming());
     }
 
     match /schedules/{scheduleId} {
@@ -293,6 +329,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /hymnStages/{stageId} {
+      allow read: if true;
+      allow write: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     match /competitions/{compId} {
       allow read: if true;
       allow write: if isAdmin();
@@ -319,6 +361,11 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isAdmin() && isValidAppConfig(incoming());
       allow delete: if isAdmin();
+    }
+
+    match /settings/results_headers {
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     match /settings/validation {

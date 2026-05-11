@@ -92,11 +92,41 @@
         "studentName": { "type": "string" },
         "churchName": { "type": "string" },
         "stage": { "type": "string" },
-        "score": { "type": "number" },
+        "academicScore": { "type": "number" },
+        "memorizationScore": { "type": "number" },
+        "q1Score": { "type": "number" },
+        "q2Score": { "type": "number" },
+        "activities": { "type": "array", "items": { "type": "string" } },
         "grade": { "type": "string" },
         "timestamp": { "type": "string" }
       },
-      "required": ["studentName", "churchName", "stage", "score", "grade", "timestamp"]
+      "required": ["studentName", "churchName", "stage"]
+    },
+    "Exam": {
+      "title": "Exam Template",
+      "description": "A set of questions for a specific stage/model",
+      "type": "object",
+      "properties": {
+        "stage": { "type": "string" },
+        "model": { "type": "string" },
+        "questions": { "type": "array", "items": { "type": "object" } },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["stage", "model", "questions"]
+    },
+    "ExamLog": {
+      "title": "Exam Access Log",
+      "description": "Log of students accessing the exam gateway",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "churchName": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "userAgent": { "type": "string" },
+        "ip": { "type": "string" }
+      },
+      "required": ["studentId", "timestamp"]
     },
     "Schedule": {
       "title": "Exam Schedule",
@@ -143,6 +173,24 @@
         "order": { "type": "number" }
       },
       "required": ["url", "title"]
+    },
+    "ActivityStage": {
+      "title": "Activity Stage",
+      "description": "Definition of an activity stage",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "HymnStage": {
+      "title": "Hymn Stage",
+      "description": "Definition of a hymn stage",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "required": ["name"]
     },
     "AppConfig": {
       "title": "App Configuration",
@@ -203,6 +251,22 @@
     "/carousel/{carouselId}": {
       "schema": "CarouselItem",
       "description": "Home slider items"
+    },
+    "/activityStages/{stageId}": {
+      "schema": "ActivityStage",
+      "description": "Activity stages"
+    },
+    "/hymnStages/{stageId}": {
+      "schema": "HymnStage",
+      "description": "Hymn stages"
+    },
+    "/exams/{examId}": {
+      "schema": "Exam",
+      "description": "Exam templates"
+    },
+    "/exam_logs/{logId}": {
+      "schema": "ExamLog",
+      "description": "Live access logs"
     }
   }
 }

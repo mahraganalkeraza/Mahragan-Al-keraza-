@@ -49,6 +49,11 @@ import {
   Loader2,
   Save,
   ShoppingCart,
+  Activity,
+  Wallet,
+  TrendingUp,
+  Clock,
+  BarChart3,
   FileScan,
   FileSpreadsheet,
   Sliders,
@@ -56,6 +61,9 @@ import {
   ChevronDown
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
+import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
+import { LiveExamMonitoring } from './components/LiveExamMonitoring';
+import { ResultsViewer } from './components/ResultsViewer';
 import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
 import { motion, AnimatePresence } from 'motion/react';
@@ -93,6 +101,7 @@ import {
   where, 
   addDoc, 
   updateDoc, 
+  deleteField,
   deleteDoc,
   writeBatch,
   handleFirestoreError,
@@ -128,7 +137,7 @@ import {
   sortStages
   } from './constants';
 
-import { exportFullDioceseReport, exportChurchReport, exportParticipantsReport, exportAllDataReport, exportResultsToExcel } from './services/excelService';
+import { exportUnifiedExcel, downloadMasterTemplate } from './services/excelManager';
 import DynamicAdminSettings from './components/DynamicAdminSettings';
 // @ts-ignore
 import logo from './by-logo.jpeg';
@@ -405,7 +414,8 @@ const ALL_ADMIN_TABS = [
   { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
   { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
   { id: 'calculator', label: 'حاسبة الكتب', icon: Calculator },
-  { id: 'exams_management', label: 'روابط الامتحانات', icon: BookOpen },
+  { id: 'exams_management', label: 'إدارة الامتحانات', icon: BookOpen },
+  { id: 'exams_live', label: 'المتابعة المباشرة', icon: Activity },
   { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
   { id: 'dynamic_management', label: 'النظام الديناميكي', icon: Settings },
   { id: 'system_settings', label: 'إعدادات المنصة', icon: Settings }
@@ -436,6 +446,7 @@ function App() {
   const [userProfile, setUserProfile] = useState<any>(initialProfile);
   const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
   const [activityStages, setActivityStages] = useState<any[]>([]);
+  const [hymnStages, setHymnStages] = useState<any[]>([]);
 
   // Customization State
   const [isCustomizeTabsModalOpen, setIsCustomizeTabsModalOpen] = useState(false);
@@ -503,6 +514,11 @@ function App() {
       setActivityStages(fetchedStages);
     }, (error) => console.error("Error syncing activity stages:", error));
 
+    const unsubscribeHymnStages = onSnapshot(collection(db, 'hymnStages'), (snapshot) => {
+      const fetchedHymnStages = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setHymnStages(fetchedHymnStages);
+    }, (error) => console.error("Error syncing hymn stages:", error));
+
     const unsubscribeValidation = onSnapshot(doc(db, 'settings', 'validation'), (snapshot) => {
       if (snapshot.exists()) {
         const valData = snapshot.data();
@@ -519,6 +535,7 @@ function App() {
       unsubscribeChurches();
       unsubscribeLevels();
       unsubscribeActivityStages();
+      unsubscribeHymnStages();
       unsubscribeValidation();
     };
   }, []);
@@ -550,7 +567,17 @@ function App() {
   const [newsFilterDate, setNewsFilterDate] = useState('');
   const [resultsFilterStage, setResultsFilterStage] = useState('الكل');
   const [resultsFilterGrade, setResultsFilterGrade] = useState('الكل');
-  const [resultsSortOrder, setResultsSortOrder] = useState<'rank' | 'default'>('default');
+  const [isScanning, setIsScanning] = useState(false);
+
+  const handleScanSuccess = async (decodedText: string) => {
+    setIsScanning(false);
+    // 1. Fetch student data by ID
+    // 2. Validate submitted status
+    // 3. Save log to Firestore
+    // 4. Redirect to pre-filled Google Form
+    console.log("Scanned:", decodedText);
+    alert("Scanned: " + decodedText);
+  };
   const [participantSearch, setParticipantSearch] = useState('');
   const [calculatorSettings, setCalculatorSettings] = useState<any[]>([]);
   const [isCalculatorLoading, setIsCalculatorLoading] = useState(true);
@@ -1255,6 +1282,18 @@ function App() {
     }
   };
 
+  const EXPECTED_HEADERS = [
+    'توقيت التسجيل',
+    'الرقم التعريفي',
+    'الاسم',
+    'الكنيسة/البلد',
+    'النوع',
+    'دراسي',
+    'محفوظات',
+    'قبطي مستوى 1',
+    'قبطي مستوى 2'
+  ];
+
   const handleResultsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1265,9 +1304,28 @@ function App() {
         try {
           const bstr = evt.target?.result;
           const wb = XLSX.read(bstr, { type: 'binary' });
-          const wsname = wb.SheetNames[0];
+          const wsname = wb.SheetNames[0]; // Master sheet
           const ws = wb.Sheets[wsname];
-          const data = XLSX.utils.sheet_to_json(ws);
+          const data = XLSX.utils.sheet_to_json(ws) as any[];
+          const headers = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as string[];
+          
+          if (!headers || headers.length < EXPECTED_HEADERS.length) {
+            alert('Invalid Schema: Please use the updated Master Template.');
+            e.target.value = '';
+            return;
+          }
+
+          for (let i = 0; i < EXPECTED_HEADERS.length; i++) {
+            if (headers[i] !== EXPECTED_HEADERS[i]) {
+               alert(`Invalid Schema: Expected ${EXPECTED_HEADERS[i]} at column ${i + 1}, found ${headers[i]}. Please use the updated Master Template.`);
+               e.target.value = '';
+               return;
+            }
+          }
+          
+          if (headers && headers.length > 0) {
+            await setDoc(doc(db, 'settings', 'results_headers'), { headers, updatedForYear: activeYear });
+          }
           
           const chunks = [];
           for (let i = 0; i < data.length; i += 400) {
@@ -1277,44 +1335,23 @@ function App() {
           for (const chunk of chunks) {
             const batch = writeBatch(db);
             chunk.forEach((row: any) => {
-              const studentNameVal = row['اسم المشترك رباعي'] || row['الاسم'] || row['studentName'] || '';
+              const studentNameVal = row['الاسم'] || '';
               if (!studentNameVal || String(studentNameVal).trim() === '') return;
               
               const resultRef = doc(collection(db, 'results'));
               
-              const churchNameVal = row['اسم البلد'] || row['الكنيسة'] || row['churchName'] || '';
-              const stageVal = row['نوع المرحلة'] || row['المرحلة'] || row['stage'] || '';
-              const sanitizeNum = (val: any) => {
-                const num = Number(val);
-                return isNaN(num) ? 0 : num;
-              };
-              
-              const academicScore = sanitizeNum(row['دراسي']);
-              const memorizationScore = sanitizeNum(row['محفوظ']);
-              const q1Score = sanitizeNum(row['ق١']);
-              const qScore = sanitizeNum(row['ق']);
-              
-              let rawTotal = row['المجموع'] || row['الدرجة'] || row['score'];
-              let finalScore = 0;
-              if (rawTotal !== undefined && rawTotal !== null) {
-                 finalScore = sanitizeNum(rawTotal);
-              } else {
-                 finalScore = academicScore + memorizationScore + q1Score + qScore;
-              }
-              const totalScore = finalScore;
+              const churchNameVal = row['الكنيسة/البلد'] || '';
+              const idVal = row['الرقم التعريفي'] || '';
               
               batch.set(resultRef, {
-                serial: row['م'] ? String(row['م']) : '',
+                serial: String(idVal),
                 churchName: String(churchNameVal),
                 studentName: String(studentNameVal),
-                stage: String(stageVal),
-                academicScore,
-                memorizationScore,
-                q1Score,
-                qScore,
-                score: totalScore,
-                grade: row['التقدير'] ? String(row['التقدير']) : (row['grade'] ? String(row['grade']) : ''),
-                timestamp: new Date().toISOString(),
+                stage: '', // Stage might not be in this schema, keeping it blank or we could infer
+                score: 0,
+                grade: '',
+                data: row,
+                timestamp: row['توقيت التسجيل'] ? String(row['توقيت التسجيل']) : new Date().toISOString(),
                 year: String(activeYear)
               });
             });
@@ -1583,8 +1620,8 @@ function App() {
     XLSX.writeFile(workbook, `detailed_orders_${new Date().toLocaleDateString()}.xlsx`);
   };
 
-  const exportAllRegistrationsToExcel = () => {
-    exportAllDataReport(participants, activityTeams, orders);
+  const exportAllRegistrationsToExcel = async () => {
+    await exportUnifiedExcel();
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -1957,6 +1994,7 @@ function App() {
         members: [{ name: '', gender: 'ذكر', stage: '' }],
         choirLevel: '',
         instrumentType: '',
+        performanceType: '',
         maleCount: 0,
         femaleCount: 0
       });
@@ -1983,6 +2021,7 @@ function App() {
       members: team.members?.length ? team.members : [{ name: '', gender: 'ذكر', stage: '' }],
       choirLevel: team.choirLevel || '',
       instrumentType: team.instrumentType || '',
+      performanceType: team.performanceType || '',
       maleCount: team.maleCount || 0,
       femaleCount: team.femaleCount || 0
     });
@@ -2024,6 +2063,29 @@ function App() {
       setParticipantToDelete(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `participants/${id}`);
+    }
+  };
+
+  const [showExamGateway, setShowExamGateway] = useState(false);
+
+  const handleResetExam = async (studentId: string) => {
+    if (!confirm('هل أنت متأكد من إعادة ضبط امتحانات هذا الطالب؟ سيتم حذف جميع درجات الامتحانات الإلكترونية.')) return;
+    try {
+      await updateDoc(doc(db, 'results', studentId), {
+        academicScore: deleteField(),
+        memorizationScore: deleteField(),
+        copticL1Score: deleteField(),
+        copticL2Score: deleteField(),
+        'data.دراسي': deleteField(),
+        'data.محفوظات': deleteField(),
+        'data.قبطي مستوى أول': deleteField(),
+        'data.قبطي مستوى ثاني': deleteField(),
+        submissionInfo: deleteField()
+      });
+      alert('تمت إعادة ضبط الامتحانات بنجاح');
+    } catch (e) {
+      console.error(e);
+      alert('فشل في إعادة الضبط');
     }
   };
 
@@ -2126,19 +2188,13 @@ function App() {
   }, [news, newsSearch, newsFilterDate]);
 
   const filteredResults = useMemo(() => {
-    let list = results.filter(r => {
+    return results.filter(r => {
       const matchesSearch = r.studentName.toLowerCase().includes(resultSearch.toLowerCase());
       const matchesStage = resultsFilterStage === 'الكل' || r.stage === resultsFilterStage;
       const matchesGrade = resultsFilterGrade === 'الكل' || r.grade === resultsFilterGrade;
       return matchesSearch && matchesStage && matchesGrade;
     });
-
-    if (resultsSortOrder === 'rank') {
-      list = [...list].sort((a, b) => b.score - a.score);
-    }
-
-    return list;
-  }, [results, resultSearch, resultsFilterStage, resultsFilterGrade, resultsSortOrder]);
+  }, [results, resultSearch, resultsFilterStage, resultsFilterGrade]);
 
   const groupedSettings = useMemo(() => {
     console.log('Calculator settings:', calculatorSettings);
@@ -2236,7 +2292,14 @@ function App() {
 
   const NavItem = ({ id, icon: Icon, label }: { id: string, icon: any, label: string }) => (
     <button
-      onClick={() => { setActiveSection(id); setIsMenuOpen(false); }}
+      onClick={() => { 
+        if (id === 'exams_portal') {
+          setShowExamGateway(true);
+        } else {
+          setActiveSection(id); 
+        }
+        setIsMenuOpen(false); 
+      }}
       className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300 w-full text-right ${
         activeSection === id 
           ? 'bg-primary text-white shadow-lg scale-[1.02]' 
@@ -2446,7 +2509,7 @@ function App() {
                 {userRole === 'church' && <NavItem id="church_dashboard" icon={LayoutDashboard} label="صفحة الكنيسة" />}
                 <NavItem id="calculator" icon={Calculator} label="حاسبة الكتب" />
                 <NavItem id="inquiries" icon={MessageSquare} label="الاستفسارات والشكاوي" />
-                <NavItem id="schedule" icon={Calendar} label="جدول المهرجان" />
+                <NavItem id="exams_portal" icon={BookOpen} label="امتحانات الأونلاين" />
                 <NavItem id="info" icon={Info} label="عن المهرجان" />
                 {isLoggedIn && (
                   <button
@@ -2770,6 +2833,15 @@ function App() {
           </motion.div>
         )}
 
+        {activeSection === 'exams' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+            <BackButton />
+            <div className="max-w-4xl mx-auto">
+              <LiveExamGateway />
+            </div>
+          </motion.div>
+        )}
+
         {activeSection === 'news' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
             <BackButton />
@@ -2861,7 +2933,7 @@ function App() {
                     className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
                   >
                     <option value="الكل">كل المراحل</option>
-                    {dynamicLevels.sort((a,b)=>sortStages(a.name, b.name)).map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+                    {dynamicLevels.sort((a,b)=>sortStages(a.name, b.name)).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </select>
                   <select 
                     value={resultsFilterGrade}
@@ -2876,52 +2948,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 text-xs font-black text-slate-500 uppercase">
-                      <th className="p-4">الاسم</th>
-                      <th className="p-4">المرحلة</th>
-                      <th className="p-4">دراسي</th>
-                      <th className="p-4">محفوظ</th>
-                      <th className="p-4">ق١</th>
-                      <th className="p-4">ق</th>
-                      <th className="p-4">المجموع</th>
-                      <th className="p-4">التقدير</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredResultsList.map(result => (
-                        <tr key={result.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-4 font-bold text-slate-800">{result.studentName}</td>
-                          <td className="p-4 text-slate-600">{result.stage}</td>
-                          <td className="p-4 text-slate-600">{result.academicScore || 0}</td>
-                          <td className="p-4 text-slate-600">{result.memorizationScore || 0}</td>
-                          <td className="p-4 text-slate-600">{result.q1Score || 0}</td>
-                          <td className="p-4 text-slate-600">{result.qScore || 0}</td>
-                          <td className="p-4 font-black text-coptic-blue">{result.score}</td>
-                          <td className="p-4">
-                            <span className={`px-3 py-1 rounded-full text-[10px] font-black ${
-                              result.grade === 'ممتاز' ? 'bg-emerald-50 text-emerald-600' :
-                              result.grade === 'جيد جداً' ? 'bg-blue-50 text-blue-600' :
-                              result.grade === 'جيد' ? 'bg-yellow-50 text-yellow-600' :
-                              'bg-slate-50 text-slate-600'
-                            }`}>
-                              {result.grade}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    {filteredResultsList.length === 0 && (
-                      <tr>
-                        <td colSpan={8} className="p-12 text-center text-slate-400 font-bold italic">
-                          لا توجد نتائج مطابقة للبحث
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <ResultsViewer results={filteredResultsList} />
             </div>
           </motion.div>
         )}
@@ -2952,7 +2979,7 @@ function App() {
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
                 >
                   <option value="الكل">كل المراحل</option>
-                  {dynamicLevels.map(l => <option key={l.name} value={l.name}>{l.name}</option>)}
+                  {dynamicLevels.map(l => <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>{typeof l === 'string' ? l : l.name}</option>)}
                 </select>
                 <select 
                   value={globalCompetitionFilter}
@@ -2981,7 +3008,13 @@ function App() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button 
-                    onClick={() => exportAllDataReport(filteredParticipantsList, filteredTeamsList, orders.filter(o => o.churchName === churchName))}
+                    onClick={() => setShowExamGateway(true)}
+                    className="px-6 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-xl hover:scale-105 active:scale-95"
+                  >
+                    <BookOpen size={18} /> بدء دخول الامتحان (QR Scan)
+                  </button>
+                  <button 
+                    onClick={() => exportUnifiedExcel()}
                     className="px-6 py-3 bg-emerald-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-xl hover:scale-105 active:scale-95"
                   >
                     <Download size={18} /> التصدير الشامل الموحد (Excel)
@@ -3037,7 +3070,7 @@ function App() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {dynamicLevels.map((p: any) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
                       </select>
                     </div>
 
@@ -3193,7 +3226,7 @@ function App() {
                       className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary font-bold shadow-sm"
                     >
                       <option value="الكل">عرض الكل</option>
-                      {publicChurches.map((c: any) => c.name).sort().map(church => (
+                      {Array.from(new Set(publicChurches.map((c: any) => c.name))).sort().map(church => (
                         <option key={church} value={church}>{church}</option>
                       ))}
                     </select>
@@ -3210,7 +3243,7 @@ function App() {
                   </div>
                   <div className="mt-6">
                     <button 
-                      onClick={() => exportAllDataReport(filteredParticipantsList, filteredTeamsList, orders.filter(o => globalChurchFilter === 'الكل' || o.churchName === globalChurchFilter))}
+                      onClick={() => exportUnifiedExcel(true, globalChurchFilter)}
                       className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-md active:scale-95"
                     >
                       <Download size={14} /> التصدير الشامل (Excel)
@@ -3284,13 +3317,13 @@ function App() {
                     </div>
                     <div className="flex flex-col md:flex-row items-center gap-2">
                       <button 
-                        onClick={() => exportFullDioceseReport(results)}
+                        onClick={() => downloadMasterTemplate()}
                         className="px-6 py-3 bg-coptic-red text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                       >
-                        <Award size={20} /> تصدير تقرير النتائج المجمع (Excel)
+                        <Award size={20} /> تحميل قالب التسجيل المعتمد
                       </button>
                       <button 
-                        onClick={() => exportAllDataReport(filteredParticipantsList, filteredTeamsList, orders.filter(o => globalChurchFilter === 'الكل' || o.churchName === globalChurchFilter))}
+                        onClick={() => exportUnifiedExcel(true, globalChurchFilter)}
                         className="px-6 py-3 bg-coptic-blue text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                       >
                         <Download size={20} /> تصدير كل بيانات التسجيل الموحد (Excel)
@@ -3728,201 +3761,8 @@ function App() {
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
                     <Award className="text-indigo-600" /> إدارة النتائج
                   </h4>
-                  <button 
-                    onClick={handleClearResults}
-                    className="px-4 py-2 bg-red-500 text-white rounded-xl text-xs font-black hover:bg-opacity-90 transition-all shadow-md"
-                  >
-                    مسح كل النتائج
-                  </button>
                 </div>
-
-                <form onSubmit={handleResultSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12 bg-white p-6 rounded-2xl border border-slate-100">
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">اسم المخدوم</label>
-                    <input 
-                      type="text"
-                      value={newResult.studentName}
-                      onChange={(e) => setNewResult({...newResult, studentName: e.target.value})}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">الكنيسة</label>
-                    <select 
-                      value={newResult.churchName}
-                      onChange={(e) => setNewResult({...newResult, churchName: e.target.value})}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                      required
-                    >
-                      <option value="">اختر الكنيسة</option>
-                      {publicChurches.map((c: any) => c.name).sort().map(church => (
-                        <option key={church} value={church}>{church}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">المرحلة</label>
-                    <select 
-                      value={newResult.stage}
-                      onChange={(e) => setNewResult({...newResult, stage: e.target.value})}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                      required
-                    >
-                      <option value="">اختر المرحلة</option>
-                      {dynamicLevels.map((p: any) => <option key={p.name} value={p.name}>{p.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">دراسي</label>
-                    <input 
-                      type="number"
-                      value={newResult.academicScore}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        const total = val + newResult.memorizationScore + newResult.q1Score + newResult.qScore;
-                        setNewResult({...newResult, academicScore: val, score: total});
-                      }}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">محفوظ</label>
-                    <input 
-                      type="number"
-                      value={newResult.memorizationScore}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        const total = newResult.academicScore + val + newResult.q1Score + newResult.qScore;
-                        setNewResult({...newResult, memorizationScore: val, score: total});
-                      }}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">ق١</label>
-                    <input 
-                      type="number"
-                      value={newResult.q1Score}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        const total = newResult.academicScore + newResult.memorizationScore + val + newResult.qScore;
-                        setNewResult({...newResult, q1Score: val, score: total});
-                      }}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">ق</label>
-                    <input 
-                      type="number"
-                      value={newResult.qScore}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        const total = newResult.academicScore + newResult.memorizationScore + newResult.q1Score + val;
-                        setNewResult({...newResult, qScore: val, score: total});
-                      }}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">المجموع</label>
-                    <input 
-                      type="number"
-                      value={newResult.score}
-                      onChange={(e) => setNewResult({...newResult, score: Number(e.target.value)})}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">التقدير</label>
-                    <select 
-                      value={newResult.grade}
-                      onChange={(e) => setNewResult({...newResult, grade: e.target.value})}
-                      className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                      required
-                    >
-                      <option value="">اختر التقدير</option>
-                      {['ممتاز', 'جيد جداً', 'جيد', 'مقبول'].map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex items-end">
-                    <button 
-                      type="submit"
-                      disabled={isSubmittingResult}
-                      className="w-full py-3 bg-indigo-600 text-white rounded-xl font-black hover:bg-opacity-90 transition-all shadow-lg"
-                    >
-                      {editingResult ? 'تحديث النتيجة' : 'إضافة نتيجة'}
-                    </button>
-                  </div>
-                </form>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right border-collapse">
-                    <thead>
-                      <tr className="bg-white text-[10px] font-black text-slate-500 uppercase">
-                        <th className="p-4 border-b border-slate-100">الاسم</th>
-                        <th className="p-4 border-b border-slate-100">الكنيسة</th>
-                        <th className="p-4 border-b border-slate-100">المرحلة</th>
-                        <th className="p-4 border-b border-slate-100">دراسي</th>
-                        <th className="p-4 border-b border-slate-100">محفوظ</th>
-                        <th className="p-4 border-b border-slate-100">ق١</th>
-                        <th className="p-4 border-b border-slate-100">ق</th>
-                        <th className="p-4 border-b border-slate-100">المجموع</th>
-                        <th className="p-4 border-b border-slate-100">التقدير</th>
-                        <th className="p-4 border-b border-slate-100 text-center">الإجراءات</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredResultsList
-                        .map(r => (
-                          <tr key={r.id} className="bg-white hover:bg-slate-50 transition-colors">
-                            <td className="p-4 font-bold text-slate-800 text-sm">{r.studentName}</td>
-                            <td className="p-4 text-slate-600 text-xs">{r.churchName}</td>
-                            <td className="p-4 text-slate-600 text-xs">{r.stage}</td>
-                            <td className="p-4 text-slate-600 text-xs">{r.academicScore || 0}</td>
-                            <td className="p-4 text-slate-600 text-xs">{r.memorizationScore || 0}</td>
-                            <td className="p-4 text-slate-600 text-xs">{r.q1Score || 0}</td>
-                            <td className="p-4 text-slate-600 text-xs">{r.qScore || 0}</td>
-                            <td className="p-4 font-black text-indigo-600">{r.score}</td>
-                            <td className="p-4 text-slate-600 text-xs">{r.grade}</td>
-                            <td className="p-4">
-                              <div className="flex items-center justify-center gap-2">
-                                <button 
-                                  onClick={() => {
-                                    setEditingResult(r);
-                                    setNewResult({
-                                      studentName: r.studentName,
-                                      stage: r.stage,
-                                      academicScore: r.academicScore || 0,
-                                      memorizationScore: r.memorizationScore || 0,
-                                      q1Score: r.q1Score || 0,
-                                      qScore: r.qScore || 0,
-                                      score: r.score,
-                                      grade: r.grade,
-                                      churchName: r.churchName
-                                    });
-                                  }}
-                                  className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"
-                                  title="تعديل"
-                                >
-                                  <FileText size={18} />
-                                </button>
-                                <button 
-                                  onClick={() => handleDeleteResult(r.id)}
-                                  className="p-2 text-slate-400 hover:text-coptic-red transition-colors"
-                                  title="حذف"
-                                >
-                                  <Trash2 size={18} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ResultsViewer results={filteredResultsList} />
               </section>
             )}
 
@@ -4137,33 +3977,20 @@ function App() {
             )}
 
             {adminActiveTab === 'exams_management' && (
-              <section className="p-8 bg-white rounded-3xl border border-slate-200 shadow-sm">
+              <section>
                 <h4 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-2">
-                  <BookOpen className="text-primary" /> إدارة روابط الامتحانات
+                  <BookOpen className="text-primary" /> بناء وتحكم الامتحانات الإلكترونية
                 </h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {dynamicLevels.map((p: any) => (
-                    <div key={p.name} className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                      <label className="text-xs font-black text-slate-400 uppercase mb-2 block">{p.name}</label>
-                      <input 
-                        type="url"
-                        value={examLinks[p.name] || ''}
-                        onChange={(e) => setExamLinks({...examLinks, [p.name]: e.target.value})}
-                        placeholder="رابط الامتحان..."
-                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold mb-2"
-                      />
-                      <button 
-                        onClick={() => {
-                          handleUpdateExamLink(p.name, examLinks[p.name] || '');
-                          alert('تم تحديث الرابط');
-                        }}
-                        className="w-full py-2 bg-primary text-white rounded-xl font-bold hover:bg-opacity-90 transition-all"
-                      >
-                        حفظ
-                      </button>
-                    </div>
-                  ))}
-                </div>
+                <ExamBuilder stages={dynamicLevels} />
+              </section>
+            )}
+
+            {adminActiveTab === 'exams_live' && (
+              <section>
+                <h4 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-2">
+                  <Activity className="text-primary" /> المتابعة المباشرة للامتحانات
+                </h4>
+                <LiveExamMonitoring results={results} globalChurchFilter={globalChurchFilter} />
               </section>
             )}
 
@@ -4182,7 +4009,7 @@ function App() {
                       className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold"
                     >
                       <option value="">-- اختر المرحلة --</option>
-                      {dynamicLevels.map((p: any) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                      {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
                     </select>
                   </div>
                   <div>
@@ -4794,7 +4621,7 @@ function App() {
                         required
                       >
                         <option value="">اختر الكنيسة</option>
-                        {publicChurches.map((c: any) => c.name).sort().map(church => (
+                        {Array.from(new Set(publicChurches.map((c: any) => c.name))).sort().map(church => (
                           <option key={church} value={church}>{church}</option>
                         ))}
                       </select>
@@ -4808,7 +4635,7 @@ function App() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {dynamicLevels.map((p: any) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
                       </select>
                     </div>
                     <div>
@@ -4869,17 +4696,22 @@ function App() {
                   <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 mb-8">
                       <div className="flex flex-col md:flex-row items-center justify-between gap-4">
                         <div>
-                          <h5 className="font-black text-slate-700">رفع ملف النتائج (Excel)</h5>
-                          <p className="text-xs text-slate-400 font-bold">يجب أن يحتوي الملف على أعمدة: الكنيسة، الاسم، المرحلة، الدرجة، التقدير</p>
+                          <h5 className="font-black text-slate-700">تحديث واستخراج النتائج الموحدة (Live Schema)</h5>
+                          <p className="text-xs text-slate-400 font-bold mb-2">يرجى تحميل القالب المعتمد ورفع النتائج من خلاله ليتم مطابقتها ديناميكياً.</p>
+                          <button type="button" onClick={downloadMasterTemplate} className="text-indigo-600 text-xs font-bold hover:underline">
+                            تحميل قالب النتائج المعتمد (Master Template)
+                          </button>
                         </div>
                         <div className="flex items-center gap-3">
                           <button 
-                            onClick={() => exportResultsToExcel(filteredResults)}
+                            type="button"
+                            onClick={() => exportUnifiedExcel()}
                             className="px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                           >
-                            <Download size={20} /> Excel
+                            <Download size={20} /> التصدير الشامل (Excel)
                           </button>
                           <button 
+                            type="button"
                             onClick={handleClearResults}
                             className="px-6 py-3 bg-red-50 text-red-600 border border-red-100 rounded-2xl font-black flex items-center gap-2 hover:bg-red-100 transition-all shadow-sm"
                           >
@@ -4898,89 +4730,12 @@ function App() {
                       </div>
                    </div>
 
-                   <div className="flex items-center justify-between mb-4">
-                     <div className="flex items-center gap-2">
-                       <button
-                         onClick={() => setResultsSortOrder(prev => prev === 'rank' ? 'default' : 'rank')}
-                         className={`px-4 py-2 rounded-xl font-black text-sm flex items-center gap-2 transition-all ${
-                           resultsSortOrder === 'rank' 
-                             ? 'bg-coptic-gold text-white shadow-lg scale-105' 
-                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                         }`}
-                       >
-                         <Trophy size={16} />
-                         {resultsSortOrder === 'rank' ? 'ترتيب حسب المركز' : 'ترتيب افتراضي'}
-                       </button>
-                     </div>
-                     <p className="text-xs text-slate-400 font-bold">
-                       إجمالي النتائج المفلترة: {filteredResults.length}
-                     </p>
-                   </div>
-
-                   <div className="overflow-x-auto">
-                    <table className="w-full text-right border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 text-xs font-black text-slate-500 uppercase">
-                          <th className="p-4">م</th>
-                          <th className="p-4">الكنيسة</th>
-                          <th className="p-4">الاسم</th>
-                          <th className="p-4">المرحلة</th>
-                          <th className="p-4">الدرجة (%)</th>
-                          <th className="p-4">التقدير</th>
-                          <th className="p-4 text-center">إجراءات</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredResultsList
-                          .sort((a, b) => resultsSortOrder === 'rank' ? b.score - a.score : 0)
-                          .map((r, index) => (
-                          <tr key={r.id} className="bg-white hover:bg-slate-50 transition-colors">
-                            <td className="p-4 font-bold text-slate-400">{index + 1}</td>
-                            <td className="p-4 font-bold text-coptic-blue">{r.churchName}</td>
-                            <td className="p-4 text-slate-800 font-bold">{r.studentName}</td>
-                            <td className="p-4 text-slate-600 font-bold">{r.stage}</td>
-                            <td className="p-4 font-black text-indigo-600">{r.score}%</td>
-                            <td className="p-4">
-                              <span className={`px-3 py-1 rounded-full text-[10px] font-black ${
-                                r.grade === 'ممتاز' ? 'bg-emerald-100 text-emerald-600' :
-                                r.grade === 'جيد جداً' ? 'bg-blue-100 text-blue-600' :
-                                r.grade === 'جيد' ? 'bg-indigo-100 text-indigo-600' :
-                                'bg-slate-100 text-slate-600'
-                              }`}>
-                                {r.grade}
-                              </span>
-                            </td>
-                            <td className="p-4">
-                              <div className="flex justify-center gap-2">
-                                <button 
-                                  onClick={() => handleEditResult(r)}
-                                  className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"
-                                  title="تعديل"
-                                >
-                                  <FileText size={16} />
-                                </button>
-                                <button 
-                                  onClick={() => handleDeleteResult(r.id)}
-                                  className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-                                  title="حذف"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                        {filteredResults.length === 0 && (
-                          <tr>
-                            <td colSpan={7} className="p-8 text-center text-slate-400 font-bold">
-                              لا توجد نتائج مسجلة حالياً
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
+                   <ResultsViewer 
+                     results={filteredResults} 
+                     onReset={handleResetExam}
+                     isAdmin={userRole === 'admin'}
+                   />
+                 </section>
 
                 <section className="pt-12 border-t border-slate-100">
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2 mb-6">
@@ -5453,7 +5208,7 @@ function App() {
                           required
                         >
                           <option value="">اختر المرحلة</option>
-                          {dynamicLevels.map((p: any) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                          {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
                         </select>
                       </div>
                     </div>
@@ -5636,7 +5391,10 @@ function App() {
                                   activityType: '',
                                   members: [{ name: '', gender: 'ذكر', stage: '' }],
                                   choirLevel: '',
-                                  instrumentType: ''
+                                  instrumentType: '',
+                                  performanceType: '',
+                                  maleCount: 0,
+                                  femaleCount: 0
                                 });
                               }}
                               className="text-xs font-black text-blue-500 hover:underline"
@@ -5671,25 +5429,46 @@ function App() {
                               required
                             >
                               <option value="">-- اختر المرحلة --</option>
-                              {activityStages.map((stage: any) => (
-                                <option key={stage.id} value={stage.name}>{stage.name}</option>
-                              ))}
+                              {newTeam.activityType === 'ألحان' ? (
+                                hymnStages.map((stage: any) => (
+                                  <option key={stage.id} value={stage.name}>{stage.name}</option>
+                                ))
+                              ) : (
+                                activityStages.map((stage: any) => (
+                                  <option key={stage.id} value={stage.name}>{stage.name}</option>
+                                ))
+                              )}
                             </select>
                           </div>
                         )}
 
                         {newTeam.activityType === 'عزف' && (
-                          <div className="space-y-2">
-                            <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">الآلة الموسيقية</label>
-                            <input 
-                              type="text"
-                              placeholder="أدخل نوع الآلة"
-                              value={newTeam.instrumentType || ''}
-                              onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
-                              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                              required
-                            />
-                          </div>
+                          <>
+                            <div className="space-y-2 mb-4">
+                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">نوع الأداء</label>
+                              <select 
+                                value={newTeam.performanceType || ''}
+                                onChange={e => setNewTeam({...newTeam, performanceType: e.target.value})}
+                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
+                                required
+                              >
+                                <option value="">-- اختر نوع الأداء --</option>
+                                <option value="عزف فردي">عزف فردي (Individual Performance)</option>
+                                <option value="عزف جماعي">عزف جماعي (Group Performance)</option>
+                              </select>
+                            </div>
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">الآلة الموسيقية</label>
+                              <input 
+                                type="text"
+                                placeholder="أدخل نوع الآلة"
+                                value={newTeam.instrumentType || ''}
+                                onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
+                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
+                                required
+                              />
+                            </div>
+                          </>
                         )}
 
                         {newTeam.activityType === 'كورال' || newTeam.activityType === 'ألحان' ? (
@@ -5854,6 +5633,7 @@ function App() {
                             <div className="mb-4">
                               <h5 className="text-lg font-black text-slate-800">{t.activityType}</h5>
                               {t.choirLevel && <p className="text-xs font-bold text-primary mt-1">{t.choirLevel}</p>}
+                              {t.performanceType && <p className="text-xs font-bold text-emerald-600 mt-1">{t.performanceType}</p>}
                               {t.instrumentType && <p className="text-xs font-bold text-primary mt-1">{t.instrumentType}</p>}
                             </div>
 
@@ -6072,7 +5852,7 @@ function App() {
             <ul className="space-y-4 text-slate-400 font-bold text-base">
               <li><button onClick={() => setActiveSection('home')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> الرئيسية</button></li>
               <li><button onClick={() => setActiveSection('news')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> آخر الأخبار</button></li>
-              <li><button onClick={() => setActiveSection('schedule')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> جدول المواعيد</button></li>
+              <li><button onClick={() => setShowExamGateway(true)} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> امتحانات الأونلاين</button></li>
               <li><button onClick={() => setActiveSection('calculator')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> حاسبة الكتب</button></li>
             </ul>
           </div>
@@ -6225,6 +6005,77 @@ function App() {
           </div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {showExamGateway && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/95 z-[100] flex flex-col p-0 md:p-4">
+            <div className="bg-indigo-700 text-white p-4 flex justify-between items-center shadow-lg md:rounded-t-3xl">
+              <div className="flex items-center gap-3">
+                <BookOpen size={24} className="text-accent" />
+                <h3 className="text-xl font-black">بوابة الامتحانات الإلكترونية</h3>
+              </div>
+              <button onClick={() => setShowExamGateway(false)} className="w-10 h-10 flex items-center justify-center bg-white/10 rounded-full hover:bg-white/20 transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="flex-1 bg-slate-50 overflow-hidden relative">
+              <div className="absolute inset-0 overflow-y-auto p-4 md:p-8 flex items-center justify-center">
+                 <div className="w-full max-w-4xl">
+                   <LiveExamGateway />
+                 </div>
+              </div>
+            </div>
+            <div className="bg-white p-4 text-center border-t border-slate-200 md:rounded-b-3xl text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              نظام الامتحانات الرقمي - مهرجان الكرازة المنطقة ١٨
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile Bottom Navigation - Distinctive & Functional */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-slate-200 px-4 py-2.5 flex justify-around items-center z-[50] shadow-[0_-8px_30px_rgba(0,0,0,0.1)] pb-safe">
+        <button 
+          onClick={() => setActiveSection('home')} 
+          className={`flex flex-col items-center gap-1 min-w-[64px] transition-all ${activeSection === 'home' ? 'text-primary' : 'text-slate-400'}`}
+        >
+          <div className={`p-1 rounded-lg ${activeSection === 'home' ? 'bg-primary/5' : ''}`}>
+            <Home size={22} className={activeSection === 'home' ? 'animate-pulse' : ''} />
+          </div>
+          <span className="text-[10px] font-black">الرئيسية</span>
+        </button>
+        
+        <button 
+          onClick={() => setShowExamGateway(true)} 
+          className="flex flex-col items-center gap-1 min-w-[64px] text-slate-400 group"
+        >
+          <div className="p-1 rounded-lg group-active:bg-indigo-50">
+            <BookOpen size={22} />
+          </div>
+          <span className="text-[10px] font-black">الامتحانات</span>
+        </button>
+
+        <div className="w-12" /> {/* Space for floating button or center visual */}
+
+        <button 
+          onClick={() => setActiveSection('calculator')} 
+          className={`flex flex-col items-center gap-1 min-w-[64px] transition-all ${activeSection === 'calculator' ? 'text-primary' : 'text-slate-400'}`}
+        >
+          <div className={`p-1 rounded-lg ${activeSection === 'calculator' ? 'bg-primary/5' : ''}`}>
+            <Calculator size={22} />
+          </div>
+          <span className="text-[10px] font-black">الحاسبة</span>
+        </button>
+
+        <button 
+          onClick={() => setIsMenuOpen(true)} 
+          className="flex flex-col items-center gap-1 min-w-[64px] text-slate-400 group"
+        >
+          <div className="p-1 rounded-lg group-active:bg-slate-50">
+            <Menu size={22} />
+          </div>
+          <span className="text-[10px] font-black">القائمة</span>
+        </button>
+      </div>
 
       <Lightbox
         open={lightboxOpen}

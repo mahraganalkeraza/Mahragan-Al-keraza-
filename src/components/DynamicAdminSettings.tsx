@@ -22,7 +22,7 @@ export default function DynamicAdminSettings() {
   const [churches, setChurches] = useState<any[]>([]);
   const [levels, setLevels] = useState<any[]>([]);
   const [competitions, setCompetitions] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'churches' | 'levels' | 'competitions' | 'activityStages' | 'logo' | 'validation' | 'purge'>('churches');
+  const [activeTab, setActiveTab] = useState<'churches' | 'levels' | 'competitions' | 'activityStages' | 'hymnStages' | 'logo' | 'validation' | 'purge'>('churches');
 
   const [validationSettings, setValidationSettings] = useState<any>({
     templates: [],
@@ -36,6 +36,9 @@ export default function DynamicAdminSettings() {
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [newActivityStageName, setNewActivityStageName] = useState('');
 
+  const [hymnStages, setHymnStages] = useState<any[]>([]);
+  const [newHymnStageName, setNewHymnStageName] = useState('');
+
   // Input states
   const [newChurchName, setNewChurchName] = useState('');
   const [newChurchCode, setNewChurchCode] = useState('');
@@ -48,7 +51,7 @@ export default function DynamicAdminSettings() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [purgeStatus, setPurgeStatus] = useState('');
-  const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string, type: 'church' | 'level' | 'comp' | 'activityStage' | 'purge' } | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string, type: 'church' | 'level' | 'comp' | 'activityStage' | 'hymnStage' | 'purge' } | null>(null);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -64,6 +67,9 @@ export default function DynamicAdminSettings() {
 
       const activityStagesSnap = await getDocs(collection(db, 'activityStages'));
       setActivityStages(activityStagesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+
+      const hymnStagesSnap = await getDocs(collection(db, 'hymnStages'));
+      setHymnStages(hymnStagesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
       const configSnap = await getDoc(doc(db, 'settings', 'app_config'));
       if (configSnap.exists()) {
@@ -232,6 +238,29 @@ export default function DynamicAdminSettings() {
     }
   };
 
+  // HYMN STAGES
+  const addHymnStage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newHymnStageName) return;
+    try {
+      await addDoc(collection(db, 'hymnStages'), { name: newHymnStageName });
+      setNewHymnStageName('');
+      fetchData();
+    } catch (e) { 
+      console.error(e);
+      handleFirestoreError(e, OperationType.CREATE, 'hymnStages');
+    }
+  };
+  const deleteHymnStage = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'hymnStages', id));
+      setDeleteConfirmation(null);
+      fetchData();
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, `hymnStages/${id}`);
+    }
+  };
+
   // ACTIVITY STAGES
   const addActivityStage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -391,6 +420,7 @@ export default function DynamicAdminSettings() {
           { id: 'competitions', label: 'بنك المسابقات' },
           { id: 'levels', label: 'إدارة المراحل وتخصيص مسابقاتها' },
           { id: 'activityStages', label: 'مراحل الأنشطة' },
+          { id: 'hymnStages', label: 'مراحل الألحان' },
           { id: 'validation', label: 'محرك التحقق وإدارة الملفات' },
           { id: 'logo', label: 'شعار المهرجان السنوي' },
           { id: 'purge', label: 'تنظيف البيانات القديمة (Wipe)' }
@@ -545,6 +575,41 @@ export default function DynamicAdminSettings() {
                     <h4 className="font-black text-lg text-slate-800">{stage.name}</h4>
                   </div>
                   <button onClick={() => setDeleteConfirmation({ id: stage.id, type: 'activityStage' as any })} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: HYMN STAGES */}
+        {activeTab === 'hymnStages' && (
+          <div className="space-y-8">
+            <form onSubmit={addHymnStage} className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
+              <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Plus /> صياغة مرحلة الألحان (للألحان فقط)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold mb-2">اسم المرحلة</label>
+                  <input type="text" value={newHymnStageName} onChange={e => setNewHymnStageName(e.target.value)} required className="w-full p-3 rounded-lg border border-slate-200" placeholder="مثال: Nursery, Grade 3..." />
+                </div>
+              </div>
+              <button 
+                type="submit" 
+                className="mt-4 px-6 py-3 bg-primary text-white rounded-lg font-black flex items-center gap-2"
+              >
+                <Plus size={20} />
+                إضافة المرحلة
+              </button>
+            </form>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {hymnStages.map(stage => (
+                <div key={stage.id} className="p-4 border border-slate-100 rounded-xl flex items-center justify-between shadow-sm">
+                  <div>
+                    <h4 className="font-black text-lg text-slate-800">{stage.name}</h4>
+                  </div>
+                  <button onClick={() => setDeleteConfirmation({ id: stage.id, type: 'hymnStage' as any })} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
                     <Trash2 size={18} />
                   </button>
                 </div>
@@ -717,6 +782,7 @@ export default function DynamicAdminSettings() {
                   else if (deleteConfirmation.type === 'comp') deleteCompetition(deleteConfirmation.id);
                   else if (deleteConfirmation.type === 'level') deleteLevel(deleteConfirmation.id);
                   else if (deleteConfirmation.type === 'activityStage') deleteActivityStage(deleteConfirmation.id);
+                  else if (deleteConfirmation.type === 'hymnStage') deleteHymnStage(deleteConfirmation.id);
                   else if (deleteConfirmation.type === 'purge') handlePurge();
                 }}
                 className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black hover:bg-red-700 transition-all"
