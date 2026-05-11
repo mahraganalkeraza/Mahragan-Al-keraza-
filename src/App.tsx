@@ -135,6 +135,8 @@ import {
   PRICING_DATA, 
   CAROUSEL_IMAGES, 
   ADMIN_PASSWORD,
+  CHURCH_CREDENTIALS,
+  STAGE_ORDER,
   sortStages
   } from './constants';
 
@@ -604,6 +606,17 @@ function App() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxImages, setLightboxImages] = useState<{src: string}[]>([]);
+  const [examConfig, setExamConfig] = useState<{
+    isExamLive: boolean;
+    autoCloseTime?: string;
+    churchOverrides: Record<string, boolean>;
+    stageOverrides: Record<string, boolean>;
+  }>({
+    isExamLive: true,
+    churchOverrides: {},
+    stageOverrides: {}
+  });
+
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({
     phone: '',
     facebook: '',
@@ -949,6 +962,12 @@ function App() {
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/about'));
 
+    const unsubExamConfig = onSnapshot(doc(db, 'settings', 'exam_config'), (snapshot) => {
+      if (snapshot.exists()) {
+        setExamConfig(snapshot.data() as any);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/exam_config'));
+
     return () => {
       unsubNews();
       unsubResults();
@@ -1122,6 +1141,19 @@ function App() {
     } catch (error) {
       console.error("Error saving settings:", error);
       alert('حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateExamConfig = async (newConfig: any) => {
+    setIsLoading(true);
+    try {
+      await setDoc(doc(db, 'settings', 'exam_config'), newConfig);
+      setNotification('تم تحديث إعدادات الامتحانات');
+    } catch (e) {
+      console.error(e);
+      setNotification('خطأ في التحديث');
     } finally {
       setIsLoading(false);
     }
@@ -4162,6 +4194,103 @@ function App() {
 
             {adminActiveTab === 'system_settings' && (
               <div className="space-y-12">
+                {/* Control Hub Section */}
+                <section className="p-8 bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden relative">
+                  <div className="absolute top-0 inset-x-0 h-2 bg-primary" />
+                  <h4 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8">
+                    <Sliders className="text-primary" /> لوحة التحكم المركزية للامتحانات
+                  </h4>
+
+                  {/* Global Switch */}
+                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between mb-8">
+                    <div>
+                      <h5 className="text-lg font-black text-slate-800">حالة الامتحانات (عام)</h5>
+                      <p className="text-sm text-slate-500 font-bold">فتح أو غلق بوابة الامتحانات الإلكترونية لجميع الطلاب بقرار مركزي</p>
+                    </div>
+                    <button 
+                      onClick={() => handleUpdateExamConfig({...examConfig, isExamLive: !examConfig.isExamLive})}
+                      className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg min-w-[140px] flex items-center justify-center gap-2 ${examConfig.isExamLive ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}
+                    >
+                      {examConfig.isExamLive ? <CheckCircle2 size={18}/> : <X size={18}/>}
+                      {examConfig.isExamLive ? 'مفتوح الآن' : 'مغلق الآن'}
+                    </button>
+                  </div>
+
+                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-6 mb-8">
+                    <div className="flex-1">
+                      <h5 className="text-sm font-black text-slate-800 mb-1">موعد الإغلاق التلقائي</h5>
+                      <p className="text-[10px] text-slate-400 font-bold">سيتم غلق الامتحانات لجميع الطلاب عند الوصول لهذا الوقت</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="time"
+                        value={examConfig.autoCloseTime || ''}
+                        onChange={(e) => handleUpdateExamConfig({...examConfig, autoCloseTime: e.target.value})}
+                        className="px-4 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
+                      />
+                      {examConfig.autoCloseTime && (
+                        <button 
+                          onClick={() => handleUpdateExamConfig({...examConfig, autoCloseTime: deleteField() as any})}
+                          className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="إزالة الموعد"
+                        >
+                          <X size={18} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Church Overrides */}
+                    <div className="space-y-4">
+                      <h5 className="font-black text-slate-700 flex items-center gap-2">
+                        <Church size={18} className="text-primary"/> تحكم حسب الكنيسة
+                      </h5>
+                      <div className="max-h-[300px] overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-2 no-scrollbar">
+                        {Object.keys(CHURCH_CREDENTIALS).sort().map(church => (
+                          <div key={church} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+                            <span className="font-bold text-sm text-slate-700">{church}</span>
+                            <button 
+                              onClick={() => {
+                                const overrides = {...(examConfig.churchOverrides || {})};
+                                overrides[church] = overrides[church] === false ? true : false;
+                                handleUpdateExamConfig({...examConfig, churchOverrides: overrides});
+                              }}
+                              className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-colors ${examConfig.churchOverrides?.[church] === false ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}
+                            >
+                              {examConfig.churchOverrides?.[church] === false ? 'مغلق' : 'نمط العام'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Stage Overrides */}
+                    <div className="space-y-4">
+                       <h5 className="font-black text-slate-700 flex items-center gap-2">
+                        <Users size={18} className="text-primary"/> تحكم حسب المرحلة
+                      </h5>
+                      <div className="max-h-[300px] overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-2 no-scrollbar">
+                        {STAGE_ORDER.map(stage => (
+                          <div key={stage} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+                            <span className="font-bold text-sm text-slate-700">{stage}</span>
+                            <button 
+                              onClick={() => {
+                                const overrides = {...(examConfig.stageOverrides || {})};
+                                overrides[stage] = overrides[stage] === false ? true : false;
+                                handleUpdateExamConfig({...examConfig, stageOverrides: overrides});
+                              }}
+                              className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-colors ${examConfig.stageOverrides?.[stage] === false ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}
+                            >
+                              {examConfig.stageOverrides?.[stage] === false ? 'مغلق' : 'نمط العام'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
                 {/* Year Management Section */}
                 <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2 mb-6">

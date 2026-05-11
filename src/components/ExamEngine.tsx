@@ -379,21 +379,59 @@ export const LiveExamGateway: React.FC = () => {
   const [lastScanDebug, setLastScanDebug] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isTerminated, setIsTerminated] = useState(false);
+  const [examConfig, setExamConfig] = useState<any>(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'exam_config'), (snap) => {
+      if (snap.exists()) setExamConfig(snap.data());
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (!activeStudent?.id) return;
-    const unsub = onSnapshot(doc(db, 'active_sessions', activeStudent.id), (snap) => {
-      if (snap.exists() && snap.data()?.status === 'terminated') {
+    
+    // 1. Listen to results doc to check isSubmitted status in real-time (for Admin Resets)
+    const unsubResult = onSnapshot(doc(db, 'results', activeStudent.id), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        // If it was submitted but now it's not, it means an admin reset it
+        if (activeStudent.isSubmitted && !data.isSubmitted) {
+          setActiveStudent(prev => prev ? {...prev, ...data, isSubmitted: false} : null);
+          if (isExamCompleted) {
+             setIsExamCompleted(false);
+             setSelectedCompetition(null);
+             setActiveExam(null);
+             alert('تم إضافة محاولة جديدة لك من قبل المسئول');
+          }
+        } else {
+           setActiveStudent(prev => prev ? {...prev, ...data} : data as any);
+        }
+      }
+    });
+
+    // 2. Listen to session doc for terminations or resets
+    const unsubSession = onSnapshot(doc(db, 'active_sessions', activeStudent.id), (snap) => {
+      if (!snap.exists() && selectedCompetition) {
+         // Session deleted while in exam = Admin click Reset Exam
+         alert('جلسة الامتحان تم إعادة ضبطها من قبل المسئول');
+         setSelectedCompetition(null);
+         setActiveExam(null);
+         setIsExamCompleted(false);
+      } else if (snap.exists() && snap.data()?.status === 'terminated') {
         setIsTerminated(true);
         setActiveStudent(null);
         setSelectedCompetition(null);
         setActiveExam(null);
-        // Clear local cache for this student to prevent re-entry attempt if they reload
         localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
       }
     });
-    return () => unsub();
-  }, [activeStudent?.id, selectedCompetition]);
+
+    return () => {
+      unsubResult();
+      unsubSession();
+    };
+  }, [activeStudent?.id, selectedCompetition, isExamCompleted]);
 
   useEffect(() => {
     const fp = getDeviceFingerprint();
@@ -534,6 +572,35 @@ export const LiveExamGateway: React.FC = () => {
       setIsLoading(true);
       
       const stage = activeStudent.data?.['المرحلة'] || activeStudent.stage;
+
+      // 0. Check Global / Group Blocks
+      if (examConfig) {
+        if (!examConfig.isExamLive) {
+          setIsLoading(false);
+          return alert('عذراً، الامتحانات مغلقة الآن بقرار من اللجنة المركزية');
+        }
+
+        // Check Auto-Close Time
+        if (examConfig.autoCloseTime) {
+          const now = new Date();
+          const [hours, minutes] = examConfig.autoCloseTime.split(':').map(Number);
+          const closeTime = new Date();
+          closeTime.setHours(hours, minutes, 0, 0);
+          
+          if (now > closeTime) {
+            setIsLoading(false);
+            return alert(`عذراً، انتهى الوقت المحدد للامتحانات اليوم (${examConfig.autoCloseTime})`);
+          }
+        }
+        if (examConfig.churchOverrides?.[activeStudent.churchName] === false) {
+          setIsLoading(false);
+          return alert(`عذراً، الامتحانات مغلقة حالياً لكنيسة ${activeStudent.churchName}`);
+        }
+        if (examConfig.stageOverrides?.[stage] === false) {
+          setIsLoading(false);
+          return alert(`عذراً، الامتحانات مغلقة حالياً لمرحلة ${stage}`);
+        }
+      }
       
       // Check if already taken this specific competition
       const scoreFieldMap: Record<string, string> = {
