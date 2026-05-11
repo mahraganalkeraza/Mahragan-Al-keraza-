@@ -29,6 +29,7 @@ import {
   Lock,
   ShieldCheck,
   MessageSquare,
+  RotateCcw,
   Send,
   History,
   LayoutDashboard,
@@ -2068,24 +2069,48 @@ function App() {
 
   const [showExamGateway, setShowExamGateway] = useState(false);
 
-  const handleResetExam = async (studentId: string) => {
-    if (!confirm('هل أنت متأكد من إعادة ضبط امتحانات هذا الطالب؟ سيتم حذف جميع درجات الامتحانات الإلكترونية.')) return;
+  const handleResetExam = async (studentId: string, studentName?: string) => {
+    console.log('Admin calling handleResetExam:', { studentId, studentName });
+    if (!confirm(`هل أنت متأكد من إعادة فتح الامتحان للطالب ${studentName || ''}؟ سيؤدي ذلك لمسح المحاولة الحالية وأرشفتها.`)) return;
+    setIsLoading(true);
     try {
-      await updateDoc(doc(db, 'results', studentId), {
-        academicScore: deleteField(),
-        memorizationScore: deleteField(),
-        copticL1Score: deleteField(),
-        copticL2Score: deleteField(),
-        'data.دراسي': deleteField(),
-        'data.محفوظات': deleteField(),
-        'data.قبطي مستوى أول': deleteField(),
-        'data.قبطي مستوى ثاني': deleteField(),
-        submissionInfo: deleteField()
-      });
-      alert('تمت إعادة ضبط الامتحانات بنجاح');
+      const resultRef = doc(db, 'results', studentId);
+      const resDoc = await getDoc(resultRef);
+      
+      if (resDoc.exists()) {
+        const data = resDoc.data();
+        // 1. Archive Old Attempt
+        await addDoc(collection(db, 'results', studentId, 'previous_attempts'), {
+          ...data,
+          archivedAt: new Date().toISOString(),
+          archivedBy: user?.email || 'admin'
+        });
+        
+        // 2. Clear primary fields
+        await updateDoc(resultRef, {
+          academicScore: deleteField(),
+          memorizationScore: deleteField(),
+          copticL1Score: deleteField(),
+          copticL2Score: deleteField(),
+          score: deleteField(),
+          data: deleteField(),
+          submissionInfo: deleteField(),
+          isSubmitted: false // Explicitly clear submission flag
+        });
+      }
+      
+      // 3. Unlock Gateway / Reset Session
+      await deleteDoc(doc(db, 'active_sessions', studentId));
+      
+      const successMsg = `تمت إعادة فتح الامتحان بنجاح للطالب: ${studentName || studentId}`;
+      setNotification(successMsg);
+      alert(successMsg);
     } catch (e) {
-      console.error(e);
-      alert('فشل في إعادة الضبط');
+      console.error('Reset Exam Error:', e);
+      setNotification('خطأ في إعادة فتح الامتحان');
+      alert('فشل في إعادة فتح الامتحان. تحقق من الصلاحيات.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -3672,6 +3697,13 @@ function App() {
                             <td className="p-4">
                               <div className="flex items-center justify-center gap-2">
                                 <button 
+                                  onClick={() => handleResetExam(p.id, p.name)}
+                                  className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
+                                  title="إعادة فتح الامتحان"
+                                >
+                                  <RotateCcw size={18} />
+                                </button>
+                                <button 
                                   onClick={() => {
                                     setActiveSection('registration');
                                     handleEditParticipant(p);
@@ -3990,7 +4022,11 @@ function App() {
                 <h4 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-2">
                   <Activity className="text-primary" /> المتابعة المباشرة للامتحانات
                 </h4>
-                <LiveExamMonitoring results={results} globalChurchFilter={globalChurchFilter} />
+                <LiveExamMonitoring 
+                  results={results} 
+                  globalChurchFilter={globalChurchFilter} 
+                  onResetExam={handleResetExam}
+                />
               </section>
             )}
 

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where } from 'firebase/firestore';
-import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet } from 'lucide-react';
+import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc } from 'firebase/firestore';
+import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet, ShieldX } from 'lucide-react';
 import { QRScanner } from './QRScanner';
+import { getDeviceFingerprint, DeviceFingerprint } from '../lib/deviceTracking';
 
 interface Question {
   id: string;
@@ -374,15 +375,29 @@ export const LiveExamGateway: React.FC = () => {
   const [isExamCompleted, setIsExamCompleted] = useState(false);
   const [score, setScore] = useState(0);
   const [deviceInfo, setDeviceInfo] = useState({ ip: 'جاري التحميل...', type: 'غير معروف', count: 0 });
+  const [fingerprint, setFingerprint] = useState<DeviceFingerprint | null>(null);
+  const [lastScanDebug, setLastScanDebug] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isTerminated, setIsTerminated] = useState(false);
 
   useEffect(() => {
-    // Get/Set unique device ID
-    let deviceId = localStorage.getItem('coptic_device_id');
-    if (!deviceId) {
-      deviceId = 'dev_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('coptic_device_id', deviceId);
-    }
+    if (!activeStudent?.id) return;
+    const unsub = onSnapshot(doc(db, 'active_sessions', activeStudent.id), (snap) => {
+      if (snap.exists() && snap.data()?.status === 'terminated') {
+        setIsTerminated(true);
+        setActiveStudent(null);
+        setSelectedCompetition(null);
+        setActiveExam(null);
+        // Clear local cache for this student to prevent re-entry attempt if they reload
+        localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
+      }
+    });
+    return () => unsub();
+  }, [activeStudent?.id, selectedCompetition]);
+
+  useEffect(() => {
+    const fp = getDeviceFingerprint();
+    setFingerprint(fp);
 
     // Attempt to get IP
     fetch('https://api.ipify.org?format=json')
@@ -402,6 +417,7 @@ export const LiveExamGateway: React.FC = () => {
 
   const fetchStudentAndExam = async (input: string) => {
     console.log('--- SCANNER DEBUG: Input Received ---', input);
+    setLastScanDebug(input);
     try {
       setIsLoading(true);
       let studentId = input.trim();
@@ -420,6 +436,15 @@ export const LiveExamGateway: React.FC = () => {
       }
 
       console.log('--- SCANNER DEBUG: Searching for studentId ---', studentId);
+
+      // Blacklist Check
+      if (fingerprint?.uuid) {
+        const blSnap = await getDoc(doc(db, 'blacklist', fingerprint.uuid));
+        if (blSnap.exists()) {
+          setIsLoading(false);
+          return alert('عذراً، هذا الجهاز تم حظره من دخول الامتحانات نظراً لمخالفات سابقة.');
+        }
+      }
 
       let studentData: any = null;
 
@@ -469,17 +494,29 @@ export const LiveExamGateway: React.FC = () => {
       await setDoc(doc(db, 'exam_logs', Date.now().toString()), {
         ip: deviceInfo.ip,
         userAgent: navigator.userAgent,
+        fingerprint: fingerprint,
         timestamp: new Date().toISOString(),
         studentId: studentData.id,
         studentName: studentData.name || studentData.studentName || studentNameFromPayload,
         churchName: studentData.churchName,
-        deviceId: deviceId,
+        deviceId: fingerprint?.uuid,
         deviceType: deviceInfo.type,
         action: 'IDENTIFIED'
       });
 
       // Normalize studentName field
       if (!studentData.studentName) studentData.studentName = studentData.name;
+
+      // Create Active Session
+      await setDoc(doc(db, 'active_sessions', studentData.id), {
+        studentId: studentData.id,
+        studentName: studentData.studentName,
+        churchName: studentData.churchName,
+        deviceId: fingerprint?.uuid,
+        status: 'active',
+        timestamp: new Date().toISOString(),
+        lastUpdate: new Date().toISOString()
+      });
 
       setActiveStudent(studentData);
       setIsScanning(false);
@@ -611,7 +648,8 @@ export const LiveExamGateway: React.FC = () => {
         submissionInfo: {
           timestamp: new Date().toISOString(),
           ip: deviceInfo.ip,
-          deviceId: localStorage.getItem('coptic_device_id'),
+          deviceId: fingerprint?.uuid,
+          fingerprint: fingerprint,
           userAgent: navigator.userAgent,
           competitionType: selectedCompetition
         }
@@ -619,6 +657,14 @@ export const LiveExamGateway: React.FC = () => {
       
       setIsExamCompleted(true);
       setIsLoading(false);
+      
+      // Remove Active Session on normal completion
+      try {
+        await deleteDoc(doc(db, 'active_sessions', activeStudent.id));
+      } catch (e) {
+        console.warn('Could not delete active session doc', e);
+      }
+
       localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
     } catch (e: any) {
       console.error('Submission error:', e);
@@ -626,6 +672,28 @@ export const LiveExamGateway: React.FC = () => {
       alert('فشل في حفظ الدرجة: ' + (e.message || 'Error occurred'));
     }
   };
+
+  if (isTerminated) {
+    return (
+      <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl overflow-hidden relative">
+        <div className="absolute top-0 inset-x-0 h-2 bg-rose-500" />
+        <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
+          <ShieldX size={48} />
+        </div>
+        <h2 className="text-3xl font-black mb-4 text-slate-800">تم إنهاء الجلسة</h2>
+        <div className="bg-rose-50 p-6 rounded-2xl border border-rose-100 mb-8 max-w-md mx-auto">
+           <p className="text-rose-700 font-bold text-lg">عذراً، تم إنهاء محاولة الامتحان الخاصة بك بواسطة الإدارة.</p>
+           <p className="text-rose-500 text-sm mt-2">يرجى مراجعة اللجنة المنظمة في حال وجود خطأ.</p>
+        </div>
+        <button 
+          onClick={() => { setIsTerminated(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
+          className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all"
+        >
+          الخروج
+        </button>
+      </div>
+    );
+  }
 
   if (!activeStudent && !isScanning) {
     return (
@@ -676,6 +744,12 @@ export const LiveExamGateway: React.FC = () => {
         <div className="max-w-sm mx-auto overflow-hidden rounded-2xl border-4 border-indigo-100 shadow-inner">
           <QRScanner onScanSuccess={fetchStudentAndExam} />
         </div>
+        {lastScanDebug && (
+          <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-mono break-all text-amber-700">
+            <span className="font-black block mb-1">آخر قراءة للكاميرا:</span>
+            {lastScanDebug}
+          </div>
+        )}
         <button 
           onClick={() => setIsScanning(false)} 
           className="mt-8 px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all"

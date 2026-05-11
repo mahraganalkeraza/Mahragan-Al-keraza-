@@ -238,37 +238,64 @@ const createOMRSheetElement = async (
 
 const createQRCardPageElement = async (students: Participant[]) => {
   const wrapper = document.createElement('div');
-  wrapper.style.width = '210mm'; // A4 width
-  wrapper.style.height = '297mm'; // A4 height
+  wrapper.style.width = '210mm'; 
+  wrapper.style.height = '297mm'; 
   wrapper.style.backgroundColor = 'white';
-  wrapper.style.position = 'fixed'; // offscreen
-  wrapper.style.top = '-9999px';
-  wrapper.style.left = '-10000px';
-  wrapper.style.padding = '10mm';
+  wrapper.style.position = 'absolute'; 
+  wrapper.style.top = '0';
+  wrapper.style.left = '0';
+  wrapper.style.opacity = '0';
+  wrapper.style.pointerEvents = 'none';
+  wrapper.style.padding = '15mm 10mm'; 
   wrapper.style.display = 'grid';
-  wrapper.style.gridTemplateColumns = 'repeat(4, 1fr)';
-  wrapper.style.gridTemplateRows = 'repeat(5, 1fr)';
-  wrapper.style.gap = '4mm';
+  wrapper.style.gridTemplateColumns = 'repeat(2, 90mm)';
+  wrapper.style.gridTemplateRows = 'repeat(4, 60mm)';
+  wrapper.style.gap = '8mm 10mm';
   wrapper.style.direction = 'rtl';
   wrapper.style.boxSizing = 'border-box';
-  wrapper.style.fontFamily = 'Arial, sans-serif';
+  wrapper.style.fontFamily = "'Cairo', sans-serif";
   wrapper.style.zIndex = '-9999';
+
+  const style = document.createElement('style');
+  style.innerHTML = `
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
+    #qr-card-wrapper * { 
+      font-family: 'Cairo', sans-serif !important; 
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+  `;
+  wrapper.id = 'qr-card-wrapper';
+  wrapper.appendChild(style);
+
+  // Buffer for fonts
+  await document.fonts.ready;
+  await new Promise(r => setTimeout(r, 1500));
 
   for (const s of students) {
     const card = document.createElement('div');
-    card.style.border = '1px solid #e2e8f0';
-    card.style.borderRadius = '4mm';
-    card.style.padding = '3mm';
+    card.style.border = '2px solid #e2e8f0';
+    card.style.borderRadius = '5mm';
+    card.style.padding = '5mm';
     card.style.display = 'flex';
     card.style.flexDirection = 'column';
     card.style.alignItems = 'center';
-    card.style.justifyContent = 'center';
+    card.style.justifyContent = 'space-between';
     card.style.backgroundColor = 'white';
     card.style.boxSizing = 'border-box';
     card.style.overflow = 'hidden';
-    card.style.height = '100%';
+    card.style.height = '60mm';
+    card.style.width = '90mm';
+    card.style.position = 'relative';
 
-    // QR
+    // QR Section (approx 60% height)
+    const qrContainer = document.createElement('div');
+    qrContainer.style.display = 'flex';
+    qrContainer.style.justifyContent = 'center';
+    qrContainer.style.alignItems = 'center';
+    qrContainer.style.height = '35mm';
+    qrContainer.style.width = '100%';
+
     const qrImg = document.createElement('img');
     const qrPayload = JSON.stringify({
         studentID: s.id,
@@ -276,53 +303,64 @@ const createQRCardPageElement = async (students: Participant[]) => {
         churchName: s.churchName,
         stage: s.stage
     });
-    qrImg.src = await QRCode.toDataURL(qrPayload, { margin: 1, width: 300 });
-    qrImg.style.width = '32mm';
+    // High resolution QR
+    qrImg.src = await QRCode.toDataURL(qrPayload, { margin: 1, width: 600, errorCorrectionLevel: 'H' });
     qrImg.style.height = '32mm';
-    qrImg.style.marginBottom = '2mm';
-    card.appendChild(qrImg);
+    qrImg.style.width = '32mm';
+    qrContainer.appendChild(qrImg);
+    card.appendChild(qrContainer);
 
-    // Name with scaling logic approximate
+    // Data Section
+    const dataContainer = document.createElement('div');
+    dataContainer.style.display = 'flex';
+    dataContainer.style.flexDirection = 'column';
+    dataContainer.style.alignItems = 'center';
+    dataContainer.style.justifyContent = 'center';
+    dataContainer.style.width = '100%';
+    dataContainer.style.flex = '1';
+
+    // Name (Large & Bold)
     const nameLabel = document.createElement('div');
     nameLabel.innerText = s.name;
-    nameLabel.style.fontSize = s.name.length > 20 ? '10px' : '13px';
+    const nameLength = s.name.length;
+    let fontSize = '16px';
+    if (nameLength > 40) fontSize = '10px';
+    else if (nameLength > 30) fontSize = '12px';
+    else if (nameLength > 20) fontSize = '14px';
+    
+    nameLabel.style.fontSize = fontSize;
     nameLabel.style.fontWeight = '900';
     nameLabel.style.textAlign = 'center';
     nameLabel.style.width = '100%';
-    nameLabel.style.whiteSpace = 'nowrap';
-    nameLabel.style.overflow = 'hidden';
-    nameLabel.style.textOverflow = 'ellipsis';
-    nameLabel.style.color = '#1e293b';
-    card.appendChild(nameLabel);
+    nameLabel.style.lineHeight = '1.1';
+    nameLabel.style.color = '#0f172a';
+    nameLabel.style.marginBottom = '1mm';
+    dataContainer.appendChild(nameLabel);
 
-    // ID
-    const idLabel = document.createElement('div');
-    idLabel.innerText = `ID: ${s.serial || s.id.substring(0, 8)}`;
-    idLabel.style.fontSize = '9px';
-    idLabel.style.fontWeight = 'bold';
-    idLabel.style.color = '#64748b';
-    idLabel.style.marginTop = '1mm';
-    card.appendChild(idLabel);
+    // ID & Stage (Medium)
+    const subLabel = document.createElement('div');
+    subLabel.innerText = `${s.serial || s.id.substring(0, 8)} • ${s.stage}`;
+    subLabel.style.fontSize = '11px';
+    subLabel.style.fontWeight = '700';
+    subLabel.style.color = '#475569';
+    subLabel.style.marginBottom = '1mm';
+    dataContainer.appendChild(subLabel);
 
-    // Details (Church & Stage)
-    const detailsLabel = document.createElement('div');
-    detailsLabel.innerText = `${s.churchName} - ${s.stage}`;
-    detailsLabel.style.fontSize = '8px';
-    detailsLabel.style.fontWeight = 'bold';
-    detailsLabel.style.color = '#94a3b8';
-    detailsLabel.style.textAlign = 'center';
-    detailsLabel.style.width = '100%';
-    detailsLabel.style.whiteSpace = 'nowrap';
-    detailsLabel.style.overflow = 'hidden';
-    detailsLabel.style.textOverflow = 'ellipsis';
-    detailsLabel.style.marginTop = '1mm';
-    card.appendChild(detailsLabel);
+    // Church (Small)
+    const churchLabel = document.createElement('div');
+    churchLabel.innerText = s.churchName;
+    churchLabel.style.fontSize = '9px';
+    churchLabel.style.fontWeight = '600';
+    churchLabel.style.color = '#94a3b8';
+    dataContainer.appendChild(churchLabel);
 
+    card.appendChild(dataContainer);
     wrapper.appendChild(card);
   }
 
   document.body.appendChild(wrapper);
-  await new Promise(r => setTimeout(r, 200)); 
+  // Wait for fonts to load properly
+  await new Promise(r => setTimeout(r, 500)); 
   return wrapper;
 };
 
@@ -453,7 +491,7 @@ export default function OmrGenerator() {
   const generateQRPDF = async (students: Participant[]) => {
     const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
     const totalStudents = students.length;
-    const cardsPerPage = 20; // 4x5
+    const cardsPerPage = 8; // 2x4 (90x60mm cards)
     const totalPagesNum = Math.ceil(totalStudents / cardsPerPage);
     
     setProgress({ current: 0, total: totalStudents, batch: 1, totalBatches: 1 });
@@ -464,14 +502,15 @@ export default function OmrGenerator() {
         
         // Use html2canvas to render the entire page of cards
         const canvas = await html2canvas(domElement, { 
-            scale: 2, // 2x for good quality without huge file size
+            scale: 3, // Increased scale for 300+ DPI equivalent quality
             useCORS: true, 
             allowTaint: true,
-            logging: false
+            logging: false,
+            backgroundColor: '#ffffff'
         });
         
-        const imgData = canvas.toDataURL('image/jpeg', 0.9);
-        doc.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+        const imgData = canvas.toDataURL('image/jpeg', 1.0); // Max quality
+        doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
 
         document.body.removeChild(domElement);
 
@@ -482,7 +521,7 @@ export default function OmrGenerator() {
     }
 
     const timeStamp = new Date().getTime();
-    doc.save(`QR_Cards_${selectedChurch === 'الكل' ? 'All' : selectedChurch}_${timeStamp}.pdf`);
+    doc.save(`QR_ID_Cards_${selectedChurch === 'الكل' ? 'All' : selectedChurch}_${timeStamp}.pdf`);
   };
 
   return (
