@@ -392,6 +392,7 @@ export const LiveExamGateway: React.FC = () => {
   const [activeExam, setActiveExam] = useState<Exam|null>(null);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [isExamCompleted, setIsExamCompleted] = useState(false);
+  const [isAlreadyExamined, setIsAlreadyExamined] = useState(false);
   const [score, setScore] = useState(0);
   const [deviceInfo, setDeviceInfo] = useState({ ip: 'جاري التحميل...', type: 'غير معروف', count: 0 });
   const [fingerprint, setFingerprint] = useState<DeviceFingerprint | null>(null);
@@ -579,6 +580,18 @@ export const LiveExamGateway: React.FC = () => {
            studentData = { ...studentData, ...(resSnap.data() as object) };
            console.log('--- SCANNER DEBUG: Merged with existing results ---', resSnap.data());
         }
+
+        // Check if already examined online
+        const onlineResSnap = await getDoc(doc(db, 'online_results', studentData.id));
+        if (onlineResSnap.exists()) {
+           console.log('--- SCANNER DEBUG: Already examined ---');
+           setIsLoading(false);
+           setActiveStudent(studentData);
+           setScore(onlineResSnap.data().finalScore);
+           setIsAlreadyExamined(true);
+           setIsExamCompleted(true);
+           return;
+        }
       }
 
       if (!studentData) {
@@ -734,11 +747,13 @@ export const LiveExamGateway: React.FC = () => {
     setIsLoading(true);
 
     let totalScore = 0;
+    let totalScorePossible = 0;
     console.log('--- STARTING GRADING ---');
     console.log('Student:', activeStudent.studentName, 'ID:', activeStudent.id);
     console.log('Competition:', selectedCompetition);
 
     activeExam.questions.forEach((q, idx) => {
+      totalScorePossible += q.points;
       const stdAns = answers[q.id];
       const correctAns = q.correctAnswers?.[0];
       
@@ -792,6 +807,9 @@ export const LiveExamGateway: React.FC = () => {
       // Use dot notation for nested merging if possible, or build the object carefully
       const resultDocRef = doc(db, 'results', activeStudent.id);
       
+      const onlineResultRef = doc(db, 'online_results', activeStudent.id);
+      const sessionRef = doc(db, 'active_sessions', activeStudent.id);
+      
       const payload: any = {
         studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
         churchName: activeStudent.churchName || 'غير محدد',
@@ -812,13 +830,31 @@ export const LiveExamGateway: React.FC = () => {
         }
       };
 
-      await setDoc(resultDocRef, payload, { merge: true });
+      const onlineResultPayload = {
+        studentID: activeStudent.id,
+        studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
+        churchName: activeStudent.churchName || 'غير محدد',
+        stage: activeExam.stage,
+        finalScore: totalScore,
+        maxScore: totalScorePossible,
+        competition: selectedCompetition,
+        submissionTimestamp: new Date().toISOString(),
+        deviceFingerprint: {
+          uuid: localStorage.getItem('coptic_device_id') || 'untracked',
+          os: navigator.platform,
+          browser: navigator.userAgent
+        }
+      };
+
+      await Promise.all([
+        setDoc(resultDocRef, payload, { merge: true }),
+        setDoc(onlineResultRef, onlineResultPayload)
+      ]);
       
       // Fetch permanent record to ensure it is saved and show real score
-      const freshSnap = await getDoc(resultDocRef);
+      const freshSnap = await getDoc(onlineResultRef);
       if (freshSnap.exists()) {
-         const dbData = freshSnap.data();
-         setScore(dbData[field] || dbData.data?.[selectedCompetition] || totalScore);
+         setScore(freshSnap.data()?.finalScore ?? totalScore);
       }
       
       setIsExamCompleted(true);
@@ -984,14 +1020,18 @@ export const LiveExamGateway: React.FC = () => {
         <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
           <CheckCircle size={48} />
         </div>
-        <h2 className="text-3xl font-black mb-2 text-slate-800">تم إنهاء الامتحان بنجاح</h2>
-        <p className="text-slate-500 font-bold mb-8">لقد تم حفظ نتيجتك في مسابقة {selectedCompetition}</p>
+        <h2 className="text-3xl font-black mb-2 text-slate-800">
+          {isAlreadyExamined ? 'تم امتحانك مسبقاً' : 'تم إنهاء الامتحان بنجاح'}
+        </h2>
+        <p className="text-slate-500 font-bold mb-8">
+          {isAlreadyExamined ? 'عذراً، لا يمكنك أداء هذا الامتحان مرة أخرى.' : `لقد تم حفظ نتيجتك في مسابقة ${selectedCompetition}`}
+        </p>
         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-10 inline-block min-w-[200px]">
           <p className="text-[10px] font-black text-slate-400 uppercase mb-1">الدرجة المحصلة</p>
           <p className="text-5xl font-black text-indigo-600">{score || (selectedCompetition && activeStudent?.[SCORE_FIELD_MAP[selectedCompetition]]) || 0}</p>
         </div>
         <button 
-          onClick={() => { setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); setIsExamCompleted(false); }} 
+          onClick={() => { setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); setIsExamCompleted(false); setIsAlreadyExamined(false); }} 
           className="block w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-lg hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 mt-4"
         >
           العودة للبوابة الرئيسية

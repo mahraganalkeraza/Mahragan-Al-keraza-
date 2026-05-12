@@ -140,7 +140,7 @@ import {
   sortStages
   } from './constants';
 
-import { exportUnifiedExcel, downloadMasterTemplate } from './services/excelManager';
+import { exportUnifiedExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/excelManager';
 import { generateShortId } from './lib/utils';
 import DynamicAdminSettings from './components/DynamicAdminSettings';
 // @ts-ignore
@@ -412,7 +412,8 @@ const ALL_ADMIN_TABS = [
   { id: 'news', label: 'الأخبار والسلايدر', icon: Newspaper },
   { id: 'participants', label: 'إدارة المشتركين', icon: Users },
   { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
-  { id: 'results', label: 'النتائج', icon: Award },
+  { id: 'results', label: 'السجل العام', icon: Award },
+  { id: 'online_results', label: 'قسم النتائج', icon: Award },
   { id: 'omr', label: 'البابل شيت والكيو أر', icon: FileScan },
   { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
   { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
@@ -594,6 +595,7 @@ function App() {
   const [showDeleteScheduleModal, setShowDeleteScheduleModal] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<string | null>(null);
   const [results, setResults] = useState<Result[]>([]);
+  const [onlineResults, setOnlineResults] = useState<any[]>([]);
   const [news, setNews] = useState<News[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -903,6 +905,10 @@ function App() {
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'news'));
 
     // Filtered listeners for church users
+    const unsubOnlineResults = onSnapshot(collection(db, 'online_results'), (snapshot) => {
+      setOnlineResults(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'online_results'));
+
     const resultsQuery = userRole === 'admin' 
       ? query(collection(db, 'results'), where('year', '==', activeYear)) 
       : query(collection(db, 'results'), where('churchName', '==', churchName), where('year', '==', activeYear));
@@ -971,6 +977,7 @@ function App() {
 
     return () => {
       unsubNews();
+      unsubOnlineResults();
       unsubResults();
       unsubOrders();
       unsubParticipants();
@@ -3827,10 +3834,64 @@ function App() {
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
                 <div className="flex items-center justify-between mb-8">
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                    <Award className="text-indigo-600" /> إدارة النتائج
+                    <Award className="text-indigo-600" /> السجل العام
                   </h4>
                 </div>
                 <ResultsViewer results={filteredResultsList} />
+              </section>
+            )}
+
+            {adminActiveTab === 'online_results' && (
+              <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
+                <div className="flex items-center justify-between mb-8">
+                  <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                    <Award className="text-emerald-600" /> قسم النتائج (أونلاين)
+                  </h4>
+                  <button
+                    onClick={exportOnlineResultsExcel}
+                    className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 transition shadow flex items-center gap-2"
+                  >
+                    <Download size={18} /> استخراج نتائج الأونلاين (Excel)
+                  </button>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse bg-white rounded-xl shadow-sm overflow-hidden">
+                    <thead>
+                      <tr className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase">
+                        <th className="p-4 border-b border-slate-200">الكود</th>
+                        <th className="p-4 border-b border-slate-200">الاسم</th>
+                        <th className="p-4 border-b border-slate-200">الكنيسة</th>
+                        <th className="p-4 border-b border-slate-200">المرحلة</th>
+                        <th className="p-4 border-b border-slate-200">المسابقة</th>
+                        <th className="p-4 border-b border-slate-200">الدرجة النهائية</th>
+                        <th className="p-4 border-b border-slate-200">الدرجة الكلية</th>
+                        <th className="p-4 border-b border-slate-200">التاريخ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {onlineResults.map((r, i) => (
+                        <tr key={r.id || i} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-4 font-mono text-xs text-slate-500">{r.studentId}</td>
+                          <td className="p-4 font-bold text-slate-800 text-sm whitespace-nowrap">{r.studentName}</td>
+                          <td className="p-4 text-slate-600 text-xs">{r.churchName}</td>
+                          <td className="p-4 text-slate-600 text-xs">{r.stage}</td>
+                          <td className="p-4 text-slate-600 text-xs">{r.competition}</td>
+                          <td className="p-4 font-black text-indigo-600">{r.finalScore}</td>
+                          <td className="p-4 font-black text-slate-400">{r.maxScore}</td>
+                          <td className="p-4 text-xs text-slate-400 text-left" dir="ltr">
+                            {r.submissionTimestamp ? new Date(r.submissionTimestamp).toLocaleString('ar-EG') : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                      {onlineResults.length === 0 && (
+                        <tr>
+                          <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">لا يوجد نتائج أونلاين مسجلة بعد.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             )}
 

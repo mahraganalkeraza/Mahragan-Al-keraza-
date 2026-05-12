@@ -396,6 +396,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /online_results/{resultId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     match /test/connection {
       allow read: if true;
     }

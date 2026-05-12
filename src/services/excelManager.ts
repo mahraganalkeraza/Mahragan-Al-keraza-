@@ -144,3 +144,33 @@ export const downloadMasterTemplate = () => {
     XLSX.utils.book_append_sheet(workbook, ws, "السجل الرئيسي");
     XLSX.writeFile(workbook, `Master_Template.xlsx`);
 };
+
+export const exportOnlineResultsExcel = async () => {
+    const onlineSnap = await getDocs(collection(db, 'online_results'));
+    const onlineResults = onlineSnap.docs.map(d => d.data());
+    
+    if (onlineResults.length === 0) {
+        alert('لا يوجد نتائج أونلاين حتى الآن.');
+        return;
+    }
+    
+    const formattedData = onlineResults.map(r => ({
+        'الكود': r.studentID || r.studentId || '-',
+        'الاسم': r.studentName || '-',
+        'الكنيسة/البلد': r.churchName || '-',
+        'المرحلة': r.stage || '-',
+        'المسابقة': r.competition || '-',
+        'الدرجة النهائية': r.finalScore ?? '-',
+        'الدرجة الكلية': r.maxScore ?? '-',
+        'تاريخ وتوقيت التقديم': r.submissionTimestamp ? new Date(r.submissionTimestamp).toLocaleString('ar-EG') : '-',
+        'بصمة الجهاز (OS)': r.deviceFingerprint?.os || '-',
+        'متصفح الجهاز': r.deviceFingerprint?.browser || '-'
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(formattedData);
+    ws['!view'] = { rightToLeft: true };
+    XLSX.utils.book_append_sheet(workbook, ws, "النتائج الأونلاين");
+    XLSX.writeFile(workbook, `Online_Results_${new Date().getTime()}.xlsx`);
+};
+
