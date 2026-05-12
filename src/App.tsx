@@ -140,7 +140,7 @@ import {
   sortStages
   } from './constants';
 
-import { exportUnifiedExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/excelManager';
+import { generateMasterExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/newExcelExport';
 import { generateShortId } from './lib/utils';
 import DynamicAdminSettings from './components/DynamicAdminSettings';
 // @ts-ignore
@@ -1663,7 +1663,7 @@ function App() {
   };
 
   const exportAllRegistrationsToExcel = async () => {
-    await exportUnifiedExcel();
+    await generateMasterExcel();
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -3082,8 +3082,7 @@ function App() {
                     <BookOpen size={18} /> بدء دخول الامتحان (QR Scan)
                   </button>
                   <button 
-                    onClick={() => exportUnifiedExcel()}
-                    className="px-6 py-3 bg-emerald-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-xl hover:scale-105 active:scale-95"
+                    onClick={() => generateMasterExcel()}
                   >
                     <Download size={18} /> التصدير الشامل الموحد (Excel)
                   </button>
@@ -3385,14 +3384,13 @@ function App() {
                     </div>
                     <div className="flex flex-col md:flex-row items-center gap-2">
                       <button 
-                        onClick={() => downloadMasterTemplate()}
+                        onClick={() => generateMasterExcel()}
                         className="px-6 py-3 bg-coptic-red text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                       >
                         <Award size={20} /> تحميل قالب التسجيل المعتمد
                       </button>
                       <button 
-                        onClick={() => exportUnifiedExcel(true, globalChurchFilter)}
-                        className="px-6 py-3 bg-coptic-blue text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
+                        onClick={() => generateMasterExcel()}
                       >
                         <Download size={20} /> تصدير كل بيانات التسجيل الموحد (Excel)
                       </button>
@@ -3848,7 +3846,7 @@ function App() {
                     <Award className="text-emerald-600" /> قسم النتائج (أونلاين)
                   </h4>
                   <button
-                    onClick={exportOnlineResultsExcel}
+                    onClick={generateMasterExcel}
                     className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 transition shadow flex items-center gap-2"
                   >
                     <Download size={18} /> استخراج نتائج الأونلاين (Excel)
@@ -4953,7 +4951,7 @@ function App() {
                         <div>
                           <h5 className="font-black text-slate-700">تحديث واستخراج النتائج الموحدة (Live Schema)</h5>
                           <p className="text-xs text-slate-400 font-bold mb-2">يرجى تحميل القالب المعتمد ورفع النتائج من خلاله ليتم مطابقتها ديناميكياً.</p>
-                          <button type="button" onClick={downloadMasterTemplate} className="text-indigo-600 text-xs font-bold hover:underline">
+                          <button type="button" onClick={generateMasterExcel} className="text-indigo-600 text-xs font-bold hover:underline">
                             تحميل قالب النتائج المعتمد (Master Template)
                           </button>
                         </div>
