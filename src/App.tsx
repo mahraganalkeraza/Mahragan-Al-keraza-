@@ -652,7 +652,7 @@ function App() {
     name: '', 
     stage: '', 
     country: '',
-    competitions: ['', '', '', ''] 
+    competitions: ['', '', ''] 
   });
   const [batchUploadStatus, setBatchUploadStatus] = useState<string | null>(null);
   const [batchUploadErrors, setBatchUploadErrors] = useState<{row: number, error: string}[]>([]);
@@ -3142,9 +3142,9 @@ function App() {
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase">نوع المسابقات (بحد أقصى ٤)</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase">نوع المسابقات (بحد أقصى ٣)</label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {[0, 1, 2, 3].map((idx) => {
+                        {[0, 1, 2].map((idx) => {
                           const selectedComps = newParticipant.competitions;
                           const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
                           const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
@@ -5380,45 +5380,47 @@ function App() {
               {/* Team Registration form content starts below directly */}
 
               {/* BATCH UPLOAD FIREWALL SECTION */}
-              <div className="bg-slate-50 border-2 border-dashed border-slate-300 p-8 rounded-3xl mb-12">
-                <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
-                  <div>
-                    <h4 className="font-black text-xl text-slate-800 flex items-center gap-2 mb-2">
-                      <FileSpreadsheet className="text-primary" /> رفع ملف المشتركين (Batch Upload)
-                    </h4>
-                    <p className="text-sm font-bold text-slate-500 max-w-xl">
-                      يتم فحص الملفات المرفوعة عن طريق <span className="text-primary">محرك التحقق الجداري (Firewall)</span> للتأكد من مطابقة الاسم مع القالب المعتمد المخصص للكنيسة.
-                      تتم مطابقة الأعمدة تلقائياً والتأكد من المراحل الدراسية وسنوات الميلاد لتجنب الأخطاء. لم يتم حفظ أي داتا إذا إحتوى الملف أخطاء.
-                    </p>
+              {userRole === 'admin' && (
+                <div className="bg-slate-50 border-2 border-dashed border-slate-300 p-8 rounded-3xl mb-12">
+                  <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
+                    <div>
+                      <h4 className="font-black text-xl text-slate-800 flex items-center gap-2 mb-2">
+                        <FileSpreadsheet className="text-primary" /> رفع ملف المشتركين (Batch Upload)
+                      </h4>
+                      <p className="text-sm font-bold text-slate-500 max-w-xl">
+                        يتم فحص الملفات المرفوعة عن طريق <span className="text-primary">محرك التحقق الجداري (Firewall)</span> للتأكد من مطابقة الاسم مع القالب المعتمد المخصص للكنيسة.
+                        تتم مطابقة الأعمدة تلقائياً والتأكد من المراحل الدراسية وسنوات الميلاد لتجنب الأخطاء. لم يتم حفظ أي داتا إذا إحتوى الملف أخطاء.
+                      </p>
+                    </div>
+                    <label className="shrink-0 flex items-center gap-2 px-8 py-4 bg-primary text-white rounded-xl font-black cursor-pointer hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 hover:scale-105 active:scale-95">
+                      {isUploadingBatch ? <Loader2 size={24} className="animate-spin" /> : <Upload size={24} />}
+                      <span>تصفح ورفع الملف (Excel)</span>
+                      <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleBatchUpload} disabled={isUploadingBatch} />
+                    </label>
                   </div>
-                  <label className="shrink-0 flex items-center gap-2 px-8 py-4 bg-primary text-white rounded-xl font-black cursor-pointer hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 hover:scale-105 active:scale-95">
-                    {isUploadingBatch ? <Loader2 size={24} className="animate-spin" /> : <Upload size={24} />}
-                    <span>تصفح ورفع الملف (Excel)</span>
-                    <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleBatchUpload} disabled={isUploadingBatch} />
-                  </label>
+
+                  {batchUploadStatus && (
+                    <div className={`mt-6 p-4 rounded-xl font-bold flex items-center gap-3 ${batchUploadErrors.length > 0 ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                      {batchUploadErrors.length > 0 ? <X size={20} /> : <Check size={20} />}
+                      {batchUploadStatus}
+                    </div>
+                  )}
+
+                  {batchUploadErrors.length > 0 && (
+                    <div className="mt-4 max-h-[300px] overflow-y-auto bg-white border border-red-100 rounded-xl p-4 shadow-inner">
+                      <h5 className="font-black text-red-600 mb-4 border-b border-red-100 pb-2">تقرير أخطاء القبول (Rejection Report)</h5>
+                      <ul className="space-y-3">
+                        {batchUploadErrors.map((err, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm">
+                            <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold shrink-0 mt-0.5">صف {err.row}</span>
+                            <span className="text-slate-700 font-bold">{err.error}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-
-                {batchUploadStatus && (
-                  <div className={`mt-6 p-4 rounded-xl font-bold flex items-center gap-3 ${batchUploadErrors.length > 0 ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
-                    {batchUploadErrors.length > 0 ? <X size={20} /> : <Check size={20} />}
-                    {batchUploadStatus}
-                  </div>
-                )}
-
-                {batchUploadErrors.length > 0 && (
-                  <div className="mt-4 max-h-[300px] overflow-y-auto bg-white border border-red-100 rounded-xl p-4 shadow-inner">
-                     <h5 className="font-black text-red-600 mb-4 border-b border-red-100 pb-2">تقرير أخطاء القبول (Rejection Report)</h5>
-                     <ul className="space-y-3">
-                       {batchUploadErrors.map((err, idx) => (
-                         <li key={idx} className="flex items-start gap-2 text-sm">
-                           <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold shrink-0 mt-0.5">صف {err.row}</span>
-                           <span className="text-slate-700 font-bold">{err.error}</span>
-                         </li>
-                       ))}
-                     </ul>
-                  </div>
-                )}
-              </div>
+              )}
 
               <div className="space-y-8">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
