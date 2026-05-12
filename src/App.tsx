@@ -3872,7 +3872,15 @@ function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {onlineResults.map((r, i) => {
+                      {Object.values((onlineResults || []).reduce((acc: any, r: any) => {
+                        const id = r.studentID || r.studentId;
+                        if (!id) return acc;
+                        if (!acc[id]) acc[id] = { ...r };
+                        else {
+                           Object.keys(r).forEach(k => { if (r[k] !== undefined && r[k] !== null) acc[id][k] = r[k]; });
+                        }
+                        return acc;
+                      }, {})).map((r: any, i: number) => {
                         let drasy = r['مسابقة دراسي'] ?? (r.competition === 'دراسي' ? r.finalScore : '-');
                         let mahfozat = r['مسابقة محفوظات'] ?? (r.competition === 'محفوظات' ? r.finalScore : '-');
                         let coptic1 = r['مسابقة قبطي مستوى أول'] ?? (r.competition === 'قبطي مستوى أول' ? r.finalScore : '-');

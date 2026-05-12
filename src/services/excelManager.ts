@@ -154,7 +154,17 @@ export const exportOnlineResultsExcel = async () => {
         return;
     }
     
-    const formattedData = onlineResults.map(r => {
+    const consolidated = onlineResults.reduce((acc: any, cur: any) => {
+        const id = cur.studentID || cur.studentId;
+        if (!id) return acc;
+        if (!acc[id]) acc[id] = { ...cur };
+        else {
+           Object.keys(cur).forEach(k => { if (cur[k] !== undefined && cur[k] !== null) acc[id][k] = cur[k]; });
+        }
+        return acc;
+    }, {});
+
+    const formattedData = Object.values(consolidated).map((r: any) => {
         let drasy = r['مسابقة دراسي'] ?? (r.competition === 'دراسي' ? r.finalScore : '-');
         let mahfozat = r['مسابقة محفوظات'] ?? (r.competition === 'محفوظات' ? r.finalScore : '-');
         let coptic1 = r['مسابقة قبطي مستوى أول'] ?? (r.competition === 'قبطي مستوى أول' ? r.finalScore : '-');
