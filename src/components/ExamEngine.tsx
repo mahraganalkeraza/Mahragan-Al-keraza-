@@ -12,8 +12,8 @@ const normalizeArabic = (text: any): string => {
     .replace(/[أإآ]/g, 'ا')
     .replace(/ة/g, 'ه')
     .replace(/ى/g, 'ي')
-    .replace(/[ًٌٍَُِّْـ]/g, '') // Remove diacritics and Tatweel
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '') // Remove punctuation
+    .replace(/[ًٌٍَُِّْـ]/g, '')
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '')
     .replace(/\s+/g, ' ');
 };
 
@@ -31,7 +31,7 @@ interface Exam {
   id: string;
   stage: string;
   competitionType: string;
-  model: string; // A, B, C
+  model: string;
   questions: Question[];
   isActive: boolean;
   updatedAt: string;
@@ -231,7 +231,6 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
               </div>
             </div>
 
-            {/* MCQ & Boolean UI */}
             {(q.type === 'mcq' || q.type === 'boolean') && (
               <div className="space-y-3">
                 <label className="text-xs font-black mb-2 block text-slate-400">الخيارات (حدد الإجابة الصحيحة)</label>
@@ -296,7 +295,6 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
               </div>
             )}
 
-            {/* Matching UI */}
             {q.type === 'matching' && (
               <div className="space-y-4">
                 <label className="text-xs font-black mb-2 block text-slate-400">أزواج التوصيل (العمود أ - العمود ب)</label>
@@ -355,7 +353,6 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
               </div>
             )}
 
-            {/* Fill in the blanks UI */}
             {q.type === 'fill' && (
               <div className="space-y-3">
                 <label className="text-xs font-black mb-1 block text-slate-400">الإجابة الصحيحة (سيقوم الطالب بكتابتها)</label>
@@ -411,11 +408,9 @@ export const LiveExamGateway: React.FC = () => {
   useEffect(() => {
     if (!activeStudent?.id) return;
     
-    // 1. Listen to results doc to check isSubmitted status in real-time (for Admin Resets)
     const unsubResult = onSnapshot(doc(db, 'results', activeStudent.id), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        // If it was submitted but now it's not, it means an admin reset it
         if (activeStudent.isSubmitted && !data.isSubmitted) {
           setActiveStudent(prev => prev ? {...prev, ...data, isSubmitted: false} : null);
           if (isExamCompleted) {
@@ -430,10 +425,8 @@ export const LiveExamGateway: React.FC = () => {
       }
     });
 
-    // 2. Listen to session doc for terminations or resets
     const unsubSession = onSnapshot(doc(db, 'active_sessions', activeStudent.id), (snap) => {
       if (!snap.exists() && selectedCompetition) {
-         // Session deleted while in exam = Admin click Reset Exam
          alert('جلسة الامتحان تم إعادة ضبطها من قبل المسئول');
          setSelectedCompetition(null);
          setActiveExam(null);
@@ -457,7 +450,6 @@ export const LiveExamGateway: React.FC = () => {
     const fp = getDeviceFingerprint();
     setFingerprint(fp);
 
-    // Attempt to get IP
     fetch('https://api.ipify.org?format=json')
       .then(res => res.json())
       .then(data => {
@@ -465,7 +457,6 @@ export const LiveExamGateway: React.FC = () => {
       })
       .catch(() => setDeviceInfo(prev => ({ ...prev, ip: 'مخفي/غير متاح' })));
 
-    // Detect device type
     const ua = navigator.userAgent;
     let type = 'Desktop';
     if (/android/i.test(ua)) type = 'Android';
@@ -474,32 +465,23 @@ export const LiveExamGateway: React.FC = () => {
   }, []);
 
   const fetchStudentAndExam = async (input: string) => {
-    console.log('--- SCANNER DEBUG: Input Received ---', input);
     setLastScanDebug(input);
     try {
       setIsScanning(false);
       setIsLoading(true);
       let studentId = input.trim().toLowerCase();
-
       let studentNameFromPayload = '';
       
-      // Attempt to parse JSON if it looks like our payload
       try {
         if (input.includes('{')) {
           const payload = JSON.parse(input);
           studentId = (payload.studentID || payload.id || input).toString().trim();
           studentNameFromPayload = payload.fullName || '';
-          console.log('--- SCANNER DEBUG: JSON Payload Parsed ---', payload);
         }
-      } catch (e) {
-        console.warn('QR scan not a JSON payload or parsing failed, using raw string');
-      }
+      } catch (e) {}
 
-      // Robust matching: Try case-insensitive if direct fail
       const normalizedId = studentId.toLowerCase();
-      console.log('--- SCANNER DEBUG: Searching for normalizedId ---', normalizedId);
 
-      // Blacklist Check
       if (fingerprint?.uuid) {
         try {
           const blSnap = await getDoc(doc(db, 'blacklist', fingerprint.uuid));
@@ -514,11 +496,9 @@ export const LiveExamGateway: React.FC = () => {
 
       let studentData: any = null;
 
-      // Try multiple collections for robustness as requested
       const collectionsToTry = ['participants', 'students'];
       
       for (const colName of collectionsToTry) {
-        // Step 1: Try direct ID match (original case)
         const docRef = doc(db, colName, studentId);
         const snap = await getDoc(docRef);
         if (snap.exists()) {
@@ -526,7 +506,6 @@ export const LiveExamGateway: React.FC = () => {
           break;
         }
 
-        // Step 1b: Try normalized ID match if different
         if (studentId !== normalizedId) {
           const docRefNorm = doc(db, colName, normalizedId);
           const snapNorm = await getDoc(docRefNorm);
@@ -536,7 +515,6 @@ export const LiveExamGateway: React.FC = () => {
           }
         }
 
-        // Step 2: Try serial match
         const colRef = collection(db, colName);
         const qSerial = query(colRef, where('serial', '==', studentId));
         const qSnap = await getDocs(qSerial);
@@ -546,7 +524,6 @@ export const LiveExamGateway: React.FC = () => {
           break;
         }
         
-        // Also try serial match with normalized string just in case
         const qSerialNorm = query(colRef, where('serial', '==', normalizedId));
         const qSnapNorm = await getDocs(qSerialNorm);
         if (!qSnapNorm.empty) {
@@ -556,7 +533,6 @@ export const LiveExamGateway: React.FC = () => {
         }
       }
 
-      // Admin Override / Force Load for identifying
       const isAdminUser = auth.currentUser?.email === 'admin@mafk.com' || auth.currentUser?.email === 'kareemsame77esoyam@gmail.com';
       if (!studentData && isAdminUser) {
         if (confirm(`لم يتم العثور على طالب بالكود "${studentId}". هل تريد إنشاء جلسة امتحان يدوية بهذا الكود؟ (لمسؤولي النظام فقط)`)) {
@@ -570,34 +546,25 @@ export const LiveExamGateway: React.FC = () => {
         }
       }
 
-      // Step 3: Check Results collection for existing scores (Sync identity)
       if (studentData) {
         const resDocRef = doc(db, 'results', studentData.id);
         const resSnap = await getDoc(resDocRef);
         
         if (resSnap.exists()) {
-           // Merge result data (scores) into student data
            studentData = { ...studentData, ...(resSnap.data() as object) };
-           console.log('--- SCANNER DEBUG: Merged with existing results ---', resSnap.data());
         }
 
-        // Check if already examined online
         const onlineResSnap = await getDoc(doc(db, 'online_results', studentData.id));
         if (onlineResSnap.exists()) {
-           console.log('--- SCANNER DEBUG: Has online results ---', onlineResSnap.data());
            studentData = { ...studentData, ...(onlineResSnap.data() as object) };
         }
       }
 
       if (!studentData) {
         setIsLoading(false);
-        console.error('--- SCANNER DEBUG: NOT FOUND ---');
         return alert(`عذراً، هذا الكود غير مسجل: ${studentId}\nيرجى التأكد من الكود المطبوع أو مراجعة المشرف.`);
       }
       
-      const deviceId = localStorage.getItem('coptic_device_id');
-      
-      // Log access with fingerprint
       await setDoc(doc(db, 'exam_logs', Date.now().toString()), {
         ip: deviceInfo.ip,
         userAgent: navigator.userAgent,
@@ -611,38 +578,29 @@ export const LiveExamGateway: React.FC = () => {
         action: 'IDENTIFIED'
       });
 
-      // Normalize studentName field
       if (!studentData.studentName) studentData.studentName = studentData.name;
 
-  const sessionData: any = {
-    studentId: studentData.id,
-    studentName: studentData.studentName,
-    churchName: studentData.churchName,
-    deviceId: fingerprint?.uuid,
-    fingerprint: fingerprint, // Store full fingerprint in session as requested
-    status: 'active',
-    timestamp: new Date().toISOString(),
-    lastUpdate: new Date().toISOString()
-  };
+      const sessionData: any = {
+        studentId: studentData.id,
+        studentName: studentData.studentName,
+        churchName: studentData.churchName,
+        deviceId: fingerprint?.uuid,
+        fingerprint: fingerprint,
+        status: 'active',
+        timestamp: new Date().toISOString(),
+        lastUpdate: new Date().toISOString()
+      };
 
-  if (studentData.isManual) {
-    sessionData.isManual = true;
-  }
+      if (studentData.isManual) sessionData.isManual = true;
 
-  // Create Active Session
-  await setDoc(doc(db, 'active_sessions', studentData.id), sessionData);
+      await setDoc(doc(db, 'active_sessions', studentData.id), sessionData);
 
       setActiveStudent(studentData);
       setIsScanning(false);
       setIsLoading(false);
     } catch (e: any) {
-      console.error('--- SCANNER DEBUG: ERROR ---', e);
       setIsLoading(false);
-      if (e.code === 'permission-denied' || e.message?.includes('permission')) {
-        alert('خطأ في الاتصال بالسيرفر - يرجى مراجعة الصلاحيات أو تسجيل الدخول بصلاحية أدمن');
-      } else {
-        alert('حدث خطأ غير متوقع: ' + (e.message || 'Error occurred'));
-      }
+      alert('حدث خطأ غير متوقع: ' + (e.message || 'Error occurred'));
     }
   };
 
@@ -653,14 +611,12 @@ export const LiveExamGateway: React.FC = () => {
       
       const stage = activeStudent.data?.['المرحلة'] || activeStudent.stage;
 
-      // 0. Check Global / Group Blocks
       if (examConfig) {
         if (!examConfig.isExamLive) {
           setIsLoading(false);
           return alert('عذراً، الامتحانات مغلقة الآن بقرار من اللجنة المركزية');
         }
 
-        // Check Auto-Close Time
         if (examConfig.autoCloseTime) {
           const now = new Date();
           const [hours, minutes] = examConfig.autoCloseTime.split(':').map(Number);
@@ -681,12 +637,27 @@ export const LiveExamGateway: React.FC = () => {
           return alert(`عذراً، الامتحانات مغلقة حالياً لمرحلة ${stage}`);
         }
       }
+
+      if (activeStudent.enrolled_subjects && Array.isArray(activeStudent.enrolled_subjects)) {
+        if (!activeStudent.enrolled_subjects.includes(competitionType)) {
+          setIsLoading(false);
+          return alert("عذراً، أنت غير مسجل في هذه المسابقة. يرجى مراجعة اللجنة التنظيمية.");
+        }
+      }
+
+      if (competitionType === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) {
+        setIsLoading(false);
+        return alert("غير مسموح لك بدخول مستوى قبطي مخالف لمستواك المسجل.");
+      }
+      if (competitionType === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) {
+        setIsLoading(false);
+        return alert("غير مسموح لك بدخول مستوى قبطي مخالف لمستواك المسجل.");
+      }
       
-      // Check if already taken this specific competition
       const field = SCORE_FIELD_MAP[competitionType];
       if (activeStudent[field] !== undefined && activeStudent[field] !== null) {
         setIsLoading(false);
-        return alert(`عفواً، لقد قمت بأداء امتحان ${competitionType} سابقاً. لا يسمح بإعادته إلا بإذن المسئول.`);
+        return alert(`عفواً، لقد قمت بأداء امتحان ${competitionType} سابقاً.`);
       }
 
       const examsSnap = await getDocs(collection(db, 'exams'));
@@ -701,7 +672,6 @@ export const LiveExamGateway: React.FC = () => {
       
       const randomModel = availableExams[Math.floor(Math.random() * availableExams.length)];
       
-      // Shuffle questions
       const shuffledQuestions = [...randomModel.questions].sort(() => 0.5 - Math.random());
       shuffledQuestions.forEach(q => {
         if (q.type === 'mcq') q.options.sort(() => 0.5 - Math.random());
@@ -719,7 +689,6 @@ export const LiveExamGateway: React.FC = () => {
       setSelectedCompetition(competitionType);
       setActiveExam(randomModel);
       
-      // Update session to indicate which exam they are taking
       await setDoc(doc(db, 'active_sessions', activeStudent.id), {
          competition: competitionType,
          lastUpdate: new Date().toISOString()
@@ -749,36 +718,16 @@ export const LiveExamGateway: React.FC = () => {
     setIsLoading(true);
 
     let totalScore = 0;
-    let totalScorePossible = 0;
-    console.log('--- STARTING GRADING ---');
-    console.log('Student:', activeStudent.studentName, 'ID:', activeStudent.id);
-    console.log('Competition:', selectedCompetition);
 
-    activeExam.questions.forEach((q, idx) => {
-      totalScorePossible += q.points;
+    activeExam.questions.forEach((q) => {
       const stdAns = answers[q.id];
       const correctAns = q.correctAnswers?.[0];
       
-      console.log(`Q${idx+1} [${q.type}]: student="${stdAns}", correct="${correctAns}"`);
+      if (!stdAns) return;
 
-      if (!stdAns) {
-        console.log(`Q${idx+1}: No answer provided.`);
-        return;
-      }
-
-      if (q.type === 'mcq' || q.type === 'boolean') {
+      if (q.type === 'mcq' || q.type === 'boolean' || q.type === 'fill') {
         if (normalizeArabic(String(stdAns)) === normalizeArabic(String(correctAns))) {
           totalScore += q.points;
-          console.log(`Q${idx+1}: CORRECT (+${q.points})`);
-        } else {
-          console.log(`Q${idx+1}: INCORRECT`);
-        }
-      } else if (q.type === 'fill') {
-        if (normalizeArabic(String(stdAns)) === normalizeArabic(String(correctAns))) {
-          totalScore += q.points;
-          console.log(`Q${idx+1}: CORRECT (+${q.points})`);
-        } else {
-          console.log(`Q${idx+1}: INCORRECT`);
         }
       } else if (q.type === 'matching') {
         let correctMatches = 0;
@@ -790,27 +739,17 @@ export const LiveExamGateway: React.FC = () => {
              correctMatches++;
            }
         });
-        
-        console.log(`Q${idx+1}: Matches ${correctMatches}/${matchingPairs.length}`);
-        if (correctMatches === matchingPairs.length) {
-          totalScore += q.points;
-          console.log(`Q${idx+1}: CORRECT (+${q.points})`);
-        }
+        if (correctMatches === matchingPairs.length) totalScore += q.points;
       }
     });
 
-    console.log('--- GRADING FINISHED --- Total Score:', totalScore);
     setScore(totalScore);
 
     const field = SCORE_FIELD_MAP[selectedCompetition];
 
     try {
-      // Use setDoc with merge: true to handle missing results documents
-      // Use dot notation for nested merging if possible, or build the object carefully
       const resultDocRef = doc(db, 'results', activeStudent.id);
-      
       const onlineResultRef = doc(db, 'online_results', activeStudent.id);
-      const sessionRef = doc(db, 'active_sessions', activeStudent.id);
       
       const payload: any = {
         studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
@@ -823,25 +762,16 @@ export const LiveExamGateway: React.FC = () => {
         [field]: totalScore,
         data: {
           [selectedCompetition]: totalScore
-        },
-        submissionInfo: {
-          timestamp: new Date().toISOString(),
-          ip: deviceInfo.ip,
-          userAgent: navigator.userAgent,
-          deviceId: localStorage.getItem('coptic_device_id')
         }
       };
-
-      const simplifiedSignature = `${deviceInfo.type || 'Unknown'} - ${navigator.userAgent.includes('Chrome') ? 'Chrome' : navigator.userAgent.includes('Safari') ? 'Safari' : navigator.userAgent.includes('Firefox') ? 'Firefox' : navigator.userAgent.includes('Edg') ? 'Edge' : 'Browser'}`;
 
       const onlineResultPayload = {
         studentID: activeStudent.id,
         studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
         churchName: activeStudent.churchName || 'غير محدد',
         stage: activeExam.stage,
-        [`مسابقة ${selectedCompetition}`]: totalScore, // Save score under competition name dynamically
-        submissionTimestamp: new Date().toISOString(),
-        deviceFingerprint: simplifiedSignature
+        [`مسابقة ${selectedCompetition}`]: totalScore,
+        submissionTimestamp: new Date().toISOString()
       };
 
       await Promise.all([
@@ -849,26 +779,15 @@ export const LiveExamGateway: React.FC = () => {
         setDoc(onlineResultRef, onlineResultPayload, { merge: true })
       ]);
       
-      // Fetch permanent record to ensure it is saved and show real score
-      const freshSnap = await getDoc(onlineResultRef);
-      if (freshSnap.exists()) {
-         const dbData = freshSnap.data();
-         setScore(dbData[`مسابقة ${selectedCompetition}`] ?? totalScore);
-      }
-      
       setIsExamCompleted(true);
       setIsLoading(false);
       
-      // Remove Active Session on normal completion
       try {
         await deleteDoc(doc(db, 'active_sessions', activeStudent.id));
-      } catch (e) {
-        console.warn('Could not delete active session doc', e);
-      }
+      } catch (e) {}
 
       localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
     } catch (e: any) {
-      console.error('Submission error:', e);
       setIsLoading(false);
       alert('فشل في حفظ الدرجة: ' + (e.message || 'Error occurred'));
     }
@@ -882,10 +801,6 @@ export const LiveExamGateway: React.FC = () => {
           <ShieldX size={48} />
         </div>
         <h2 className="text-3xl font-black mb-4 text-slate-800">تم إنهاء الجلسة</h2>
-        <div className="bg-rose-50 p-6 rounded-2xl border border-rose-100 mb-8 max-w-md mx-auto">
-           <p className="text-rose-700 font-bold text-lg">عذراً، تم إنهاء محاولة الامتحان الخاصة بك بواسطة الإدارة.</p>
-           <p className="text-rose-500 text-sm mt-2">يرجى مراجعة اللجنة المنظمة في حال وجود خطأ.</p>
-        </div>
         <button 
           onClick={() => { setIsTerminated(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
           className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all"
@@ -899,35 +814,21 @@ export const LiveExamGateway: React.FC = () => {
   if (!activeStudent && !isScanning) {
     return (
       <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
-        <div className="mb-6 flex justify-center gap-4 text-[10px] font-black uppercase text-slate-400">
-           <span className="flex items-center gap-1"><Activity size={12}/> IP: {deviceInfo.ip}</span>
-           <span className="flex items-center gap-1"><Activity size={12}/> {deviceInfo.type}</span>
-        </div>
-        <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6">
-          <BookOpen size={40} />
-        </div>
         <h3 className="text-2xl font-black mb-2 text-slate-800">بوابة الامتحان الإلكتروني</h3>
-        <p className="text-slate-500 mb-8 font-bold">يرجى مسح كود الطالب أو إدخال رقم المسلسل للبدء</p>
         
         <div className="max-w-xs mx-auto space-y-4">
           <button 
             onClick={() => setIsScanning(true)} 
-            className="w-full px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3"
+            className="w-full px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all"
           >
-            <FileText size={24} /> مسح QR كود الطالب
+            مسح QR كود
           </button>
           
-          <div className="relative flex items-center py-2">
-            <div className="flex-grow border-t border-slate-200"></div>
-            <span className="flex-shrink mx-4 text-slate-400 text-xs font-black uppercase">أو</span>
-            <div className="flex-grow border-t border-slate-200"></div>
-          </div>
-
           <div className="flex gap-2">
             <input 
               type="text" 
               placeholder="كود الطالب"
-              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-center"
+              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none text-center"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') fetchStudentAndExam((e.target as HTMLInputElement).value);
               }}
@@ -938,7 +839,7 @@ export const LiveExamGateway: React.FC = () => {
                 const input = document.getElementById('manual-student-id') as HTMLInputElement;
                 if (input?.value) fetchStudentAndExam(input.value);
               }}
-              className="px-4 py-3 bg-indigo-100 text-indigo-600 rounded-xl font-black hover:bg-indigo-200 transition-all"
+              className="px-4 py-3 bg-indigo-100 text-indigo-600 rounded-xl font-black"
             >
               دخول
             </button>
@@ -948,189 +849,73 @@ export const LiveExamGateway: React.FC = () => {
     );
   }
 
-  if (isScanning) {
-    return (
-      <div className="p-8 bg-white border border-slate-200 rounded-3xl text-center shadow-xl">
-        <h3 className="text-xl font-black mb-6 text-slate-800">يُرجى مسح الكود التعريفي للطالب</h3>
-        <div className="max-w-sm mx-auto overflow-hidden rounded-2xl border-4 border-indigo-100 shadow-inner">
-          <QRScanner onScanSuccess={fetchStudentAndExam} />
-        </div>
-        {lastScanDebug && (
-          <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-mono break-all text-amber-700">
-            <span className="font-black block mb-1">آخر قراءة للكاميرا:</span>
-            {lastScanDebug}
-          </div>
-        )}
-        <button 
-          onClick={() => setIsScanning(false)} 
-          className="mt-8 px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all"
-        >
-          إلغاء
-        </button>
-      </div>
-    );
-  }
-
   if (activeStudent && !selectedCompetition) {
      const stage = activeStudent.data?.['المرحلة'] || activeStudent.stage;
      return (
        <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
-         <div className="flex flex-col items-center mb-8">
-           <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-4 border-4 border-white shadow-md">
-             <Users size={32} className="text-indigo-600" />
-           </div>
-           <h3 className="text-2xl font-black text-slate-800">{activeStudent.studentName}</h3>
-           <p className="text-indigo-600 font-bold bg-indigo-50 px-4 py-1 rounded-full mt-2">مرحلة {stage}</p>
-         </div>
-
-         <h4 className="text-lg font-black text-slate-700 mb-6 flex items-center justify-center gap-2">
-           <Activity size={20} className="text-indigo-500"/> اختر نوع الامتحان
-         </h4>
+         <h3 className="text-2xl font-black text-slate-800 mb-8">{activeStudent.studentName}</h3>
          
          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto">
-           {COMPETITION_TYPES.map(type => (
-             <button
-               key={type}
-               onClick={() => startExam(type)}
-               disabled={isLoading}
-               className="p-6 bg-slate-50 border border-slate-200 rounded-2xl hover:border-indigo-500 hover:bg-indigo-50 transition-all group relative overflow-hidden"
-             >
-               <div className="absolute top-0 right-0 w-1 h-full bg-indigo-500 transition-all opacity-0 group-hover:opacity-100" />
-               <h5 className="font-black text-slate-800 text-lg mb-1">{type}</h5>
-               <p className="text-xs text-slate-400 font-bold">ابدأ امتحان {type} الإلكتروني</p>
-             </button>
-           ))}
+           {COMPETITION_TYPES.filter(type => {
+              if (activeStudent.enrolled_subjects && Array.isArray(activeStudent.enrolled_subjects)) {
+                  if (!activeStudent.enrolled_subjects.includes(type)) return false;
+              }
+              if (type === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) return false;
+              if (type === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) return false;
+              return true;
+            }).length === 0 ? (
+              <div className="col-span-full p-8 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 font-bold text-center">
+                لا يوجد امتحانات متاحة لك حالياً.
+              </div>
+            ) : (
+                COMPETITION_TYPES.filter(type => {
+                  if (activeStudent.enrolled_subjects && Array.isArray(activeStudent.enrolled_subjects)) {
+                      if (!activeStudent.enrolled_subjects.includes(type)) return false;
+                  }
+                  if (type === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) return false;
+                  if (type === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) return false;
+                  return true;
+                }).map(type => (
+               <button
+                 key={type}
+                 onClick={() => startExam(type)}
+                 disabled={isLoading}
+                 className="p-6 bg-slate-50 border border-slate-200 rounded-2xl hover:border-indigo-500 hover:bg-indigo-50 transition-all"
+               >
+                 <h5 className="font-black text-slate-800 text-lg mb-1">{type}</h5>
+               </button>
+             ))
+           )}
          </div>
-
-         <button 
-           onClick={() => { setActiveStudent(null); setSelectedCompetition(null); }}
-           className="mt-8 text-slate-400 font-bold hover:text-red-500 transition-colors text-sm"
-         >
-           إلغاء والعودة للبوابة
-         </button>
        </div>
      );
   }
 
-  if (isExamCompleted) {
-    return (
-      <div className="text-center p-12 bg-white border border-emerald-200 rounded-3xl shadow-xl overflow-hidden relative">
-        <div className="absolute top-0 inset-x-0 h-2 bg-emerald-500" />
-        <div className="w-20 h-20 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
-          <CheckCircle size={48} />
-        </div>
-        <h2 className="text-3xl font-black mb-2 text-slate-800">
-          {isAlreadyExamined ? 'تم امتحانك مسبقاً' : 'تم إنهاء الامتحان بنجاح'}
-        </h2>
-        <p className="text-slate-500 font-bold mb-8">
-          {isAlreadyExamined ? 'عذراً، لا يمكنك أداء هذا الامتحان مرة أخرى.' : `لقد تم حفظ نتيجتك في مسابقة ${selectedCompetition}`}
-        </p>
-        <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-10 inline-block min-w-[200px]">
-          <p className="text-[10px] font-black text-slate-400 uppercase mb-1">الدرجة المحصلة</p>
-          <p className="text-5xl font-black text-indigo-600">{score || (selectedCompetition && activeStudent?.[SCORE_FIELD_MAP[selectedCompetition]]) || 0}</p>
-        </div>
-        <button 
-          onClick={() => { setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); setIsExamCompleted(false); setIsAlreadyExamined(false); }} 
-          className="block w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-lg hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 mt-4"
-        >
-          العودة للبوابة الرئيسية
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
-      {isLoading && (
-        <div className="fixed inset-0 bg-white/50 backdrop-blur-[1px] z-[100] flex items-center justify-center">
-          <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-      <div className="bg-indigo-600 p-6 flex flex-col md:flex-row justify-between items-center text-white gap-4">
-        <div>
-          <h2 className="text-2xl font-black">{activeStudent?.studentName}</h2>
-          <div className="flex items-center gap-3 opacity-90 mt-1">
-             <span className="text-sm font-bold bg-white/20 px-3 py-1 rounded-full">{selectedCompetition}</span>
-             <span className="text-sm font-bold bg-white/20 px-3 py-1 rounded-full">{activeExam?.stage}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="font-mono bg-white/20 px-4 py-2 rounded-xl text-lg font-black">
-            نموذج {activeExam?.model}
-          </div>
-          <div className="flex flex-col items-end text-[10px] font-black opacity-60">
-             <span>IP: {deviceInfo.ip}</span>
-             <span>ID: {localStorage.getItem('coptic_device_id')?.slice(-6).toUpperCase()}</span>
-          </div>
-        </div>
-      </div>
-      
-      <div className="p-6 md:p-8 space-y-8 max-h-[70vh] overflow-y-auto no-scrollbar">
+      <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto">
         {activeExam?.questions.map((q, i) => (
           <div key={q.id} className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-            <h4 className="text-lg font-bold mb-4">{i + 1}. {q.text} <span className="text-sm font-normal text-slate-400">({q.points} درجات)</span></h4>
+            <h4 className="text-lg font-bold mb-4">{i + 1}. {q.text}</h4>
             
             {(q.type === 'mcq' || q.type === 'boolean') && (
               <div className="space-y-3">
-                {q.options.map((opt, oIndex) => {
-                  const isChecked = answers[q.id] === opt;
-                  return (
-                    <label key={oIndex} className={`block p-4 rounded-xl border cursor-pointer transition-all ${isChecked ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200 hover:border-indigo-300'}`}>
-                      <div className="flex items-center gap-3">
-                        <input 
-                          type="radio"
-                          name={`q_${q.id}`}
-                          checked={isChecked}
-                          onChange={() => handleAnswer(q.id, opt)}
-                          className="w-5 h-5 accent-indigo-600"
-                        />
-                        <span className="font-medium text-slate-700">{opt}</span>
-                      </div>
+                {q.options.map((opt, oIndex) => (
+                    <label key={oIndex} className="block p-4 rounded-xl border border-slate-200 cursor-pointer">
+                      <input 
+                        type="radio"
+                        checked={answers[q.id] === opt}
+                        onChange={() => handleAnswer(q.id, opt)}
+                        className="w-5 h-5 accent-indigo-600"
+                      />
+                      <span className="font-medium text-slate-700 ml-2">{opt}</span>
                     </label>
-                  );
-                })}
-              </div>
-            )}
-
-            {q.type === 'fill' && (
-              <input 
-                type="text"
-                value={answers[q.id] || ''}
-                onChange={e => handleAnswer(q.id, e.target.value)}
-                placeholder="اكتب الإجابة هنا..."
-                className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-indigo-500 outline-none"
-              />
-            )}
-
-            {q.type === 'matching' && (
-              <div className="space-y-4">
-                {q.matchingPairs?.map((pair, pIdx) => (
-                  <div key={pIdx} className="flex flex-col md:flex-row gap-4 items-center">
-                    <div className="flex-1 w-full p-3 bg-white border border-slate-200 rounded-xl text-center font-bold">
-                       {pair.left}
-                    </div>
-                    <div className="text-slate-300">↔</div>
-                    <select 
-                      value={answers[q.id]?.[pIdx] || ''}
-                      onChange={e => {
-                        const current = answers[q.id] || {};
-                        handleAnswer(q.id, { ...current, [pIdx]: e.target.value });
-                      }}
-                      className="flex-1 w-full p-3 border-2 border-indigo-100 rounded-xl bg-white font-bold"
-                    >
-                      <option value="">اختر المطابق...</option>
-                      {(q as any).shuffledRights?.map((r: string, rIdx: number) => (
-                        <option key={rIdx} value={r}>{r}</option>
-                      ))}
-                    </select>
-                  </div>
                 ))}
               </div>
             )}
           </div>
         ))}
-        
-        <button onClick={handleSubmit} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-lg shadow-xl hover:bg-opacity-90 transition-all">
+        <button onClick={handleSubmit} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-lg shadow-xl hover:bg-indigo-700">
           تسليم الامتحان
         </button>
       </div>

@@ -246,12 +246,12 @@ const createQRCardPageElement = async (students: Participant[]) => {
   wrapper.style.left = '-9999px';
   wrapper.style.opacity = '1';
   wrapper.style.pointerEvents = 'none';
-  wrapper.style.padding = '15mm 10mm'; 
+  wrapper.style.padding = '10mm 10mm';
   wrapper.style.display = 'flex';
   wrapper.style.flexWrap = 'wrap';
-  wrapper.style.justifyContent = 'center';
+  wrapper.style.justifyContent = 'space-between';
   wrapper.style.alignContent = 'flex-start';
-  wrapper.style.gap = '8mm 10mm';
+  wrapper.style.gap = '0';
   wrapper.style.direction = 'rtl';
   wrapper.style.boxSizing = 'border-box';
   wrapper.style.fontFamily = "'Cairo', sans-serif";
@@ -265,6 +265,11 @@ const createQRCardPageElement = async (students: Participant[]) => {
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
+    .card-item {
+      border: 0.5px solid #cbd5e1;
+      border-right: 0.5px dashed #94a3b8;
+      border-bottom: 0.5px dashed #94a3b8;
+    }
   `;
   wrapper.id = 'qr-card-wrapper';
   wrapper.appendChild(style);
@@ -275,9 +280,8 @@ const createQRCardPageElement = async (students: Participant[]) => {
 
   for (const s of students) {
     const card = document.createElement('div');
-    card.style.border = '2px solid #e2e8f0';
-    card.style.borderRadius = '5mm';
-    card.style.padding = '5mm';
+    card.className = 'card-item';
+    card.style.padding = '2mm';
     card.style.display = 'flex';
     card.style.flexDirection = 'column';
     card.style.alignItems = 'center';
@@ -285,29 +289,29 @@ const createQRCardPageElement = async (students: Participant[]) => {
     card.style.backgroundColor = 'white';
     card.style.boxSizing = 'border-box';
     card.style.overflow = 'hidden';
-    card.style.height = '60mm';
-    card.style.width = '90mm';
+    card.style.height = '53.4mm';
+    card.style.width = '47.5mm';
     card.style.position = 'relative';
 
-    // QR Section (approx 60% height)
+    // QR Section (approx 50% height)
     const qrContainer = document.createElement('div');
     qrContainer.style.display = 'flex';
     qrContainer.style.justifyContent = 'center';
     qrContainer.style.alignItems = 'center';
-    qrContainer.style.height = '35mm';
+    qrContainer.style.height = '28mm';
     qrContainer.style.width = '100%';
 
     const qrImg = document.createElement('img');
     const qrPayload = JSON.stringify({
-        studentID: s.id,
-        fullName: s.name,
-        churchName: s.churchName,
+        id: s.id,
+        name: s.name,
+        church: s.churchName,
         stage: s.stage
     });
     // High resolution QR
     qrImg.src = await QRCode.toDataURL(qrPayload, { margin: 1, width: 600, errorCorrectionLevel: 'H' });
-    qrImg.style.height = '32mm';
-    qrImg.style.width = '32mm';
+    qrImg.style.height = '26mm';
+    qrImg.style.width = '26mm';
     qrContainer.appendChild(qrImg);
     card.appendChild(qrContainer);
 
@@ -324,10 +328,10 @@ const createQRCardPageElement = async (students: Participant[]) => {
     const nameLabel = document.createElement('div');
     nameLabel.innerText = s.name;
     const nameLength = s.name.length;
-    let fontSize = '16px';
-    if (nameLength > 40) fontSize = '10px';
-    else if (nameLength > 30) fontSize = '12px';
-    else if (nameLength > 20) fontSize = '14px';
+    let fontSize = '14px';
+    if (nameLength > 40) fontSize = '8px';
+    else if (nameLength > 30) fontSize = '10px';
+    else if (nameLength > 20) fontSize = '12px';
     
     nameLabel.style.fontSize = fontSize;
     nameLabel.style.fontWeight = '900';
@@ -335,22 +339,22 @@ const createQRCardPageElement = async (students: Participant[]) => {
     nameLabel.style.width = '100%';
     nameLabel.style.lineHeight = '1.1';
     nameLabel.style.color = '#0f172a';
-    nameLabel.style.marginBottom = '1mm';
+    nameLabel.style.marginBottom = '0.5mm';
     dataContainer.appendChild(nameLabel);
 
     // ID & Stage (Medium)
     const subLabel = document.createElement('div');
     subLabel.innerText = `${s.serial || s.id.substring(0, 8)} • ${s.stage}`;
-    subLabel.style.fontSize = '11px';
+    subLabel.style.fontSize = '9px';
     subLabel.style.fontWeight = '700';
     subLabel.style.color = '#475569';
-    subLabel.style.marginBottom = '1mm';
+    subLabel.style.marginBottom = '0.5mm';
     dataContainer.appendChild(subLabel);
 
     // Church (Small)
     const churchLabel = document.createElement('div');
     churchLabel.innerText = s.churchName;
-    churchLabel.style.fontSize = '9px';
+    churchLabel.style.fontSize = '8px';
     churchLabel.style.fontWeight = '600';
     churchLabel.style.color = '#94a3b8';
     dataContainer.appendChild(churchLabel);
@@ -467,6 +471,9 @@ export default function OmrGenerator() {
         students = students.filter(s => /إعدادي|اعدادي|إعدادى|اعدادى|ثانوي|ثانوى|خريجين|جامعة|جامعه/i.test(s.stage));
       }
 
+      // Sort alphabetically by name
+      students.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+
       if (students.length === 0) {
         setError("لا يوجد طلاب يطابقون خيارات البحث.");
         setIsGenerating(false);
@@ -525,7 +532,7 @@ export default function OmrGenerator() {
   const generateQRPDF = async (students: Participant[]) => {
     const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
     const totalStudents = students.length;
-    const cardsPerPage = 8; // 2x4 (90x60mm cards)
+    const cardsPerPage = 20; // 4x5
     const totalPagesNum = Math.ceil(totalStudents / cardsPerPage);
     
     setProgress({ current: 0, total: totalStudents, batch: 1, totalBatches: 1 });
