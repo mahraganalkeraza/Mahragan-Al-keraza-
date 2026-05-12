@@ -3390,7 +3390,7 @@ function App() {
                         <Award size={20} /> تحميل قالب التسجيل المعتمد
                       </button>
                       <button 
-                        onClick={() => generateMasterExcel(userRole === 'admin', userRole === 'admin' ? '' : churchName)}
+                        onClick={() => generateMasterExcel(userRole === 'admin' ? null : churchName)}
                         className="px-6 py-3 bg-coptic-blue text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                       >
                         <Download size={20} /> {userRole === 'admin' ? 'تصدير كل بيانات التسجيل الموحد (Excel)' : 'تحميل بيانات المشتركين بصيغة XLSX'}
@@ -5478,7 +5478,7 @@ function App() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {[0, 1, 2, 3].map((idx) => {
+                      {[0, 1, 2].map((idx) => {
                         const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي'].includes(newParticipant.stage);
                         const selectedComps = newParticipant.competitions;
                         const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
