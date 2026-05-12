@@ -604,16 +604,23 @@ export const LiveExamGateway: React.FC = () => {
       // Normalize studentName field
       if (!studentData.studentName) studentData.studentName = studentData.name;
 
-      // Create Active Session
-      await setDoc(doc(db, 'active_sessions', studentData.id), {
-        studentId: studentData.id,
-        studentName: studentData.studentName,
-        churchName: studentData.churchName,
-        deviceId: fingerprint?.uuid,
-        status: 'active',
-        timestamp: new Date().toISOString(),
-        lastUpdate: new Date().toISOString()
-      });
+  const sessionData: any = {
+    studentId: studentData.id,
+    studentName: studentData.studentName,
+    churchName: studentData.churchName,
+    deviceId: fingerprint?.uuid,
+    fingerprint: fingerprint, // Store full fingerprint in session as requested
+    status: 'active',
+    timestamp: new Date().toISOString(),
+    lastUpdate: new Date().toISOString()
+  };
+
+  if (studentData.isManual) {
+    sessionData.isManual = true;
+  }
+
+  // Create Active Session
+  await setDoc(doc(db, 'active_sessions', studentData.id), sessionData);
 
       setActiveStudent(studentData);
       setIsScanning(false);

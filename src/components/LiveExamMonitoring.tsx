@@ -237,7 +237,7 @@ export const LiveExamMonitoring: React.FC<{
                       <td className="py-4">
                          <div className="flex flex-col gap-1">
                             <span className="flex items-center gap-1 font-bold text-slate-600">
-                               <Smartphone size={12} /> {fp ? `${fp.brand} ${fp.model} (${fp.os})` : log.deviceType}
+                              <Smartphone size={12} /> {fp ? `${fp.brand === 'Unknown' ? '' : fp.brand} ${fp.model} (${fp.os})`.trim() : log.deviceType}
                             </span>
                             <div className="flex gap-2 items-center text-[9px] text-slate-300 font-mono">
                                <span>{log.ip}</span>
@@ -255,7 +255,9 @@ export const LiveExamMonitoring: React.FC<{
                         <div className="flex items-center gap-1">
                           {isActive && !isTerminated && (
                             <button
-                              onClick={() => handleTerminateSession(log.studentId, log.deviceId)}
+                              onClick={async () => {
+                                await handleTerminateSession(log.studentId, log.deviceId);
+                              }}
                               disabled={isProcessing === log.studentId}
                               className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-1 font-black"
                               title="طرد وحظر الجهاز"
@@ -266,11 +268,16 @@ export const LiveExamMonitoring: React.FC<{
                           )}
                           
                           <button 
-                            onClick={() => onResetExam(log.studentId, log.studentName)}
+                            onClick={async () => {
+                              setIsProcessing(log.studentId);
+                              await onResetExam(log.studentId, log.studentName);
+                              setIsProcessing(null);
+                            }}
+                            disabled={isProcessing === log.studentId}
                             className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-colors"
                             title="إعادة فتح الامتحان (تصفير المحاولة)"
                           >
-                            <RotateCcw size={16} />
+                            <RotateCcw size={16} className={isProcessing === log.studentId ? 'animate-spin' : ''} />
                           </button>
 
                           {!isActive && log.deviceId && (

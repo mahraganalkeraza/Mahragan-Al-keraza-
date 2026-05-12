@@ -359,8 +359,14 @@ const createQRCardPageElement = async (students: Participant[]) => {
   }
 
   document.body.appendChild(wrapper);
-  // Wait for fonts to load properly
-  await new Promise(r => setTimeout(r, 500)); 
+  // Wait for fonts to load properly - expanded check for Arabic
+  try {
+    await document.fonts.load('1em Cairo');
+    await document.fonts.ready;
+  } catch (e) {
+    console.warn('Font loading check failed, proceeding with timeout', e);
+  }
+  await new Promise(r => setTimeout(r, 2000)); 
   return wrapper;
 };
 
@@ -403,23 +409,37 @@ export default function OmrGenerator() {
 
     try {
       let students: Participant[] = [];
+      const search = searchQuery.trim();
       
-      if (searchQuery.trim()) {
-        // Individual Search
+      if (search) {
+        // Individual Search - try literal, upper, and lower
         const participantsRef = collection(db, 'participants');
-        const q = query(participantsRef, where('serial', '==', searchQuery.trim()), limit(1));
-        const snap = await getDocs(q);
-        if (snap.empty) {
-            // Try by ID directly as fallback
-            const snap2 = await getDocs(query(participantsRef, where('id', '==', searchQuery.trim()), limit(1)));
-            if (snap2.empty) {
-                setError("لم يتم العثور على طالب بهذا الرقم.");
-                setIsGenerating(false);
-                return;
-            }
-            students = snap2.docs.map(d => ({ id: d.id, ...d.data() })) as Participant[];
-        } else {
+        const searchVariations = [search, search.toUpperCase(), search.toLowerCase()];
+        
+        for (const variant of searchVariations) {
+          const q = query(participantsRef, where('serial', '==', variant), limit(1));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
             students = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Participant[];
+            break;
+          }
+        }
+
+        if (students.length === 0) {
+          // Try by ID directly as fallback
+          for (const variant of searchVariations) {
+            const docSnap = await getDocs(query(participantsRef, where('id', '==', variant), limit(1)));
+            if (!docSnap.empty) {
+              students = docSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Participant[];
+              break;
+            }
+          }
+        }
+
+        if (students.length === 0) {
+          setError("لم يتم العثور على طالب بهذا الرقم.");
+          setIsGenerating(false);
+          return;
         }
       } else {
         // Filtered Search
