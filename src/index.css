@@ -63,10 +63,29 @@ button {
   border: 2px solid #D4AF37 !important; /* لون ذهبي للإطار */
   color: #dfab02; /* شلنا ال !important علشان Tailwind يشتغل */
   font-weight: bold;
-  };
-  .text-shadow-SAFE{
-    text-shadow: 1xp 1xp 2xp rgba(0, 0, 0, 0.5),0 0 1xp rgba(0, 0, 0, 0.8);
-  }
+}
+
+.quick-access-card {
+  background-color: #006064 !important; /* Dark Teal, override global */
+  color: #ffffff !important;            /* White, override global */
+  border: 1px solid #004d40 !important;
+  transition: all 0.3s ease !important;
+  font-family: var(--font-cairo) !important;
+  border-radius: 1rem !important; /* Matches rounded-2xl */
+  padding: 1.5rem !important;     /* Matches p-6 */
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  text-align: center !important;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+.quick-access-card:hover {
+  filter: brightness(0.9);
+  background-color: #006064 !important; /* Keep original background color */
+  color: #ffffff !important;            /* Force white text */
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
 
 button:hover {
   background-color: #000000 !important; 

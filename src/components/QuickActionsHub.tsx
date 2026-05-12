@@ -29,7 +29,7 @@ const QuickActionsHub: React.FC<QuickActionsHubProps> = ({ userRole, onAction })
           <button
             key={action.id}
             onClick={() => onAction(action.id)}
-            className="bg-[#D4AF37] text-[#800000] p-6 rounded-2xl shadow-lg hover:bg-[#800000] hover:text-white transition-all duration-300 flex flex-col items-center text-center group"
+            className="quick-access-card group"
           >
             <action.icon size={32} className="mb-4 group-hover:scale-110 transition-transform" />
             <h3 className="font-black text-lg mb-2">{action.title}</h3>
