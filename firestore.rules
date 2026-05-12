@@ -238,7 +238,7 @@ service cloud.firestore {
     }
 
     match /students/{studentId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if isAdmin();
     }
 
@@ -295,14 +295,12 @@ service cloud.firestore {
       allow read: if true; // Public read for exam verification and results viewer
       allow create: if isAdmin() || (
         isValidId(resultId) && 
-        exists(/databases/$(database)/documents/participants/$(resultId)) &&
         isValidResult(incoming())
       );
       allow delete: if isAdmin();
       allow update: if isAdmin() || (
         isValidResult(incoming()) &&
         (
-          // Allow identifying and submitting scores
           incoming().diff(existing()).affectedKeys().hasAny(['academicScore', 'memorizationScore', 'copticL1Score', 'copticL2Score', 'data', 'submissionInfo', 'score', 'timestamp', 'isSubmitted'])
         )
       );
@@ -326,8 +324,8 @@ service cloud.firestore {
     match /active_sessions/{sessionId} {
       allow read: if true;
       allow create: if isValidId(sessionId);
-      allow update: if isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/participants/$(sessionId)));
-      allow delete: if isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/participants/$(sessionId)));
+      allow update: if true;
+      allow delete: if true;
     }
 
     match /blacklist/{deviceId} {

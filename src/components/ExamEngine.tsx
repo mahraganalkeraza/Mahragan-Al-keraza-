@@ -476,8 +476,10 @@ export const LiveExamGateway: React.FC = () => {
     console.log('--- SCANNER DEBUG: Input Received ---', input);
     setLastScanDebug(input);
     try {
+      setIsScanning(false);
       setIsLoading(true);
-      let studentId = input.trim();
+      let studentId = input.trim().toLowerCase();
+
       let studentNameFromPayload = '';
       
       // Attempt to parse JSON if it looks like our payload
@@ -811,6 +813,13 @@ export const LiveExamGateway: React.FC = () => {
       };
 
       await setDoc(resultDocRef, payload, { merge: true });
+      
+      // Fetch permanent record to ensure it is saved and show real score
+      const freshSnap = await getDoc(resultDocRef);
+      if (freshSnap.exists()) {
+         const dbData = freshSnap.data();
+         setScore(dbData[field] || dbData.data?.[selectedCompetition] || totalScore);
+      }
       
       setIsExamCompleted(true);
       setIsLoading(false);

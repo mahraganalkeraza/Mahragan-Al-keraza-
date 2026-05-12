@@ -141,6 +141,7 @@ import {
   } from './constants';
 
 import { exportUnifiedExcel, downloadMasterTemplate } from './services/excelManager';
+import { generateShortId } from './lib/utils';
 import DynamicAdminSettings from './components/DynamicAdminSettings';
 // @ts-ignore
 import logo from './by-logo.jpeg';
@@ -1541,8 +1542,9 @@ function App() {
         for (const chunk of chunks) {
           const batch = writeBatch(db);
           chunk.forEach(p => {
-             const newRef = doc(collection(db, 'participants'));
-             batch.set(newRef, p);
+             const customId = generateShortId();
+             const newRef = doc(db, 'participants', customId);
+             batch.set(newRef, { ...p, serial: customId });
           });
           await batch.commit();
         }
@@ -2016,7 +2018,8 @@ function App() {
                timestamp: new Date().toLocaleString('ar-EG'),
                year: activeYear
              };
-             await withExponentialBackoff(() => addDoc(collection(db, 'participants'), newParticipant));
+             const customId = generateShortId();
+             await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...newParticipant, serial: customId }));
           }
         }
 
@@ -2183,7 +2186,8 @@ function App() {
           timestamp: new Date().toLocaleString('ar-EG'),
           year: activeYear
         };
-        await withExponentialBackoff(() => addDoc(collection(db, 'participants'), participantData));
+        const customId = generateShortId();
+        await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...participantData, serial: customId }));
         alert('تم تسجيل المشترك بنجاح.');
       }
       
