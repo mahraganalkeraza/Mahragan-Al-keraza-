@@ -1,40 +1,41 @@
 import ExcelJS from 'exceljs';
 import { db } from '../firebase';
-import { collection, getDocs } from 'firebase/firestore';
-import { saveAs } from 'file-saver';
-
-import ExcelJS from 'exceljs';
-import { db } from '../firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { saveAs } from 'file-saver';
 
 export const generateMasterExcel = async (isAdmin: boolean = true, churchFilter: string = '') => {
   try {
-    let participantsSnap, resultsSnap, teamsSnap, onlineResultsSnap;
+    const fetchCollection = async (collName: string, queryConstraint?: any) => {
+        try {
+            const colRef = collection(db, collName);
+            const q = queryConstraint ? query(colRef, queryConstraint) : colRef;
+            return await getDocs(q);
+        } catch (e: any) {
+            console.error(`Permission denied or error fetching ${collName}:`, e.message);
+            return null; // Return null if forbidden
+        }
+    };
 
-    if (!isAdmin && churchFilter) {
-        participantsSnap = await getDocs(query(collection(db, 'participants'), where('churchName', '==', churchFilter)));
-        teamsSnap = await getDocs(query(collection(db, 'activityTeams'), where('churchName', '==', churchFilter)));
-        resultsSnap = await getDocs(collection(db, 'results')); 
-        onlineResultsSnap = await getDocs(collection(db, 'online_results'));
-    } else {
-        [participantsSnap, resultsSnap, teamsSnap, onlineResultsSnap] = await Promise.all([
-            getDocs(collection(db, 'participants')),
-            getDocs(collection(db, 'results')),
-            getDocs(collection(db, 'activityTeams')),
-            getDocs(collection(db, 'online_results'))
-          ]);
+    // 1. Fetch data safely
+    const [participantsSnap, resultsSnap, teamsSnap, onlineResultsSnap] = await Promise.all([
+        fetchCollection('participants', !isAdmin && churchFilter ? where('churchName', '==', churchFilter) : null),
+        fetchCollection('results'), 
+        fetchCollection('activityTeams', !isAdmin && churchFilter ? where('churchName', '==', churchFilter) : null),
+        fetchCollection('online_results')
+    ]);
+
+    if (!participantsSnap && !isAdmin) {
+        throw new Error('عذراً، لا تملك صلاحية الوصول لقائمة المشاركين.');
     }
 
-    const participants = participantsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-    const results = resultsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-    const teams = teamsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-    const onlineResults = onlineResultsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-
+    const participants = participantsSnap ? participantsSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+    const results = resultsSnap ? resultsSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+    const teams = teamsSnap ? teamsSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+    const onlineResults = onlineResultsSnap ? onlineResultsSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+    
     // 2. Merge data
     const studentData: Record<string, any> = {};
 
-    // Initialize with participants
     participants.forEach(p => {
         studentData[p.id.toLowerCase().trim()] = {
             id: p.id,
@@ -49,7 +50,6 @@ export const generateMasterExcel = async (isAdmin: boolean = true, churchFilter:
         };
     });
 
-    // Merge results
     results.forEach(r => {
         const id = (r.studentId || r.id || '').toLowerCase().trim();
         if (studentData[id]) {
@@ -59,7 +59,6 @@ export const generateMasterExcel = async (isAdmin: boolean = true, churchFilter:
         }
     });
 
-    // Merge online results
     onlineResults.forEach(r => {
         const id = (r.studentID || r.studentId || '').toLowerCase().trim();
         if (studentData[id]) {
@@ -69,7 +68,6 @@ export const generateMasterExcel = async (isAdmin: boolean = true, churchFilter:
         }
     });
 
-    // Merge teams
     teams.forEach(t => {
         t.members?.forEach((m: any) => {
             const id = (m.id || '').toLowerCase().trim();
@@ -82,7 +80,6 @@ export const generateMasterExcel = async (isAdmin: boolean = true, churchFilter:
     // 3. Create Workbook
     const workbook = new ExcelJS.Workbook();
     
-    // Tab 1: Students
     const wsStudents = workbook.addWorksheet('Students');
     wsStudents.columns = [
         { header: 'ID', key: 'id', width: 15 },
@@ -92,7 +89,6 @@ export const generateMasterExcel = async (isAdmin: boolean = true, churchFilter:
     ];
     wsStudents.addRows(Object.values(studentData));
 
-    // Tab 2: Academic
     const wsAcademic = workbook.addWorksheet('Academic');
     wsAcademic.columns = [
         { header: 'ID', key: 'id', width: 15 },
@@ -102,7 +98,6 @@ export const generateMasterExcel = async (isAdmin: boolean = true, churchFilter:
     ];
     wsAcademic.addRows(Object.values(studentData));
 
-    // Tab 3: Activities
     const wsActivities = workbook.addWorksheet('Activities');
     wsActivities.columns = [
         { header: 'ID', key: 'id', width: 15 },
@@ -110,7 +105,6 @@ export const generateMasterExcel = async (isAdmin: boolean = true, churchFilter:
     ];
     wsActivities.addRows(Object.values(studentData).map(s => ({...s, teams: s.teams.join(', ')})));
 
-    // Tab 4: Statistics
     const wsStats = workbook.addWorksheet('Statistics');
     wsStats.columns = [
         { header: 'Church', key: 'church', width: 20 },
@@ -122,19 +116,17 @@ export const generateMasterExcel = async (isAdmin: boolean = true, churchFilter:
     });
     wsStats.addRows(Object.entries(stats).map(([church, count]) => ({ church, count })));
 
-    // Formatting
     [wsStudents, wsAcademic, wsActivities, wsStats].forEach(ws => {
         ws.getRow(1).font = { bold: true };
         ws.views = [{ rightToLeft: true }];
     });
 
-    // 4. Save
     const buffer = await workbook.xlsx.writeBuffer();
-    saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'Master_Export.xlsx');
+    saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), 'Export.xlsx');
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Export failed:', error);
-    alert('فشل تصدير البيانات. يرجى التحقق من الصلاحيات.');
+    alert('عذراً، لا تملك صلاحية الوصول لهذه البيانات. أو حدث خطأ أثناء التصدير.');
   }
 };
 
@@ -158,6 +150,5 @@ export const downloadMasterTemplate = async () => {
 };
 
 export const exportOnlineResultsExcel = async () => {
-    // Re-use logic for now, but ensure it fetches from Firebase properly now
-    await generateMasterExcel(); // Since it has EVERYTHING now.
+    await generateMasterExcel();
 };
