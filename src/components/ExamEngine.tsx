@@ -584,13 +584,8 @@ export const LiveExamGateway: React.FC = () => {
         // Check if already examined online
         const onlineResSnap = await getDoc(doc(db, 'online_results', studentData.id));
         if (onlineResSnap.exists()) {
-           console.log('--- SCANNER DEBUG: Already examined ---');
-           setIsLoading(false);
-           setActiveStudent(studentData);
-           setScore(onlineResSnap.data().finalScore);
-           setIsAlreadyExamined(true);
-           setIsExamCompleted(true);
-           return;
+           console.log('--- SCANNER DEBUG: Has online results ---', onlineResSnap.data());
+           studentData = { ...studentData, ...(onlineResSnap.data() as object) };
         }
       }
 
@@ -723,6 +718,13 @@ export const LiveExamGateway: React.FC = () => {
 
       setSelectedCompetition(competitionType);
       setActiveExam(randomModel);
+      
+      // Update session to indicate which exam they are taking
+      await setDoc(doc(db, 'active_sessions', activeStudent.id), {
+         competition: competitionType,
+         lastUpdate: new Date().toISOString()
+      }, { merge: true });
+
       setIsLoading(false);
     } catch (e) {
       console.error(e);
@@ -830,31 +832,28 @@ export const LiveExamGateway: React.FC = () => {
         }
       };
 
+      const simplifiedSignature = `${deviceInfo.type || 'Unknown'} - ${navigator.userAgent.includes('Chrome') ? 'Chrome' : navigator.userAgent.includes('Safari') ? 'Safari' : navigator.userAgent.includes('Firefox') ? 'Firefox' : navigator.userAgent.includes('Edg') ? 'Edge' : 'Browser'}`;
+
       const onlineResultPayload = {
         studentID: activeStudent.id,
         studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
         churchName: activeStudent.churchName || 'غير محدد',
         stage: activeExam.stage,
-        finalScore: totalScore,
-        maxScore: totalScorePossible,
-        competition: selectedCompetition,
+        [`مسابقة ${selectedCompetition}`]: totalScore, // Save score under competition name dynamically
         submissionTimestamp: new Date().toISOString(),
-        deviceFingerprint: {
-          uuid: localStorage.getItem('coptic_device_id') || 'untracked',
-          os: navigator.platform,
-          browser: navigator.userAgent
-        }
+        deviceFingerprint: simplifiedSignature
       };
 
       await Promise.all([
         setDoc(resultDocRef, payload, { merge: true }),
-        setDoc(onlineResultRef, onlineResultPayload)
+        setDoc(onlineResultRef, onlineResultPayload, { merge: true })
       ]);
       
       // Fetch permanent record to ensure it is saved and show real score
       const freshSnap = await getDoc(onlineResultRef);
       if (freshSnap.exists()) {
-         setScore(freshSnap.data()?.finalScore ?? totalScore);
+         const dbData = freshSnap.data();
+         setScore(dbData[`مسابقة ${selectedCompetition}`] ?? totalScore);
       }
       
       setIsExamCompleted(true);

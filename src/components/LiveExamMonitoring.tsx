@@ -23,9 +23,10 @@ function handleFirestoreError(error: any, op: OperationType, path: string) {
 
 export const LiveExamMonitoring: React.FC<{ 
   results: any[], 
+  onlineResults?: any[],
   globalChurchFilter: string,
   onResetExam: (studentId: string, name?: string) => void
-}> = ({ results, globalChurchFilter, onResetExam }) => {
+}> = ({ results, onlineResults = [], globalChurchFilter, onResetExam }) => {
   const [logs, setLogs] = useState<any[]>([]);
   const [activeSessionsData, setActiveSessionsData] = useState<any[]>([]);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
@@ -199,6 +200,7 @@ export const LiveExamMonitoring: React.FC<{
                 <tr className="text-xs font-black text-slate-400 uppercase border-b border-slate-100">
                    <th className="pb-4">الطالب</th>
                    <th className="pb-4">الكنيسة</th>
+                   <th className="pb-4">الحالة (د/م/ق1/ق2)</th>
                    <th className="pb-4">الجهاز / IP</th>
                    <th className="pb-4">محاولات الطالب</th>
                    <th className="pb-4">التوقيت</th>
@@ -208,9 +210,17 @@ export const LiveExamMonitoring: React.FC<{
               <tbody className="divide-y divide-slate-50">
                 {groupedLogs.slice(0, 50).map((log: any) => {
                   const fp = log.fingerprint;
-                  const isActive = activeSessionsData.some(s => s.id === log.studentId && s.status === 'active');
+                  const activeSession = activeSessionsData.find(s => s.id === log.studentId && s.status === 'active');
+                  const isActive = !!activeSession;
                   const isTerminated = activeSessionsData.some(s => s.id === log.studentId && s.status === 'terminated');
                   
+                  const studentResults = onlineResults.find(r => r.studentID === log.studentId || r.studentId === log.studentId);
+                  const checkStatus = (comp: string) => {
+                     if (studentResults?.[`مسابقة ${comp}`] !== undefined) return '✅';
+                     if (activeSession?.competition === comp) return '⏳';
+                     return '❌';
+                  };
+
                   // Detect if this device UUID has been used by DIFFERENT students
                   const distinctStudentsForThisDevice = logs.filter(l => l.deviceId === log.deviceId && l.deviceId)
                     .reduce((acc: Set<string>, curr) => acc.add(curr.studentId), new Set<string>());
@@ -234,6 +244,14 @@ export const LiveExamMonitoring: React.FC<{
                         </div>
                       </td>
                       <td className="py-4 text-slate-500 font-bold">{log.churchName}</td>
+                      <td className="py-4">
+                        <div className="flex gap-2 text-[10px] bg-slate-50 p-2 rounded-lg inline-flex border border-slate-100">
+                           <span title="دراسي">دراسي:{checkStatus('دراسي')}</span>
+                           <span title="محفوظات">محفوظات:{checkStatus('محفوظات')}</span>
+                           <span title="قبطي مستوى أول">ق1:{checkStatus('قبطي مستوى أول')}</span>
+                           <span title="قبطي مستوى ثاني">ق2:{checkStatus('قبطي مستوى ثاني')}</span>
+                        </div>
+                      </td>
                       <td className="py-4">
                          <div className="flex flex-col gap-1">
                             <span className="flex items-center gap-1 font-bold text-slate-600">

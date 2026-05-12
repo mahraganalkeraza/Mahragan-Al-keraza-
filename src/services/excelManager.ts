@@ -154,23 +154,40 @@ export const exportOnlineResultsExcel = async () => {
         return;
     }
     
-    const formattedData = onlineResults.map(r => ({
-        'الكود': r.studentID || r.studentId || '-',
-        'الاسم': r.studentName || '-',
-        'الكنيسة/البلد': r.churchName || '-',
-        'المرحلة': r.stage || '-',
-        'المسابقة': r.competition || '-',
-        'الدرجة النهائية': r.finalScore ?? '-',
-        'الدرجة الكلية': r.maxScore ?? '-',
-        'تاريخ وتوقيت التقديم': r.submissionTimestamp ? new Date(r.submissionTimestamp).toLocaleString('ar-EG') : '-',
-        'بصمة الجهاز (OS)': r.deviceFingerprint?.os || '-',
-        'متصفح الجهاز': r.deviceFingerprint?.browser || '-'
-    }));
+    const formattedData = onlineResults.map(r => {
+        let drasy = r['مسابقة دراسي'] ?? (r.competition === 'دراسي' ? r.finalScore : '-');
+        let mahfozat = r['مسابقة محفوظات'] ?? (r.competition === 'محفوظات' ? r.finalScore : '-');
+        let coptic1 = r['مسابقة قبطي مستوى أول'] ?? (r.competition === 'قبطي مستوى أول' ? r.finalScore : '-');
+        let coptic2 = r['مسابقة قبطي مستوى ثاني'] ?? (r.competition === 'قبطي مستوى ثاني' ? r.finalScore : '-');
+
+        let total = 0;
+        if (typeof drasy === 'number') total += drasy;
+        if (typeof mahfozat === 'number') total += mahfozat;
+        if (typeof coptic1 === 'number') total += coptic1;
+        if (typeof coptic2 === 'number') total += coptic2;
+
+        let deviceSig = typeof r.deviceFingerprint === 'string' 
+            ? r.deviceFingerprint 
+            : (r.deviceFingerprint ? `${r.deviceFingerprint?.os || 'Unknown'} - ${r.deviceFingerprint?.browser || 'Browser'}` : '-');
+
+        return {
+            'الكود': r.studentID || r.studentId || '-',
+            'الاسم': r.studentName || '-',
+            'الكنيسة': r.churchName || '-',
+            'المرحلة': r.stage || '-',
+            'مسابقة دراسي': drasy,
+            'مسابقة محفوظات': mahfozat,
+            'قبطي - مستوى أول': coptic1,
+            'قبطي - مستوى ثانِ': coptic2,
+            'إجمالي الدرجات': total || '-',
+            'بصمة الجهاز': deviceSig
+        };
+    });
 
     const workbook = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(formattedData);
     ws['!view'] = { rightToLeft: true };
-    XLSX.utils.book_append_sheet(workbook, ws, "النتائج الأونلاين");
-    XLSX.writeFile(workbook, `Online_Results_${new Date().getTime()}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, ws, "النتائج المجمعة");
+    XLSX.writeFile(workbook, `Comprehensive_Results_2026.xlsx`);
 };
 

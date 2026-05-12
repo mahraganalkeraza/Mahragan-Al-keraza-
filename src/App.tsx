@@ -3863,30 +3863,46 @@ function App() {
                         <th className="p-4 border-b border-slate-200">الاسم</th>
                         <th className="p-4 border-b border-slate-200">الكنيسة</th>
                         <th className="p-4 border-b border-slate-200">المرحلة</th>
-                        <th className="p-4 border-b border-slate-200">المسابقة</th>
-                        <th className="p-4 border-b border-slate-200">الدرجة النهائية</th>
-                        <th className="p-4 border-b border-slate-200">الدرجة الكلية</th>
+                        <th className="p-4 border-b border-slate-200">د</th>
+                        <th className="p-4 border-b border-slate-200">م</th>
+                        <th className="p-4 border-b border-slate-200">ق1</th>
+                        <th className="p-4 border-b border-slate-200">ق2</th>
+                        <th className="p-4 border-b border-slate-200">الإجمالي</th>
                         <th className="p-4 border-b border-slate-200">التاريخ</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {onlineResults.map((r, i) => (
+                      {onlineResults.map((r, i) => {
+                        let drasy = r['مسابقة دراسي'] ?? (r.competition === 'دراسي' ? r.finalScore : '-');
+                        let mahfozat = r['مسابقة محفوظات'] ?? (r.competition === 'محفوظات' ? r.finalScore : '-');
+                        let coptic1 = r['مسابقة قبطي مستوى أول'] ?? (r.competition === 'قبطي مستوى أول' ? r.finalScore : '-');
+                        let coptic2 = r['مسابقة قبطي مستوى ثاني'] ?? (r.competition === 'قبطي مستوى ثاني' ? r.finalScore : '-');
+                        let total = 0;
+                        if (typeof drasy === 'number') total += drasy;
+                        if (typeof mahfozat === 'number') total += mahfozat;
+                        if (typeof coptic1 === 'number') total += coptic1;
+                        if (typeof coptic2 === 'number') total += coptic2;
+
+                        return (
                         <tr key={r.id || i} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-4 font-mono text-xs text-slate-500">{r.studentId}</td>
-                          <td className="p-4 font-bold text-slate-800 text-sm whitespace-nowrap">{r.studentName}</td>
-                          <td className="p-4 text-slate-600 text-xs">{r.churchName}</td>
-                          <td className="p-4 text-slate-600 text-xs">{r.stage}</td>
-                          <td className="p-4 text-slate-600 text-xs">{r.competition}</td>
-                          <td className="p-4 font-black text-indigo-600">{r.finalScore}</td>
-                          <td className="p-4 font-black text-slate-400">{r.maxScore}</td>
+                          <td className="p-4 font-mono text-xs text-slate-500">{r.studentID || r.studentId || '-'}</td>
+                          <td className="p-4 font-bold text-slate-800 text-sm whitespace-nowrap">{r.studentName || '-'}</td>
+                          <td className="p-4 text-slate-600 text-xs">{r.churchName || '-'}</td>
+                          <td className="p-4 text-slate-600 text-xs">{r.stage || '-'}</td>
+                          <td className="p-4 font-black text-indigo-600">{drasy}</td>
+                          <td className="p-4 font-black text-indigo-600">{mahfozat}</td>
+                          <td className="p-4 font-black text-indigo-600">{coptic1}</td>
+                          <td className="p-4 font-black text-indigo-600">{coptic2}</td>
+                          <td className="p-4 font-black text-slate-800 bg-slate-50">{total || '-'}</td>
                           <td className="p-4 text-xs text-slate-400 text-left" dir="ltr">
                             {r.submissionTimestamp ? new Date(r.submissionTimestamp).toLocaleString('ar-EG') : '-'}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                       {onlineResults.length === 0 && (
                         <tr>
-                          <td colSpan={8} className="p-8 text-center text-slate-400 font-bold">لا يوجد نتائج أونلاين مسجلة بعد.</td>
+                          <td colSpan={10} className="p-8 text-center text-slate-400 font-bold">لا يوجد نتائج أونلاين مسجلة بعد.</td>
                         </tr>
                       )}
                     </tbody>
@@ -4121,6 +4137,7 @@ function App() {
                 </h4>
                 <LiveExamMonitoring 
                   results={results} 
+                  onlineResults={onlineResults}
                   globalChurchFilter={globalChurchFilter} 
                   onResetExam={handleResetExam}
                 />
