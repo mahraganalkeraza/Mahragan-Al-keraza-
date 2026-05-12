@@ -241,15 +241,16 @@ const createQRCardPageElement = async (students: Participant[]) => {
   wrapper.style.width = '210mm'; 
   wrapper.style.height = '297mm'; 
   wrapper.style.backgroundColor = 'white';
-  wrapper.style.position = 'absolute'; 
-  wrapper.style.top = '0';
-  wrapper.style.left = '0';
-  wrapper.style.opacity = '0';
+  wrapper.style.position = 'fixed'; 
+  wrapper.style.top = '-9999px';
+  wrapper.style.left = '-9999px';
+  wrapper.style.opacity = '1';
   wrapper.style.pointerEvents = 'none';
   wrapper.style.padding = '15mm 10mm'; 
-  wrapper.style.display = 'grid';
-  wrapper.style.gridTemplateColumns = 'repeat(2, 90mm)';
-  wrapper.style.gridTemplateRows = 'repeat(4, 60mm)';
+  wrapper.style.display = 'flex';
+  wrapper.style.flexWrap = 'wrap';
+  wrapper.style.justifyContent = 'center';
+  wrapper.style.alignContent = 'flex-start';
   wrapper.style.gap = '8mm 10mm';
   wrapper.style.direction = 'rtl';
   wrapper.style.boxSizing = 'border-box';
@@ -420,7 +421,10 @@ export default function OmrGenerator() {
           const q = query(participantsRef, where('serial', '==', variant), limit(1));
           const snap = await getDocs(q);
           if (!snap.empty) {
-            students = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Participant[];
+            students = snap.docs.map(d => {
+              const data = d.data();
+              return { id: d.id, ...data, name: data.name || data.studentName || 'بدون اسم' };
+            }) as Participant[];
             break;
           }
         }
@@ -430,7 +434,10 @@ export default function OmrGenerator() {
           for (const variant of searchVariations) {
             const docSnap = await getDocs(query(participantsRef, where('id', '==', variant), limit(1)));
             if (!docSnap.empty) {
-              students = docSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Participant[];
+              students = docSnap.docs.map(d => {
+                const data = d.data();
+                return { id: d.id, ...data, name: data.name || data.studentName || 'بدون اسم' };
+              }) as Participant[];
               break;
             }
           }
@@ -450,7 +457,10 @@ export default function OmrGenerator() {
         const participantsRef = collection(db, 'participants');
         const q = conditions.length > 0 ? query(participantsRef, ...conditions) : query(participantsRef);
         const snap = await getDocs(q);
-        students = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Participant[];
+        students = snap.docs.map(doc => {
+          const data = doc.data();
+          return { id: doc.id, ...data, name: data.name || data.studentName || 'بدون اسم' };
+        }) as Participant[];
       }
 
       if (mode === 'omr') {
@@ -489,11 +499,15 @@ export default function OmrGenerator() {
 
       for (let j = 0; j < batchList.length; j++) {
         const student = batchList[j];
-        const domElement = await createOMRSheetElement(student, numQuestions, churchLogos);
-        const canvas = await html2canvas(domElement, { scale: 3, useCORS: true, allowTaint: true });
-        const imgData = canvas.toDataURL('image/jpeg', 1.0);
-        doc.addImage(imgData, 'JPEG', 0, 0, 148, 210);
-        document.body.removeChild(domElement);
+        try {
+          const domElement = await createOMRSheetElement(student, numQuestions, churchLogos);
+          const canvas = await html2canvas(domElement, { scale: 3, useCORS: true, allowTaint: true });
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          doc.addImage(imgData, 'JPEG', 0, 0, 148, 210);
+          document.body.removeChild(domElement);
+        } catch (e) {
+          console.error('Error generating OMR page:', e);
+        }
 
         if (j < batchList.length - 1) doc.addPage();
         if (j % 5 === 0) {
@@ -518,21 +532,25 @@ export default function OmrGenerator() {
 
     for (let pIdx = 0; pIdx < totalPagesNum; pIdx++) {
         const batch = students.slice(pIdx * cardsPerPage, (pIdx + 1) * cardsPerPage);
-        const domElement = await createQRCardPageElement(batch);
-        
-        // Use html2canvas to render the entire page of cards
-        const canvas = await html2canvas(domElement, { 
-            scale: 3, // Increased scale for 300+ DPI equivalent quality
-            useCORS: true, 
-            allowTaint: true,
-            logging: false,
-            backgroundColor: '#ffffff'
-        });
-        
-        const imgData = canvas.toDataURL('image/jpeg', 1.0); // Max quality
-        doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+        try {
+          const domElement = await createQRCardPageElement(batch);
+          
+          // Use html2canvas to render the entire page of cards
+          const canvas = await html2canvas(domElement, { 
+              scale: 2.5, // Slightly lower scale to avoid memory issues on large PDFs
+              useCORS: true, 
+              allowTaint: true,
+              logging: true, // Enable logging for troubleshooting
+              backgroundColor: '#ffffff'
+          });
+          
+          const imgData = canvas.toDataURL('image/jpeg', 0.9); 
+          doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
 
-        document.body.removeChild(domElement);
+          document.body.removeChild(domElement);
+        } catch (e) {
+          console.error('Error rendering QR page:', e);
+        }
 
         if (pIdx < totalPagesNum - 1) doc.addPage();
         
