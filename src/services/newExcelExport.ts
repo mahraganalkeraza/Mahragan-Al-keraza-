@@ -6,9 +6,10 @@ import { saveAs } from 'file-saver';
 export const generateMasterExcel = async (churchName: string | null = null) => {
   try {
     const isAdmin = !churchName;
-    
-    // Define helper to fetch filtered or all data
-    const fetchWithScope = async (path: string, collName: string) => {
+    console.log(`Exporting for ${isAdmin ? 'Admin' : churchName}`);
+
+    // Fetch helper
+    const fetchWithScope = async (collName: string) => {
         let q;
         if (!isAdmin) {
              q = query(collection(db, collName), where('churchName', '==', churchName));
@@ -17,28 +18,31 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
         }
         try {
             return await getDocs(q);
-        } catch (e) {
+        } catch (e: any) {
             console.error(`Error fetching ${collName}:`, e);
-            throw new Error(`تعذر الوصول إلى بيانات ${collName}`);
+            throw new Error(`تعذر الوصول إلى بيانات ${collName}: ${e.message || 'لا توجد صلاحية'}`);
         }
     };
 
     // 1. Fetch data
     const [participantsSnap, resultsSnap, teamsSnap] = await Promise.all([
-        fetchWithScope('participants', 'participants'),
-        fetchWithScope('results', 'results'),
-        fetchWithScope('activityTeams', 'activityTeams'),
+        fetchWithScope('participants'),
+        fetchWithScope('results'),
+        fetchWithScope('activityTeams'),
     ]);
 
-    const participants = participantsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const results = resultsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const teams = teamsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const participants = participantsSnap?.docs.map(d => ({ id: d.id, ...(d.data() as any) })) || [];
+    if (participants.length === 0) {
+        throw new Error('لا توجد بيانات متاحة للتصدير.');
+    }
+    const results = resultsSnap?.docs.map(d => ({ id: d.id, ...(d.data() as any) })) || [];
+    const teams = teamsSnap?.docs.map(d => ({ id: d.id, ...(d.data() as any) })) || [];
     
+    // Merge logic
     const studentData: Record<string, any> = {};
 
-    // Merge logic
-    participants.forEach(p => {
-        studentData[p.id.toLowerCase().trim()] = {
+    participants.forEach((p: any) => {
+        studentData[p.id?.toLowerCase().trim()] = {
             id: p.id,
             name: p.name || '-',
             church: p.churchName || '-',
@@ -50,16 +54,16 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
         };
     });
 
-    results.forEach(r => {
+    results.forEach((r: any) => {
         const id = (r.studentId || r.id || '').toLowerCase().trim();
         if (studentData[id]) {
             studentData[id].drasyScore = r.academicScore || r.data?.['دراسي'] || 0;
-            studentData[id].mafozatScore = r.memorizationScore || r.data?.['محفوظات'] || 0;
+            studentData[id].mahfozatScore = r.memorizationScore || r.data?.['محفوظات'] || 0;
             studentData[id].copticScore = (r.q1Score || 0) + (r.q2Score || 0);
         }
     });
 
-    teams.forEach(t => {
+    teams.forEach((t: any) => {
         t.members?.forEach((m: any) => {
             const id = (m.id || '').toLowerCase().trim();
             if (studentData[id]) {
@@ -91,7 +95,7 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
 
   } catch (error: any) {
     console.error('Export failed:', error);
-    alert(error.message || 'حدث خطأ أثناء تصدير البيانات. يرجى المحاولة لاحقاً.');
+    alert(error.message || 'حدث خطأ غير متوقع أثناء التصدير.');
   }
 };
 

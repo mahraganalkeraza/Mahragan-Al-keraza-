@@ -436,7 +436,7 @@ const getValidLogoUrl = (url: string | null | undefined, fallback: string | null
   return finalUrl;
 };
 
-function App() {
+function AppComponent() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [user, setUser] = useState<any>(null);
 
@@ -3310,7 +3310,7 @@ function App() {
                   </div>
                   <div className="mt-6">
                     <button 
-                      onClick={() => exportUnifiedExcel(true, globalChurchFilter)}
+                      onClick={() => { generateMasterExcel(userRole === 'admin' ? null : churchName); }}
                       className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-md active:scale-95"
                     >
                       <Download size={14} /> التصدير الشامل (Excel)
@@ -3847,7 +3847,7 @@ function App() {
                     <Award className="text-emerald-600" /> قسم النتائج (أونلاين)
                   </h4>
                   <button
-                    onClick={generateMasterExcel}
+                    onClick={() => { generateMasterExcel(null); }}
                     className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 transition shadow flex items-center gap-2"
                   >
                     <Download size={18} /> استخراج نتائج الأونلاين (Excel)
@@ -4952,14 +4952,14 @@ function App() {
                         <div>
                           <h5 className="font-black text-slate-700">تحديث واستخراج النتائج الموحدة (Live Schema)</h5>
                           <p className="text-xs text-slate-400 font-bold mb-2">يرجى تحميل القالب المعتمد ورفع النتائج من خلاله ليتم مطابقتها ديناميكياً.</p>
-                          <button type="button" onClick={generateMasterExcel} className="text-indigo-600 text-xs font-bold hover:underline">
+                          <button type="button" onClick={() => generateMasterExcel(churchName)} className="text-indigo-600 text-xs font-bold hover:underline">
                             تحميل قالب النتائج المعتمد (Master Template)
                           </button>
                         </div>
                         <div className="flex items-center gap-3">
                           <button 
                             type="button"
-                            onClick={() => exportUnifiedExcel()}
+                            onClick={() => { generateMasterExcel(churchName); }}
                             className="px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                           >
                             <Download size={20} /> التصدير الشامل (Excel)
@@ -5543,7 +5543,7 @@ function App() {
                     </button>
                     <button 
                       onClick={() => {
-                        setNewParticipant({ name: '', stage: '', country: '', competitions: ['', '', '', ''] });
+                        setNewParticipant({ name: '', stage: '', country: '', competitions: ['', '', ''] });
                         setRegistrationStep(1);
                       }}
                       className="px-8 py-4 bg-slate-100 text-slate-600 rounded-lg font-black text-base hover:bg-slate-200 transition-all"
@@ -6355,4 +6355,10 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppComponent />
+    </ErrorBoundary>
+  );
+}
