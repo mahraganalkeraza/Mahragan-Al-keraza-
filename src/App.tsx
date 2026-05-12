@@ -3390,9 +3390,10 @@ function App() {
                         <Award size={20} /> تحميل قالب التسجيل المعتمد
                       </button>
                       <button 
-                        onClick={() => generateMasterExcel()}
+                        onClick={() => generateMasterExcel(userRole === 'admin', userRole === 'admin' ? '' : churchName)}
+                        className="px-6 py-3 bg-coptic-blue text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                       >
-                        <Download size={20} /> تصدير كل بيانات التسجيل الموحد (Excel)
+                        <Download size={20} /> {userRole === 'admin' ? 'تصدير كل بيانات التسجيل الموحد (Excel)' : 'تحميل بيانات المشتركين بصيغة XLSX'}
                       </button>
                     </div>
                   </div>

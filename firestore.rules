@@ -260,7 +260,7 @@ service cloud.firestore {
     }
 
     match /participants/{participantId} {
-      allow read: if true; // Public read for exam verification
+      allow read: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
       allow create: if isValidId(participantId) && 
                     isValidParticipant(incoming()) && 
                     (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
@@ -397,7 +397,7 @@ service cloud.firestore {
     }
 
     match /online_results/{resultId} {
-      allow read: if true;
+      allow read: if isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/participants/$(resultId)) && isChurch(get(/databases/$(database)/documents/participants/$(resultId)).data.churchName));
       allow create: if true;
       allow update: if isAdmin();
       allow delete: if isAdmin();

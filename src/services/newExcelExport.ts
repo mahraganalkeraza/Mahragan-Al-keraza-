@@ -5,18 +5,26 @@ import { saveAs } from 'file-saver';
 
 import ExcelJS from 'exceljs';
 import { db } from '../firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { saveAs } from 'file-saver';
 
 export const generateMasterExcel = async (isAdmin: boolean = true, churchFilter: string = '') => {
   try {
-    // 1. Fetch data in parallel
-    const [participantsSnap, resultsSnap, teamsSnap, onlineResultsSnap] = await Promise.all([
-      getDocs(collection(db, 'participants')),
-      getDocs(collection(db, 'results')),
-      getDocs(collection(db, 'activityTeams')),
-      getDocs(collection(db, 'online_results'))
-    ]);
+    let participantsSnap, resultsSnap, teamsSnap, onlineResultsSnap;
+
+    if (!isAdmin && churchFilter) {
+        participantsSnap = await getDocs(query(collection(db, 'participants'), where('churchName', '==', churchFilter)));
+        teamsSnap = await getDocs(query(collection(db, 'activityTeams'), where('churchName', '==', churchFilter)));
+        resultsSnap = await getDocs(collection(db, 'results')); 
+        onlineResultsSnap = await getDocs(collection(db, 'online_results'));
+    } else {
+        [participantsSnap, resultsSnap, teamsSnap, onlineResultsSnap] = await Promise.all([
+            getDocs(collection(db, 'participants')),
+            getDocs(collection(db, 'results')),
+            getDocs(collection(db, 'activityTeams')),
+            getDocs(collection(db, 'online_results'))
+          ]);
+    }
 
     const participants = participantsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
     const results = resultsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
