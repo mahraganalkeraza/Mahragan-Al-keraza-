@@ -4,7 +4,13 @@ service cloud.firestore {
     
     // 0. Global Safety Net
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if request.auth != null && (
+        request.auth.token.email == "admin@mafk.com" ||
+        request.auth.token.email == "kareemsame77esoyam@gmail.com" ||
+        request.auth.token.email == "mahraganalkeraza7esoyam@gmail.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
     }
 
     // ===============================================================
@@ -220,6 +226,16 @@ service cloud.firestore {
     // Rules Matching
     // ===============================================================
 
+    match /settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /students/{studentId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if (isOwner(userId) || isAdmin()) && isValidUser(incoming(), userId);
@@ -368,32 +384,6 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
       allow delete: if isAdmin();
-    }
-
-    match /settings/footer {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    match /settings/about {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    match /settings/app_config {
-      allow read: if true;
-      allow create, update: if isAdmin() && isValidAppConfig(incoming());
-      allow delete: if isAdmin();
-    }
-
-    match /settings/results_headers {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-
-    match /settings/validation {
-      allow read: if true;
-      allow write: if isAdmin();
     }
 
     match /carousel/{carouselId} {

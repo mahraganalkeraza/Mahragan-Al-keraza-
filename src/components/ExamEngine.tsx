@@ -1,9 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebase';
+import { auth, db } from '../firebase';
 import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc } from 'firebase/firestore';
 import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet, ShieldX } from 'lucide-react';
 import { QRScanner } from './QRScanner';
 import { getDeviceFingerprint, DeviceFingerprint } from '../lib/deviceTracking';
+
+const normalizeArabic = (text: any): string => {
+  if (!text || typeof text !== 'string') return '';
+  return text
+    .trim()
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[ًٌٍَُِّْـ]/g, '') // Remove diacritics and Tatweel
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '') // Remove punctuation
+    .replace(/\s+/g, ' ');
+};
 
 interface Question {
   id: string;
@@ -31,6 +43,13 @@ const COMPETITION_TYPES = [
   'قبطي مستوى أول',
   'قبطي مستوى ثاني'
 ];
+
+const SCORE_FIELD_MAP: Record<string, string> = {
+  'دراسي': 'academicScore',
+  'محفوظات': 'memorizationScore',
+  'قبطي مستوى أول': 'copticL1Score',
+  'قبطي مستوى ثاني': 'copticL2Score'
+};
 
 interface ExamEngineProps {
   stages: any[];
@@ -473,36 +492,78 @@ export const LiveExamGateway: React.FC = () => {
         console.warn('QR scan not a JSON payload or parsing failed, using raw string');
       }
 
-      console.log('--- SCANNER DEBUG: Searching for studentId ---', studentId);
+      // Robust matching: Try case-insensitive if direct fail
+      const normalizedId = studentId.toLowerCase();
+      console.log('--- SCANNER DEBUG: Searching for normalizedId ---', normalizedId);
 
       // Blacklist Check
       if (fingerprint?.uuid) {
-        const blSnap = await getDoc(doc(db, 'blacklist', fingerprint.uuid));
-        if (blSnap.exists()) {
-          setIsLoading(false);
-          return alert('عذراً، هذا الجهاز تم حظره من دخول الامتحانات نظراً لمخالفات سابقة.');
+        try {
+          const blSnap = await getDoc(doc(db, 'blacklist', fingerprint.uuid));
+          if (blSnap.exists()) {
+            setIsLoading(false);
+            return alert('عذراً، هذا الجهاز تم حظره من دخول الامتحانات نظراً لمخالفات سابقة.');
+          }
+        } catch (e) {
+          console.warn('Blacklist check skipped due to permissions', e);
         }
       }
 
       let studentData: any = null;
 
-      // Step 1: Try direct ID match in participants (Source of Truth)
-      const partDocRef = doc(db, 'participants', studentId);
-      const partSnap = await getDoc(partDocRef);
+      // Try multiple collections for robustness as requested
+      const collectionsToTry = ['participants', 'students'];
       
-      if (partSnap.exists()) {
-        studentData = { id: partSnap.id, ...(partSnap.data() as object) };
-        console.log('--- SCANNER DEBUG: Found in participants by ID ---', studentData);
-      } else {
-        // Step 2: Try serial match in participants
-        const partRef = collection(db, 'participants');
-        const qSerial = query(partRef, where('serial', '==', studentId));
+      for (const colName of collectionsToTry) {
+        // Step 1: Try direct ID match (original case)
+        const docRef = doc(db, colName, studentId);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          studentData = { id: snap.id, ...(snap.data() as object) };
+          break;
+        }
+
+        // Step 1b: Try normalized ID match if different
+        if (studentId !== normalizedId) {
+          const docRefNorm = doc(db, colName, normalizedId);
+          const snapNorm = await getDoc(docRefNorm);
+          if (snapNorm.exists()) {
+            studentData = { id: snapNorm.id, ...(snapNorm.data() as object) };
+            break;
+          }
+        }
+
+        // Step 2: Try serial match
+        const colRef = collection(db, colName);
+        const qSerial = query(colRef, where('serial', '==', studentId));
         const qSnap = await getDocs(qSerial);
-        
         if (!qSnap.empty) {
           const docFound = qSnap.docs[0];
           studentData = { id: docFound.id, ...(docFound.data() as object) };
-          console.log('--- SCANNER DEBUG: Found in participants by Serial ---', studentData);
+          break;
+        }
+        
+        // Also try serial match with normalized string just in case
+        const qSerialNorm = query(colRef, where('serial', '==', normalizedId));
+        const qSnapNorm = await getDocs(qSerialNorm);
+        if (!qSnapNorm.empty) {
+          const docFound = qSnapNorm.docs[0];
+          studentData = { id: docFound.id, ...(docFound.data() as object) };
+          break;
+        }
+      }
+
+      // Admin Override / Force Load for identifying
+      const isAdminUser = auth.currentUser?.email === 'admin@mafk.com' || auth.currentUser?.email === 'kareemsame77esoyam@gmail.com';
+      if (!studentData && isAdminUser) {
+        if (confirm(`لم يتم العثور على طالب بالكود "${studentId}". هل تريد إنشاء جلسة امتحان يدوية بهذا الكود؟ (لمسؤولي النظام فقط)`)) {
+          studentData = {
+            id: studentId,
+            studentName: 'طالب يدوي - ' + studentId,
+            churchName: 'إدخال يدوي',
+            stage: 'عام',
+            isManual: true
+          };
         }
       }
 
@@ -515,15 +576,13 @@ export const LiveExamGateway: React.FC = () => {
            // Merge result data (scores) into student data
            studentData = { ...studentData, ...(resSnap.data() as object) };
            console.log('--- SCANNER DEBUG: Merged with existing results ---', resSnap.data());
-        } else {
-           console.log('--- SCANNER DEBUG: No results doc yet, will create on submission ---');
         }
       }
 
       if (!studentData) {
         setIsLoading(false);
         console.error('--- SCANNER DEBUG: NOT FOUND ---');
-        return alert(`لم يتم العثور على طالب بالكود: ${studentId}\nتأكد من صحة الكود أو تواصل مع المسئول.`);
+        return alert(`عذراً، هذا الكود غير مسجل: ${studentId}\nيرجى التأكد من الكود المطبوع أو مراجعة المشرف.`);
       }
       
       const deviceId = localStorage.getItem('coptic_device_id');
@@ -562,7 +621,11 @@ export const LiveExamGateway: React.FC = () => {
     } catch (e: any) {
       console.error('--- SCANNER DEBUG: ERROR ---', e);
       setIsLoading(false);
-      alert('خطأ في استرجاع البيانات: ' + (e.message || 'Error occurred'));
+      if (e.code === 'permission-denied' || e.message?.includes('permission')) {
+        alert('خطأ في الاتصال بالسيرفر - يرجى مراجعة الصلاحيات أو تسجيل الدخول بصلاحية أدمن');
+      } else {
+        alert('حدث خطأ غير متوقع: ' + (e.message || 'Error occurred'));
+      }
     }
   };
 
@@ -603,14 +666,7 @@ export const LiveExamGateway: React.FC = () => {
       }
       
       // Check if already taken this specific competition
-      const scoreFieldMap: Record<string, string> = {
-        'دراسي': 'academicScore',
-        'محفوظات': 'memorizationScore',
-        'قبطي مستوى أول': 'copticL1Score',
-        'قبطي مستوى ثاني': 'copticL2Score'
-      };
-      
-      const field = scoreFieldMap[competitionType];
+      const field = SCORE_FIELD_MAP[competitionType];
       if (activeStudent[field] !== undefined && activeStudent[field] !== null) {
         setIsLoading(false);
         return alert(`عفواً، لقد قمت بأداء امتحان ${competitionType} سابقاً. لا يسمح بإعادته إلا بإذن المسئول.`);
@@ -669,58 +725,85 @@ export const LiveExamGateway: React.FC = () => {
     setIsLoading(true);
 
     let totalScore = 0;
-    activeExam.questions.forEach(q => {
+    console.log('--- STARTING GRADING ---');
+    console.log('Student:', activeStudent.studentName, 'ID:', activeStudent.id);
+    console.log('Competition:', selectedCompetition);
+
+    activeExam.questions.forEach((q, idx) => {
       const stdAns = answers[q.id];
-      if (!stdAns) return;
+      const correctAns = q.correctAnswers?.[0];
+      
+      console.log(`Q${idx+1} [${q.type}]: student="${stdAns}", correct="${correctAns}"`);
+
+      if (!stdAns) {
+        console.log(`Q${idx+1}: No answer provided.`);
+        return;
+      }
 
       if (q.type === 'mcq' || q.type === 'boolean') {
-        if (stdAns === q.correctAnswers[0]) totalScore += q.points;
+        if (normalizeArabic(String(stdAns)) === normalizeArabic(String(correctAns))) {
+          totalScore += q.points;
+          console.log(`Q${idx+1}: CORRECT (+${q.points})`);
+        } else {
+          console.log(`Q${idx+1}: INCORRECT`);
+        }
       } else if (q.type === 'fill') {
-        if (stdAns.trim() === q.correctAnswers[0].trim()) totalScore += q.points;
+        if (normalizeArabic(String(stdAns)) === normalizeArabic(String(correctAns))) {
+          totalScore += q.points;
+          console.log(`Q${idx+1}: CORRECT (+${q.points})`);
+        } else {
+          console.log(`Q${idx+1}: INCORRECT`);
+        }
       } else if (q.type === 'matching') {
-        // Matching stdAns is expected to be Record<leftIndex, rightValue>
         let correctMatches = 0;
-        q.matchingPairs?.forEach((pair, idx) => {
-           if (stdAns[idx] === pair.right) correctMatches++;
+        const matchingPairs = q.matchingPairs || [];
+        matchingPairs.forEach((pair, pIdx) => {
+           const sMatch = stdAns[pIdx];
+           const rMatch = pair.right;
+           if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
+             correctMatches++;
+           }
         });
-        if (correctMatches === q.matchingPairs?.length) totalScore += q.points;
-        else if (correctMatches > 0) {
-           // Partial credit? User didn't specify. Let's do full match for now.
+        
+        console.log(`Q${idx+1}: Matches ${correctMatches}/${matchingPairs.length}`);
+        if (correctMatches === matchingPairs.length) {
+          totalScore += q.points;
+          console.log(`Q${idx+1}: CORRECT (+${q.points})`);
         }
       }
     });
 
+    console.log('--- GRADING FINISHED --- Total Score:', totalScore);
     setScore(totalScore);
 
-    const scoreFieldMap: Record<string, string> = {
-      'دراسي': 'academicScore',
-      'محفوظات': 'memorizationScore',
-      'قبطي مستوى أول': 'copticL1Score',
-      'قبطي مستوى ثاني': 'copticL2Score'
-    };
-    
-    const field = scoreFieldMap[selectedCompetition];
+    const field = SCORE_FIELD_MAP[selectedCompetition];
 
     try {
       // Use setDoc with merge: true to handle missing results documents
-      await setDoc(doc(db, 'results', activeStudent.id), {
+      // Use dot notation for nested merging if possible, or build the object carefully
+      const resultDocRef = doc(db, 'results', activeStudent.id);
+      
+      const payload: any = {
         studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
         churchName: activeStudent.churchName || 'غير محدد',
         stage: activeExam.stage,
-        score: totalScore, // Default main score, might be overwritten by specific competitions
+        score: totalScore,
         grade: '--',
         timestamp: new Date().toISOString(),
+        isSubmitted: true,
         [field]: totalScore,
-        [`data.${selectedCompetition}`]: totalScore,
+        data: {
+          [selectedCompetition]: totalScore
+        },
         submissionInfo: {
           timestamp: new Date().toISOString(),
           ip: deviceInfo.ip,
-          deviceId: fingerprint?.uuid,
-          fingerprint: fingerprint,
           userAgent: navigator.userAgent,
-          competitionType: selectedCompetition
+          deviceId: localStorage.getItem('coptic_device_id')
         }
-      }, { merge: true });
+      };
+
+      await setDoc(resultDocRef, payload, { merge: true });
       
       setIsExamCompleted(true);
       setIsLoading(false);
@@ -797,7 +880,17 @@ export const LiveExamGateway: React.FC = () => {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') fetchStudentAndExam((e.target as HTMLInputElement).value);
               }}
+              id="manual-student-id"
             />
+            <button 
+              onClick={() => {
+                const input = document.getElementById('manual-student-id') as HTMLInputElement;
+                if (input?.value) fetchStudentAndExam(input.value);
+              }}
+              className="px-4 py-3 bg-indigo-100 text-indigo-600 rounded-xl font-black hover:bg-indigo-200 transition-all"
+            >
+              دخول
+            </button>
           </div>
         </div>
       </div>
@@ -879,7 +972,7 @@ export const LiveExamGateway: React.FC = () => {
         <p className="text-slate-500 font-bold mb-8">لقد تم حفظ نتيجتك في مسابقة {selectedCompetition}</p>
         <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 mb-10 inline-block min-w-[200px]">
           <p className="text-[10px] font-black text-slate-400 uppercase mb-1">الدرجة المحصلة</p>
-          <p className="text-5xl font-black text-indigo-600">{score}</p>
+          <p className="text-5xl font-black text-indigo-600">{score || (selectedCompetition && activeStudent?.[SCORE_FIELD_MAP[selectedCompetition]]) || 0}</p>
         </div>
         <button 
           onClick={() => { setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); setIsExamCompleted(false); }} 

@@ -8,15 +8,14 @@ export const ResultsViewer: React.FC<{
   isAdmin?: boolean 
 }> = ({ results, onReset, isAdmin }) => {
   const MASTER_HEADERS = [
-    'توقيت التسجيل',
-    'الرقم التعريفي',
+    'وقت التسليم',
     'الاسم',
     'الكنيسة/البلد',
     'النوع',
-    'دراسي',
+    'التحصيل الدراسي',
     'محفوظات',
-    'قبطي مستوى 1',
-    'قبطي مستوى 2'
+    'قبطي مستوى أول',
+    'قبطي مستوى ثاني'
   ];
 
   // Discover dynamic headers
@@ -25,7 +24,7 @@ export const ResultsViewer: React.FC<{
     results.forEach(r => {
       if (r.data) {
          Object.keys(r.data).forEach(k => {
-           if (!MASTER_HEADERS.includes(k) && k !== 'serial') {
+           if (!MASTER_HEADERS.includes(k) && k !== 'serial' && k !== 'دراسي') {
              dh.add(k);
            }
          });
@@ -39,7 +38,7 @@ export const ResultsViewer: React.FC<{
   // Derive Church vs Stages Matrix
   const matrix = useMemo(() => {
     const churches = Array.from(new Set(results.map(r => r.churchName)));
-    const stages = Array.from(new Set(results.map(r => r.data?.['دراسي'] || r.stage))).filter(Boolean) as string[];
+    const stages = Array.from(new Set(results.map(r => r.academicScore !== undefined ? r.stage : r.data?.['دراسي'] || r.stage))).filter(Boolean) as string[];
     
     return { churches, stages };
   }, [results]);
@@ -64,17 +63,16 @@ export const ResultsViewer: React.FC<{
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {results.slice(0, 100).map((r, index) => {
+              {results.slice(0, 500).map((r, index) => {
                 const rowData: Record<string, any> = {
-                  'توقيت التسجيل': r.timestamp,
-                  'الرقم التعريفي': r.serial || '',
+                  'وقت التسليم': r.timestamp ? new Date(r.timestamp).toLocaleString('ar-EG') : '',
                   'الاسم': r.studentName,
                   'الكنيسة/البلد': r.churchName,
                   'النوع': r.data?.['النوع'] || '',
-                  'دراسي': r.data?.['دراسي'] || '',
-                  'محفوظات': r.data?.['محفوظات'] || '',
-                  'قبطي مستوى 1': r.data?.['قبطي مستوى 1'] || '',
-                  'قبطي مستوى 2': r.data?.['قبطي مستوى 2'] || '',
+                  'التحصيل الدراسي': r.academicScore ?? r.data?.['دراسي'] ?? '',
+                  'محفوظات': r.memorizationScore ?? r.data?.['محفوظات'] ?? '',
+                  'قبطي مستوى أول': r.copticL1Score ?? r.data?.['قبطي مستوى أول'] ?? '',
+                  'قبطي مستوى ثاني': r.copticL2Score ?? r.data?.['قبطي مستوى ثاني'] ?? '',
                   ...r.data
                 };
                 
