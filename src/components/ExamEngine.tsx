@@ -595,6 +595,10 @@ export const LiveExamGateway: React.FC = () => {
 
       await setDoc(doc(db, 'active_sessions', studentData.id), sessionData);
 
+      setSelectedCompetition(null);
+      setActiveExam(null);
+      setIsExamCompleted(false);
+      setAnswers({});
       setActiveStudent(studentData);
       setIsScanning(false);
       setIsLoading(false);
@@ -792,6 +796,22 @@ export const LiveExamGateway: React.FC = () => {
       alert('فشل في حفظ الدرجة: ' + (e.message || 'Error occurred'));
     }
   };
+
+  if (isExamCompleted) {
+    return (
+      <div className="text-center p-12 bg-white border border-emerald-200 rounded-3xl shadow-xl overflow-hidden relative">
+        <div className="absolute top-0 inset-x-0 h-2 bg-emerald-500" />
+        <h2 className="text-3xl font-black mb-4 text-emerald-600">تم استلام إجاباتك بنجاح!</h2>
+        <p className="text-slate-600 font-bold mb-6">نتمنى لك التوفيق.</p>
+        <button 
+          onClick={() => { setIsExamCompleted(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
+          className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all"
+        >
+          خروج
+        </button>
+      </div>
+    );
+  }
 
   if (isTerminated) {
     return (

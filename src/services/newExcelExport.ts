@@ -8,35 +8,30 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
     const isAdmin = !churchName;
     console.log(`Exporting for ${isAdmin ? 'Admin' : churchName}`);
 
-    // Fetch helper
-    const fetchWithScope = async (collName: string) => {
-        let q;
-        if (!isAdmin) {
-             q = query(collection(db, collName), where('churchName', '==', churchName));
-        } else {
-             q = collection(db, collName);
-        }
-        try {
-            return await getDocs(q);
-        } catch (e: any) {
-            console.error(`Error fetching ${collName}:`, e);
-            throw new Error(`تعذر الوصول إلى بيانات ${collName}: ${e.message || 'لا توجد صلاحية'}`);
-        }
-    };
+    // Fetch sequentially to guarantee resolution
+    let pQuery = isAdmin 
+      ? collection(db, 'participants') 
+      : query(collection(db, 'participants'), where('churchName', '==', churchName));
+      
+    const pSnap = await getDocs(pQuery);
+    const participants = pSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
 
-    // 1. Fetch data
-    const [participantsSnap, resultsSnap, teamsSnap] = await Promise.all([
-        fetchWithScope('participants'),
-        fetchWithScope('results'),
-        fetchWithScope('activityTeams'),
-    ]);
-
-    const participants = participantsSnap?.docs.map(d => ({ id: d.id, ...(d.data() as any) })) || [];
-    if (participants.length === 0) {
-        throw new Error('لا توجد بيانات متاحة للتصدير.');
+    if (!participants || participants.length === 0) {
+      alert('لا توجد بيانات متاحة للتصدير لهذه الكنيسة.');
+      return;
     }
-    const results = resultsSnap?.docs.map(d => ({ id: d.id, ...(d.data() as any) })) || [];
-    const teams = teamsSnap?.docs.map(d => ({ id: d.id, ...(d.data() as any) })) || [];
+
+    let rQuery = isAdmin
+      ? collection(db, 'results')
+      : query(collection(db, 'results'), where('churchName', '==', churchName));
+    const rSnap = await getDocs(rQuery);
+    const results = rSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+
+    let tQuery = isAdmin
+      ? collection(db, 'activityTeams')
+      : query(collection(db, 'activityTeams'), where('churchName', '==', churchName));
+    const tSnap = await getDocs(tQuery);
+    const teams = tSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
     
     // Merge logic
     const studentData: Record<string, any> = {};

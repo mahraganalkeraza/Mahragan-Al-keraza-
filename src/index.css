@@ -65,7 +65,12 @@ button {
   font-weight: bold;
 }
 
-.quick-access-card {
+button:hover {
+  background-color: #000000 !important; 
+  color: #ffffff !important; 
+}
+
+button.quick-access-card {
   background-color: #006064 !important; /* Dark Teal, override global */
   color: #ffffff !important;            /* White, override global */
   border: 1px solid #004d40 !important;
@@ -80,16 +85,11 @@ button {
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 
-.quick-access-card:hover {
+button.quick-access-card:hover {
   filter: brightness(0.9);
   background-color: #006064 !important; /* Keep original background color */
-  color: #ffffff !important;            /* Force white text */
+  color: #ffff00 !important;            /* Very bright yellow to stay visible */
   box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-}
-
-button:hover {
-  background-color: #000000 !important; 
-  color: #ffffff !important; 
 }
 @media print {
   .no-print {

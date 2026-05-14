@@ -32,8 +32,8 @@ class ErrorBoundary extends Component<Props, State> {
       
       try {
         const parsedError = JSON.parse(this.state.error?.message || '');
-        if (parsedError.error && parsedError.error.includes('insufficient permissions')) {
-          errorMessage = 'عذراً، ليس لديك الصلاحيات الكافية للقيام بهذا الإجراء.';
+        if (parsedError.error && parsedError.error.includes('Missing or insufficient permissions')) {
+          errorMessage = 'عذراً، لا تملك صلاحية الوصول لهذه البيانات';
         }
       } catch (e) {
         // Not a JSON error
