@@ -40,6 +40,7 @@ export interface Participant {
   country: string;
   name: string;
   stage: string;
+  gender?: string;
   competitions: string[];
   timestamp: string;
   year?: string;
@@ -70,6 +71,7 @@ export interface Result {
   serial?: string;
   churchName: string;
   studentName: string;
+  gender?: string;
   stage: string;
   academicScore?: number;
   memorizationScore?: number;

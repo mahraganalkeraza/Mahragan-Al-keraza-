@@ -68,7 +68,7 @@ export const ResultsViewer: React.FC<{
                   'وقت التسليم': r.timestamp ? new Date(r.timestamp).toLocaleString('ar-EG') : '',
                   'الاسم': r.studentName,
                   'الكنيسة/البلد': r.churchName,
-                  'النوع': r.data?.['النوع'] || '',
+                  'النوع': (r as any).gender || r.data?.['النوع'] || '',
                   'التحصيل الدراسي': r.academicScore ?? r.data?.['دراسي'] ?? '',
                   'محفوظات': r.memorizationScore ?? r.data?.['محفوظات'] ?? '',
                   'قبطي مستوى أول': r.copticL1Score ?? r.data?.['قبطي مستوى أول'] ?? '',

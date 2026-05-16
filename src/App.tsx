@@ -701,6 +701,7 @@ function AppComponent() {
   const [newParticipant, setNewParticipant] = useState({ 
     name: '', 
     stage: '', 
+    gender: '',
     country: '',
     competitions: ['', '', ''] 
   });
@@ -1527,9 +1528,11 @@ function AppComponent() {
         }
 
         if (name && stage) {
+           const rowGender = row['النوع'] || row['الجنس'] || row['Gender'] || (name.startsWith('مريم') || name.endsWith('ة') ? 'أنثى' : 'ذكر');
            parsedParticipants.push({
              name,
              stage,
+             gender: rowGender,
              competitions: comps,
              churchName: churchName,
              country: 'مصر',
@@ -2236,9 +2239,10 @@ function AppComponent() {
           if (!dbParticipant) {
              const newParticipant = {
                churchName,
-               country: 'Egypt', // default to church's country if we had it, fallback to Egypt
+               country: 'Egypt', 
                name: memberName,
                stage: newTeam.members[0].stage,
+               gender: newTeam.members[0].gender,
                competitions: [],
                timestamp: new Date().toLocaleString('ar-EG'),
                year: activeYear
@@ -2307,6 +2311,7 @@ function AppComponent() {
     setNewParticipant({
       name: participant.name,
       stage: participant.stage,
+      gender: (participant as any).gender || '',
       country: participant.country,
       competitions: [...(participant.competitions || []), '', '', ''].slice(0, 3)
     });
@@ -2380,7 +2385,10 @@ function AppComponent() {
 
   const handleAddParticipant = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newParticipant.name || !newParticipant.stage) return;
+    if (!newParticipant.name || !newParticipant.stage || !newParticipant.gender) {
+      alert('يرجى ملء جميع الحقول المطلوبة (الاسم، المرحلة، النوع)');
+      return;
+    }
     
     if (!editingParticipant) {
       const isDuplicate = participants.some(p => 
@@ -2401,6 +2409,7 @@ function AppComponent() {
         await withExponentialBackoff(() => updateDoc(doc(db, 'participants', editingParticipant.id), {
           name: newParticipant.name,
           stage: newParticipant.stage,
+          gender: newParticipant.gender,
           competitions: newParticipant.competitions.filter(c => c !== ''),
           timestamp: new Date().toLocaleString('ar-EG')
         }));
@@ -2411,6 +2420,7 @@ function AppComponent() {
           churchName,
           name: newParticipant.name,
           stage: newParticipant.stage,
+          gender: newParticipant.gender,
           competitions: newParticipant.competitions.filter(c => c !== ''),
           timestamp: new Date().toLocaleString('ar-EG'),
           year: activeYear
@@ -2423,6 +2433,7 @@ function AppComponent() {
       setNewParticipant({ 
         ...newParticipant, 
         name: '', 
+        gender: '',
         competitions: ['دراسي', '', ''] 
       });
     } catch (error: any) {
@@ -3346,16 +3357,32 @@ function AppComponent() {
                     <UserPlus size={20} className="text-coptic-blue" /> تسجيل المشتركين
                   </h4>
                   <form onSubmit={handleAddParticipant} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase">اسم المخدوم ثلاثياً</label>
-                      <input 
-                        type="text" 
-                        placeholder="أدخل الاسم الثلاثي"
-                        value={newParticipant.name}
-                        onChange={e => setNewParticipant({...newParticipant, name: e.target.value})}
-                        className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue"
-                        required
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase">اسم المخدوم ثلاثياً</label>
+                        <input 
+                          type="text" 
+                          placeholder="أدخل الاسم الثلاثي"
+                          value={newParticipant.name}
+                          onChange={e => setNewParticipant({...newParticipant, name: e.target.value})}
+                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase">النوع</label>
+                        <select 
+                          value={newParticipant.gender}
+                          onChange={e => setNewParticipant({...newParticipant, gender: e.target.value})}
+                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue"
+                          required
+                        >
+                          <option value="" disabled>اختر النوع</option>
+                          <option value="ذكر">ذكر</option>
+                          <option value="أنثى">أنثى</option>
+                        </select>
+                      </div>
                     </div>
 
                     <div className="space-y-2">
@@ -3438,7 +3465,10 @@ function AppComponent() {
                         <div className="flex justify-between items-start mb-2">
                           <div>
                             <p className="text-sm font-black text-slate-800">{p.name}</p>
-                            <p className="text-[10px] font-bold text-coptic-blue mt-0.5">{p.stage}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <p className="text-[10px] font-bold text-coptic-blue">{p.stage}</p>
+                              <span className="text-[9px] text-slate-400 font-black px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{p.gender || 'غير محدد'}</span>
+                            </div>
                           </div>
                           <button onClick={() => handleDeleteParticipant(p.id)} className="p-1.5 text-slate-200 hover:text-coptic-red transition-colors opacity-0 group-hover:opacity-100">
                             <X size={16} />
@@ -3959,6 +3989,7 @@ function AppComponent() {
                     <thead>
                       <tr className="bg-white text-[10px] font-black text-slate-500 uppercase">
                         <th className="p-4 border-b border-slate-100">الاسم</th>
+                        <th className="p-4 border-b border-slate-100">النوع</th>
                         <th className="p-4 border-b border-slate-100">الكنيسة</th>
                         <th className="p-4 border-b border-slate-100">المرحلة</th>
                         <th className="p-4 border-b border-slate-100">المسابقات</th>
@@ -3970,6 +4001,7 @@ function AppComponent() {
                         .map(p => (
                           <tr key={p.id} className="bg-white hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-slate-800 text-sm">{p.name}</td>
+                            <td className="p-4 text-slate-600 text-xs">{p.gender || '--'}</td>
                             <td className="p-4 text-slate-600 text-xs">{p.churchName}</td>
                             <td className="p-4 text-slate-600 text-xs">{p.stage}</td>
                             <td className="p-4">
@@ -5940,7 +5972,7 @@ function AppComponent() {
                       <h5 className="font-black text-lg text-slate-800">البيانات الأساسية</h5>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                       <div className="space-y-2">
                         <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
                           اسم المخدوم ثلاثياً
@@ -5967,6 +5999,22 @@ function AppComponent() {
                         >
                           <option value="">اختر المرحلة</option>
                           {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                          النوع
+                        </label>
+                        <select 
+                          value={newParticipant.gender}
+                          onChange={e => setNewParticipant({...newParticipant, gender: e.target.value})}
+                          className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
+                          required
+                        >
+                          <option value="" disabled>اختر النوع</option>
+                          <option value="ذكر">ذكر</option>
+                          <option value="أنثى">أنثى</option>
                         </select>
                       </div>
                     </div>
@@ -6045,7 +6093,7 @@ function AppComponent() {
                     </button>
                     <button 
                       onClick={() => {
-                        setNewParticipant({ name: '', stage: '', country: '', competitions: ['', '', ''] });
+                        setNewParticipant({ name: '', stage: '', gender: '', country: '', competitions: ['', '', ''] });
                         setRegistrationStep(1);
                       }}
                       className="px-8 py-4 bg-slate-100 text-slate-600 rounded-lg font-black text-base hover:bg-slate-200 transition-all"

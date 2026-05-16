@@ -45,10 +45,11 @@
       "properties": {
         "name": { "type": "string" },
         "stage": { "type": "string" },
+        "gender": { "type": "string", "enum": ["ذكر", "أنثى"] },
         "churchName": { "type": "string" },
         "competitions": { "type": "array", "items": { "type": "string" } }
       },
-      "required": ["name", "stage", "churchName", "competitions"]
+      "required": ["name", "stage", "gender", "churchName", "competitions"]
     },
     "Inquiry": {
       "title": "Inquiry",
@@ -90,6 +91,7 @@
       "type": "object",
       "properties": {
         "studentName": { "type": "string" },
+        "gender": { "type": "string", "enum": ["ذكر", "أنثى"] },
         "churchName": { "type": "string" },
         "stage": { "type": "string" },
         "academicScore": { "type": "number" },
