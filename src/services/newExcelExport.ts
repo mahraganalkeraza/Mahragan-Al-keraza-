@@ -40,6 +40,7 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
         studentData[p.id?.toLowerCase().trim()] = {
             id: p.id,
             name: p.name || '-',
+            gender: p.gender || '-',
             church: p.churchName || '-',
             stage: p.stage || '-',
             teams: [],
@@ -73,6 +74,7 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
     ws.columns = [
         { header: 'ID', key: 'id', width: 15 },
         { header: 'الاسم', key: 'name', width: 30 },
+        { header: 'النوع', key: 'gender', width: 12 },
         { header: 'الكنيسة', key: 'church', width: 20 },
         { header: 'المرحلة', key: 'stage', width: 15 },
         { header: 'دراسي', key: 'drasyScore', width: 15 },
@@ -127,6 +129,7 @@ export const exportOnlineResultsExcel = async (results: any[]) => {
         ws.columns = [
             { header: 'الكود', key: 'studentID', width: 15 },
             { header: 'الاسم', key: 'studentName', width: 30 },
+            { header: 'النوع', key: 'gender', width: 12 },
             { header: 'الكنيسة', key: 'churchName', width: 25 },
             { header: 'المرحلة', key: 'stage', width: 15 },
             { header: 'دراسي', key: 'drasy', width: 12 },
@@ -138,6 +141,7 @@ export const exportOnlineResultsExcel = async (results: any[]) => {
         ws.addRows(results.map(r => ({
             studentID: r.studentID,
             studentName: r.studentName,
+            gender: r.gender || '',
             churchName: r.churchName,
             stage: r.stage,
             drasy: r['مسابقة دراسي'] || '-',

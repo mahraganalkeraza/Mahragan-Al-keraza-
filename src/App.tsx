@@ -1296,6 +1296,7 @@ function AppComponent() {
         sheet.columns = [
           { header: 'Student ID', key: 'id', width: 25 },
           { header: 'Triple Name', key: 'name', width: 30 },
+          { header: 'Gender', key: 'gender', width: 12 },
           { header: 'Stage/Level', key: 'stage', width: 20 },
           { header: 'Church Name', key: 'churchName', width: 25 },
           { header: 'Competition Type', key: 'competitions', width: 30 },
@@ -1312,6 +1313,7 @@ function AppComponent() {
           sheet.addRow({
             id: String(p.id),
             name: p.name || '',
+            gender: p.gender || '',
             stage: p.stage || '',
             churchName: p.churchName || '',
             competitions: Array.isArray(p.competitions) ? p.competitions.join(' - ') : (p.competitions || ''),

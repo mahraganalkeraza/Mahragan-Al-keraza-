@@ -744,6 +744,7 @@ export const LiveExamGateway: React.FC = () => {
       const payload: any = {
         studentId: activeStudent.id,
         studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
+        gender: activeStudent.gender || '',
         church: activeStudent.churchName || 'غير محدد',
         churchName: activeStudent.churchName || 'غير محدد',
         stage: activeExam.stage,
@@ -762,6 +763,7 @@ export const LiveExamGateway: React.FC = () => {
         studentId: activeStudent.id,
         studentID: activeStudent.id,
         studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
+        gender: activeStudent.gender || '',
         church: activeStudent.churchName || 'غير محدد',
         churchName: activeStudent.churchName || 'غير محدد',
         stage: activeExam.stage,
