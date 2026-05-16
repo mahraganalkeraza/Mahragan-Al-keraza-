@@ -677,10 +677,23 @@ export const LiveExamGateway: React.FC = () => {
       setIsExamCompleted(false);
       setIsTerminated(false);
 
-      const examsSnap = await getDocs(collection(db, 'exams'));
-      const availableExams = examsSnap.docs
-        .map(d => d.data() as Exam)
-        .filter(e => e.stage === stage && e.competitionType === competitionType && e.isActive);
+      let availableExams: Exam[] = [];
+      const cacheKey = `exams_${stage}_${competitionType}`;
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        availableExams = JSON.parse(cached);
+      } else {
+        const examsSnap = await getDocs(
+          query(
+            collection(db, 'exams'), 
+            where('stage', '==', stage), 
+            where('competitionType', '==', competitionType), 
+            where('isActive', '==', true)
+          )
+        );
+        availableExams = examsSnap.docs.map(d => d.data() as Exam);
+        sessionStorage.setItem(cacheKey, JSON.stringify(availableExams));
+      }
       
       if (availableExams.length === 0) {
         setIsLoading(false);

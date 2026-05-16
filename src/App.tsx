@@ -492,56 +492,78 @@ function AppComponent() {
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
 
-    const unsubscribeChurches = onSnapshot(collection(db, 'churches'), (snapshot) => {
-      setPublicChurches(snapshot.docs
-        .map(d => ({ 
-          name: d.data().name, 
-          email: '', 
-          isEnabled: d.data().isEnabled !== false,
-          logoUrl: d.data().logoUrl || ''
-        }))
-        .filter(c => c.isEnabled)
-      );
-    }, (error) => console.error("Error syncing churches:", error));
+    const fetchCachedMetadata = async () => {
+      const now = new Date().getTime();
+      const CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
+      
+      const loadCachedOrFetch = async (key: string, fetchFn: () => Promise<any>) => {
+        const cachedStr = localStorage.getItem(`cache_${key}`);
+        if (cachedStr) {
+          try {
+            const cached = JSON.parse(cachedStr);
+            if (now - cached.timestamp < CACHE_EXPIRY) {
+              return cached.data;
+            }
+          } catch (e) {}
+        }
+        const data = await fetchFn();
+        localStorage.setItem(`cache_${key}`, JSON.stringify({ timestamp: now, data }));
+        return data;
+      };
 
-    const unsubscribeLevels = onSnapshot(collection(db, 'levels'), (snapshot) => {
-      if (!snapshot.empty) {
-        const fetchedLevels = snapshot.docs.map(d => ({ 
-          name: d.data().name, 
-          comps: d.data().allowedCompetitions || [] 
-        }));
-        setDynamicLevels(fetchedLevels.sort((a, b) => sortStages(a.name, b.name)));
-      }
-    }, (error) => console.error("Error syncing levels:", error));
-
-    const unsubscribeActivityStages = onSnapshot(collection(db, 'activityStages'), (snapshot) => {
-      const fetchedStages = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setActivityStages(fetchedStages);
-    }, (error) => console.error("Error syncing activity stages:", error));
-
-    const unsubscribeHymnStages = onSnapshot(collection(db, 'hymnStages'), (snapshot) => {
-      const fetchedHymnStages = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setHymnStages(fetchedHymnStages);
-    }, (error) => console.error("Error syncing hymn stages:", error));
-
-    const unsubscribeValidation = onSnapshot(doc(db, 'settings', 'validation'), (snapshot) => {
-      if (snapshot.exists()) {
-        const valData = snapshot.data();
-        setValidationSettings({
-          templates: valData.templates || [],
-          ageMappings: valData.ageMappings || [],
-          rules: valData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
+      try {
+        const churchesData = await loadCachedOrFetch('churches', async () => {
+          const snap = await getDocs(collection(db, 'churches'));
+          return snap.docs
+            .map(d => ({ 
+              name: d.data().name, 
+              email: '', 
+              isEnabled: d.data().isEnabled !== false,
+              logoUrl: d.data().logoUrl || ''
+            }))
+            .filter(c => c.isEnabled);
         });
+        setPublicChurches(churchesData);
+
+        const levelsData = await loadCachedOrFetch('levels', async () => {
+          const snap = await getDocs(collection(db, 'levels'));
+          return snap.docs.map(d => ({ 
+            name: d.data().name, 
+            comps: d.data().allowedCompetitions || [] 
+          }));
+        });
+        setDynamicLevels(levelsData.sort((a: any, b: any) => sortStages(a.name, b.name)));
+
+        const activityStagesData = await loadCachedOrFetch('activityStages', async () => {
+          const snap = await getDocs(collection(db, 'activityStages'));
+          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        });
+        setActivityStages(activityStagesData);
+
+        const hymnStagesData = await loadCachedOrFetch('hymnStages', async () => {
+          const snap = await getDocs(collection(db, 'hymnStages'));
+          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        });
+        setHymnStages(hymnStagesData);
+
+        const validationData = await loadCachedOrFetch('validation', async () => {
+          const snap = await getDoc(doc(db, 'settings', 'validation'));
+          return snap.exists() ? snap.data() : { templates: [], ageMappings: [], rules: { nameLength: true, genderMatch: false, mandatoryRows: true } };
+        });
+        setValidationSettings({
+          templates: validationData.templates || [],
+          ageMappings: validationData.ageMappings || [],
+          rules: validationData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
+        });
+      } catch (e) {
+        console.error("Error fetching cached metadata:", e);
       }
-    }, (error) => console.error("Error syncing validation settings:", error));
+    };
+
+    fetchCachedMetadata();
 
     return () => {
       unsubAppConfig();
-      unsubscribeChurches();
-      unsubscribeLevels();
-      unsubscribeActivityStages();
-      unsubscribeHymnStages();
-      unsubscribeValidation();
     };
   }, []);
 
@@ -900,49 +922,11 @@ function AppComponent() {
     // For church users, wait until churchName is loaded to avoid permission errors on filtered queries
     if (userRole === 'church' && !churchName) return;
 
+    // Filtered listeners for church users
+    // Removed onSnapshot listeners for large tables per performance requirements
     const unsubNews = onSnapshot(query(collection(db, 'news'), where('year', '==', activeYear), orderBy('timestamp', 'desc'), limit(10)), (snapshot) => {
       setNews(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as News)));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'news'));
-
-    // Filtered listeners for church users
-    const unsubOnlineResults = onSnapshot(collection(db, 'online_results'), (snapshot) => {
-      setOnlineResults(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'online_results'));
-
-    const resultsQuery = userRole === 'admin' 
-      ? query(collection(db, 'results'), where('year', '==', activeYear)) 
-      : query(collection(db, 'results'), where('churchName', '==', churchName), where('year', '==', activeYear));
-    const unsubResults = onSnapshot(resultsQuery, (snapshot) => {
-      setResults(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Result)));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'results'));
-
-    const ordersQuery = userRole === 'admin' 
-      ? query(collection(db, 'orders'), where('year', '==', activeYear)) 
-      : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
-    const unsubOrders = onSnapshot(ordersQuery, (snapshot) => {
-      setOrders(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'orders'));
-
-    const participantsQuery = userRole === 'admin' 
-      ? query(collection(db, 'participants'), where('year', '==', activeYear)) 
-      : query(collection(db, 'participants'), where('churchName', '==', churchName), where('year', '==', activeYear));
-    const unsubParticipants = onSnapshot(participantsQuery, (snapshot) => {
-      setParticipants(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant)));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'participants'));
-
-    const inquiriesQuery = userRole === 'admin' 
-      ? query(collection(db, 'inquiries'), where('year', '==', activeYear)) 
-      : query(collection(db, 'inquiries'), where('churchName', '==', churchName), where('year', '==', activeYear));
-    const unsubInquiries = onSnapshot(inquiriesQuery, (snapshot) => {
-      setInquiries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Inquiry)));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'inquiries'));
-
-    const activityTeamsQuery = userRole === 'admin' 
-      ? query(collection(db, 'activityTeams'), where('year', '==', activeYear)) 
-      : query(collection(db, 'activityTeams'), where('churchName', '==', churchName), where('year', '==', activeYear));
-    const unsubActivityTeams = onSnapshot(activityTeamsQuery, (snapshot) => {
-      setActivityTeams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityTeam)));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'activityTeams'));
 
     const unsubCarousel = onSnapshot(query(collection(db, 'carousel'), where('year', '==', activeYear)), (snapshot) => {
       const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CarouselItem));
@@ -977,16 +961,11 @@ function AppComponent() {
 
     return () => {
       unsubNews();
-      unsubOnlineResults();
-      unsubResults();
-      unsubOrders();
-      unsubParticipants();
-      unsubInquiries();
-      unsubActivityTeams();
       unsubCarousel();
       unsubCalculatorSettings();
       unsubFooterSettings();
       unsubAboutSettings();
+      unsubExamConfig();
     };
   }, [isAuthReady, isLoggedIn, userRole, churchName, activeYear]);
 
@@ -1665,6 +1644,65 @@ function AppComponent() {
   const exportAllRegistrationsToExcel = async () => {
     await generateMasterExcel();
   };
+
+  const fetchLargeData = async (toast = true) => {
+    if (!isLoggedIn) return;
+    if (userRole === 'church' && !churchName) return;
+    
+    try {
+      if (toast) setNotification('جاري تحديث البيانات...');
+      
+      const partsQuery = userRole === 'admin' 
+        ? query(collection(db, 'participants'), where('year', '==', activeYear)) 
+        : query(collection(db, 'participants'), where('churchName', '==', churchName), where('year', '==', activeYear));
+      
+      const ordersQ = userRole === 'admin' 
+        ? query(collection(db, 'orders'), where('year', '==', activeYear)) 
+        : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
+        
+      const resultsQ = userRole === 'admin' 
+        ? query(collection(db, 'results'), where('year', '==', activeYear)) 
+        : query(collection(db, 'results'), where('churchName', '==', churchName), where('year', '==', activeYear));
+        
+      const inquiriesQ = userRole === 'admin' 
+        ? query(collection(db, 'inquiries'), where('year', '==', activeYear)) 
+        : query(collection(db, 'inquiries'), where('churchName', '==', churchName), where('year', '==', activeYear));
+        
+      const activitiesQ = userRole === 'admin' 
+        ? query(collection(db, 'activityTeams'), where('year', '==', activeYear)) 
+        : query(collection(db, 'activityTeams'), where('churchName', '==', churchName), where('year', '==', activeYear));
+
+      const onlineResultsQ = collection(db, 'online_results');
+
+      const [pSnap, oSnap, rSnap, iSnap, aSnap, orSnap] = await Promise.all([
+        getDocs(partsQuery),
+        getDocs(ordersQ),
+        getDocs(resultsQ),
+        getDocs(inquiriesQ),
+        getDocs(activitiesQ),
+        getDocs(onlineResultsQ)
+      ]);
+
+      setParticipants(pSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant)));
+      setOrders(oSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
+      setResults(rSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Result)));
+      setInquiries(iSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Inquiry)));
+      setActivityTeams(aSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityTeam)));
+      setOnlineResults(orSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      
+      if (toast) {
+        setNotification('تم استرجاع البيانات بنجاح.');
+        setTimeout(() => setNotification(null), 3000);
+      }
+    } catch (err: any) {
+      console.error(err);
+      if (toast) setNotification('حدث خطأ أثناء جلب البيانات.');
+    }
+  };
+
+  useEffect(() => {
+    fetchLargeData(false);
+  }, [userRole, churchName, activeYear, isLoggedIn]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3023,7 +3061,15 @@ function AppComponent() {
 
         {activeSection === 'church_dashboard' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-            <BackButton />
+            <div className="flex items-center justify-between">
+              <BackButton />
+              <button 
+                onClick={() => fetchLargeData(true)}
+                className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 flex flex-row gap-2 transition"
+              >
+                 تحديث البيانات
+              </button>
+            </div>
             
             {/* Universal Filter Engine - Church View */}
             <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 space-y-4">
@@ -3270,7 +3316,15 @@ function AppComponent() {
 
         {activeSection === 'admin_dashboard' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-            <BackButton />
+            <div className="flex items-center justify-between">
+              <BackButton />
+              <button 
+                onClick={() => fetchLargeData(true)}
+                className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 flex flex-row gap-2 transition"
+              >
+                 تحديث البيانات
+              </button>
+            </div>
             <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden min-h-[700px] flex flex-col lg:flex-row">
               {/* Sidebar Navigation */}
               <div className="w-full lg:w-72 bg-slate-50 border-b lg:border-b-0 lg:border-l border-slate-200 flex flex-col">
