@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { auth, db } from '../firebase';
-import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc, writeBatch } from 'firebase/firestore';
+import { auth, db, CURRENT_YEAR } from '../firebase';
+import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc, writeBatch, getCountFromServer } from 'firebase/firestore';
+import { rdb, rdbRef, rdbSet, onDisconnect, rdbServerTimestamp } from '../firebase';
 import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet, ShieldX, Loader2 } from 'lucide-react';
 import { QRScanner } from './QRScanner';
 import { getDeviceFingerprint, DeviceFingerprint } from '../lib/deviceTracking';
@@ -413,10 +414,43 @@ export const LiveExamGateway: React.FC = () => {
   useEffect(() => {
     if (!activeStudent?.id) return;
     
-    // Instead of real-time listeners for updates or terminations, we simply assume they process local state correctly 
-    // without live feedback to save reads.
+    // 1. Kill Switch Listener: Watch for termination or reset
+    const unsubSession = onSnapshot(doc(db, 'active_sessions', activeStudent.id), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.status === 'terminated') {
+          setIsTerminated(true);
+          // Clear local storage on kick
+          localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
+        }
+        if (data.allowReentry) {
+          // Admin reset the exam, we can re-enter
+          setIsAlreadyExamined(false);
+          setIsExamCompleted(false);
+          setIsTerminated(false);
+        }
+      }
+    });
+
+    // 2. RDB Presence: Track active connection
+    const presenceRef = rdbRef(rdb, `presence/${activeStudent.id}`);
+    rdbSet(presenceRef, {
+      studentName: activeStudent.studentName,
+      churchName: activeStudent.churchName,
+      lastSeen: rdbServerTimestamp(),
+      deviceId: fingerprint?.uuid,
+      competition: selectedCompetition || 'waiting'
+    });
+
+    // Remove presence on disconnect
+    onDisconnect(presenceRef).remove();
+
+    return () => {
+      unsubSession();
+      rdbSet(presenceRef, null); // Clean up on unmount
+    };
     
-  }, [activeStudent?.id, selectedCompetition, isExamCompleted]);
+  }, [activeStudent?.id, selectedCompetition, fingerprint?.uuid]);
 
   useEffect(() => {
     const fp = getDeviceFingerprint();
@@ -708,10 +742,13 @@ export const LiveExamGateway: React.FC = () => {
       const batch = writeBatch(db);
       
       const payload: any = {
+        studentId: activeStudent.id,
         studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
+        church: activeStudent.churchName || 'غير محدد',
         churchName: activeStudent.churchName || 'غير محدد',
         stage: activeExam.stage,
         score: totalScore,
+        year: String(CURRENT_YEAR),
         grade: '--',
         timestamp: new Date().toISOString(),
         isSubmitted: true,
@@ -722,10 +759,13 @@ export const LiveExamGateway: React.FC = () => {
       };
 
       const onlineResultPayload = {
+        studentId: activeStudent.id,
         studentID: activeStudent.id,
         studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
+        church: activeStudent.churchName || 'غير محدد',
         churchName: activeStudent.churchName || 'غير محدد',
         stage: activeExam.stage,
+        year: String(CURRENT_YEAR),
         [`مسابقة ${selectedCompetition}`]: totalScore,
         submissionTimestamp: new Date().toISOString()
       };

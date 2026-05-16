@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { db, auth } from '../firebase';
-import { collection, query, orderBy, limit, doc, updateDoc, setDoc, deleteDoc, getDocs } from 'firebase/firestore';
-import { Activity, Users, Monitor, Clock, TrendingUp, ShieldAlert, Smartphone, ShieldX, UserMinus, RotateCcw, RotateCw } from 'lucide-react';
+import { db, auth, rdb, rdbRef, onValue, getCountFromServer, writeBatch } from '../firebase';
+import { collection, query, orderBy, limit, doc, updateDoc, setDoc, deleteDoc, getDocs, where } from 'firebase/firestore';
+import { Activity, Users, Monitor, Clock, TrendingUp, ShieldAlert, Smartphone, ShieldX, UserMinus, RotateCcw, RotateCw, Trash2, AlertCircle } from 'lucide-react';
 
 enum OperationType {
   CREATE = 'create',
@@ -29,13 +29,39 @@ export const LiveExamMonitoring: React.FC<{
 }> = ({ results, onlineResults = [], globalChurchFilter, onResetExam }) => {
   const [logs, setLogs] = useState<any[]>([]);
   const [activeSessionsData, setActiveSessionsData] = useState<any[]>([]);
+  const [rdbPresence, setRdbPresence] = useState<Record<string, any>>({});
+  const [totalRegistered, setTotalRegistered] = useState(0);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    // 1. RDB Presence listener
+    const presenceRef = rdbRef(rdb, 'presence');
+    const unsubRdb = onValue(presenceRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      setRdbPresence(data);
+    });
+
+    return () => unsubRdb();
+  }, []);
+
+  const fetchTotalRegistered = async () => {
+    try {
+      const coll = collection(db, 'participants');
+      // For simplicity, count all if church filter is 'الكل', otherwise count per church
+      const q = globalChurchFilter === 'الكل' 
+        ? query(coll) 
+        : query(coll, where('churchName', '==', globalChurchFilter));
+      const snap = await getCountFromServer(q);
+      setTotalRegistered(snap.data().count);
+    } catch (e) { console.error(e); }
+  };
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const logsSnap = await getDocs(query(collection(db, 'exam_logs'), orderBy('timestamp', 'desc'), limit(100)));
+      await fetchTotalRegistered();
+      const logsSnap = await getDocs(query(collection(db, 'exam_logs'), orderBy('timestamp', 'desc'), limit(200)));
       setLogs(logsSnap.docs.map(d => ({id: d.id, ...d.data()})));
       
       const sessionsSnap = await getDocs(collection(db, 'active_sessions'));
@@ -55,21 +81,18 @@ export const LiveExamMonitoring: React.FC<{
     console.log('Admin calling handleTerminateSession:', { studentId, deviceId });
     if (!confirm('هل أنت متأكد من طرد هذا الطالب وحظر جهازه من الامتحان؟')) return;
     
+    // Optimistic UI Update
+    setActiveSessionsData(prev => prev.map(s => s.id === studentId ? { ...s, status: 'terminated' } : s));
+
     setIsProcessing(studentId);
     try {
       const sessionRef = doc(db, 'active_sessions', studentId);
       // 1. Mark session as terminated (this triggers the Kill Switch on student's side)
-      await updateDoc(sessionRef, {
+      await setDoc(sessionRef, {
         status: 'terminated',
-        terminatedAt: new Date().toISOString()
-      }).catch(err => {
-        console.warn('Session doc might not exist, attempting to create terminated placeholder', err);
-        return setDoc(sessionRef, {
-          id: studentId,
-          status: 'terminated',
-          terminatedAt: new Date().toISOString()
-        });
-      });
+        terminatedAt: new Date().toISOString(),
+        allowReentry: false
+      }, { merge: true });
 
       // 2. Blacklist the device if available
       if (deviceId) {
@@ -80,11 +103,64 @@ export const LiveExamMonitoring: React.FC<{
         });
       }
 
+      // 3. Clear RDB presence immediately
+      const { rdbSet } = await import('../firebase');
+      await rdbSet(rdbRef(rdb, `presence/${studentId}`), null);
+
       alert('تم إنهاء الجلسة بنجاح');
     } catch (e: any) {
       handleFirestoreError(e, OperationType.UPDATE, `active_sessions/${studentId}`);
     } finally {
       setIsProcessing(null);
+    }
+  };
+
+  const handleResetAllMonitoring = async () => {
+    if (!confirm('سيتم مسح كافة بيانات المراقبة المباشرة وسجلات الدخول (Logs). هل أنت متأكد؟')) return;
+    setIsLoading(true);
+    try {
+      const logsSnap = await getDocs(collection(db, 'exam_logs'));
+      const sessSnap = await getDocs(collection(db, 'active_sessions'));
+      
+      const batch = writeBatch(db);
+      logsSnap.docs.forEach(d => batch.delete(d.ref));
+      sessSnap.docs.forEach(d => batch.delete(d.ref));
+      
+      await batch.commit();
+      
+      // Clear RDB presence
+      const { rdbSet } = await import('../firebase');
+      await rdbSet(rdbRef(rdb, 'presence'), null);
+      
+      setLogs([]);
+      setActiveSessionsData([]);
+      setRdbPresence({});
+      alert('تم تصفير كافة البيانات بنجاح');
+    } catch (e) {
+      console.error(e);
+      alert('حدث خطأ أثناء تصفير البيانات');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteLogRow = async (studentId: string) => {
+    if (!confirm('هل تريد حذف هذا السجل من شاشة المراقبة؟')) return;
+    try {
+      // Find all logs for this student
+      const studentLogs = logs.filter(l => l.studentId === studentId);
+      const batch = writeBatch(db);
+      studentLogs.forEach(l => batch.delete(doc(db, 'exam_logs', l.id)));
+      
+      // Also delete active session if any
+      batch.delete(doc(db, 'active_sessions', studentId));
+      
+      await batch.commit();
+      setLogs(prev => prev.filter(l => l.studentId !== studentId));
+      setActiveSessionsData(prev => prev.filter(s => s.id !== studentId));
+      alert('تم حذف السجل بنجاح');
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -117,10 +193,7 @@ export const LiveExamMonitoring: React.FC<{
     return acc;
   }, {});
 
-  const activeSessions = logs.filter(l => {
-      const logTime = new Date(l.timestamp).getTime();
-      return (Date.now() - logTime) < 20 * 60 * 1000; // 20 minutes
-  }).length;
+  const activeSessionsCount = Object.keys(rdbPresence).length;
 
   // Group logs by studentId to prevent row duplication
   const groupedLogs = Object.values(logs.reduce((acc: any, log) => {
@@ -141,14 +214,24 @@ export const LiveExamMonitoring: React.FC<{
     <div className="space-y-8">
       <div className="flex justify-between items-center bg-white p-4 rounded-3xl border border-slate-200">
         <h3 className="font-black text-slate-800 text-lg">المتابعة المباشرة للامتحانات</h3>
-        <button 
-          onClick={fetchData}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50"
-        >
-          {isLoading ? <RotateCw className="animate-spin" size={18} /> : <RotateCw size={18} />}
-          تحديث البيانات
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleResetAllMonitoring}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl font-bold hover:bg-rose-100 transition-all disabled:opacity-50 border border-rose-200"
+          >
+            <ShieldX size={18} />
+            تصفير بيانات المراقبة المباشرة
+          </button>
+          <button 
+            onClick={fetchData}
+            disabled={isLoading}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all disabled:opacity-50"
+          >
+            {isLoading ? <RotateCw className="animate-spin" size={18} /> : <RotateCw size={18} />}
+            تحديث البيانات
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -158,8 +241,8 @@ export const LiveExamMonitoring: React.FC<{
               <Activity size={24} />
             </div>
             <div>
-              <p className="text-xs font-black text-slate-400 uppercase">الجلسات النشطة (٢٠ د)</p>
-              <h3 className="text-2xl font-black text-slate-800">{activeSessions}</h3>
+              <p className="text-xs font-black text-slate-400 uppercase">الجلسات النشطة (حالياً)</p>
+              <h3 className="text-2xl font-black text-slate-800">{activeSessionsCount}</h3>
             </div>
           </div>
           <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -174,7 +257,7 @@ export const LiveExamMonitoring: React.FC<{
             </div>
             <div>
               <p className="text-xs font-black text-slate-400 uppercase">إجمالي المسجلين</p>
-              <h3 className="text-2xl font-black text-slate-800">{filteredResults.length}</h3>
+              <h3 className="text-2xl font-black text-slate-800">{totalRegistered}</h3>
             </div>
           </div>
         </div>
@@ -231,10 +314,12 @@ export const LiveExamMonitoring: React.FC<{
                   const isActive = !!activeSession;
                   const isTerminated = activeSessionsData.some(s => s.id === log.studentId && s.status === 'terminated');
                   
+                  const isActiveInRdb = !!rdbPresence[log.studentId];
+
                   const studentResults = onlineResults.find(r => r.studentID === log.studentId || r.studentId === log.studentId);
                   const checkStatus = (comp: string) => {
                      if (studentResults?.[`مسابقة ${comp}`] !== undefined) return '✅';
-                     if (activeSession?.competition === comp) return '⏳';
+                     if (activeSession?.competition === comp || (isActiveInRdb && rdbPresence[log.studentId].competition === comp)) return '⏳';
                      return '❌';
                   };
 
@@ -250,7 +335,8 @@ export const LiveExamMonitoring: React.FC<{
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
                              {log.studentName || 'غير معروف'}
-                             {isActive && <div className="w-2 h-2 bg-emerald-500 rounded-full animate-ping" title="نشط الآن" />}
+                             {isActiveInRdb && <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" title="نشط الآن" />}
+                             {!isActiveInRdb && isActive && <div className="w-2 h-2 bg-amber-400 rounded-full" title="جهاز مفصول" />}
                              {isTerminated && <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[9px] uppercase font-black">تم الطرد</span>}
                           </div>
                           {isDeviceShared && (
@@ -288,7 +374,15 @@ export const LiveExamMonitoring: React.FC<{
                       <td className="py-4 text-slate-400 font-bold">{new Date(log.timestamp).toLocaleTimeString('ar-EG')}</td>
                       <td className="py-4">
                         <div className="flex items-center gap-1">
-                          {isActive && !isTerminated && (
+                          <button 
+                            onClick={() => handleDeleteLogRow(log.studentId)}
+                            className="p-2 text-slate-300 hover:text-rose-500 rounded-lg transition-colors"
+                            title="حذف هذا السجل"
+                          >
+                             <Trash2 size={16} />
+                          </button>
+
+                          {(isActive || isActiveInRdb) && !isTerminated && (
                             <button
                               onClick={async () => {
                                 await handleTerminateSession(log.studentId, log.deviceId);

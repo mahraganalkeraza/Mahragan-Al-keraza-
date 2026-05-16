@@ -1,28 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { 
-  getFirestore, 
-  enableIndexedDbPersistence,
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  getDocs, 
-  onSnapshot, 
-  query, 
-  where, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc,
-  deleteField,
-  getDocFromServer,
-  writeBatch,
-  orderBy,
-  limit,
-  runTransaction,
-  serverTimestamp,
-  startAfter
-} from 'firebase/firestore';
+import { getFirestore, enableIndexedDbPersistence, collection, doc, setDoc, getDoc, getDocs, onSnapshot, query, where, addDoc, updateDoc, deleteDoc, deleteField, getDocFromServer, writeBatch, orderBy, limit, runTransaction, serverTimestamp, startAfter, getCountFromServer } from 'firebase/firestore';
+import { getDatabase, ref as rdbRef, set as rdbSet, onValue, onDisconnect, off, push, serverTimestamp as rdbServerTimestamp, get as rdbGet } from 'firebase/database';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 // Import the Firebase configuration
@@ -42,6 +21,7 @@ enableIndexedDbPersistence(db).catch((err) => {
 
 export const auth = getAuth(firebaseApp);
 export const storage = getStorage(firebaseApp);
+export const rdb = getDatabase(firebaseApp);
 export { firebaseConfig };
 
 export const CURRENT_YEAR = '2026';
@@ -133,7 +113,17 @@ export {
   runTransaction,
   serverTimestamp,
   startAfter,
+  getCountFromServer,
   ref,
   uploadBytesResumable,
-  getDownloadURL
+  getDownloadURL,
+  getDatabase,
+  rdbRef,
+  rdbSet,
+  onValue,
+  onDisconnect,
+  off,
+  push,
+  rdbServerTimestamp,
+  rdbGet
 };

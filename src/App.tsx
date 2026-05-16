@@ -2360,7 +2360,11 @@ function AppComponent() {
       }
       
       // 3. Unlock Gateway / Reset Session
-      await deleteDoc(doc(db, 'active_sessions', studentId));
+      await setDoc(doc(db, 'active_sessions', studentId), {
+        allowReentry: true,
+        status: 'active',
+        lastUpdate: new Date().toISOString()
+      }, { merge: true });
       
       const successMsg = `تمت إعادة فتح الامتحان بنجاح للطالب: ${studentName || studentId}`;
       setNotification(successMsg);
