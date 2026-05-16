@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db } from '../firebase';
 import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc } from 'firebase/firestore';
-import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet, ShieldX } from 'lucide-react';
+import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet, ShieldX, Loader2 } from 'lucide-react';
 import { QRScanner } from './QRScanner';
 import { getDeviceFingerprint, DeviceFingerprint } from '../lib/deviceTracking';
 
@@ -661,8 +661,18 @@ export const LiveExamGateway: React.FC = () => {
       const field = SCORE_FIELD_MAP[competitionType];
       if (activeStudent[field] !== undefined && activeStudent[field] !== null) {
         setIsLoading(false);
-        return alert(`عفواً، لقد قمت بأداء امتحان ${competitionType} سابقاً.`);
+        setScore(activeStudent[field]);
+        setIsAlreadyExamined(true);
+        setIsExamCompleted(true);
+        setSelectedCompetition(competitionType);
+        return;
       }
+
+      // Explicitly clear any previous cached states for this subject
+      localStorage.removeItem(`exam_${activeStudent.id}_${competitionType}`);
+      setAnswers({});
+      setIsExamCompleted(false);
+      setIsTerminated(false);
 
       const examsSnap = await getDocs(collection(db, 'exams'));
       const availableExams = examsSnap.docs
@@ -680,16 +690,12 @@ export const LiveExamGateway: React.FC = () => {
       shuffledQuestions.forEach(q => {
         if (q.type === 'mcq') q.options.sort(() => 0.5 - Math.random());
         if (q.type === 'matching' && q.matchingPairs) {
-          (q as any).shuffledRights = q.matchingPairs.map(p => p.right).sort(() => 0.5 - Math.random());
+          (q as any).shuffledRights = q.matchingPairs.map((p: any) => p.right).sort(() => 0.5 - Math.random());
         }
       });
 
       randomModel.questions = shuffledQuestions;
       
-      const saved = localStorage.getItem(`exam_${activeStudent.id}_${competitionType}`);
-      if (saved) setAnswers(JSON.parse(saved));
-      else setAnswers({});
-
       setSelectedCompetition(competitionType);
       setActiveExam(randomModel);
       
@@ -801,10 +807,17 @@ export const LiveExamGateway: React.FC = () => {
     return (
       <div className="text-center p-12 bg-white border border-emerald-200 rounded-3xl shadow-xl overflow-hidden relative">
         <div className="absolute top-0 inset-x-0 h-2 bg-emerald-500" />
-        <h2 className="text-3xl font-black mb-4 text-emerald-600">تم استلام إجاباتك بنجاح!</h2>
+        <h2 className="text-3xl font-black mb-4 text-emerald-600">
+          {isAlreadyExamined ? 'لقد قمت بتسليم هذا الامتحان مسبقاً!' : 'تم استلام إجاباتك بنجاح!'}
+        </h2>
+        {isAlreadyExamined && score > 0 && (
+          <div className="mb-6 mx-auto inline-block bg-emerald-50 px-6 py-2 rounded-xl border border-emerald-100">
+            <span className="font-bold text-emerald-800">الدرجة المسجلة: {score}</span>
+          </div>
+        )}
         <p className="text-slate-600 font-bold mb-6">نتمنى لك التوفيق.</p>
         <button 
-          onClick={() => { setIsExamCompleted(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
+          onClick={() => { setIsExamCompleted(false); setIsAlreadyExamined(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
           className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all"
         >
           خروج
@@ -911,10 +924,19 @@ export const LiveExamGateway: React.FC = () => {
      );
   }
 
+  if (isLoading || !activeExam || !activeExam.questions?.length) {
+    return (
+      <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
+        <Loader2 className="animate-spin text-indigo-600 mx-auto" size={48} />
+        <p className="mt-4 text-slate-500 font-bold">جاري تحميل أسئلة الامتحان...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
       <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto">
-        {activeExam?.questions.map((q, i) => (
+        {activeExam.questions.map((q, i) => (
           <div key={q.id} className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
             <h4 className="text-lg font-bold mb-4">{i + 1}. {q.text}</h4>
             

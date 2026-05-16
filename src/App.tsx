@@ -708,7 +708,7 @@ function AppComponent() {
   const filteredParticipantsList = useMemo(() => {
     return (participants || []).filter(p => {
       const matchChurch = (userRole === 'admin' || (userRole === 'church' && churchName)) ? (globalChurchFilter === 'الكل' || p.churchName === (userRole === 'admin' ? globalChurchFilter : churchName)) : true;
-      const matchName = p.name.toLowerCase().includes(globalNameFilter.toLowerCase());
+      const matchName = p.name?.toLowerCase().includes(globalNameFilter.toLowerCase());
       const matchStage = globalStageFilter === 'الكل' || p.stage === globalStageFilter;
       const matchComp = globalCompetitionFilter === 'الكل' || (p.competitions && p.competitions.some(c => c === globalCompetitionFilter));
       return (userRole === 'admin' ? true : p.churchName === churchName) && matchChurch && matchName && matchStage && matchComp;
@@ -718,8 +718,8 @@ function AppComponent() {
   const filteredTeamsList = useMemo(() => {
     return (activityTeams || []).filter(t => {
       const matchChurch = (userRole === 'admin' || (userRole === 'church' && churchName)) ? (globalChurchFilter === 'الكل' || t.churchName === (userRole === 'admin' ? globalChurchFilter : churchName)) : true;
-      const matchName = t.members.some(m => m.name.toLowerCase().includes(globalNameFilter.toLowerCase())) || t.activityType.includes(globalNameFilter);
-      const matchStage = globalStageFilter === 'الكل' || t.choirLevel === globalStageFilter || t.members.some(m => m.stage === globalStageFilter);
+      const matchName = t.members?.some(m => m.name?.toLowerCase().includes(globalNameFilter.toLowerCase())) || t.activityType?.includes(globalNameFilter);
+      const matchStage = globalStageFilter === 'الكل' || t.choirLevel === globalStageFilter || t.members?.some(m => m.stage === globalStageFilter);
       const matchType = globalCompetitionFilter === 'الكل' || t.activityType === globalCompetitionFilter;
       return (userRole === 'admin' ? true : t.churchName === churchName) && matchChurch && matchName && matchStage && matchType;
     });
@@ -728,7 +728,7 @@ function AppComponent() {
   const filteredResultsList = useMemo(() => {
     return (results || []).filter(r => {
       const matchChurch = (userRole === 'admin' || (userRole === 'church' && churchName)) ? (globalChurchFilter === 'الكل' || r.churchName === (userRole === 'admin' ? globalChurchFilter : churchName)) : true;
-      const matchName = r.studentName.toLowerCase().includes(globalNameFilter.toLowerCase());
+      const matchName = r.studentName?.toLowerCase().includes(globalNameFilter.toLowerCase());
       const matchStage = globalStageFilter === 'الكل' || r.stage === globalStageFilter;
       const matchGrade = resultsFilterGrade === 'الكل' || r.grade === resultsFilterGrade;
       return (userRole === 'admin' ? true : r.churchName === churchName) && matchChurch && matchName && matchStage && matchGrade;
@@ -2248,7 +2248,7 @@ function AppComponent() {
 
   const filteredNews = useMemo(() => {
     return news.filter(n => {
-      const matchesSearch = n.title.toLowerCase().includes(newsSearch.toLowerCase());
+      const matchesSearch = n.title?.toLowerCase().includes(newsSearch.toLowerCase());
       const dateStr = new Date(n.timestamp).toLocaleDateString('ar-EG');
       const matchesDate = !newsFilterDate || dateStr.includes(newsFilterDate);
       return matchesSearch && matchesDate;
@@ -2257,7 +2257,7 @@ function AppComponent() {
 
   const filteredResults = useMemo(() => {
     return results.filter(r => {
-      const matchesSearch = r.studentName.toLowerCase().includes(resultSearch.toLowerCase());
+      const matchesSearch = r.studentName?.toLowerCase().includes(resultSearch.toLowerCase());
       const matchesStage = resultsFilterStage === 'الكل' || r.stage === resultsFilterStage;
       const matchesGrade = resultsFilterGrade === 'الكل' || r.grade === resultsFilterGrade;
       return matchesSearch && matchesStage && matchesGrade;
@@ -3384,7 +3384,7 @@ function AppComponent() {
                     </div>
                     <div className="flex flex-col md:flex-row items-center gap-2">
                       <button 
-                        onClick={() => generateMasterExcel()}
+                        onClick={() => downloadMasterTemplate()}
                         className="px-6 py-3 bg-coptic-red text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                       >
                         <Award size={20} /> تحميل قالب التسجيل المعتمد
@@ -3847,7 +3847,7 @@ function AppComponent() {
                     <Award className="text-emerald-600" /> قسم النتائج (أونلاين)
                   </h4>
                   <button
-                    onClick={() => { generateMasterExcel(null); }}
+                    onClick={() => { exportOnlineResultsExcel(onlineResults); }}
                     className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 transition shadow flex items-center gap-2"
                   >
                     <Download size={18} /> استخراج نتائج الأونلاين (Excel)
@@ -4995,7 +4995,7 @@ function AppComponent() {
                         <div>
                           <h5 className="font-black text-slate-700">تحديث واستخراج النتائج الموحدة (Live Schema)</h5>
                           <p className="text-xs text-slate-400 font-bold mb-2">يرجى تحميل القالب المعتمد ورفع النتائج من خلاله ليتم مطابقتها ديناميكياً.</p>
-                          <button type="button" onClick={() => generateMasterExcel(churchName)} className="text-indigo-600 text-xs font-bold hover:underline">
+                          <button type="button" onClick={() => downloadMasterTemplate()} className="text-indigo-600 text-xs font-bold hover:underline">
                             تحميل قالب النتائج المعتمد (Master Template)
                           </button>
                         </div>
