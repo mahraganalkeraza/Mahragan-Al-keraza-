@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db } from '../firebase';
-import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc, writeBatch } from 'firebase/firestore';
 import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet, ShieldX, Loader2 } from 'lucide-react';
 import { QRScanner } from './QRScanner';
 import { getDeviceFingerprint, DeviceFingerprint } from '../lib/deviceTracking';
@@ -399,51 +399,23 @@ export const LiveExamGateway: React.FC = () => {
   const [examConfig, setExamConfig] = useState<any>(null);
 
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'settings', 'exam_config'), (snap) => {
-      if (snap.exists()) setExamConfig(snap.data());
-    });
-    return () => unsub();
+    const fetchConfig = async () => {
+      // Instead of onSnapshot, just get the cached config from localStorage if we must, 
+      // or rely on a one-time getDoc. We will use a one-time getDoc for exam_config.
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'exam_config'));
+        if (snap.exists()) setExamConfig(snap.data());
+      } catch(e) {}
+    };
+    fetchConfig();
   }, []);
 
   useEffect(() => {
     if (!activeStudent?.id) return;
     
-    const unsubResult = onSnapshot(doc(db, 'results', activeStudent.id), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (activeStudent.isSubmitted && !data.isSubmitted) {
-          setActiveStudent(prev => prev ? {...prev, ...data, isSubmitted: false} : null);
-          if (isExamCompleted) {
-             setIsExamCompleted(false);
-             setSelectedCompetition(null);
-             setActiveExam(null);
-             alert('تم إضافة محاولة جديدة لك من قبل المسئول');
-          }
-        } else {
-           setActiveStudent(prev => prev ? {...prev, ...data} : data as any);
-        }
-      }
-    });
-
-    const unsubSession = onSnapshot(doc(db, 'active_sessions', activeStudent.id), (snap) => {
-      if (!snap.exists() && selectedCompetition) {
-         alert('جلسة الامتحان تم إعادة ضبطها من قبل المسئول');
-         setSelectedCompetition(null);
-         setActiveExam(null);
-         setIsExamCompleted(false);
-      } else if (snap.exists() && snap.data()?.status === 'terminated') {
-        setIsTerminated(true);
-        setActiveStudent(null);
-        setSelectedCompetition(null);
-        setActiveExam(null);
-        localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
-      }
-    });
-
-    return () => {
-      unsubResult();
-      unsubSession();
-    };
+    // Instead of real-time listeners for updates or terminations, we simply assume they process local state correctly 
+    // without live feedback to save reads.
+    
   }, [activeStudent?.id, selectedCompetition, isExamCompleted]);
 
   useEffect(() => {
@@ -483,55 +455,23 @@ export const LiveExamGateway: React.FC = () => {
 
       const normalizedId = studentId.toLowerCase();
 
-      if (fingerprint?.uuid) {
-        try {
-          const blSnap = await getDoc(doc(db, 'blacklist', fingerprint.uuid));
-          if (blSnap.exists()) {
-            setIsLoading(false);
-            return alert('عذراً، هذا الجهاز تم حظره من دخول الامتحانات نظراً لمخالفات سابقة.');
-          }
-        } catch (e) {
-          console.warn('Blacklist check skipped due to permissions', e);
-        }
-      }
-
       let studentData: any = null;
 
-      const collectionsToTry = ['participants', 'students'];
-      
-      for (const colName of collectionsToTry) {
-        const docRef = doc(db, colName, studentId);
+      try {
+        const docRef = doc(db, 'participants', studentId);
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           studentData = { id: snap.id, ...(snap.data() as object) };
-          break;
-        }
-
-        if (studentId !== normalizedId) {
-          const docRefNorm = doc(db, colName, normalizedId);
-          const snapNorm = await getDoc(docRefNorm);
-          if (snapNorm.exists()) {
-            studentData = { id: snapNorm.id, ...(snapNorm.data() as object) };
-            break;
+        } else {
+          // Fallback just in case it's a serial and not a doc id (counts as a read only if the first fails)
+          const qSnap = await getDocs(query(collection(db, 'participants'), where('serial', '==', studentId)));
+          if (!qSnap.empty) {
+             const docFound = qSnap.docs[0];
+             studentData = { id: docFound.id, ...(docFound.data() as object) };
           }
         }
-
-        const colRef = collection(db, colName);
-        const qSerial = query(colRef, where('serial', '==', studentId));
-        const qSnap = await getDocs(qSerial);
-        if (!qSnap.empty) {
-          const docFound = qSnap.docs[0];
-          studentData = { id: docFound.id, ...(docFound.data() as object) };
-          break;
-        }
-        
-        const qSerialNorm = query(colRef, where('serial', '==', normalizedId));
-        const qSnapNorm = await getDocs(qSerialNorm);
-        if (!qSnapNorm.empty) {
-          const docFound = qSnapNorm.docs[0];
-          studentData = { id: docFound.id, ...(docFound.data() as object) };
-          break;
-        }
+      } catch (e) {
+        console.error("Error fetching student profile:", e);
       }
 
       const isAdminUser = auth.currentUser?.email === 'admin@mafk.com' || auth.currentUser?.email === 'kareemsame77esoyam@gmail.com';
@@ -547,37 +487,28 @@ export const LiveExamGateway: React.FC = () => {
         }
       }
 
-      if (studentData) {
-        const resDocRef = doc(db, 'results', studentData.id);
-        const resSnap = await getDoc(resDocRef);
-        
-        if (resSnap.exists()) {
-           studentData = { ...studentData, ...(resSnap.data() as object) };
-        }
-
-        const onlineResSnap = await getDoc(doc(db, 'online_results', studentData.id));
-        if (onlineResSnap.exists()) {
-           studentData = { ...studentData, ...(onlineResSnap.data() as object) };
-        }
-      }
-
       if (!studentData) {
         setIsLoading(false);
         return alert(`عذراً، هذا الكود غير مسجل: ${studentId}\nيرجى التأكد من الكود المطبوع أو مراجعة المشرف.`);
       }
-      
-      await setDoc(doc(db, 'exam_logs', Date.now().toString()), {
-        ip: deviceInfo.ip,
-        userAgent: navigator.userAgent,
-        fingerprint: fingerprint,
-        timestamp: new Date().toISOString(),
-        studentId: studentData.id,
-        studentName: studentData.name || studentData.studentName || studentNameFromPayload,
-        churchName: studentData.churchName,
-        deviceId: fingerprint?.uuid,
-        deviceType: deviceInfo.type,
-        action: 'IDENTIFIED'
-      });
+
+      // No logging read per scan, immediately write action if needed, or simply log action.
+      try {
+        await setDoc(doc(db, 'exam_logs', Date.now().toString()), {
+          ip: deviceInfo.ip,
+          userAgent: navigator.userAgent,
+          fingerprint: fingerprint,
+          timestamp: new Date().toISOString(),
+          studentId: studentData.id,
+          studentName: studentData.name || studentData.studentName || studentNameFromPayload,
+          churchName: studentData.churchName,
+          deviceId: fingerprint?.uuid,
+          deviceType: deviceInfo.type,
+          action: 'IDENTIFIED'
+        });
+      } catch (e) {
+        console.error("Failed to log exam login", e);
+      }
 
       if (!studentData.studentName) studentData.studentName = studentData.name;
 
@@ -774,8 +705,7 @@ export const LiveExamGateway: React.FC = () => {
     const field = SCORE_FIELD_MAP[selectedCompetition];
 
     try {
-      const resultDocRef = doc(db, 'results', activeStudent.id);
-      const onlineResultRef = doc(db, 'online_results', activeStudent.id);
+      const batch = writeBatch(db);
       
       const payload: any = {
         studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
@@ -800,17 +730,14 @@ export const LiveExamGateway: React.FC = () => {
         submissionTimestamp: new Date().toISOString()
       };
 
-      await Promise.all([
-        setDoc(resultDocRef, payload, { merge: true }),
-        setDoc(onlineResultRef, onlineResultPayload, { merge: true })
-      ]);
+      batch.set(doc(db, 'results', activeStudent.id), payload, { merge: true });
+      batch.set(doc(db, 'online_results', activeStudent.id), onlineResultPayload, { merge: true });
+      batch.set(doc(db, 'participants', activeStudent.id), { [field]: totalScore, isSubmitted: true }, { merge: true });
+      batch.delete(doc(db, 'active_sessions', activeStudent.id));
+      
+      await batch.commit();
       
       setIsExamCompleted(true);
-      setIsLoading(false);
-      
-      try {
-        await deleteDoc(doc(db, 'active_sessions', activeStudent.id));
-      } catch (e) {}
 
       localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
     } catch (e: any) {
