@@ -465,6 +465,7 @@ export const LiveExamGateway: React.FC = () => {
   }, []);
 
   const fetchStudentAndExam = async (input: string) => {
+    if (!input || !input.trim()) return;
     setLastScanDebug(input);
     try {
       setIsScanning(false);
@@ -598,6 +599,8 @@ export const LiveExamGateway: React.FC = () => {
       setSelectedCompetition(null);
       setActiveExam(null);
       setIsExamCompleted(false);
+      setIsAlreadyExamined(false);
+      setIsTerminated(false);
       setAnswers({});
       setActiveStudent(studentData);
       setIsScanning(false);
@@ -882,6 +885,23 @@ export const LiveExamGateway: React.FC = () => {
     );
   }
 
+  if (!activeStudent && isScanning) {
+    return (
+      <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
+        <h3 className="text-2xl font-black mb-6 text-slate-800">توجيه الكاميرا نحو كود الطالب</h3>
+        <div className="max-w-md mx-auto aspect-square rounded-2xl overflow-hidden bg-slate-900 border-4 border-slate-100 shadow-inner mb-6 relative">
+          <QRScanner onScanSuccess={(id) => fetchStudentAndExam(id)} />
+        </div>
+        <button 
+          onClick={() => setIsScanning(false)}
+          className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all"
+        >
+          إلغاء
+        </button>
+      </div>
+    );
+  }
+
   if (activeStudent && !selectedCompetition) {
      const stage = activeStudent.data?.['المرحلة'] || activeStudent.stage;
      return (
@@ -924,11 +944,26 @@ export const LiveExamGateway: React.FC = () => {
      );
   }
 
-  if (isLoading || !activeExam || !activeExam.questions?.length) {
+  if (isLoading) {
     return (
       <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
         <Loader2 className="animate-spin text-indigo-600 mx-auto" size={48} />
         <p className="mt-4 text-slate-500 font-bold">جاري تحميل أسئلة الامتحان...</p>
+      </div>
+    );
+  }
+
+  if (!activeExam || !activeExam.questions || activeExam.questions.length === 0) {
+    return (
+      <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl">
+        <ShieldX className="text-rose-500 mx-auto mb-4" size={48} />
+        <p className="text-slate-700 font-bold">عذراً، لم يتم العثور على أسئلة لهذه المسابقة أو انتهى وقت الامتحان.</p>
+        <button 
+          onClick={() => { setActiveStudent(null); setSelectedCompetition(null); setActiveExam(null); }} 
+          className="mt-6 px-6 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors"
+        >
+          رجوع
+        </button>
       </div>
     );
   }

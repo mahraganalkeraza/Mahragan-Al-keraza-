@@ -1,6 +1,7 @@
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
+import { VideoOff } from 'lucide-react';
 
 interface QRScannerProps {
   onScanSuccess: (decodedText: string) => void;
@@ -8,6 +9,7 @@ interface QRScannerProps {
 
 export const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess }) => {
   const qrCodeRef = useRef<Html5Qrcode | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     const html5QrCode = new Html5Qrcode("qr-reader");
@@ -41,7 +43,10 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess }) => {
           });
         },
         () => {}
-      ).catch(e => console.error("Fallback failed", e));
+      ).catch(e => {
+        console.error("Fallback failed", e);
+        setErrorMsg('لا يمكن الوصول إلى الكاميرا. يرجى إعطاء الصلاحية أو استخدام الإدخال اليدوي. (NotAllowedError)');
+      });
     });
 
     return () => {
@@ -50,6 +55,15 @@ export const QRScanner: React.FC<QRScannerProps> = ({ onScanSuccess }) => {
       }
     };
   }, [onScanSuccess]);
+
+  if (errorMsg) {
+    return (
+      <div className="w-full aspect-square bg-slate-100 flex flex-col items-center justify-center p-6 rounded-xl text-center border-4 border-slate-200">
+        <VideoOff size={48} className="text-slate-400 mb-4" />
+        <p className="text-slate-600 font-bold">{errorMsg}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full aspect-square bg-black overflow-hidden rounded-xl">

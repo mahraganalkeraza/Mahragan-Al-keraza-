@@ -4282,6 +4282,7 @@ function AppComponent() {
                 <DynamicAdminSettings />
                 
                 {/* BATCH UPLOAD FIREWALL SECTION */}
+                {userRole === 'admin' && (
                 <div className="bg-slate-50 border-2 border-dashed border-slate-300 p-8 rounded-3xl mb-12">
                   <div className="flex flex-col md:flex-row gap-6 items-center justify-between">
                     <div>
@@ -4321,6 +4322,7 @@ function AppComponent() {
                     </div>
                   )}
                 </div>
+                )}
               </div>
             )}
 
