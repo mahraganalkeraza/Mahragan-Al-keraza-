@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from '../firebase';
-import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc, deleteDoc } from 'firebase/firestore';
-import { Activity, Users, Monitor, Clock, TrendingUp, ShieldAlert, Smartphone, ShieldX, UserMinus, RotateCcw } from 'lucide-react';
+import { collection, query, orderBy, limit, doc, updateDoc, setDoc, deleteDoc, getDocs } from 'firebase/firestore';
+import { Activity, Users, Monitor, Clock, TrendingUp, ShieldAlert, Smartphone, ShieldX, UserMinus, RotateCcw, RotateCw } from 'lucide-react';
 
 enum OperationType {
   CREATE = 'create',
@@ -30,20 +30,25 @@ export const LiveExamMonitoring: React.FC<{
   const [logs, setLogs] = useState<any[]>([]);
   const [activeSessionsData, setActiveSessionsData] = useState<any[]>([]);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      const logsSnap = await getDocs(query(collection(db, 'exam_logs'), orderBy('timestamp', 'desc'), limit(100)));
+      setLogs(logsSnap.docs.map(d => ({id: d.id, ...d.data()})));
+      
+      const sessionsSnap = await getDocs(collection(db, 'active_sessions'));
+      setActiveSessionsData(sessionsSnap.docs.map(d => ({id: d.id, ...d.data()})));
+    } catch (e: any) {
+      console.error("Error fetching monitoring data:", e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const unsubLogs = onSnapshot(query(collection(db, 'exam_logs'), orderBy('timestamp', 'desc'), limit(100)), (snap) => {
-      setLogs(snap.docs.map(d => ({id: d.id, ...d.data()})));
-    });
-
-    const unsubSessions = onSnapshot(collection(db, 'active_sessions'), (snap) => {
-      setActiveSessionsData(snap.docs.map(d => ({id: d.id, ...d.data()})));
-    });
-
-    return () => {
-      unsubLogs();
-      unsubSessions();
-    };
+    fetchData();
   }, []);
 
   const handleTerminateSession = async (studentId: string, deviceId?: string) => {
@@ -134,6 +139,18 @@ export const LiveExamMonitoring: React.FC<{
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-between items-center bg-white p-4 rounded-3xl border border-slate-200">
+        <h3 className="font-black text-slate-800 text-lg">المتابعة المباشرة للامتحانات</h3>
+        <button 
+          onClick={fetchData}
+          disabled={isLoading}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all disabled:opacity-50"
+        >
+          {isLoading ? <RotateCw className="animate-spin" size={18} /> : <RotateCw size={18} />}
+          تحديث البيانات
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm transition-all hover:shadow-md">
           <div className="flex items-center gap-4 mb-4">

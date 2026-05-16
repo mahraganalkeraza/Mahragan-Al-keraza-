@@ -20,7 +20,8 @@ import {
   orderBy,
   limit,
   runTransaction,
-  serverTimestamp
+  serverTimestamp,
+  startAfter
 } from 'firebase/firestore';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
@@ -131,6 +132,7 @@ export {
   limit,
   runTransaction,
   serverTimestamp,
+  startAfter,
   ref,
   uploadBytesResumable,
   getDownloadURL

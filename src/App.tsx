@@ -30,6 +30,7 @@ import {
   ShieldCheck,
   MessageSquare,
   RotateCcw,
+  RotateCw,
   Send,
   History,
   LayoutDashboard,
@@ -109,6 +110,7 @@ import {
   OperationType,
   orderBy,
   limit,
+  startAfter,
   CURRENT_YEAR,
   runTransaction,
   serverTimestamp
@@ -606,6 +608,8 @@ function AppComponent() {
     alert("Scanned: " + decodedText);
   };
   const [participantSearch, setParticipantSearch] = useState('');
+  const [teamSearch, setTeamSearch] = useState('');
+  const [resultSearch, setResultSearch] = useState('');
   const [calculatorSettings, setCalculatorSettings] = useState<any[]>([]);
   const [isCalculatorLoading, setIsCalculatorLoading] = useState(true);
   const [isSubmittingCalculator, setIsSubmittingCalculator] = useState(false);
@@ -617,13 +621,37 @@ function AppComponent() {
   const [showDeleteScheduleModal, setShowDeleteScheduleModal] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<string | null>(null);
   const [results, setResults] = useState<Result[]>([]);
+  const [lastResultDoc, setLastResultDoc] = useState<any>(null);
+  const [resultPageCount, setResultPageCount] = useState(1);
+  const [isResultsEnd, setIsResultsEnd] = useState(false);
+  const [isResultsLoading, setIsResultsLoading] = useState(false);
+
   const [onlineResults, setOnlineResults] = useState<any[]>([]);
+  const [lastOnlineResultDoc, setLastOnlineResultDoc] = useState<any>(null);
+  const [onlineResultPageCount, setOnlineResultPageCount] = useState(1);
+  const [isOnlineResultsEnd, setIsOnlineResultsEnd] = useState(false);
+  const [isOnlineResultsLoading, setIsOnlineResultsLoading] = useState(false);
+
+  const [activityTeams, setActivityTeams] = useState<ActivityTeam[]>([]);
+  const [lastTeamDoc, setLastTeamDoc] = useState<any>(null);
+  const [teamPageCount, setTeamPageCount] = useState(1);
+  const [isTeamsEnd, setIsTeamsEnd] = useState(false);
+  const [isTeamsLoading, setIsTeamsLoading] = useState(false);
+
   const [news, setNews] = useState<News[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [lastOrderDoc, setLastOrderDoc] = useState<any>(null);
+  const [orderPageCount, setOrderPageCount] = useState(1);
+  const [isOrdersEnd, setIsOrdersEnd] = useState(false);
+  const [isOrdersLoading, setIsOrdersLoading] = useState(false);
+
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [lastParticipantDoc, setLastParticipantDoc] = useState<any>(null);
+  const [isParticipantsLoading, setIsParticipantsLoading] = useState(false);
+  const [isParticipantsEnd, setIsParticipantsEnd] = useState(false);
+  const [participantPageCount, setParticipantPageCount] = useState(1);
   const [allUsers, setAllUsers] = useState<any[]>([]);
-  const [activityTeams, setActivityTeams] = useState<ActivityTeam[]>([]);
   const [examLinks, setExamLinks] = useState<Record<string, string>>({});
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
@@ -711,7 +739,6 @@ function AppComponent() {
       }, 500);
     };
   }, [participants, churchName, newTeam]);
-  const [resultSearch, setResultSearch] = useState('');
   const [dashboardBg, setDashboardBg] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [newNews, setNewNews] = useState({ title: '', content: '', image: null as File | null });
@@ -1645,6 +1672,53 @@ function AppComponent() {
     await generateMasterExcel();
   };
 
+  const fetchParticipantsPage = async (isNext = true, isFirst = false, search = '') => {
+    if (!isLoggedIn) return;
+    setIsParticipantsLoading(true);
+    try {
+      let baseQueryQ = collection(db, 'participants');
+      const constraints: any[] = [where('year', '==', activeYear), orderBy('name'), limit(20)];
+      
+      // Admin global filters
+      if (userRole === 'admin') {
+        if (globalChurchFilter !== 'الكل') constraints.push(where('churchName', '==', globalChurchFilter));
+      } else {
+        constraints.push(where('churchName', '==', churchName));
+      }
+
+      if (globalStageFilter !== 'الكل') constraints.push(where('stage', '==', globalStageFilter));
+      
+      // Filtering by competition in Firestore is tricky if it's an array (array-contains).
+      // But we can only have 10 where clauses and only one range/inequality.
+      // For now, we'll stick to name search + church/stage/year.
+      
+      if (search) {
+        constraints.unshift(where('name', '>=', search), where('name', '<=', search + '\uf8ff'));
+      }
+      
+      if (!isFirst && isNext && lastParticipantDoc) {
+        constraints.push(startAfter(lastParticipantDoc));
+      }
+      
+      const q = query(baseQueryQ, ...constraints);
+      const snap = await getDocs(q);
+      
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
+      setParticipants(newList);
+      setLastParticipantDoc(snap.docs[snap.docs.length - 1]);
+      setIsParticipantsEnd(snap.docs.length < 20);
+      
+      if (isFirst) setParticipantPageCount(1);
+      else if (isNext) setParticipantPageCount(prev => prev + 1);
+      
+    } catch (err) {
+      console.error(err);
+      setNotification('خطأ في جلب بيانات المشتركين');
+    } finally {
+      setIsParticipantsLoading(false);
+    }
+  };
+
   const fetchLargeData = async (toast = true) => {
     if (!isLoggedIn) return;
     if (userRole === 'church' && !churchName) return;
@@ -1652,46 +1726,16 @@ function AppComponent() {
     try {
       if (toast) setNotification('جاري تحديث البيانات...');
       
-      const partsQuery = userRole === 'admin' 
-        ? query(collection(db, 'participants'), where('year', '==', activeYear)) 
-        : query(collection(db, 'participants'), where('churchName', '==', churchName), where('year', '==', activeYear));
+      // Fetch only the first page for initial load of active tab
+      if (adminActiveTab === 'participants' || activeSection === 'church_dashboard') {
+        await fetchParticipantsPage(true, true);
+      }
       
-      const ordersQ = userRole === 'admin' 
-        ? query(collection(db, 'orders'), where('year', '==', activeYear)) 
-        : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
-        
-      const resultsQ = userRole === 'admin' 
-        ? query(collection(db, 'results'), where('year', '==', activeYear)) 
-        : query(collection(db, 'results'), where('churchName', '==', churchName), where('year', '==', activeYear));
-        
-      const inquiriesQ = userRole === 'admin' 
-        ? query(collection(db, 'inquiries'), where('year', '==', activeYear)) 
-        : query(collection(db, 'inquiries'), where('churchName', '==', churchName), where('year', '==', activeYear));
-        
-      const activitiesQ = userRole === 'admin' 
-        ? query(collection(db, 'activityTeams'), where('year', '==', activeYear)) 
-        : query(collection(db, 'activityTeams'), where('churchName', '==', churchName), where('year', '==', activeYear));
-
-      const onlineResultsQ = collection(db, 'online_results');
-
-      const [pSnap, oSnap, rSnap, iSnap, aSnap, orSnap] = await Promise.all([
-        getDocs(partsQuery),
-        getDocs(ordersQ),
-        getDocs(resultsQ),
-        getDocs(inquiriesQ),
-        getDocs(activitiesQ),
-        getDocs(onlineResultsQ)
-      ]);
-
-      setParticipants(pSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant)));
-      setOrders(oSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order)));
-      setResults(rSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Result)));
-      setInquiries(iSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Inquiry)));
-      setActivityTeams(aSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityTeam)));
-      setOnlineResults(orSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // For other collections, we should also implement pagination, but let's start with participants
+      // Briefly fetch others if needed or wait for tab active
       
       if (toast) {
-        setNotification('تم استرجاع البيانات بنجاح.');
+        setNotification('تم تحديث الصفحة الحالية.');
         setTimeout(() => setNotification(null), 3000);
       }
     } catch (err: any) {
@@ -1700,9 +1744,145 @@ function AppComponent() {
     }
   };
 
+  const fetchOrdersPage = async (isNext = true, isFirst = false) => {
+    if (!isLoggedIn) return;
+    setIsOrdersLoading(true);
+    try {
+      const baseQuery = userRole === 'admin' 
+        ? query(collection(db, 'orders'), where('year', '==', activeYear)) 
+        : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
+      
+      const constraints: any[] = [orderBy('timestamp', 'desc'), limit(20)];
+      
+      if (!isFirst && isNext && lastOrderDoc) {
+        constraints.push(startAfter(lastOrderDoc));
+      }
+      
+      const q = query(baseQuery, ...constraints);
+      const snap = await getDocs(q);
+      
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+      setOrders(newList);
+      setLastOrderDoc(snap.docs[snap.docs.length - 1]);
+      setIsOrdersEnd(snap.docs.length < 20);
+      
+      if (isFirst) setOrderPageCount(1);
+      else if (isNext) setOrderPageCount(prev => prev + 1);
+      
+    } catch (err) { console.error(err); } finally { setIsOrdersLoading(false); }
+  };
+
+  const fetchOnlineResultsPage = async (isNext = true, isFirst = false) => {
+    if (!isLoggedIn) return;
+    setIsOnlineResultsLoading(true);
+    try {
+      const baseQuery = collection(db, 'online_results');
+      const constraints: any[] = [orderBy('submissionTimestamp', 'desc'), limit(20)];
+      
+      if (!isFirst && isNext && lastOnlineResultDoc) {
+        constraints.push(startAfter(lastOnlineResultDoc));
+      }
+      
+      const q = query(baseQuery, ...constraints);
+      const snap = await getDocs(q);
+      
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setOnlineResults(newList);
+      setLastOnlineResultDoc(snap.docs[snap.docs.length - 1]);
+      setIsOnlineResultsEnd(snap.docs.length < 20);
+      
+      if (isFirst) setOnlineResultPageCount(1);
+      else if (isNext) setOnlineResultPageCount(prev => prev + 1);
+    } catch (err) { console.error(err); } finally { setIsOnlineResultsLoading(false); }
+  };
+
+  const fetchResultsPage = async (isNext = true, isFirst = false, search = '') => {
+    if (!isLoggedIn) return;
+    setIsResultsLoading(true);
+    try {
+      let baseQueryQ = collection(db, 'results');
+      const constraints: any[] = [where('year', '==', activeYear), orderBy('submissionTimestamp', 'desc'), limit(20)];
+      
+      if (userRole === 'admin') {
+        if (globalChurchFilter !== 'الكل') constraints.push(where('churchName', '==', globalChurchFilter));
+      } else {
+        constraints.push(where('churchName', '==', churchName));
+      }
+
+      if (globalStageFilter !== 'الكل') constraints.push(where('stage', '==', globalStageFilter));
+      if (resultsFilterGrade !== 'الكل') constraints.push(where('grade', '==', resultsFilterGrade));
+
+      if (search) {
+        constraints.unshift(where('studentName', '>=', search), where('studentName', '<=', search + '\uf8ff'));
+      }
+      
+      if (!isFirst && isNext && lastResultDoc) {
+        constraints.push(startAfter(lastResultDoc));
+      }
+      
+      const q = query(baseQueryQ, ...constraints);
+      const snap = await getDocs(q);
+      
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Result));
+      setResults(newList);
+      setLastResultDoc(snap.docs[snap.docs.length - 1]);
+      setIsResultsEnd(snap.docs.length < 20);
+      
+      if (isFirst) setResultPageCount(1);
+      else if (isNext) setResultPageCount(prev => prev + 1);
+      
+    } catch (err) { console.error(err); } finally { setIsResultsLoading(false); }
+  };
+
+  const fetchTeamsPage = async (isNext = true, isFirst = false, search = '') => {
+    if (!isLoggedIn) return;
+    setIsTeamsLoading(true);
+    try {
+      let baseQueryQ = collection(db, 'activity_teams');
+      const constraints: any[] = [where('year', '==', activeYear), orderBy('teamName'), limit(20)];
+      
+      if (userRole === 'admin') {
+        if (globalChurchFilter !== 'الكل') constraints.push(where('churchName', '==', globalChurchFilter));
+      } else {
+        constraints.push(where('churchName', '==', churchName));
+      }
+
+      if (search) {
+        constraints.unshift(where('teamName', '>=', search), where('teamName', '<=', search + '\uf8ff'));
+      }
+      
+      if (!isFirst && isNext && lastTeamDoc) {
+        constraints.push(startAfter(lastTeamDoc));
+      }
+      
+      const q = query(baseQueryQ, ...constraints);
+      const snap = await getDocs(q);
+      
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityTeam));
+      setActivityTeams(newList);
+      setLastTeamDoc(snap.docs[snap.docs.length - 1]);
+      setIsTeamsEnd(snap.docs.length < 20);
+      
+      if (isFirst) setTeamPageCount(1);
+      else if (isNext) setTeamPageCount(prev => prev + 1);
+      
+    } catch (err) { console.error(err); } finally { setIsTeamsLoading(false); }
+  };
+
   useEffect(() => {
     fetchLargeData(false);
   }, [userRole, churchName, activeYear, isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    if (activeSection === 'admin_dashboard') {
+      if (adminActiveTab === 'participants' && participants.length === 0) fetchParticipantsPage(true, true, participantSearch);
+      if (adminActiveTab === 'results' && results.length === 0) fetchResultsPage(true, true);
+      if (adminActiveTab === 'online_results' && onlineResults.length === 0) fetchOnlineResultsPage(true, true);
+      if (adminActiveTab === 'orders' && orders.length === 0) fetchOrdersPage(true, true);
+      if (adminActiveTab === 'activity_teams' && activityTeams.length === 0) fetchTeamsPage(true, true, teamSearch);
+    }
+  }, [adminActiveTab, activeSection, isLoggedIn, activeYear]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3752,8 +3932,15 @@ function AppComponent() {
                         className="pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                         value={participantSearch}
                         onChange={(e) => setParticipantSearch(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && fetchParticipantsPage(true, true, participantSearch)}
                       />
                     </div>
+                    <button 
+                      onClick={() => fetchParticipantsPage(true, true, participantSearch)}
+                      className="px-4 py-2 bg-coptic-blue text-white rounded-xl text-xs font-black shadow-md"
+                    >
+                      بحث
+                    </button>
                     <button 
                       onClick={exportAllRegistrationsToExcel}
                       className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-md"
@@ -3775,7 +3962,7 @@ function AppComponent() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredParticipantsList
+                      {participants
                         .map(p => (
                           <tr key={p.id} className="bg-white hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-slate-800 text-sm">{p.name}</td>
@@ -3826,15 +4013,71 @@ function AppComponent() {
                     </tbody>
                   </table>
                 </div>
+
+                <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
+                  <div className="flex items-center gap-4">
+                    <button 
+                       disabled={participantPageCount === 1 || isParticipantsLoading}
+                       onClick={() => {
+                          const prevPage = participantPageCount - 1;
+                          setParticipantPageCount(prevPage);
+                          fetchParticipantsPage(false, prevPage === 1, participantSearch);
+                       }}
+                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all"
+                    >
+                       <ChevronRight size={20} className="text-slate-600" />
+                    </button>
+                    <span className="font-black text-slate-800 not-italic text-sm">صفحة {participantPageCount}</span>
+                    <button 
+                       disabled={isParticipantsEnd || isParticipantsLoading}
+                       onClick={() => fetchParticipantsPage(true, false, participantSearch)}
+                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all"
+                    >
+                       <ChevronLeft size={20} className="text-slate-600" />
+                    </button>
+                  </div>
+                  {isParticipantsLoading && (
+                    <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
+                       <Loader2 className="animate-spin" size={14} /> جاري التحميل...
+                    </div>
+                  )}
+                  {!isParticipantsLoading && <span className="text-[10px]">عرض ٢٠ مشترك في الصفحة</span>}
+                </div>
               </section>
             )}
 
             {adminActiveTab === 'activity_teams' && (
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
                     <Users className="text-emerald-500" /> إدارة الفرق والأنشطة
                   </h4>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative group">
+                      <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors" size={18} />
+                      <input 
+                        type="text"
+                        placeholder="ابحث باسم الفريق..."
+                        value={teamSearch}
+                        onChange={(e) => setTeamSearch(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && fetchTeamsPage(true, true, teamSearch)}
+                        className="pr-12 pl-6 py-3 bg-white border border-slate-200 rounded-2xl text-slate-700 font-bold focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all w-72"
+                      />
+                    </div>
+                    <button 
+                      onClick={() => fetchTeamsPage(true, true, teamSearch)}
+                      className="px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black hover:bg-emerald-700 transition shadow-lg shadow-emerald-600/20"
+                    >
+                      بحث
+                    </button>
+                    <button 
+                      onClick={() => fetchTeamsPage(true, true, teamSearch)}
+                      disabled={isTeamsLoading}
+                      className="px-4 py-3 bg-white text-slate-700 rounded-2xl font-bold border border-slate-200 hover:bg-slate-50 transition flex items-center gap-2"
+                    >
+                      <RotateCw size={18} className={isTeamsLoading ? 'animate-spin' : ''} /> تحديث
+                    </button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-right border-collapse">
@@ -3847,7 +4090,7 @@ function AppComponent() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredTeamsList
+                      {activityTeams
                         .map(t => (
                           <tr key={t.id} className="bg-white hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-slate-800 text-sm">{t.activityType}</td>
@@ -3876,6 +4119,36 @@ function AppComponent() {
                     </tbody>
                   </table>
                 </div>
+
+                <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
+                  <div className="flex items-center gap-4">
+                    <button 
+                       disabled={teamPageCount === 1 || isTeamsLoading}
+                       onClick={() => {
+                          const prevPage = teamPageCount - 1;
+                          setTeamPageCount(prevPage);
+                          fetchTeamsPage(false, prevPage === 1, teamSearch);
+                       }}
+                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
+                    >
+                       <ChevronRight size={20} />
+                    </button>
+                    <span className="font-black text-slate-800 not-italic text-sm">صفحة {teamPageCount}</span>
+                    <button 
+                       disabled={isTeamsEnd || isTeamsLoading}
+                       onClick={() => fetchTeamsPage(true, false, teamSearch)}
+                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
+                    >
+                       <ChevronLeft size={20} />
+                    </button>
+                  </div>
+                  {isTeamsLoading && (
+                    <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
+                       <Loader2 className="animate-spin" size={14} /> جاري التحميل...
+                    </div>
+                  )}
+                  {!isTeamsLoading && <span className="text-[10px]">عرض ٢٠ فريق في الصفحة</span>}
+                </div>
               </section>
             )}
 
@@ -3885,12 +4158,68 @@ function AppComponent() {
 
             {adminActiveTab === 'results' && (
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
                     <Award className="text-indigo-600" /> السجل العام
                   </h4>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative group">
+                      <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={18} />
+                      <input 
+                        type="text"
+                        placeholder="ابحث باسم الطالب..."
+                        value={resultSearch}
+                        onChange={(e) => setResultSearch(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && fetchResultsPage(true, true, resultSearch)}
+                        className="pr-12 pl-6 py-3 bg-white border border-slate-200 rounded-2xl text-slate-700 font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all w-72"
+                      />
+                    </div>
+                    <button 
+                      onClick={() => fetchResultsPage(true, true, resultSearch)}
+                      className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition shadow-lg shadow-indigo-600/20"
+                    >
+                      بحث
+                    </button>
+                    <button 
+                      onClick={() => fetchResultsPage(true, true, resultSearch)}
+                      disabled={isResultsLoading}
+                      className="px-4 py-3 bg-white text-slate-700 rounded-2xl font-bold border border-slate-200 hover:bg-slate-50 transition flex items-center gap-2"
+                    >
+                      <RotateCw size={18} className={isResultsLoading ? 'animate-spin' : ''} /> تحديث
+                    </button>
+                  </div>
                 </div>
-                <ResultsViewer results={filteredResultsList} />
+                <ResultsViewer results={results} />
+
+                <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
+                  <div className="flex items-center gap-4">
+                    <button 
+                       disabled={resultPageCount === 1 || isResultsLoading}
+                       onClick={() => {
+                          const prevPage = resultPageCount - 1;
+                          setResultPageCount(prevPage);
+                          fetchResultsPage(false, prevPage === 1, resultSearch);
+                       }}
+                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
+                    >
+                       <ChevronRight size={20} />
+                    </button>
+                    <span className="font-black text-slate-800 not-italic text-sm">صفحة {resultPageCount}</span>
+                    <button 
+                       disabled={isResultsEnd || isResultsLoading}
+                       onClick={() => fetchResultsPage(true, false, resultSearch)}
+                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
+                    >
+                       <ChevronLeft size={20} />
+                    </button>
+                  </div>
+                  {isResultsLoading && (
+                    <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
+                       <Loader2 className="animate-spin" size={14} /> جاري التحميل...
+                    </div>
+                  )}
+                  {!isResultsLoading && <span className="text-[10px]">عرض ٢٠ نتيجة في الصفحة</span>}
+                </div>
               </section>
             )}
 
@@ -3900,12 +4229,21 @@ function AppComponent() {
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
                     <Award className="text-emerald-600" /> قسم النتائج (أونلاين)
                   </h4>
-                  <button
-                    onClick={() => { exportOnlineResultsExcel(onlineResults); }}
-                    className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 transition shadow flex items-center gap-2"
-                  >
-                    <Download size={18} /> استخراج نتائج الأونلاين (Excel)
-                  </button>
+                  <div className="flex items-center gap-4">
+                    <button 
+                      onClick={() => fetchOnlineResultsPage(true, true)}
+                      disabled={isOnlineResultsLoading}
+                      className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition flex items-center gap-2"
+                    >
+                      <RotateCw size={18} className={isOnlineResultsLoading ? 'animate-spin' : ''} /> تحديث
+                    </button>
+                    <button
+                      onClick={() => { exportOnlineResultsExcel(onlineResults); }}
+                      className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 transition shadow flex items-center gap-2"
+                    >
+                      <Download size={18} /> استخراج Excel الحالي
+                    </button>
+                  </div>
                 </div>
                 
                 <div className="overflow-x-auto">
@@ -3969,6 +4307,36 @@ function AppComponent() {
                     </tbody>
                   </table>
                 </div>
+
+                <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
+                  <div className="flex items-center gap-4">
+                    <button 
+                       disabled={onlineResultPageCount === 1 || isOnlineResultsLoading}
+                       onClick={() => {
+                          const prevPage = onlineResultPageCount - 1;
+                          setOnlineResultPageCount(prevPage);
+                          fetchOnlineResultsPage(false, prevPage === 1);
+                       }}
+                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all"
+                    >
+                       <ChevronRight size={20} className="text-slate-600" />
+                    </button>
+                    <span className="font-black text-slate-800 not-italic text-sm">صفحة {onlineResultPageCount}</span>
+                    <button 
+                       disabled={isOnlineResultsEnd || isOnlineResultsLoading}
+                       onClick={() => fetchOnlineResultsPage(true, false)}
+                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all"
+                    >
+                       <ChevronLeft size={20} className="text-slate-600" />
+                    </button>
+                  </div>
+                  {isOnlineResultsLoading && (
+                    <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
+                       <Loader2 className="animate-spin" size={14} /> جاري التحميل...
+                    </div>
+                  )}
+                  {!isOnlineResultsLoading && <span className="text-[10px]">عرض ٢٠ نتيجة في الصفحة</span>}
+                </div>
               </section>
             )}
 
@@ -3978,6 +4346,13 @@ function AppComponent() {
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
                     <ShoppingCart className="text-coptic-red" /> إدارة طلبات الكتب
                   </h4>
+                  <button 
+                    onClick={() => fetchOrdersPage(true, true)}
+                    disabled={isOrdersLoading}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition flex items-center gap-2"
+                  >
+                    <RotateCw size={18} className={isOrdersLoading ? 'animate-spin' : ''} /> تحديث
+                  </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-right border-collapse">
@@ -4012,6 +4387,36 @@ function AppComponent() {
                         ))}
                     </tbody>
                   </table>
+                </div>
+
+                <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
+                  <div className="flex items-center gap-4">
+                    <button 
+                       disabled={orderPageCount === 1 || isOrdersLoading}
+                       onClick={() => {
+                          const prevPage = orderPageCount - 1;
+                          setOrderPageCount(prevPage);
+                          fetchOrdersPage(false, prevPage === 1);
+                       }}
+                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
+                    >
+                       <ChevronRight size={20} />
+                    </button>
+                    <span className="font-black text-slate-800 not-italic text-sm">صفحة {orderPageCount}</span>
+                    <button 
+                       disabled={isOrdersEnd || isOrdersLoading}
+                       onClick={() => fetchOrdersPage(true, false)}
+                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
+                    >
+                       <ChevronLeft size={20} />
+                    </button>
+                  </div>
+                  {isOrdersLoading && (
+                    <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
+                       <Loader2 className="animate-spin" size={14} /> جاري التحميل...
+                    </div>
+                  )}
+                  {!isOrdersLoading && <span className="text-[10px]">عرض ٢٠ طلب في الصفحة</span>}
                 </div>
               </section>
             )}
@@ -4716,11 +5121,18 @@ function AppComponent() {
                 <section>
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                      <UserPlus className="text-coptic-blue" /> المشتركين المسجلين ({filteredParticipantsList.length})
+                      <UserPlus className="text-coptic-blue" /> المشتركين المسجلين
                     </h4>
                     <div className="flex items-center gap-2">
                       <button 
-                        onClick={() => exportToExcel(filteredParticipantsList, 'participants')}
+                        onClick={() => fetchParticipantsPage(true, true, participantSearch)}
+                        disabled={isParticipantsLoading}
+                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition flex items-center gap-2"
+                      >
+                         <RotateCw size={14} className={isParticipantsLoading ? 'animate-spin' : ''} /> تحديث
+                      </button>
+                      <button 
+                        onClick={() => exportToExcel(participants, 'participants')}
                         className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-emerald-100 transition-colors"
                       >
                         <Download size={14} /> Excel
@@ -4754,7 +5166,7 @@ function AppComponent() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredParticipantsList
+                        {participants
                           .map(p => (
                           <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-coptic-blue">{p.churchName}</td>
@@ -4795,6 +5207,36 @@ function AppComponent() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+
+                  <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
+                    <div className="flex items-center gap-4">
+                      <button 
+                         disabled={participantPageCount === 1 || isParticipantsLoading}
+                         onClick={() => {
+                            const prevPage = participantPageCount - 1;
+                            setParticipantPageCount(prevPage);
+                            fetchParticipantsPage(false, prevPage === 1, participantSearch);
+                         }}
+                         className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
+                      >
+                         <ChevronRight size={20} />
+                      </button>
+                      <span className="font-black text-slate-800 not-italic text-sm">صفحة {participantPageCount}</span>
+                      <button 
+                         disabled={isParticipantsEnd || isParticipantsLoading}
+                         onClick={() => fetchParticipantsPage(true, false, participantSearch)}
+                         className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
+                      >
+                         <ChevronLeft size={20} />
+                      </button>
+                    </div>
+                    {isParticipantsLoading && (
+                      <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
+                         <Loader2 className="animate-spin" size={14} /> جاري التحميل...
+                      </div>
+                    )}
+                    {!isParticipantsLoading && <span className="text-[10px]">عرض ٢٠ مشترك في الصفحة</span>}
                   </div>
                 </section>
 
