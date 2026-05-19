@@ -3472,9 +3472,11 @@ function AppComponent() {
                               <span className="text-[9px] text-slate-400 font-black px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{p.gender || 'غير محدد'}</span>
                             </div>
                           </div>
-                          <button onClick={() => handleDeleteParticipant(p.id)} className="p-1.5 text-slate-200 hover:text-coptic-red transition-colors opacity-0 group-hover:opacity-100">
-                            <X size={16} />
-                          </button>
+                          {userRole === 'admin' && (
+                            <button onClick={() => handleDeleteParticipant(p.id)} className="p-1.5 text-slate-200 hover:text-coptic-red transition-colors opacity-0 group-hover:opacity-100">
+                              <X size={16} />
+                            </button>
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {(p.competitions || []).map((comp, i) => (
@@ -6147,16 +6149,18 @@ function AppComponent() {
                             >
                               <FileText size={16} />
                             </button>
-                            <button 
-                              onClick={() => {
-                                setParticipantToDelete(p.id);
-                                setShowDeleteModal(true);
-                              }}
-                              className="p-2 text-slate-300 hover:text-red-500 transition-colors"
-                              title="حذف"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            {userRole === 'admin' && (
+                              <button 
+                                onClick={() => {
+                                  setParticipantToDelete(p.id);
+                                  setShowDeleteModal(true);
+                                }}
+                                className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                                title="حذف"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -6431,12 +6435,14 @@ function AppComponent() {
                           .map(t => (
                           <div key={t.id} className="p-6 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-md transition-all relative group overflow-hidden">
                             <div className="absolute top-0 right-0 w-1 h-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                            <button 
-                              onClick={() => handleDeleteTeam(t.id)}
-                              className="absolute left-4 top-4 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                            >
-                              <Trash2 size={18} />
-                            </button>
+                            {userRole === 'admin' && (
+                              <button 
+                                onClick={() => handleDeleteTeam(t.id)}
+                                className="absolute left-4 top-4 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
                             
                             <div className="mb-4">
                               <h5 className="text-lg font-black text-slate-800">{t.activityType}</h5>

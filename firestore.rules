@@ -100,14 +100,16 @@ service cloud.firestore {
 
     function isValidParticipant(data) {
       return data.keys().hasAll(['name', 'stage', 'churchName', 'competitions']) &&
-             data.keys().size() <= 8 &&
+             data.keys().size() <= 10 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
              data.stage is string && data.stage.size() < 100 &&
              data.churchName is string && data.churchName.size() < 200 &&
              data.competitions is list && data.competitions.size() <= 10 &&
              (!('timestamp' in data) || data.timestamp is string) &&
              (!('year' in data) || data.year is string) &&
-             (!('country' in data) || data.country is string);
+             (!('country' in data) || data.country is string) &&
+             (!('gender' in data) || data.gender is string) &&
+             (!('serial' in data) || data.serial is string);
     }
 
     function isValidInquiry(data) {
@@ -266,8 +268,8 @@ service cloud.firestore {
                     (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
       allow update: if (isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName))) && 
                     isValidParticipant(incoming()) &&
-                    (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'stage', 'competitions', 'timestamp', 'serial']));
-      allow delete: if isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName));
+                    (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'stage', 'gender', 'country', 'competitions', 'timestamp', 'serial']));
+      allow delete: if isAdmin();
     }
 
     match /inquiries/{inquiryId} {
@@ -345,7 +347,7 @@ service cloud.firestore {
                     isValidActivityTeam(incoming()) && 
                     (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
       allow update: if (isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName))) && isValidActivityTeam(incoming());
-      allow delete: if isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName));
+      allow delete: if isAdmin();
     }
 
     match /calculator_settings/{settingId} {
