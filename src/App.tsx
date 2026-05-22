@@ -1674,7 +1674,7 @@ function AppComponent() {
   };
 
   const exportAllRegistrationsToExcel = async () => {
-    await generateMasterExcel();
+    await generateMasterExcel(userRole === 'admin' ? null : churchName);
   };
 
   const fetchParticipantsPage = async (isNext = true, isFirst = false, search = '') => {
@@ -3325,7 +3325,8 @@ function AppComponent() {
                     <BookOpen size={18} /> بدء دخول الامتحان (QR Scan)
                   </button>
                   <button 
-                    onClick={() => generateMasterExcel()}
+                    onClick={() => generateMasterExcel(churchName)}
+                    className="px-6 py-3 bg-emerald-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-xl hover:scale-105 active:scale-95"
                   >
                     <Download size={18} /> التصدير الشامل الموحد (Excel)
                   </button>
@@ -3374,16 +3375,24 @@ function AppComponent() {
 
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase">النوع</label>
-                        <select 
-                          value={newParticipant.gender}
-                          onChange={e => setNewParticipant({...newParticipant, gender: e.target.value})}
-                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue"
-                          required
-                        >
-                          <option value="" disabled>اختر النوع</option>
-                          <option value="ذكر">ذكر</option>
-                          <option value="أنثى">أنثى</option>
-                        </select>
+                        <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setNewParticipant({...newParticipant, gender: 'ذكر'})}
+                            className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-all ${newParticipant.gender === 'ذكر' ? 'bg-white shadow-sm text-coptic-blue' : 'text-slate-500 hover:bg-slate-200'}`}
+                          >
+                            ذكر
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewParticipant({...newParticipant, gender: 'أنثى'})}
+                            className={`flex-1 py-1.5 text-sm font-bold rounded-lg transition-all ${newParticipant.gender === 'أنثى' ? 'bg-white shadow-sm text-coptic-blue' : 'text-slate-500 hover:bg-slate-200'}`}
+                          >
+                            أنثى
+                          </button>
+                        </div>
+                        {/* Hidden required input for form validation */}
+                        <input type="text" name="gender" value={newParticipant.gender} required className="hidden" onChange={() => {}} />
                       </div>
                     </div>
 
@@ -6010,16 +6019,24 @@ function AppComponent() {
                         <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
                           النوع
                         </label>
-                        <select 
-                          value={newParticipant.gender}
-                          onChange={e => setNewParticipant({...newParticipant, gender: e.target.value})}
-                          className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
-                          required
-                        >
-                          <option value="" disabled>اختر النوع</option>
-                          <option value="ذكر">ذكر</option>
-                          <option value="أنثى">أنثى</option>
-                        </select>
+                        <div className="flex bg-slate-100 rounded-lg p-1.5 gap-1.5 w-full h-[54px]">
+                          <button
+                            type="button"
+                            onClick={() => setNewParticipant({...newParticipant, gender: 'ذكر'})}
+                            className={`flex-1 flex items-center justify-center text-sm font-black rounded transition-all ${newParticipant.gender === 'ذكر' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:bg-slate-200'}`}
+                          >
+                            ذكر
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewParticipant({...newParticipant, gender: 'أنثى'})}
+                            className={`flex-1 flex items-center justify-center text-sm font-black rounded transition-all ${newParticipant.gender === 'أنثى' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:bg-slate-200'}`}
+                          >
+                            أنثى
+                          </button>
+                        </div>
+                        {/* Hidden required input for standard browser validation */}
+                        <input type="text" name="gender" value={newParticipant.gender} required className="hidden" readOnly />
                       </div>
                     </div>
                   </div>
