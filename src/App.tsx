@@ -3251,7 +3251,7 @@ function AppComponent() {
                 </div>
               </div>
 
-              <ResultsViewer results={filteredResultsList} />
+              <ResultsViewer results={filteredResultsList} isAdmin={userRole === 'admin'} />
             </div>
           </motion.div>
         )}
@@ -4238,7 +4238,7 @@ function AppComponent() {
                     </button>
                   </div>
                 </div>
-                <ResultsViewer results={results} />
+                <ResultsViewer results={results} isAdmin={userRole === 'admin'} onReset={(id) => handleResetExam(id)} />
 
                 <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
                   <div className="flex items-center gap-4">

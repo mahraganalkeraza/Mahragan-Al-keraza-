@@ -1,12 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Result } from '../types';
 import { RefreshCcw, ShieldAlert } from 'lucide-react';
+import { AdminHonorsEngine } from './AdminHonorsEngine';
 
 export const ResultsViewer: React.FC<{ 
   results: Result[], 
   onReset?: (id: string) => void,
   isAdmin?: boolean 
 }> = ({ results, onReset, isAdmin }) => {
+  const [honorsRanks, setHonorsRanks] = useState<Record<string, { rank: number; colorClass: string, percentage: number, title: string }>>({});
+
   const MASTER_HEADERS = [
     'وقت التسليم',
     'الاسم',
@@ -45,6 +48,9 @@ export const ResultsViewer: React.FC<{
 
   return (
     <div className="space-y-8">
+      {/* Honors Engine (Admin Only) */}
+      <AdminHonorsEngine results={results} enabled={isAdmin} onHonorsUpdate={setHonorsRanks} />
+
       {/* Real-time Master Table */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
@@ -77,10 +83,17 @@ export const ResultsViewer: React.FC<{
                 };
                 
                 const hasScore = r.academicScore !== undefined && r.academicScore !== null;
+                const honorData = r.id ? honorsRanks[r.id] : null;
+                const rowClass = honorData ? honorData.colorClass : 'hover:bg-slate-50 transition-colors';
 
                 return (
-                  <tr key={r.id || index} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-4 font-bold text-slate-400 text-sm whitespace-nowrap border-l border-slate-50">
+                  <tr key={r.id || index} className={rowClass}>
+                    <td className="p-4 font-bold text-slate-400 text-sm whitespace-nowrap border-l border-slate-50 relative">
+                      {honorData && (
+                        <div className="absolute top-1 right-2 text-[9px] font-black bg-white/50 px-1 py-0.5 rounded text-slate-700 border border-black/10">
+                          {honorData.title} ({honorData.percentage.toFixed(1)}%)
+                        </div>
+                      )}
                       {index + 1}
                     </td>
                     {isAdmin && (
