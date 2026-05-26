@@ -496,13 +496,6 @@ export const LiveExamGateway: React.FC = () => {
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           studentData = { id: snap.id, ...(snap.data() as object) };
-        } else {
-          // Fallback just in case it's a serial and not a doc id (counts as a read only if the first fails)
-          const qSnap = await getDocs(query(collection(db, 'participants'), where('serial', '==', studentId)));
-          if (!qSnap.empty) {
-             const docFound = qSnap.docs[0];
-             studentData = { id: docFound.id, ...(docFound.data() as object) };
-          }
         }
       } catch (e) {
         console.error("Error fetching student profile:", e);
