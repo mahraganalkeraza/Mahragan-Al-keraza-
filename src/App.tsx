@@ -113,7 +113,8 @@ import {
   startAfter,
   CURRENT_YEAR,
   runTransaction,
-  serverTimestamp
+  serverTimestamp,
+  getCountFromServer
 } from './firebase';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -647,6 +648,10 @@ function AppComponent() {
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
 
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [totalParticipantsCount, setTotalParticipantsCount] = useState<number>(0);
+  const [totalOrdersCount, setTotalOrdersCount] = useState<number>(0);
+  const [totalTeamsCount, setTotalTeamsCount] = useState<number>(0);
+  const [totalResultsCount, setTotalResultsCount] = useState<number>(0);
   const [lastParticipantDoc, setLastParticipantDoc] = useState<any>(null);
   const [isParticipantsLoading, setIsParticipantsLoading] = useState(false);
   const [isParticipantsEnd, setIsParticipantsEnd] = useState(false);
@@ -1683,24 +1688,35 @@ function AppComponent() {
     try {
       let baseQueryQ = collection(db, 'participants');
       const constraints: any[] = [where('year', '==', activeYear), orderBy('name'), limit(20)];
+      const countConstraints: any[] = [where('year', '==', activeYear)];
       
       // Admin global filters
       if (userRole === 'admin') {
-        if (globalChurchFilter !== 'الكل') constraints.push(where('churchName', '==', globalChurchFilter));
+        if (globalChurchFilter !== 'الكل') {
+          constraints.push(where('churchName', '==', globalChurchFilter));
+          countConstraints.push(where('churchName', '==', globalChurchFilter));
+        }
       } else {
         constraints.push(where('churchName', '==', churchName));
+        countConstraints.push(where('churchName', '==', churchName));
       }
 
-      if (globalStageFilter !== 'الكل') constraints.push(where('stage', '==', globalStageFilter));
-      
-      // Filtering by competition in Firestore is tricky if it's an array (array-contains).
-      // But we can only have 10 where clauses and only one range/inequality.
-      // For now, we'll stick to name search + church/stage/year.
+      if (globalStageFilter !== 'الكل') {
+        constraints.push(where('stage', '==', globalStageFilter));
+        countConstraints.push(where('stage', '==', globalStageFilter));
+      }
       
       if (search) {
         constraints.unshift(where('name', '>=', search), where('name', '<=', search + '\uf8ff'));
+        countConstraints.unshift(where('name', '>=', search), where('name', '<=', search + '\uf8ff'));
       }
       
+      if (isFirst || (!isFirst && !isNext)) {
+        getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
+          setTotalParticipantsCount(snap.data().count);
+        }).catch(console.error);
+      }
+
       if (!isFirst && isNext && lastParticipantDoc) {
         constraints.push(startAfter(lastParticipantDoc));
       }
@@ -1757,6 +1773,10 @@ function AppComponent() {
         ? query(collection(db, 'orders'), where('year', '==', activeYear)) 
         : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
       
+      if (isFirst || (!isFirst && !isNext)) {
+        getCountFromServer(baseQuery).then(snap => setTotalOrdersCount(snap.data().count)).catch();
+      }
+
       const constraints: any[] = [orderBy('timestamp', 'desc'), limit(20)];
       
       if (!isFirst && isNext && lastOrderDoc) {
@@ -1807,20 +1827,38 @@ function AppComponent() {
     try {
       let baseQueryQ = collection(db, 'results');
       const constraints: any[] = [where('year', '==', activeYear), orderBy('submissionTimestamp', 'desc'), limit(20)];
+      const countConstraints: any[] = [where('year', '==', activeYear)];
       
       if (userRole === 'admin') {
-        if (globalChurchFilter !== 'الكل') constraints.push(where('churchName', '==', globalChurchFilter));
+        if (globalChurchFilter !== 'الكل') {
+          constraints.push(where('churchName', '==', globalChurchFilter));
+          countConstraints.push(where('churchName', '==', globalChurchFilter));
+        }
       } else {
         constraints.push(where('churchName', '==', churchName));
+        countConstraints.push(where('churchName', '==', churchName));
       }
 
-      if (globalStageFilter !== 'الكل') constraints.push(where('stage', '==', globalStageFilter));
-      if (resultsFilterGrade !== 'الكل') constraints.push(where('grade', '==', resultsFilterGrade));
+      if (globalStageFilter !== 'الكل') {
+        constraints.push(where('stage', '==', globalStageFilter));
+        countConstraints.push(where('stage', '==', globalStageFilter));
+      }
+      if (resultsFilterGrade !== 'الكل') {
+        constraints.push(where('grade', '==', resultsFilterGrade));
+        countConstraints.push(where('grade', '==', resultsFilterGrade));
+      }
 
       if (search) {
         constraints.unshift(where('studentName', '>=', search), where('studentName', '<=', search + '\uf8ff'));
+        countConstraints.unshift(where('studentName', '>=', search), where('studentName', '<=', search + '\uf8ff'));
       }
       
+      if (isFirst || (!isFirst && !isNext)) {
+        getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
+          setTotalResultsCount(snap.data().count);
+        }).catch();
+      }
+
       if (!isFirst && isNext && lastResultDoc) {
         constraints.push(startAfter(lastResultDoc));
       }
@@ -1845,17 +1883,29 @@ function AppComponent() {
     try {
       let baseQueryQ = collection(db, 'activity_teams');
       const constraints: any[] = [where('year', '==', activeYear), orderBy('teamName'), limit(20)];
+      const countConstraints: any[] = [where('year', '==', activeYear)];
       
       if (userRole === 'admin') {
-        if (globalChurchFilter !== 'الكل') constraints.push(where('churchName', '==', globalChurchFilter));
+        if (globalChurchFilter !== 'الكل') {
+          constraints.push(where('churchName', '==', globalChurchFilter));
+          countConstraints.push(where('churchName', '==', globalChurchFilter));
+        }
       } else {
         constraints.push(where('churchName', '==', churchName));
+        countConstraints.push(where('churchName', '==', churchName));
       }
 
       if (search) {
         constraints.unshift(where('teamName', '>=', search), where('teamName', '<=', search + '\uf8ff'));
+        countConstraints.unshift(where('teamName', '>=', search), where('teamName', '<=', search + '\uf8ff'));
       }
       
+      if (isFirst || (!isFirst && !isNext)) {
+        getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
+          setTotalTeamsCount(snap.data().count);
+        }).catch();
+      }
+
       if (!isFirst && isNext && lastTeamDoc) {
         constraints.push(startAfter(lastTeamDoc));
       }
@@ -3635,19 +3685,19 @@ function AppComponent() {
                 <div className="p-6 bg-coptic-blue/5 rounded-3xl border border-coptic-blue/10">
                   <p className="text-[10px] font-black text-coptic-blue uppercase mb-1">المشتركين ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
-                    {filteredParticipantsList.length}
+                    {totalParticipantsCount}
                   </p>
                 </div>
                 <div className="p-6 bg-coptic-gold/5 rounded-3xl border border-coptic-gold/10">
                   <p className="text-[10px] font-black text-coptic-gold uppercase mb-1">طلبات الكتب ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
-                    {(orders || []).filter(o => globalChurchFilter === 'الكل' || o.churchName === globalChurchFilter).length}
+                    {totalOrdersCount}
                   </p>
                 </div>
                 <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100">
                   <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">الفرق ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
-                    {filteredTeamsList.length}
+                    {totalTeamsCount}
                   </p>
                 </div>
                 <div className="p-6 bg-coptic-red/5 rounded-3xl border border-coptic-red/10">
@@ -5102,7 +5152,7 @@ function AppComponent() {
                 <section>
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                      <BookOpen className="text-coptic-gold" /> طلبات الكتب ({(orders || []).filter(o => adminFilterChurch === 'الكل' || o.churchName === adminFilterChurch).length})
+                      <BookOpen className="text-coptic-gold" /> طلبات الكتب ({totalOrdersCount})
                     </h4>
                     <div className="flex items-center gap-2">
                       <button 
@@ -5292,7 +5342,7 @@ function AppComponent() {
                 <section>
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                      <Users className="text-coptic-gold" /> فرق الأنشطة المسجلة ({filteredTeamsList.length})
+                      <Users className="text-coptic-gold" /> فرق الأنشطة المسجلة ({totalTeamsCount})
                     </h4>
                     <div className="flex items-center gap-2">
                       <button 
@@ -6132,7 +6182,7 @@ function AppComponent() {
                       <h4 className="font-black text-xl text-slate-800">المشتركين المسجلين</h4>
                     </div>
                     <span className="px-4 py-1.5 bg-primary/10 text-primary rounded-full text-xs font-black">
-                      إجمالي: {participants.filter(p => p.churchName === churchName).length}
+                      إجمالي: {totalParticipantsCount}
                     </span>
                   </div>
 
@@ -6182,7 +6232,7 @@ function AppComponent() {
                         </div>
                       </div>
                     ))}
-                    {participants.filter(p => p.churchName === churchName).length === 0 && (
+                    {totalParticipantsCount === 0 && (
                       <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
                         <p className="text-slate-400 font-bold">لا يوجد مشتركين مسجلين بعد</p>
                       </div>
