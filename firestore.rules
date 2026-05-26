@@ -240,7 +240,10 @@ service cloud.firestore {
     }
 
     match /students/{studentId} {
-      allow read: if true;
+      // Allow single lookups from the exam portal using the QR token ID
+      allow get: if true; 
+      // Strictly block global list queries to protect quotas and data leaks
+      allow list: if request.auth != null && request.auth.token.role == 'superadmin';
       allow write: if isAdmin();
     }
 

@@ -492,7 +492,7 @@ export const LiveExamGateway: React.FC = () => {
       let studentData: any = null;
 
       try {
-        const docRef = doc(db, 'participants', studentId);
+        const docRef = doc(db, 'students', studentId);
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           studentData = { id: snap.id, ...(snap.data() as object) };
