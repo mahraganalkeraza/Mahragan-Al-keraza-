@@ -642,6 +642,7 @@ function AppComponent() {
   const [news, setNews] = useState<News[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
   const [lastOrderDoc, setLastOrderDoc] = useState<any>(null);
   const [orderPageCount, setOrderPageCount] = useState(1);
   const [isOrdersEnd, setIsOrdersEnd] = useState(false);
@@ -1656,26 +1657,33 @@ function AppComponent() {
   const exportOrdersToExcelDetailed = (ordersList: Order[]) => {
     const flattenedData: any[] = [];
     
+    // SSOT: Use calculatorSettings sorted
+    const orderedSettings = [...calculatorSettings].sort((a, b) => sortStages(a.stage, b.stage) || a.material.localeCompare(b.material));
+
     ordersList.forEach(order => {
-      order.details.forEach(detail => {
-        flattenedData.push({
-          "الكنيسة": order.churchName,
-          "المكان": order.country,
-          "التاريخ": order.timestamp,
-          "المرحلة": detail.stage,
-          "المادة": detail.material,
-          "الكمية": detail.quantity,
-          "السعر": detail.price,
-          "الإجمالي للمرحلة": detail.subtotal,
-          "الإجمالي الكلي للطلب": order.grandTotal
-        });
+      orderedSettings.forEach(setting => {
+        const detail = order.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
+        
+        if (detail && detail.quantity > 0) {
+          flattenedData.push({
+            "الكنيسة": order.churchName,
+            "المكان": order.country,
+            "التاريخ": order.timestamp,
+            "المرحلة": setting.stage,
+            "المادة": setting.material,
+            "الكمية": detail.quantity,
+            "سعر الوحدة": setting.price,
+            "الإجمالي للمرحلة": detail.quantity * setting.price,
+            "الإجمالي الكلي للطلب": order.grandTotal
+          });
+        }
       });
     });
 
     const worksheet = XLSX.utils.json_to_sheet(flattenedData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Detailed Orders");
-    XLSX.writeFile(workbook, `detailed_orders_${new Date().toLocaleDateString()}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "طلبات الكتب مفصلة");
+    XLSX.writeFile(workbook, `detailed_orders_${new Date().toLocaleDateString('en-CA')}.xlsx`);
   };
 
   const exportAllRegistrationsToExcel = async () => {
@@ -2606,6 +2614,7 @@ function AppComponent() {
         grandTotal: calculations.grandTotal,
         timestamp: new Date().toLocaleString('ar-EG'),
         details: activeRows.map(r => ({
+          settingId: r.id,
           stage: r.stage,
           material: r.material,
           price: r.price,
@@ -2756,6 +2765,90 @@ function AppComponent() {
               >
                 إلغاء
               </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+
+  const OrderDetailsModal = () => (
+    <AnimatePresence>
+      {viewingOrder && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setViewingOrder(null)}
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="relative bg-white w-full max-w-4xl max-h-[90vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden"
+          >
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div>
+                <h3 className="text-xl font-black text-slate-800">عرض تفاصيل الطلب</h3>
+                <p className="text-sm font-bold text-slate-500 mt-1">{viewingOrder.churchName} - {viewingOrder.timestamp}</p>
+              </div>
+              <button 
+                onClick={() => setViewingOrder(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 bg-white rounded-full hover:bg-slate-100 transition-colors shadow-sm"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6">
+              {calculatorSettings.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 font-bold">
+                  لا توجد كتب مضافة حالياً بحاسبة الكتب
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-xs font-black text-slate-500 uppercase">
+                        <th className="p-4 border-b border-slate-100 whitespace-nowrap">المرحلة</th>
+                        <th className="p-4 border-b border-slate-100 whitespace-nowrap">المادة</th>
+                        <th className="p-4 border-b border-slate-100 whitespace-nowrap">سعر الوحدة</th>
+                        <th className="p-4 border-b border-slate-100 text-center whitespace-nowrap">الكمية المطلوبة</th>
+                        <th className="p-4 border-b border-slate-100 whitespace-nowrap">الإجمالي</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {[...calculatorSettings].sort((a, b) => sortStages(a.stage, b.stage) || a.material.localeCompare(b.material)).map(setting => {
+                        const detail = viewingOrder.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
+                        const quantity = detail ? Number(detail.quantity) : 0;
+                        const subtotal = quantity * setting.price;
+                        return (
+                          <tr key={setting.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-4 font-bold text-slate-800 text-sm whitespace-nowrap">{setting.stage}</td>
+                            <td className="p-4 font-bold text-slate-600 text-sm whitespace-nowrap">{setting.material}</td>
+                            <td className="p-4 font-black text-slate-400 text-sm whitespace-nowrap">{setting.price} ج.م</td>
+                            <td className="p-4 text-center whitespace-nowrap">
+                              {quantity > 0 ? (
+                                <span className="inline-block px-3 py-1 bg-coptic-blue/10 text-coptic-blue rounded-lg font-black">{quantity}</span>
+                              ) : (
+                                <span className="text-slate-300 font-bold">-</span>
+                              )}
+                            </td>
+                            <td className="p-4 font-black text-coptic-red whitespace-nowrap">{subtotal} ج.م</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-6 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+              <span className="font-bold text-slate-500">إجمالي الطلب</span>
+              <span className="text-2xl font-black text-coptic-red">{viewingOrder.grandTotal} ج.م</span>
             </div>
           </motion.div>
         </div>
@@ -4474,6 +4567,13 @@ function AppComponent() {
                             <td className="p-4">
                               <div className="flex items-center justify-center gap-2">
                                 <button 
+                                  onClick={() => setViewingOrder(o)}
+                                  className="p-2 text-slate-400 hover:text-coptic-blue transition-colors"
+                                  title="عرض تفاصيل الطلب"
+                                >
+                                  <Eye size={18} />
+                                </button>
+                                <button 
                                   onClick={() => handleDeleteOrder(o.id)}
                                   className="p-2 text-slate-400 hover:text-coptic-red transition-colors"
                                   title="حذف"
@@ -5200,7 +5300,14 @@ function AppComponent() {
                             <td className="p-4 text-xs text-slate-400">{order.timestamp}</td>
                             <td className="p-4 font-black text-coptic-red">{order.grandTotal} ج.م</td>
                             <td className="p-4">
-                              <div className="flex justify-center">
+                              <div className="flex justify-center gap-2">
+                                <button 
+                                  onClick={() => setViewingOrder(order)}
+                                  className="p-2 text-slate-400 hover:text-coptic-blue transition-colors"
+                                  title="عرض تفاصيل الطلب"
+                                >
+                                  <Eye size={16} />
+                                </button>
                                 <button 
                                   onClick={() => handleDeleteOrder(order.id)}
                                   className="p-2 text-slate-400 hover:text-red-500 transition-colors"
@@ -5985,15 +6092,19 @@ function AppComponent() {
                         </tr>
                       </thead>
                       <tbody>
-                        {order.details.map((detail: any, dIdx: number) => (
-                          <tr key={dIdx} className="text-xs">
-                            <td className="p-2 border border-slate-200 font-bold">{detail.stage}</td>
-                            <td className="p-2 border border-slate-200">{detail.material}</td>
-                            <td className="p-2 border border-slate-200 text-center">{detail.quantity}</td>
-                            <td className="p-2 border border-slate-200 text-center">{detail.price} ج.م</td>
-                            <td className="p-2 border border-slate-200 text-left font-mono">{detail.subtotal} ج.م</td>
-                          </tr>
-                        ))}
+                        {[...calculatorSettings].sort((a, b) => sortStages(a.stage, b.stage) || a.material.localeCompare(b.material)).map((setting: any, dIdx: number) => {
+                          const detail = order.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
+                          if (!detail || detail.quantity <= 0) return null;
+                          return (
+                            <tr key={setting.id} className="text-xs">
+                              <td className="p-2 border border-slate-200 font-bold">{setting.stage}</td>
+                              <td className="p-2 border border-slate-200">{setting.material}</td>
+                              <td className="p-2 border border-slate-200 text-center">{detail.quantity}</td>
+                              <td className="p-2 border border-slate-200 text-center">{setting.price} ج.م</td>
+                              <td className="p-2 border border-slate-200 text-left font-mono">{detail.quantity * setting.price} ج.م</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -6776,6 +6887,7 @@ function AppComponent() {
       <DeleteConfirmationModal />
       <DeleteScheduleModal />
       <DeleteCalculatorModal />
+      <OrderDetailsModal />
 
       <AnimatePresence>
         {confirmModal.isOpen && (

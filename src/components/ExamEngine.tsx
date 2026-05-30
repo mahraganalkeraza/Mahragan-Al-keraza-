@@ -412,6 +412,20 @@ export const LiveExamGateway: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const activeStudentId = localStorage.getItem('active_student_id');
+    if (activeStudentId) {
+      const cached = localStorage.getItem(`student_profile_${activeStudentId}`);
+      if (cached) {
+        try {
+          setActiveStudent(JSON.parse(cached));
+        } catch (e) {
+          console.error('Error parsing cached active student:', e);
+        }
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     if (!activeStudent?.id) return;
     
     // 1. Kill Switch Listener: Watch for termination or reset
@@ -490,15 +504,28 @@ export const LiveExamGateway: React.FC = () => {
       const normalizedId = studentId.toLowerCase();
 
       let studentData: any = null;
+      const cacheKey = `student_profile_${studentId}`;
 
       try {
-        const docRef = doc(db, 'students', studentId);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          studentData = { id: snap.id, ...(snap.data() as object) };
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          studentData = JSON.parse(cached);
         }
       } catch (e) {
-        console.error("Error fetching student profile:", e);
+        console.error("Error reading cached student profile:", e);
+      }
+
+      if (!studentData) {
+        try {
+          const docRef = doc(db, 'students', studentId);
+          const snap = await getDoc(docRef);
+          if (snap.exists()) {
+            studentData = { id: snap.id, ...(snap.data() as object) };
+            localStorage.setItem(cacheKey, JSON.stringify(studentData));
+          }
+        } catch (e) {
+          console.error("Error fetching student profile:", e);
+        }
       }
 
       const isAdminUser = auth.currentUser?.email === 'admin@mafk.com' || auth.currentUser?.email === 'kareemsame77esoyam@gmail.com';
@@ -561,8 +588,30 @@ export const LiveExamGateway: React.FC = () => {
       setIsTerminated(false);
       setAnswers({});
       setActiveStudent(studentData);
+      localStorage.setItem('active_student_id', studentId);
       setIsScanning(false);
       setIsLoading(false);
+      
+      try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContext) {
+          const ctx = new AudioContext();
+          const osc = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+          osc.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.15);
+        }
+        if (navigator.vibrate) {
+          navigator.vibrate([100, 50, 100]);
+        }
+      } catch (err) {
+        console.error("Feedback error", err);
+      }
     } catch (e: any) {
       setIsLoading(false);
       alert('حدث خطأ غير متوقع: ' + (e.message || 'Error occurred'));
@@ -783,7 +832,7 @@ export const LiveExamGateway: React.FC = () => {
 
   if (isExamCompleted) {
     return (
-      <div className="text-center p-12 bg-white border border-emerald-200 rounded-3xl shadow-xl overflow-hidden relative">
+      <div className="LiveExamGateway text-center p-12 bg-white border border-emerald-200 rounded-3xl shadow-xl overflow-hidden relative">
         <div className="absolute top-0 inset-x-0 h-2 bg-emerald-500" />
         <h2 className="text-3xl font-black mb-4 text-emerald-600">
           {isAlreadyExamined ? 'لقد قمت بتسليم هذا الامتحان مسبقاً!' : 'تم استلام إجاباتك بنجاح!'}
@@ -795,7 +844,7 @@ export const LiveExamGateway: React.FC = () => {
         )}
         <p className="text-slate-600 font-bold mb-6">نتمنى لك التوفيق.</p>
         <button 
-          onClick={() => { setIsExamCompleted(false); setIsAlreadyExamined(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
+          onClick={() => { localStorage.removeItem('active_student_id'); setIsExamCompleted(false); setIsAlreadyExamined(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
           className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all"
         >
           خروج
@@ -806,14 +855,14 @@ export const LiveExamGateway: React.FC = () => {
 
   if (isTerminated) {
     return (
-      <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl overflow-hidden relative">
+      <div className="LiveExamGateway text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl overflow-hidden relative">
         <div className="absolute top-0 inset-x-0 h-2 bg-rose-500" />
         <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
           <ShieldX size={48} />
         </div>
         <h2 className="text-3xl font-black mb-4 text-slate-800">تم إنهاء الجلسة</h2>
         <button 
-          onClick={() => { setIsTerminated(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
+          onClick={() => { localStorage.removeItem('active_student_id'); setIsTerminated(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
           className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all"
         >
           الخروج
@@ -824,7 +873,7 @@ export const LiveExamGateway: React.FC = () => {
 
   if (!activeStudent && !isScanning) {
     return (
-      <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
+      <div className="LiveExamGateway text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
         <h3 className="text-2xl font-black mb-2 text-slate-800">بوابة الامتحان الإلكتروني</h3>
         
         <div className="max-w-xs mx-auto space-y-4">
@@ -862,7 +911,7 @@ export const LiveExamGateway: React.FC = () => {
 
   if (!activeStudent && isScanning) {
     return (
-      <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
+      <div className="LiveExamGateway bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
         <h3 className="text-2xl font-black mb-6 text-slate-800">توجيه الكاميرا نحو كود الطالب</h3>
         <div className="max-w-md mx-auto aspect-square rounded-2xl overflow-hidden bg-slate-900 border-4 border-slate-100 shadow-inner mb-6 relative">
           <QRScanner onScanSuccess={(id) => fetchStudentAndExam(id)} />
@@ -880,10 +929,10 @@ export const LiveExamGateway: React.FC = () => {
   if (activeStudent && !selectedCompetition) {
      const stage = activeStudent.data?.['المرحلة'] || activeStudent.stage;
      return (
-       <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
+       <div className="LiveExamGateway bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
          <h3 className="text-2xl font-black text-slate-800 mb-8">{activeStudent.studentName}</h3>
          
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto">
+         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto mb-8">
            {COMPETITION_TYPES.filter(type => {
               if (activeStudent.enrolled_subjects && Array.isArray(activeStudent.enrolled_subjects)) {
                   if (!activeStudent.enrolled_subjects.includes(type)) return false;
@@ -915,13 +964,19 @@ export const LiveExamGateway: React.FC = () => {
              ))
            )}
          </div>
+         <button 
+           onClick={() => { localStorage.removeItem('active_student_id'); setActiveStudent(null); }} 
+           className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all"
+         >
+           إلغاء / خروج
+         </button>
        </div>
      );
   }
 
   if (isLoading) {
     return (
-      <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
+      <div className="LiveExamGateway text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
         <Loader2 className="animate-spin text-indigo-600 mx-auto" size={48} />
         <p className="mt-4 text-slate-500 font-bold">جاري تحميل أسئلة الامتحان...</p>
       </div>
@@ -930,11 +985,11 @@ export const LiveExamGateway: React.FC = () => {
 
   if (!activeExam || !activeExam.questions || activeExam.questions.length === 0) {
     return (
-      <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl">
+      <div className="LiveExamGateway text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl">
         <ShieldX className="text-rose-500 mx-auto mb-4" size={48} />
         <p className="text-slate-700 font-bold">عذراً، لم يتم العثور على أسئلة لهذه المسابقة أو انتهى وقت الامتحان.</p>
         <button 
-          onClick={() => { setActiveStudent(null); setSelectedCompetition(null); setActiveExam(null); }} 
+          onClick={() => { localStorage.removeItem('active_student_id'); setActiveStudent(null); setSelectedCompetition(null); setActiveExam(null); }} 
           className="mt-6 px-6 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors"
         >
           رجوع
