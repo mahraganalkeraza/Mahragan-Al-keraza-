@@ -480,6 +480,7 @@ function AppComponent() {
   const [appLogo, setAppLogo] = useState<string | null>(() => localStorage.getItem('appLogoCache'));
   const [isUpdatingYear, setIsUpdatingYear] = useState(false);
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
   const [validationSettings, setValidationSettings] = useState<any>({
     templates: [],
     ageMappings: [],
@@ -952,19 +953,28 @@ function AppComponent() {
     const element = document.getElementById('comprehensive-analytics-report');
     if (!element) return;
     
-    element.style.display = 'block';
+    setIsExportingPDF(true);
     
-    const opt = {
-      margin: [10, 10, 10, 10],
-      filename: `التقرير_التحليلي_الشامل_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString('ar-EG')}.pdf`,
-      image: { type: 'jpeg', quality: 1 },
-      html2canvas: { scale: 2, useCORS: true, letterRendering: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-    
-    html2pdf().set(opt).from(element).save().then(() => {
+    setTimeout(async () => {
+      try {
+        element.style.display = 'block';
+        
+        const opt = {
+          margin: [10, 10, 10, 10],
+          filename: `التقرير_التحليلي_الشامل_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString('ar-EG')}.pdf`,
+          image: { type: 'jpeg', quality: 0.95 },
+          html2canvas: { scale: 1.5, useCORS: true, letterRendering: true, backgroundColor: '#ffffff', logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        
+        await html2pdf().set(opt).from(element).save();
+      } catch (error) {
+        console.error('Error generating PDF:', error);
+      } finally {
         element.style.display = 'none';
-    });
+        setIsExportingPDF(false);
+      }
+    }, 300);
   };
 
   const [confirmModal, setConfirmModal] = useState<{
@@ -5509,8 +5519,9 @@ function AppComponent() {
                     <h2 className="text-xl font-black text-slate-800">اللوحة التحليلية الشاملة</h2>
                     <p className="text-sm text-slate-500 font-bold mt-1">مؤشرات إحصائية ورسوم بيانية لبيانات التسجيل والحاسبة</p>
                   </div>
-                  <button onClick={exportComprehensivePDF} className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black shadow-lg hover:bg-slate-800 transition-all text-sm flex items-center gap-2">
-                    <Download size={16} /> تصدير التقرير التحليلي (PDF)
+                  <button onClick={exportComprehensivePDF} disabled={isExportingPDF} className={`px-6 py-3 bg-slate-900 text-white rounded-2xl font-black shadow-lg transition-all text-sm flex items-center gap-2 ${isExportingPDF ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800'}`}>
+                    {isExportingPDF ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                    {isExportingPDF ? 'جاري التحضير...' : 'تصدير التقرير التحليلي (PDF)'}
                   </button>
                 </div>
 
@@ -7756,6 +7767,16 @@ function AppComponent() {
             <div className="bg-white p-4 text-center border-t border-slate-200 md:rounded-b-3xl text-[10px] font-black text-slate-400 uppercase tracking-widest">
               نظام الامتحانات الرقمي - مهرجان الكرازة المنطقة ١٨
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isExportingPDF && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[200] flex flex-col items-center justify-center p-4">
+            <Loader2 className="animate-spin text-white w-16 h-16 mb-4" />
+            <h2 className="text-2xl font-black text-white mb-2 text-center drop-shadow-md">جاري إعداد وتجهيز التقرير التحليلي الشامل</h2>
+            <p className="text-slate-300 font-bold text-center">برجاء الانتظار قليلاً... قد تستغرق هذه العملية بعض الوقت حسب حجم البيانات.</p>
           </motion.div>
         )}
       </AnimatePresence>
