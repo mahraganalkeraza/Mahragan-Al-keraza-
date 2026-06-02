@@ -60,7 +60,8 @@ import {
   FileSpreadsheet,
   Sliders,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Layers
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
@@ -616,6 +617,15 @@ function AppComponent() {
     alert("Scanned: " + decodedText);
   };
   const [participantSearch, setParticipantSearch] = useState('');
+  const [partChurchFilter, setPartChurchFilter] = useState('الكل');
+  const [partStageFilter, setPartStageFilter] = useState('الكل');
+  const [partCompFilter, setPartCompFilter] = useState('الكل');
+  
+  const [isDuplicateScanModalOpen, setIsDuplicateScanModalOpen] = useState(false);
+  const [duplicateRecords, setDuplicateRecords] = useState<Participant[][]>([]);
+  const [isScanningDuplicates, setIsScanningDuplicates] = useState(false);
+  const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
+  
   const [teamSearch, setTeamSearch] = useState('');
   const [resultSearch, setResultSearch] = useState('');
   const [calculatorSettings, setCalculatorSettings] = useState<any[]>([]);
@@ -960,7 +970,7 @@ function AppComponent() {
         element.style.display = 'block';
         
         const opt = {
-          margin: [10, 10, 10, 10],
+          margin: [10, 10, 10, 10] as [number, number, number, number],
           filename: `التقرير_التحليلي_الشامل_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString('ar-EG')}.pdf`,
           image: { type: 'jpeg', quality: 0.95 },
           html2canvas: { scale: 1.5, useCORS: true, letterRendering: true, backgroundColor: '#ffffff', logging: false },
@@ -1960,6 +1970,75 @@ function AppComponent() {
     XLSX.writeFile(workbook, `detailed_orders_${new Date().toLocaleDateString('en-CA')}.xlsx`);
   };
 
+  const handleScanDuplicates = async () => {
+    setIsDuplicateScanModalOpen(true);
+    setIsScanningDuplicates(true);
+    setDuplicateRecords([]);
+    
+    try {
+      const q = query(
+        collection(db, 'participants'),
+        where('year', '==', activeYear)
+      );
+      
+      const snap = await getDocs(q);
+      const parts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
+      
+      const duplicatesMap: Record<string, Participant[]> = {};
+      
+      parts.forEach(p => {
+        const signature = `${p.name}_${p.churchName}_${p.stage}_${[...(p.competitions || [])].sort().join('-')}`;
+        if (!duplicatesMap[signature]) {
+          duplicatesMap[signature] = [];
+        }
+        duplicatesMap[signature].push(p);
+      });
+      
+      const duplicateGroups = Object.values(duplicatesMap).filter(group => group.length > 1);
+      setDuplicateRecords(duplicateGroups);
+    } catch (err) {
+      console.error(err);
+      setNotification('حدث خطأ أثناء فحص التكرارات.');
+    } finally {
+      setIsScanningDuplicates(false);
+    }
+  };
+
+  const handleDeleteDuplicates = async () => {
+    if (!duplicateRecords.length) return;
+    setIsDeletingDuplicates(true);
+    try {
+      let batch = writeBatch(db);
+      let opCount = 0;
+      
+      for (const group of duplicateRecords) {
+        const toDelete = group.slice(1);
+        for (const record of toDelete) {
+          if (opCount >= 490) {
+            await batch.commit();
+            batch = writeBatch(db);
+            opCount = 0;
+          }
+          batch.delete(doc(db, 'participants', record.id));
+          opCount++;
+        }
+      }
+      
+      if (opCount > 0) {
+        await batch.commit();
+      }
+      
+      setNotification('تم تطهير السجلات المكررة بنجاح.');
+      setIsDuplicateScanModalOpen(false);
+      fetchParticipantsPage(true, true, participantSearch);
+    } catch (err) {
+      console.error(err);
+      setNotification('حدث خطأ أثناء حذف التكرارات.');
+    } finally {
+      setIsDeletingDuplicates(false);
+    }
+  };
+
   const exportAllRegistrationsToExcel = async () => {
     await generateMasterExcel(userRole === 'admin' ? null : churchName);
   };
@@ -1969,38 +2048,38 @@ function AppComponent() {
     setIsParticipantsLoading(true);
     try {
       let baseQueryQ = collection(db, 'participants');
-      const constraints: any[] = [where('year', '==', activeYear), orderBy('name')];
-      const countConstraints: any[] = [where('year', '==', activeYear)];
+      const constraints: any[] = [where('year', '==', activeYear)];
       
-      // Admin global filters
+      // Admin Church Filter
       if (userRole === 'admin') {
-        if (globalChurchFilter !== 'الكل') {
-          constraints.push(where('churchName', '==', globalChurchFilter));
-          countConstraints.push(where('churchName', '==', globalChurchFilter));
+        if (partChurchFilter !== 'الكل') {
+          constraints.push(where('churchName', '==', partChurchFilter));
         }
       } else {
         constraints.push(where('churchName', '==', churchName));
-        countConstraints.push(where('churchName', '==', churchName));
       }
 
-      if (globalStageFilter !== 'الكل') {
-        constraints.push(where('stage', '==', globalStageFilter));
-        countConstraints.push(where('stage', '==', globalStageFilter));
+      // Stage Filter
+      if (partStageFilter !== 'الكل') {
+        constraints.push(where('stage', '==', partStageFilter));
+      }
+
+      // Competition Filter
+      if (partCompFilter !== 'الكل') {
+        constraints.push(where('competitions', 'array-contains', partCompFilter));
       }
       
+      // Name Search Filter
       if (search) {
-        constraints.unshift(where('name', '>=', search), where('name', '<=', search + '\uf8ff'));
-        countConstraints.unshift(where('name', '>=', search), where('name', '<=', search + '\uf8ff'));
+        constraints.push(where('name', '>=', search), where('name', '<=', search + '\uf8ff'));
       }
+      
+      constraints.push(orderBy('name'));
       
       if (isFirst || (!isFirst && !isNext)) {
-        getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
+        getCountFromServer(query(baseQueryQ, ...constraints)).then(snap => {
           setTotalParticipantsCount(snap.data().count);
         }).catch(console.error);
-      }
-
-      if (!isFirst && isNext && lastParticipantDoc) {
-        constraints.push(startAfter(lastParticipantDoc));
       }
       
       const q = query(baseQueryQ, ...constraints);
@@ -2008,15 +2087,12 @@ function AppComponent() {
       
       const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
       setParticipants(newList);
-      setLastParticipantDoc(snap.docs[snap.docs.length - 1]);
-      setIsParticipantsEnd(snap.docs.length < 20);
       
       if (isFirst) setParticipantPageCount(1);
-      else if (isNext) setParticipantPageCount(prev => prev + 1);
       
     } catch (err) {
       console.error(err);
-      setNotification('خطأ في جلب بيانات المشتركين');
+      setNotification('خطأ في جلب بيانات المشتركين. تأكد من وجود الفهارس (Indexes) اللازمة.');
     } finally {
       setIsParticipantsLoading(false);
     }
@@ -3190,6 +3266,87 @@ function AppComponent() {
                 إلغاء
               </button>
             </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+
+  const DuplicateScanModal = () => (
+    <AnimatePresence>
+      {isDuplicateScanModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => !isScanningDuplicates && !isDeletingDuplicates && setIsDuplicateScanModalOpen(false)}
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+          />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className="relative bg-white w-full max-w-lg flex flex-col rounded-3xl shadow-2xl p-8"
+          >
+            {isScanningDuplicates ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="animate-spin text-coptic-blue mb-4" size={48} />
+                <h3 className="text-lg font-black text-slate-800 mb-2">جاري فحص السجلات...</h3>
+                <p className="text-sm font-bold text-slate-500 text-center">يتم الآن مطابقة الأسماء والمراحل والمسابقات عبر النظام</p>
+              </div>
+            ) : isDeletingDuplicates ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="animate-spin text-red-500 mb-4" size={48} />
+                <h3 className="text-lg font-black text-red-600 mb-2">جاري تطهير قاعدة البيانات...</h3>
+                <p className="text-sm font-bold text-slate-500 text-center">يرجى الانتظار، يتم الآن حذف السجلات المكررة والاحتفاظ بنسخة واحدة أصلية</p>
+              </div>
+            ) : (
+              <>
+                <div className="mx-auto w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mb-6">
+                  <Layers className="text-rose-500" size={32} />
+                </div>
+                
+                <h3 className="text-2xl font-black text-center text-slate-800 mb-4">نتائج فحص التكرار</h3>
+                
+                {duplicateRecords.length === 0 ? (
+                  <div className="text-center">
+                    <div className="bg-emerald-50 text-emerald-700 p-4 rounded-xl border border-emerald-100 font-bold mb-6">
+                      قاعدة البيانات نظيفة تماماً! لم يتم العثور على أي استمارات مكررة.
+                    </div>
+                    <button 
+                      onClick={() => setIsDuplicateScanModalOpen(false)}
+                      className="w-full px-4 py-3 bg-slate-900 text-white rounded-xl font-black text-sm hover:bg-slate-800 transition-colors"
+                    >
+                      إغلاق
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <p className="text-sm font-bold text-rose-600 bg-rose-50 p-4 rounded-xl border border-rose-100 mb-6 leading-relaxed">
+                      تم العثور على <span className="font-black text-lg mx-1">{duplicateRecords.reduce((acc, curr) => acc + curr.length - 1, 0)}</span> سجلات مكررة ضمن <span className="font-black text-lg mx-1">{duplicateRecords.length}</span> طالب متطابق تماماً في (الاسم - الكنيسة - المرحلة - المسابقات).
+                      <br/><br/>
+                      الوظيفة الآمنة: سيتم الاحتفاظ بنسخة واحدة أصلية لكل شخص وحذف باقي النسخ الإضافية لضمان صحة أرقام الطباعة.
+                    </p>
+                    
+                    <div className="flex gap-3">
+                      <button 
+                        onClick={() => setIsDuplicateScanModalOpen(false)}
+                        className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 rounded-xl font-black text-sm hover:bg-slate-200 transition-colors"
+                      >
+                        إلغاء
+                      </button>
+                      <button 
+                        onClick={handleDeleteDuplicates}
+                        className="flex-1 px-4 py-3 bg-rose-600 text-white rounded-xl font-black text-sm hover:bg-rose-700 transition-colors shadow-lg shadow-rose-600/20 flex justify-center items-center gap-2"
+                      >
+                        تأكيد تطهير التكرار
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </motion.div>
         </div>
       )}
@@ -4408,35 +4565,90 @@ function AppComponent() {
 
             {adminActiveTab === 'participants' && (
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
-                <div className="flex items-center justify-between mb-8">
+                <div className="flex flex-col md:flex-row items-center justify-between mb-8 gap-4">
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
                     <Users className="text-coptic-blue" /> إدارة المشتركين
                   </h4>
-                  <div className="flex items-center gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button 
+                      onClick={() => setIsDuplicateScanModalOpen(true)}
+                      className="px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black shadow-sm flex items-center gap-2 hover:bg-rose-100 transition-colors"
+                    >
+                      <Layers size={14} /> فحص وتطهير التكرار
+                    </button>
+                    <button 
+                      onClick={exportAllRegistrationsToExcel}
+                      className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-sm"
+                    >
+                      <Download size={14} /> Excel
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl border border-slate-200 mb-6 flex flex-col md:flex-row items-end gap-4 shadow-sm">
+                  {userRole === 'admin' && (
+                    <div className="flex-1 w-full flex flex-col gap-1.5">
+                      <label className="text-[10px] font-black text-slate-400">البلد/الكنيسة</label>
+                      <select 
+                        value={partChurchFilter}
+                        onChange={(e) => setPartChurchFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
+                      >
+                        <option value="الكل">كل الكنائس</option>
+                        {Array.from(new Set(publicChurches.map((c: any) => c.name))).sort().map(church => (
+                          <option key={church} value={church}>{church}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="flex-1 w-full flex flex-col gap-1.5">
+                    <label className="text-[10px] font-black text-slate-400">المرحلة</label>
+                    <select 
+                      value={partStageFilter}
+                      onChange={(e) => setPartStageFilter(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
+                    >
+                      <option value="الكل">كل المراحل</option>
+                      {dynamicLevels.map(l => <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>{typeof l === 'string' ? l : l.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="flex-1 w-full flex flex-col gap-1.5">
+                    <label className="text-[10px] font-black text-slate-400">المسابقة</label>
+                    <select 
+                      value={partCompFilter}
+                      onChange={(e) => setPartCompFilter(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
+                    >
+                      <option value="الكل">مسابقة (الكل)</option>
+                      {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني', 'ألحان مستوى أول', 'ألحان مستوى ثاني', 'كشافة', 'رياضية', 'إبتكارات هندسية', 'فنون تشكيلية', 'مسرح'].map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex-2 w-full flex flex-col gap-1.5 relative">
+                    <label className="text-[10px] font-black text-slate-400">البحث بالاسم</label>
                     <div className="relative">
-                      <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                      <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                       <input 
                         type="text"
                         placeholder="ابحث بالاسم..."
-                        className="pr-10 pl-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
+                        className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                         value={participantSearch}
                         onChange={(e) => setParticipantSearch(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && fetchParticipantsPage(true, true, participantSearch)}
                       />
                     </div>
-                    <button 
-                      onClick={() => fetchParticipantsPage(true, true, participantSearch)}
-                      className="px-4 py-2 bg-coptic-blue text-white rounded-xl text-xs font-black shadow-md"
-                    >
-                      بحث
-                    </button>
-                    <button 
-                      onClick={exportAllRegistrationsToExcel}
-                      className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-md"
-                    >
-                      <Download size={16} /> تصدير Excel
-                    </button>
                   </div>
+
+                  <button 
+                    onClick={() => fetchParticipantsPage(true, true, participantSearch)}
+                    className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black shadow-md hover:bg-slate-800 transition-colors w-full md:w-auto mt-2 md:mt-0"
+                  >
+                    تطبيق 
+                  </button>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -4453,6 +4665,7 @@ function AppComponent() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {participants
+                        .slice((participantPageCount - 1) * 20, participantPageCount * 20)
                         .map(p => (
                           <tr key={p.id} className="bg-white hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-slate-800 text-sm">{p.name}</td>
@@ -4512,7 +4725,6 @@ function AppComponent() {
                        onClick={() => {
                           const prevPage = participantPageCount - 1;
                           setParticipantPageCount(prevPage);
-                          fetchParticipantsPage(false, prevPage === 1, participantSearch);
                        }}
                        className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all"
                     >
@@ -4520,8 +4732,8 @@ function AppComponent() {
                     </button>
                     <span className="font-black text-slate-800 not-italic text-sm">صفحة {participantPageCount}</span>
                     <button 
-                       disabled={isParticipantsEnd || isParticipantsLoading}
-                       onClick={() => fetchParticipantsPage(true, false, participantSearch)}
+                       disabled={participantPageCount * 20 >= participants.length || isParticipantsLoading}
+                       onClick={() => setParticipantPageCount(prev => prev + 1)}
                        className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all"
                     >
                        <ChevronLeft size={20} className="text-slate-600" />
@@ -5879,7 +6091,7 @@ function AppComponent() {
                     `}</style>
                     <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-8">
                       <div className="flex items-center gap-4">
-                        <img src={getValidLogoUrl(siteSettings?.logoUrl, logo)} alt="Logo" className="w-12 h-12 object-contain" crossOrigin="anonymous" />
+                        <img src={getValidLogoUrl((siteSettings as any)?.logoUrl, logo)} alt="Logo" className="w-12 h-12 object-contain" crossOrigin="anonymous" />
                         <div>
                           <h1 className="text-xl font-black text-primary">بيان طباعة مسابقات الأفراد</h1>
                           <p className="text-xs font-bold text-slate-500 mt-1">
@@ -6116,6 +6328,7 @@ function AppComponent() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {participants
+                          .slice((participantPageCount - 1) * 20, participantPageCount * 20)
                           .map(p => (
                           <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-coptic-blue">{p.churchName}</td>
@@ -6165,7 +6378,6 @@ function AppComponent() {
                          onClick={() => {
                             const prevPage = participantPageCount - 1;
                             setParticipantPageCount(prevPage);
-                            fetchParticipantsPage(false, prevPage === 1, participantSearch);
                          }}
                          className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
                       >
@@ -6173,8 +6385,8 @@ function AppComponent() {
                       </button>
                       <span className="font-black text-slate-800 not-italic text-sm">صفحة {participantPageCount}</span>
                       <button 
-                         disabled={isParticipantsEnd || isParticipantsLoading}
-                         onClick={() => fetchParticipantsPage(true, false, participantSearch)}
+                         disabled={participantPageCount * 20 >= participants.length || isParticipantsLoading}
+                         onClick={() => setParticipantPageCount(prev => prev + 1)}
                          className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
                       >
                          <ChevronLeft size={20} />
@@ -7631,6 +7843,7 @@ function AppComponent() {
         </button>
       )}
       <DeleteConfirmationModal />
+      <DuplicateScanModal />
       <DeleteScheduleModal />
       <DeleteCalculatorModal />
       <OrderDetailsModal />
