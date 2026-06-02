@@ -273,7 +273,7 @@ service cloud.firestore {
       allow update: if (isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName))) && 
                     isValidParticipant(incoming()) &&
                     (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'stage', 'gender', 'country', 'competitions', 'timestamp', 'serial']));
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
     }
 
     match /inquiries/{inquiryId} {
@@ -303,7 +303,7 @@ service cloud.firestore {
         isValidId(resultId) && 
         isValidResult(incoming())
       );
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
       allow update: if isAdmin() || (
         isValidResult(incoming()) &&
         (
@@ -406,7 +406,7 @@ service cloud.firestore {
       allow read: if isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/participants/$(resultId)) && isChurch(get(/databases/$(database)/documents/participants/$(resultId)).data.churchName));
       allow create: if true;
       allow update: if isAdmin();
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/participants/$(resultId)) && isChurch(get(/databases/$(database)/documents/participants/$(resultId)).data.churchName));
     }
 
     match /test/connection {

@@ -619,6 +619,7 @@ function AppComponent() {
   const [calculatorSettingToDelete, setCalculatorSettingToDelete] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [participantToDelete, setParticipantToDelete] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [showDeleteScheduleModal, setShowDeleteScheduleModal] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<string | null>(null);
   const [results, setResults] = useState<Result[]>([]);
@@ -2384,9 +2385,16 @@ function AppComponent() {
 
   const handleDeleteParticipant = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'participants', id));
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'participants', id));
+      batch.delete(doc(db, 'active_sessions', id));
+      batch.delete(doc(db, 'results', id));
+      batch.delete(doc(db, 'online_results', id));
+      await batch.commit();
+
       setShowDeleteModal(false);
       setParticipantToDelete(null);
+      setDeleteConfirmText('');
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `participants/${id}`);
     }
@@ -2864,7 +2872,7 @@ function AppComponent() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={() => setShowDeleteModal(false)}
+            onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }}
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
           />
           <motion.div 
@@ -2877,20 +2885,33 @@ function AppComponent() {
               <X className="text-red-500" size={40} />
             </div>
             <h3 className="text-xl font-black text-primary mb-2">تأكيد الحذف</h3>
-            <p className="text-slate-500 text-sm mb-8">هل أنت متأكد من رغبتك في حذف هذا المشترك؟ لا يمكن التراجع عن هذا الإجراء.</p>
+            <p className="text-slate-700 text-sm mb-6 leading-relaxed bg-red-50 p-4 rounded-xl border border-red-100 font-bold">
+              هل أنت متأكد تماماً من حذف هذا المشترك؟ هذا الإجراء سيؤدي لحذف بيانات الطالب وأكواده نهائياً من السيستم ولا يمكن التراجع عنه!
+            </p>
+            <div className="mb-6 text-right">
+              <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block">للتأكيد، اكتب كلمة "حذف"</label>
+              <input 
+                type="text"
+                placeholder="حذف"
+                value={deleteConfirmText}
+                onChange={e => setDeleteConfirmText(e.target.value)}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-red-400 font-bold text-center"
+              />
+            </div>
             <div className="flex gap-4">
               <button 
+                disabled={deleteConfirmText !== 'حذف'}
                 onClick={() => {
                   if (participantToDelete) {
                     handleDeleteParticipant(participantToDelete);
                   }
                 }}
-                className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold hover:bg-opacity-90 transition-all"
+                className="flex-1 py-3 bg-red-500 text-white disabled:bg-slate-300 disabled:cursor-not-allowed rounded-xl font-bold hover:bg-opacity-90 transition-all"
               >
                 حذف
               </button>
               <button 
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => { setShowDeleteModal(false); setDeleteConfirmText(''); }}
                 className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
               >
                 إلغاء
@@ -3624,11 +3645,16 @@ function AppComponent() {
                               <span className="text-[9px] text-slate-400 font-black px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{p.gender || 'غير محدد'}</span>
                             </div>
                           </div>
-                          {userRole === 'admin' && (
-                            <button onClick={() => handleDeleteParticipant(p.id)} className="p-1.5 text-slate-200 hover:text-coptic-red transition-colors opacity-0 group-hover:opacity-100">
-                              <X size={16} />
+                            <button 
+                              onClick={() => {
+                                setParticipantToDelete(p.id);
+                                setShowDeleteModal(true);
+                              }} 
+                              className="p-1.5 text-slate-200 hover:text-coptic-red transition-colors opacity-0 group-hover:opacity-100"
+                              title="حذف المشترك"
+                            >
+                              <Trash2 size={16} />
                             </button>
-                          )}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {(p.competitions || []).map((comp, i) => (
@@ -6327,7 +6353,6 @@ function AppComponent() {
                             >
                               <FileText size={16} />
                             </button>
-                            {userRole === 'admin' && (
                               <button 
                                 onClick={() => {
                                   setParticipantToDelete(p.id);
@@ -6338,7 +6363,6 @@ function AppComponent() {
                               >
                                 <Trash2 size={16} />
                               </button>
-                            )}
                           </div>
                         </div>
                       </div>
