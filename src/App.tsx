@@ -792,6 +792,97 @@ function AppComponent() {
     });
   }, [results, globalNameFilter, globalStageFilter, globalChurchFilter, resultsFilterGrade, churchName, userRole]);
 
+  const aggregatedChurchPrintingData = useMemo(() => {
+    const groups: Record<string, any> = {};
+
+    participants.forEach(p => {
+      if (globalChurchFilter !== 'الكل' && p.churchName !== globalChurchFilter && userRole === 'admin') return;
+      if (userRole === 'church' && p.churchName !== churchName) return;
+
+      const church = p.churchName;
+      const stage = p.stage;
+      if (!church || !stage) return;
+
+      if (!groups[church]) {
+        groups[church] = {
+          church,
+          totalSubscribers: 0,
+          stages: {}
+        };
+      }
+
+      const churchData = groups[church];
+
+      if (!churchData.stages[stage]) {
+        churchData.stages[stage] = {
+           subscribers: 0,
+           darasi: 0,
+           mahfouthat: 0,
+           coptic1: 0,
+           coptic2: 0,
+        };
+      }
+
+      // De-duplicate stage level subscriber counting
+      const stg = churchData.stages[stage];
+      if (p.competitions && p.competitions.length > 0) {
+        let hasCountedSub = false;
+        if (p.competitions.includes('دراسي')) { stg.darasi++; hasCountedSub = true; }
+        if (p.competitions.includes('محفوظات')) { stg.mahfouthat++; hasCountedSub = true; }
+        if (p.competitions.includes('قبطي مستوى أول')) { stg.coptic1++; hasCountedSub = true; }
+        if (p.competitions.includes('قبطي مستوى ثاني')) { stg.coptic2++; hasCountedSub = true; }
+        
+        if (hasCountedSub) {
+           stg.subscribers++;
+           churchData.totalSubscribers++;
+        }
+      }
+    });
+
+    return Object.values(groups).sort((a: any, b: any) => a.church.localeCompare(b.church));
+  }, [participants, globalChurchFilter, userRole, churchName]);
+
+  const aggregatedChurchPrintingTotals = useMemo(() => {
+    const totals: any = { subscribers: 0, stages: {} };
+    STAGE_ORDER.forEach(stg => {
+        totals.stages[stg] = { subscribers: 0, darasi: 0, mahfouthat: 0, coptic1: 0, coptic2: 0 };
+    });
+
+    aggregatedChurchPrintingData.forEach(row => {
+      totals.subscribers += row.totalSubscribers;
+      STAGE_ORDER.forEach(stg => {
+         if (row.stages[stg]) {
+             totals.stages[stg].subscribers += row.stages[stg].subscribers;
+             totals.stages[stg].darasi += row.stages[stg].darasi;
+             totals.stages[stg].mahfouthat += row.stages[stg].mahfouthat;
+             totals.stages[stg].coptic1 += row.stages[stg].coptic1;
+             totals.stages[stg].coptic2 += row.stages[stg].coptic2;
+         }
+      });
+    });
+    return totals;
+  }, [aggregatedChurchPrintingData]);
+
+  const activeStagesCols = useMemo(() => {
+    const cols: Record<string, ('darasi' | 'mahfouthat' | 'coptic1' | 'coptic2')[]> = {};
+    STAGE_ORDER.forEach(stg => {
+        const subCols: ('darasi' | 'mahfouthat' | 'coptic1' | 'coptic2')[] = [];
+        const stgTotal = aggregatedChurchPrintingTotals.stages[stg];
+        
+        if (stgTotal && stgTotal.subscribers > 0) {
+            if (stgTotal.darasi > 0) subCols.push('darasi');
+            if (stgTotal.mahfouthat > 0) subCols.push('mahfouthat');
+            if (stgTotal.coptic1 > 0) subCols.push('coptic1');
+            if (stgTotal.coptic2 > 0) subCols.push('coptic2');
+            
+            if (subCols.length === 0) subCols.push('darasi');
+        }
+        
+        cols[stg] = subCols;
+    });
+    return cols;
+  }, [aggregatedChurchPrintingTotals]);
+
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -1653,6 +1744,94 @@ function AppComponent() {
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
     };
     html2pdf().set(opt).from(element).save();
+  };
+
+  const exportPrintingStatementPDF = () => {
+    const element = document.getElementById('printing-statement-table');
+    if (!element) return;
+    const opt = {
+      margin: 5,
+      filename: `بيان_طباعة_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString()}.pdf`,
+      image: { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true },
+      jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
+    };
+    html2pdf().set(opt).from(element).save();
+  };
+
+  const exportPrintingStatementExcel = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = await import('file-saver');
+      const workbook = new ExcelJS.Workbook();
+      
+      STAGE_ORDER.forEach(stg => {
+         const stgTotal = aggregatedChurchPrintingTotals.stages[stg];
+         if (!stgTotal || stgTotal.subscribers === 0) return; // Skip empty stages entirely if desired, or we can keep it. The prompt says 13 sheets, so we might want to keep it. But wait, if a stage is totally empty, no need to print a blank sheet. "up to 13 stages". Let's retain all 13 as requested or if it has any data to be clean.
+         
+         const sheet = workbook.addWorksheet(stg.substring(0, 31)); // Excel tab name max 31 chars
+         sheet.views = [{ rightToLeft: true }];
+         
+         sheet.columns = [
+          { header: 'الكنيسة', key: 'church', width: 25 },
+          { header: 'إجمالي المشتركين', key: 'subscribers', width: 20 },
+          { header: 'دراسي', key: 'darasi', width: 15 },
+          { header: 'محفوظات', key: 'mahfouthat', width: 15 },
+          { header: 'قبطي 1', key: 'coptic1', width: 15 },
+          { header: 'قبطي 2', key: 'coptic2', width: 15 },
+         ];
+
+         // Add Header Style
+         sheet.getRow(1).font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+         sheet.getRow(1).alignment = { horizontal: 'center', vertical: 'middle' };
+         sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D3B66' } }; // Coptic Blue
+
+         aggregatedChurchPrintingData.forEach(churchRow => {
+            const stgObj = churchRow.stages[stg];
+            // Only add churches that have participants in this stage OR add all? "Exactly 52 rows for 52 churches".
+            sheet.addRow({
+               church: churchRow.church,
+               subscribers: stgObj?.subscribers || 0,
+               darasi: stgObj?.darasi || 0,
+               mahfouthat: stgObj?.mahfouthat || 0,
+               coptic1: stgObj?.coptic1 || 0,
+               coptic2: stgObj?.coptic2 || 0,
+            });
+         });
+
+         // Add Totals Row
+         const totalsRow = sheet.addRow({
+           church: 'الإجمالي العام',
+           subscribers: stgTotal.subscribers,
+           darasi: stgTotal.darasi,
+           mahfouthat: stgTotal.mahfouthat,
+           coptic1: stgTotal.coptic1,
+           coptic2: stgTotal.coptic2,
+         });
+
+         totalsRow.font = { bold: true, size: 12 };
+         totalsRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } }; // slate-100
+         
+         // Center all cells
+         sheet.eachRow((row) => {
+           row.eachCell((cell) => {
+             cell.alignment = { horizontal: 'center', vertical: 'middle' };
+           });
+         });
+      });
+
+      if (workbook.worksheets.length === 0) {
+          alert('لا توجد بيانات متاحة للتصدير');
+          return;
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const fileName = `بيان_طباعة_${churchName || 'المهرجان'}_${new Date().toLocaleDateString()}.xlsx`;
+      saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileName);
+    } catch (error) {
+      console.error('Error exporting statement to excel', error);
+      alert('حدث خطأ أثناء تصدير الملف');
+    }
   };
 
   const exportOrdersToExcelDetailed = (ordersList: Order[]) => {
@@ -4836,7 +5015,7 @@ function AppComponent() {
             )}
 
             {adminActiveTab === 'calculator' && (
-              <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
+              <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200 font-arabic">
                 <h4 className="text-xl font-black text-slate-800 flex items-center gap-2 mb-8">
                   <Calculator className="text-primary" /> إدارة حاسبة الكتب
                 </h4>
@@ -4847,7 +5026,7 @@ function AppComponent() {
                     <select 
                       value={newCalculatorSetting.stage}
                       onChange={(e) => setNewCalculatorSetting({...newCalculatorSetting, stage: e.target.value})}
-                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold"
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
                     >
                       <option value="">-- اختر المرحلة --</option>
                       {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
@@ -4858,7 +5037,7 @@ function AppComponent() {
                     <select 
                       value={newCalculatorSetting.material}
                       onChange={(e) => setNewCalculatorSetting({...newCalculatorSetting, material: e.target.value})}
-                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold"
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
                     >
                       <option value="">-- اختر المادة --</option>
                       {['دراسي', 'محفوظات', 'قبطي', 'أنشطة', 'تطبيقات'].map(m => <option key={m} value={m}>{m}</option>)}
@@ -4871,19 +5050,19 @@ function AppComponent() {
                       value={newCalculatorSetting.price}
                       onChange={(e) => setNewCalculatorSetting({...newCalculatorSetting, price: Number(e.target.value)})}
                       placeholder="0"
-                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold"
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold tabular-nums font-arabic"
                     />
                   </div>
                 </div>
                 <button 
                   onClick={handleSaveCalculatorSetting}
                   disabled={isSubmittingCalculator}
-                  className="w-full py-4 bg-primary text-white rounded-2xl font-black hover:bg-opacity-90 transition-all mb-8"
+                  className="w-full py-4 bg-primary text-white rounded-2xl font-black hover:bg-opacity-90 transition-all mb-8 font-arabic"
                 >
                   {isSubmittingCalculator ? 'جاري الحفظ...' : 'حفظ الإعداد'}
                 </button>
 
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden font-arabic">
                   <div className="p-6 border-b border-slate-100 bg-slate-50/50">
                     <h3 className="font-bold text-lg text-slate-800">الكتب المضافة</h3>
                   </div>
@@ -4891,9 +5070,9 @@ function AppComponent() {
                     <table className="w-full text-right border-collapse">
                       <thead>
                         <tr className="bg-slate-50 text-slate-900 text-[11px] uppercase font-black border-b border-slate-100">
-                          <th className="px-6 py-4">المرحلة</th>
-                          <th className="px-6 py-4">المادة</th>
-                          <th className="px-6 py-4">السعر</th>
+                          <th className="px-6 py-4 border-l border-slate-100">المرحلة</th>
+                          <th className="px-6 py-4 border-l border-slate-100">المادة</th>
+                          <th className="px-6 py-4 border-l border-slate-100">السعر</th>
                           <th className="px-6 py-4 text-center">إجراءات</th>
                         </tr>
                       </thead>
@@ -4915,9 +5094,9 @@ function AppComponent() {
                             .sort((a, b) => sortStages(a.stage, b.stage))
                             .map((setting) => (
                             <tr key={setting.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4 font-bold text-slate-800">{setting.stage}</td>
-                              <td className="px-6 py-4 font-bold text-slate-600">{setting.material}</td>
-                              <td className="px-6 py-4 font-black text-primary">{setting.price} ج.م</td>
+                              <td className="px-6 py-4 font-bold text-slate-800 border-l border-slate-100">{setting.stage}</td>
+                              <td className="px-6 py-4 font-bold text-slate-600 border-l border-slate-100">{setting.material}</td>
+                              <td className="px-6 py-4 font-black text-primary border-l border-slate-100 tabular-nums">{setting.price} ج.م</td>
                               <td className="px-6 py-4 text-center">
                                 <div className="flex justify-center gap-2">
                                   <button 
@@ -5240,6 +5419,197 @@ function AppComponent() {
 
             {adminActiveTab === 'dashboard' && (
               <div className="space-y-16 mt-16">
+                
+                {/* Advanced Data Aggregation for Printing Statement */}
+                <section>
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                    <div>
+                      <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                        <FileText className="text-primary" /> بيان طباعة الامتحانات 
+                      </h4>
+                      <p className="text-xs text-slate-500 font-bold mt-1">حصر أعداد النسخ المطلوب طباعتها لكل مسابقة (يتم حساب النسخ تفصيلياً للمشترك)</p>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center gap-2">
+                      <button 
+                        onClick={exportPrintingStatementExcel}
+                        className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-emerald-100 transition-colors shadow-sm"
+                      >
+                        <Download size={14} /> تحميل بيان الطباعة (Excel)
+                      </button>
+                      <button 
+                        onClick={exportPrintingStatementPDF}
+                        className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-red-100 transition-colors shadow-sm"
+                      >
+                        <FileText size={14} /> بيان الطباعة (PDF)
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="overflow-x-auto bg-white rounded-2xl border border-slate-200">
+                    <table className="w-full text-right border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 font-black text-slate-500 uppercase border-b border-slate-200">
+                          <th rowSpan={2} className="p-3 border-l border-slate-200 align-middle">الكنيسة</th>
+                          <th rowSpan={2} className="p-3 border-l border-slate-200 text-center align-middle">المشتركين</th>
+                          {STAGE_ORDER.map(stg => {
+                            const subCols = activeStagesCols[stg];
+                            if (subCols.length === 0) return null;
+                            return (
+                              <th key={stg} colSpan={subCols.length} className="p-2 border-l border-b border-slate-200 text-center text-[10px] bg-slate-100/50">
+                                {stg}
+                              </th>
+                            );
+                          })}
+                        </tr>
+                        <tr className="bg-slate-50 font-black text-slate-500 border-b border-slate-200">
+                          {STAGE_ORDER.map(stg => {
+                            const subCols = activeStagesCols[stg];
+                            return subCols.map(col => (
+                              <th key={`${stg}-${col}`} className="p-2 border-l border-slate-200 text-center text-[9px]">
+                                {col === 'darasi' ? 'دراسي' : col === 'mahfouthat' ? 'مح' : col === 'coptic1' ? 'ق1' : 'ق2'}
+                              </th>
+                            ));
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {aggregatedChurchPrintingData.map((row, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-3 font-bold text-slate-800 border-l border-slate-100 whitespace-nowrap">{row.church}</td>
+                            <td className="p-3 font-black text-slate-800 text-center border-l border-slate-100 bg-slate-50/50">{row.totalSubscribers}</td>
+                            
+                            {STAGE_ORDER.map(stg => {
+                              const subCols = activeStagesCols[stg];
+                              const stgData = row.stages[stg];
+                              return subCols.map(col => (
+                                <td key={`${stg}-${col}`} className={`p-2 font-bold text-center border-l border-slate-100 ${stgData && stgData[col] > 0 ? 'text-slate-700' : 'text-slate-300'}`}>
+                                  {stgData ? stgData[col] : 0}
+                                </td>
+                              ));
+                            })}
+                          </tr>
+                        ))}
+                        {aggregatedChurchPrintingData.length === 0 && (
+                          <tr>
+                            <td colSpan={50} className="p-8 text-center text-slate-400 font-bold">
+                              لا توجد بيانات متاحة
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100 border-t-2 border-slate-300">
+                          <td className="p-3 font-black text-slate-800 border-l border-slate-200">الإجمالي العام</td>
+                          <td className="p-3 font-black text-slate-900 text-center border-l border-slate-200 bg-slate-200/50">{aggregatedChurchPrintingTotals.subscribers}</td>
+                          
+                          {STAGE_ORDER.map(stg => {
+                            const subCols = activeStagesCols[stg];
+                            const stgData = aggregatedChurchPrintingTotals.stages[stg];
+                            return subCols.map(col => (
+                              <td key={`${stg}-${col}`} className="p-2 font-black text-slate-800 text-center border-l border-slate-200">
+                                {stgData ? stgData[col] : 0}
+                              </td>
+                            ));
+                          })}
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </section>
+
+                {/* Print-only Printing Statement Template */}
+                <div className="hidden">
+                  <div id="printing-statement-table" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl">
+                    <style>{`
+                      @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
+                      .font-arabic { font-family: 'Tajawal', sans-serif !important; }
+                      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                      th { background-color: #f1f5f9; font-weight: 900; }
+                      td, th { padding: 12px 8px !important; line-height: 1.8 !important; border: 1px solid #e2e8f0; text-align: center; }
+                      .text-right-col { text-align: right !important; }
+                      .text-primary { color: #0F172A; }
+                      .summary-row { background-color: #f1f5f9; font-weight: 900; }
+                    `}</style>
+                    <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-8">
+                      <div className="flex items-center gap-4">
+                        <img src={getValidLogoUrl(siteSettings?.logoUrl, logo)} alt="Logo" className="w-12 h-12 object-contain" crossOrigin="anonymous" />
+                        <div>
+                          <h1 className="text-xl font-black text-primary">بيان طباعة مسابقات الأفراد</h1>
+                          <p className="text-xs font-bold text-slate-500 mt-1">
+                            {userRole === 'admin' && globalChurchFilter === 'الكل' ? 'مهرجان الكرازة المرقسية - كل الكنائس' : `مهرجان الكرازة المرقسية - ${churchName}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-left bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <p className="text-[9px] font-black text-slate-400 uppercase mb-1">تاريخ الإصدار</p>
+                        <p className="text-xs font-bold text-slate-800">{new Date().toLocaleDateString('ar-EG')}</p>
+                      </div>
+                    </div>
+
+                    <table style={{ fontSize: '10px' }}>
+                      <thead>
+                        <tr>
+                          <th rowSpan={2} className="text-right-col" style={{ verticalAlign: 'middle' }}>الكنيسة</th>
+                          <th rowSpan={2} style={{ verticalAlign: 'middle' }}>المشتركين</th>
+                          {STAGE_ORDER.map(stg => {
+                            const subCols = activeStagesCols[stg];
+                            if (subCols.length === 0) return null;
+                            return (
+                              <th key={stg} colSpan={subCols.length} style={{ borderBottom: '1px solid #cbd5e1', fontSize: '9px', backgroundColor: '#f8fafc' }}>
+                                {stg}
+                              </th>
+                            );
+                          })}
+                        </tr>
+                        <tr>
+                          {STAGE_ORDER.map(stg => {
+                            const subCols = activeStagesCols[stg];
+                            return subCols.map(col => (
+                              <th key={`${stg}-${col}`} style={{ fontSize: '8px' }}>
+                                {col === 'darasi' ? 'در' : col === 'mahfouthat' ? 'مح' : col === 'coptic1' ? 'ق1' : 'ق2'}
+                              </th>
+                            ));
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aggregatedChurchPrintingData.map((row, idx) => (
+                          <tr key={idx}>
+                            <td className="text-right-col font-bold" style={{ whiteSpace: 'nowrap' }}>{row.church}</td>
+                            <td className="font-black bg-slate-50">{row.totalSubscribers}</td>
+                            
+                            {STAGE_ORDER.map(stg => {
+                              const subCols = activeStagesCols[stg];
+                              const stgData = row.stages[stg];
+                              return subCols.map(col => (
+                                <td key={`${stg}-${col}`} style={{ color: stgData && stgData[col] > 0 ? '#334155' : '#cbd5e1' }}>
+                                  {stgData ? stgData[col] : 0}
+                                </td>
+                              ));
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="summary-row">
+                          <td className="text-right-col">الإجمالي العام</td>
+                          <td className="font-black bg-slate-200">{aggregatedChurchPrintingTotals.subscribers}</td>
+                          
+                          {STAGE_ORDER.map(stg => {
+                            const subCols = activeStagesCols[stg];
+                            const stgData = aggregatedChurchPrintingTotals.stages[stg];
+                            return subCols.map(col => (
+                              <td key={`${stg}-${col}`} className="font-black">
+                                {stgData ? stgData[col] : 0}
+                              </td>
+                            ));
+                          })}
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
                 <section>
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
@@ -5877,7 +6247,7 @@ function AppComponent() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="space-y-8"
+            className="space-y-8 font-arabic"
           >
             <BackButton />
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
@@ -5903,7 +6273,7 @@ function AppComponent() {
                     type="text" 
                     value={churchName}
                     readOnly={true}
-                    className="w-full px-5 py-4 bg-slate-100/50 border border-slate-200 rounded-lg text-sm outline-none text-slate-500 cursor-not-allowed transition-all shadow-none"
+                    className="w-full px-5 py-4 bg-slate-100/50 border border-slate-200 rounded-lg text-sm outline-none text-slate-500 cursor-not-allowed transition-all shadow-none font-arabic"
                   />
                 </div>
               </div>
@@ -5971,18 +6341,18 @@ function AppComponent() {
                               const items = groupedSettings[stage][material];
                               if (!items || items.length === 0) return null;
                               return (
-                                <div key={material} className="flex items-center justify-between border-b border-slate-50 pb-3 last:border-0 last:pb-0">
-                                  <span className="text-sm font-bold text-slate-600 w-20">{material}</span>
+                                <div key={material} className="flex items-center justify-between border-b border-slate-50 pb-3 last:border-0 last:pb-0 gap-4">
+                                  <span className="text-sm font-bold text-slate-600 w-24 shrink-0">{material}</span>
                                   <div className="flex flex-col gap-2 flex-1 items-end">
                                     {items.map((setting: any) => (
-                                      <div key={setting.id} className="flex items-center gap-3">
-                                        <span className="text-xs text-slate-400 font-bold w-12 text-left">{setting.price} ج.م</span>
+                                      <div key={setting.id} className="flex items-center justify-end gap-3 w-full">
+                                        <span className="text-xs text-slate-400 font-bold whitespace-nowrap">{setting.price} ج.م</span>
                                         <input 
                                           type="number" 
                                           min="0"
                                           value={quantities[setting.id] || ''}
                                           onChange={(e) => handleQuantityChange(setting.id, e.target.value)}
-                                          className="w-20 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-center font-black text-sm outline-none focus:bg-white focus:border-primary transition-all"
+                                          className="w-16 px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-center font-black text-sm outline-none focus:bg-white focus:border-primary transition-all shrink-0 font-arabic tabular-nums"
                                           placeholder="0"
                                         />
                                       </div>
@@ -6009,11 +6379,16 @@ function AppComponent() {
               <div ref={invoiceRef} className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl">
                 <style>{`
                   @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
-                  .font-arabic { font-family: 'Tajawal', sans-serif !important; }
+                  .font-arabic { 
+                    font-family: 'Tajawal', sans-serif !important; 
+                    -webkit-font-smoothing: antialiased;
+                    -moz-osx-font-smoothing: grayscale;
+                  }
                   table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
                   th { background-color: #f1f5f9; font-weight: 900; }
                   td, th { padding: 16px 12px !important; line-height: 2.2 !important; border-bottom: 1px solid #e2e8f0; text-align: right; }
                   .text-primary { color: #0F172A; }
+                  .tabular-nums { font-variant-numeric: tabular-nums; }
                 `}</style>
                 <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-10">
                   <div className="flex items-center gap-4">
@@ -6025,7 +6400,7 @@ function AppComponent() {
                   </div>
                   <div className="text-left">
                     <p className="font-bold text-lg">{churchName || '________________'}</p>
-                    <p className="text-xs text-slate-400 mt-2">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
+                    <p className="text-xs text-slate-400 mt-2 tabular-nums">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
                   </div>
                 </div>
 
@@ -6043,17 +6418,17 @@ function AppComponent() {
                     {calculations.rows.filter(r => r.subtotal > 0).map((item, idx) => (
                       <tr key={idx} className="border-b border-slate-100">
                         <td className="p-3 font-bold">{item.stage}</td>
-                        <td className="p-3">{item.material}</td>
-                        <td className="p-3 text-center">{item.quantity}</td>
-                        <td className="p-3 text-center">{item.price} ج.م</td>
-                        <td className="p-3 text-left font-mono">{item.subtotal} ج.م</td>
+                        <td className="p-3 font-bold">{item.material}</td>
+                        <td className="p-3 text-center font-black tabular-nums">{item.quantity}</td>
+                        <td className="p-3 text-center font-bold tabular-nums">{item.price} ج.م</td>
+                        <td className="p-3 text-left font-black tabular-nums">{item.subtotal} ج.م</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-900 text-white">
-                      <td colSpan={4} className="p-4 text-left font-bold">المجموع الكلي</td>
-                      <td className="p-4 text-left font-mono text-xl font-black">{calculations.grandTotal} ج.م</td>
+                      <td colSpan={4} className="p-4 text-left font-black">المجموع الكلي</td>
+                      <td className="p-4 text-left text-xl font-black tabular-nums text-coptic-gold">{calculations.grandTotal} ج.م</td>
                     </tr>
                   </tfoot>
                 </table>
