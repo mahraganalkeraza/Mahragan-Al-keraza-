@@ -7775,8 +7775,7 @@ function AppComponent() {
         {isExportingPDF && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[200] flex flex-col items-center justify-center p-4">
             <Loader2 className="animate-spin text-white w-16 h-16 mb-4" />
-            <h2 className="text-2xl font-black text-white mb-2 text-center drop-shadow-md">جاري إعداد وتجهيز التقرير التحليلي الشامل</h2>
-            <p className="text-slate-300 font-bold text-center">برجاء الانتظار قليلاً... قد تستغرق هذه العملية بعض الوقت حسب حجم البيانات.</p>
+            <h2 className="text-2xl font-black text-white mb-2 text-center drop-shadow-md">جاري إعداد وتجهيز التقرير التحليلي الشامل، برجاء الانتظار...</h2>
           </motion.div>
         )}
       </AnimatePresence>
