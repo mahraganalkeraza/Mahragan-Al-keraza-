@@ -443,6 +443,124 @@ const getValidLogoUrl = (url: string | null | undefined, fallback: string | null
   return finalUrl;
 };
 
+function oklchToRgb(l: number, c: number, h: number): [number, number, number] {
+  const hRad = (h * Math.PI) / 180;
+  const a = c * Math.cos(hRad);
+  const b = c * Math.sin(hRad);
+
+  const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = l - 0.1055613458 * a - 0.0638541747 * b;
+  const s_ = l - 0.0894841775 * a - 1.2914855378 * b;
+
+  const l3 = l_ * l_ * l_;
+  const m3 = m_ * m_ * m_;
+  const s3 = s_ * s_ * s_;
+
+  const r = +4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+  const g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+  const b_ = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.7076147010 * s3;
+
+  const toSrgb = (x: number) => {
+    return x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+  };
+
+  const R = Math.round(Math.max(0, Math.min(1, toSrgb(r))) * 255);
+  const G = Math.round(Math.max(0, Math.min(1, toSrgb(g))) * 255);
+  const B = Math.round(Math.max(0, Math.min(1, toSrgb(b_))) * 255);
+
+  return [R, G, B];
+}
+
+function replaceOklchInString(str: string): string {
+  if (!str || typeof str !== 'string') return str;
+  if (!str.includes('oklch')) return str;
+
+  return str.replace(/oklch\s*\(([^)]+)\)/gi, (match, contents) => {
+    const parts = contents.trim().split(/[\s,/]+/);
+    if (parts.length < 3) return match;
+
+    const lStr = parts[0];
+    const cStr = parts[1];
+    const hStr = parts[2];
+    const aStr = parts[3];
+
+    const l = lStr.endsWith('%') ? parseFloat(lStr) / 100 : parseFloat(lStr);
+    const c = parseFloat(cStr);
+    let hDeg = parseFloat(hStr);
+
+    if (hStr.endsWith('deg')) {
+      hDeg = parseFloat(hStr);
+    } else if (hStr.endsWith('rad')) {
+      hDeg = (parseFloat(hStr) * 180) / Math.PI;
+    } else if (hStr.endsWith('turn')) {
+      hDeg = parseFloat(hStr) * 360;
+    } else if (hStr.endsWith('grad')) {
+      hDeg = (parseFloat(hStr) * 360) / 400;
+    }
+
+    let a = 1;
+    if (aStr !== undefined) {
+      a = aStr.endsWith('%') ? parseFloat(aStr) / 100 : parseFloat(aStr);
+    }
+
+    if (isNaN(l) || isNaN(c) || isNaN(hDeg)) return match;
+
+    const [r, g, b] = oklchToRgb(l, c, hDeg);
+    if (a === 1) {
+      return `rgb(${r}, ${g}, ${b})`;
+    } else {
+      return `rgba(${r}, ${g}, ${b}, ${a})`;
+    }
+  });
+}
+
+const withStylesCleaned = async <T,>(fn: () => Promise<T>): Promise<T> => {
+  const originalGetComputedStyle = window.getComputedStyle;
+
+  window.getComputedStyle = function (elt: Element, pseudoElt?: string | null): CSSStyleDeclaration {
+    const style = originalGetComputedStyle.call(window, elt, pseudoElt);
+
+    return new Proxy(style, {
+      get(target, prop) {
+        if (prop === 'cssText') {
+          const originalCssText = target.cssText;
+          if (typeof originalCssText === 'string' && originalCssText.includes('oklch')) {
+            return replaceOklchInString(originalCssText);
+          }
+          return originalCssText;
+        }
+
+        const val = Reflect.get(target, prop);
+
+        if (typeof val === 'string' && val.includes('oklch')) {
+          return replaceOklchInString(val);
+        }
+
+        if (typeof val === 'function') {
+          if (prop === 'getPropertyValue') {
+            return function (propertyName: string) {
+              const originalVal = target.getPropertyValue(propertyName);
+              if (typeof originalVal === 'string' && originalVal.includes('oklch')) {
+                return replaceOklchInString(originalVal);
+              }
+              return originalVal;
+            };
+          }
+          return val.bind(target);
+        }
+
+        return val;
+      }
+    });
+  };
+
+  try {
+    return await fn();
+  } finally {
+    window.getComputedStyle = originalGetComputedStyle;
+  }
+};
+
 const normalizeArabic = (str: string) => {
   if (!str) return '';
   return str.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').trim();
@@ -481,6 +599,7 @@ function AppComponent() {
   const [notification, setNotification] = useState<string | null>(null);
   const [activeYear, setActiveYear] = useState(CURRENT_YEAR);
   const [appLogo, setAppLogo] = useState<string | null>(() => localStorage.getItem('appLogoCache'));
+  const [logoBase64, setLogoBase64] = useState<string>('');
   const [isUpdatingYear, setIsUpdatingYear] = useState(false);
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
@@ -490,6 +609,48 @@ function AppComponent() {
     ageMappings: [],
     rules: { nameLength: true, genderMatch: false, mandatoryRows: true }
   });
+
+  useEffect(() => {
+    const loadLogoAsBase64 = async () => {
+      const targetUrl = getValidLogoUrl(userProfile?.logoUrl, appLogo);
+      if (!targetUrl) return;
+      if (targetUrl.startsWith('data:image')) {
+        setLogoBase64(targetUrl);
+        return;
+      }
+      try {
+        const response = await fetch(targetUrl, { mode: 'cors' });
+        const blob = await response.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === 'string') {
+            setLogoBase64(reader.result);
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (err) {
+        console.warn("CORS fetch failed for logo, trying fallback to loaded image canvas", err);
+        try {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              setLogoBase64(canvas.toDataURL('image/jpeg'));
+            }
+          };
+          img.src = targetUrl;
+        } catch (subErr) {
+          console.error("Subsequent canvas draw failed", subErr);
+        }
+      }
+    };
+    loadLogoAsBase64();
+  }, [userProfile?.logoUrl, appLogo]);
 
   useEffect(() => {
     const unsubAppConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
@@ -972,89 +1133,58 @@ function AppComponent() {
     // Give some time for the loading overlay to render fully
     await new Promise(resolve => setTimeout(resolve, 300));
     
-    let originalParentStyle = '';
-    let originalStyle = '';
-    const parent = element.parentElement;
-    
     try {
-      if (parent) {
-        originalParentStyle = parent.getAttribute('style') || '';
-        parent.style.position = 'absolute';
-        parent.style.left = '-9999px';
-        parent.style.top = '0';
-        parent.style.display = 'block';
-        parent.style.visibility = 'visible';
-        parent.style.width = '210mm';
-      }
-      originalStyle = element.getAttribute('style') || '';
-      element.style.display = 'block';
-      element.style.width = '210mm';
-      element.style.visibility = 'visible';
-      
-      const pages = Array.from(element.querySelectorAll('.pdf-page')) as HTMLElement[];
-      if (pages.length === 0) {
-        throw new Error('لم يتم العثور على صفحات التقرير (.pdf-page)');
-      }
-      
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = 210;
-      const pdfHeight = 297;
-      
-      for (let i = 0; i < pages.length; i++) {
-        const page = pages[i];
-        setPdfExportProgress(`جاري معالجة وتجهيز الصفحة ${i + 1} من ${pages.length}...`);
-        
-        // Wait specifically to clear JS event loop and let Recharts finish rendering in the DOM if needed
-        await new Promise(resolve => setTimeout(resolve, 400));
-        
-        // Capture the target page in HD quality (300 DPI)
-        const canvas = await html2canvas(page, {
-          scale: 3.0, // Scale 3.0 ensures high-definition text and chart rendering, perfectly clear even at high zoom
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          backgroundColor: '#ffffff'
-        });
-        
-        const imgData = canvas.toDataURL('image/jpeg', 0.9);
-        
-        if (i > 0) {
-          pdf.addPage();
+      await withStylesCleaned(async () => {
+        const pages = Array.from(element.querySelectorAll('.pdf-page')) as HTMLElement[];
+        if (pages.length === 0) {
+          throw new Error('لم يتم العثور على صفحات التقرير (.pdf-page)');
         }
         
-        // Append current page drawing to PDF document
-        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const pdfWidth = 210;
+        const pdfHeight = 297;
         
-        // Free canvas resource immediately
-        canvas.width = 0;
-        canvas.height = 0;
-      }
-      
-      setPdfExportProgress('جاري الانتهاء وحفظ ملف التقرير...');
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      const fileName = `التقرير_التحليلي_الشامل_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString('ar-EG')}.pdf`;
-      pdf.save(fileName);
-      setNotification('تم تصدير التقرير التحليلي الشامل بنجاح!');
+        for (let i = 0; i < pages.length; i++) {
+          const page = pages[i];
+          setPdfExportProgress(`جاري معالجة وتجهيز الصفحة ${i + 1} من ${pages.length}...`);
+          
+          // Wait specifically to let event loop settle
+          await new Promise(resolve => setTimeout(resolve, 150));
+          
+          // Capture the target page in HD quality (300 DPI)
+          const canvas = await html2canvas(page, {
+            scale: 3.0, // Scale 3.0 ensures high-definition text and chart rendering, perfectly clear even at high zoom
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+          
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          
+          if (i > 0) {
+            pdf.addPage();
+          }
+          
+          // Append current page drawing to PDF document
+          pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+          
+          // Free canvas resource immediately
+          canvas.width = 0;
+          canvas.height = 0;
+        }
+        
+        setPdfExportProgress('جاري الانتهاء وحفظ ملف التقرير...');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        const fileName = `التقرير_التحليلي_الشامل_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString('ar-EG')}.pdf`;
+        pdf.save(fileName);
+        setNotification('تم تصدير التقرير التحليلي الشامل بنجاح!');
+      });
     } catch (error) {
       console.error('Error generating PDF:', error);
       setNotification('حدث خطأ أثناء تصدير التقرير بصيغة PDF. يرجى مراجعة الإدارة.');
     } finally {
-      // Revert styles back to hidden state
-      if (parent) {
-        if (originalParentStyle) {
-          parent.setAttribute('style', originalParentStyle);
-        } else {
-          parent.removeAttribute('style');
-        }
-      }
-      if (originalStyle) {
-        element.setAttribute('style', originalStyle);
-      } else {
-        element.removeAttribute('style');
-      }
-      element.style.display = 'none';
-      
       setIsExportingPDF(false);
       setPdfExportProgress('');
     }
@@ -1806,7 +1936,10 @@ function AppComponent() {
 
         if (name && stage) {
            const rowGender = row['النوع'] || row['الجنس'] || row['Gender'] || (name.startsWith('مريم') || name.endsWith('ة') ? 'أنثى' : 'ذكر');
+           const customId = generateShortId();
            parsedParticipants.push({
+             id: customId,
+             serial: customId,
              name,
              stage,
              gender: rowGender,
@@ -1835,12 +1968,15 @@ function AppComponent() {
         for (const chunk of chunks) {
           const batch = writeBatch(db);
           chunk.forEach(p => {
-             const customId = generateShortId();
-             const newRef = doc(db, 'participants', customId);
-             batch.set(newRef, { ...p, serial: customId });
+             const newRef = doc(db, 'participants', p.id);
+             batch.set(newRef, p);
           });
           await batch.commit();
         }
+
+        // Instant state sync
+        setParticipants(prev => [...prev, ...parsedParticipants]);
+        setTotalParticipantsCount(prev => prev + parsedParticipants.length);
 
         setBatchUploadStatus("تم رفع البيانات بنجاح!");
         setTimeout(() => setBatchUploadStatus(null), 3000);
@@ -1871,69 +2007,79 @@ function AppComponent() {
     }
   };
 
-  const exportParticipantsPDF = () => {
+  const exportParticipantsPDF = async () => {
     const element = document.getElementById('participants-table-admin');
     if (!element) return;
     const opt = {
       margin: 10,
       filename: `participants_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      html2canvas: { scale: 3, useCORS: true, allowTaint: true },
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
     };
-    html2pdf().set(opt).from(element).save();
+    await withStylesCleaned(async () => {
+      await html2pdf().set(opt).from(element).save();
+    });
   };
 
-  const exportOrdersPDF = () => {
+  const exportOrdersPDF = async () => {
     const element = document.getElementById('orders-table-admin');
     if (!element) return;
     const opt = {
       margin: 10,
       filename: `orders_summary_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      html2canvas: { scale: 3, useCORS: true, allowTaint: true },
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
     };
-    html2pdf().set(opt).from(element).save();
+    await withStylesCleaned(async () => {
+      await html2pdf().set(opt).from(element).save();
+    });
   };
 
-  const exportOrdersDetailedPDF = () => {
+  const exportOrdersDetailedPDF = async () => {
     const element = document.getElementById('detailed-orders-report-admin');
     if (!element) return;
     const opt = {
       margin: 10,
       filename: `detailed_orders_report_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      html2canvas: { scale: 3, useCORS: true, allowTaint: true },
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
     };
-    html2pdf().set(opt).from(element).save();
+    await withStylesCleaned(async () => {
+      await html2pdf().set(opt).from(element).save();
+    });
   };
 
-  const exportInquiriesPDF = () => {
+  const exportInquiriesPDF = async () => {
     const element = document.getElementById('inquiries-list-admin');
     if (!element) return;
     const opt = {
       margin: 10,
       filename: `inquiries_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      html2canvas: { scale: 3, useCORS: true, allowTaint: true },
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
     };
-    html2pdf().set(opt).from(element).save();
+    await withStylesCleaned(async () => {
+      await html2pdf().set(opt).from(element).save();
+    });
   };
 
-  const exportPrintingStatementPDF = () => {
+  const exportPrintingStatementPDF = async () => {
     const element = document.getElementById('printing-statement-table');
     if (!element) return;
     const opt = {
       margin: 5,
       filename: `بيان_طباعة_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      html2canvas: { scale: 3, useCORS: true, allowTaint: true },
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
     };
-    html2pdf().set(opt).from(element).save();
+    await withStylesCleaned(async () => {
+      await html2pdf().set(opt).from(element).save();
+    });
   };
 
   const exportPrintingStatementExcel = async () => {
@@ -2178,21 +2324,26 @@ function AppComponent() {
     try {
       if (toast) setNotification('جاري تحديث البيانات...');
       
-      // Fetch only the first page for initial load of active tab
-      if (adminActiveTab === 'participants' || activeSection === 'church_dashboard') {
-        await fetchParticipantsPage(true, true);
+      const promises = [
+        fetchParticipantsPage(true, true),
+        fetchOrdersPage(true, true),
+        fetchTeamsPage(true, true),
+        fetchResultsPage(true, true)
+      ];
+      
+      if (userRole === 'admin') {
+        promises.push(fetchOnlineResultsPage(true, true));
       }
       
-      // For other collections, we should also implement pagination, but let's start with participants
-      // Briefly fetch others if needed or wait for tab active
+      await Promise.all(promises);
       
       if (toast) {
-        setNotification('تم تحديث الصفحة الحالية.');
+        setNotification('تم تحديث جميع مؤشرات البيانات بنجاح.');
         setTimeout(() => setNotification(null), 3000);
       }
     } catch (err: any) {
-      console.error(err);
-      if (toast) setNotification('حدث خطأ أثناء جلب البيانات.');
+      console.error('Error in fetchLargeData:', err);
+      if (toast) setNotification('حدث خطأ أثناء جلب مؤشرات البيانات.');
     }
   };
 
@@ -2710,11 +2861,28 @@ function AppComponent() {
     try {
       if (editingTeam) {
         await withExponentialBackoff(() => updateDoc(doc(db, 'activityTeams', editingTeam.id), team));
+        
+        // Instant state sync
+        const updatedTeam: ActivityTeam = {
+          ...editingTeam,
+          ...team
+        } as any;
+        setActivityTeams(prev => prev.map(t => t.id === editingTeam.id ? updatedTeam : t));
+
         setEditingTeam(null);
         alert('تم تحديث النشاط بنجاح.');
       } else {
-        await withExponentialBackoff(() => addDoc(collection(db, 'activityTeams'), { ...team, year: activeYear }));
+        const docRef = await withExponentialBackoff(() => addDoc(collection(db, 'activityTeams'), { ...team, year: activeYear }));
         
+        // Instant state sync for adding team
+        const createdTeam: ActivityTeam = {
+          id: docRef.id,
+          ...team,
+          year: activeYear
+        } as any;
+        setActivityTeams(prev => [createdTeam, ...prev]);
+        setTotalTeamsCount(prev => prev + 1);
+
         // Auto-register new student in the main participants collection if they don't exist
         if (!isGroupActivity && activeActivityPath === 'new' && newTeam.members?.[0]?.name) {
           const memberName = newTeam.members[0].name.trim();
@@ -2732,6 +2900,15 @@ function AppComponent() {
              };
              const customId = generateShortId();
              await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...newParticipant, serial: customId }));
+             
+             // Instant state sync for newly added student from activity
+             const newStudent: Participant = {
+               id: customId,
+               serial: customId,
+               ...newParticipant
+             } as any as Participant;
+             setParticipants(prev => [...prev, newStudent]);
+             setTotalParticipantsCount(prev => prev + 1);
           }
         }
 
@@ -2784,6 +2961,8 @@ function AppComponent() {
     confirmAction('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الفريق؟', async () => {
       try {
         await deleteDoc(doc(db, 'activityTeams', id));
+        setActivityTeams(prev => prev.filter(t => t.id !== id));
+        setTotalTeamsCount(prev => Math.max(0, prev - 1));
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `activityTeams/${id}`);
       }
@@ -2813,6 +2992,10 @@ function AppComponent() {
       batch.delete(doc(db, 'results', id));
       batch.delete(doc(db, 'online_results', id));
       await batch.commit();
+
+      // Instant local state sync
+      setParticipants(prev => prev.filter(p => p.id !== id));
+      setTotalParticipantsCount(prev => Math.max(0, prev - 1));
 
       setShowDeleteModal(false);
       setParticipantToDelete(null);
@@ -2896,13 +3079,22 @@ function AppComponent() {
 
     try {
       if (editingParticipant) {
-        await withExponentialBackoff(() => updateDoc(doc(db, 'participants', editingParticipant.id), {
+        const updatedFields = {
           name: newParticipant.name,
           stage: newParticipant.stage,
           gender: newParticipant.gender,
           competitions: newParticipant.competitions.filter(c => c !== ''),
           timestamp: new Date().toLocaleString('ar-EG')
-        }));
+        };
+        await withExponentialBackoff(() => updateDoc(doc(db, 'participants', editingParticipant.id), updatedFields));
+        
+        // Instant state sync for edit
+        const updatedParticipant: Participant = {
+          ...editingParticipant,
+          ...updatedFields
+        };
+        setParticipants(prev => prev.map(p => p.id === editingParticipant.id ? updatedParticipant : p));
+
         setEditingParticipant(null);
         alert('تم تحديث بيانات المشترك بنجاح.');
       } else {
@@ -2913,10 +3105,21 @@ function AppComponent() {
           gender: newParticipant.gender,
           competitions: newParticipant.competitions.filter(c => c !== ''),
           timestamp: new Date().toLocaleString('ar-EG'),
-          year: activeYear
+          year: activeYear,
+          country: 'مصر'
         };
         const customId = generateShortId();
         await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...participantData, serial: customId }));
+        
+        // Instant state sync for adding a new student
+        const newStudent: Participant = {
+          id: customId,
+          serial: customId,
+          ...participantData
+        } as any as Participant;
+        setParticipants(prev => [...prev, newStudent]);
+        setTotalParticipantsCount(prev => prev + 1);
+
         alert('تم تسجيل المشترك بنجاح.');
       }
       
@@ -3053,7 +3256,16 @@ function AppComponent() {
         }))
       };
 
-      await withExponentialBackoff(() => addDoc(collection(db, 'orders'), { ...newOrder, year: activeYear }));
+      const docRef = await withExponentialBackoff(() => addDoc(collection(db, 'orders'), { ...newOrder, year: activeYear }));
+      
+      // Instant state sync
+      const finalOrder: Order = {
+        id: docRef.id,
+        ...newOrder,
+        year: activeYear
+      } as any;
+      setOrders(prev => [finalOrder, ...prev]);
+      setTotalOrdersCount(prev => prev + 1);
       
       setSubmitStatus('success');
       alert('تم إرسال طلب الكتب للجنة بنجاح!');
@@ -3067,7 +3279,7 @@ function AppComponent() {
     }
   };
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     if (!invoiceRef.current) return;
     
     const element = invoiceRef.current;
@@ -3075,11 +3287,13 @@ function AppComponent() {
       margin: 10,
       filename: `طلب_كتب_مهرجان_${churchName || 'المهرجان'}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
+      html2canvas: { scale: 3, useCORS: true, allowTaint: true },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     } as any;
 
-    html2pdf().set(opt).from(element).save();
+    await withStylesCleaned(async () => {
+      await html2pdf().set(opt).from(element).save();
+    });
   };
 
   const NavItem = ({ id, icon: Icon, label }: { id: string, icon: any, label: string }) => (
@@ -5961,23 +6175,30 @@ function AppComponent() {
                   </div>
                 </section>
 
-                {/* Print-only Printing Statement Template */}
-                <div className="hidden">
+                {/* Print-only Templates - Rendered off-screen to ensure charts are pre-measured, fonts are fully loaded, and assets are fully calculated */}
+                <div style={{ position: 'absolute', left: '-9999px', top: '0', zIndex: -100, pointerEvents: 'none', width: '210mm' }}>
                   <div id="comprehensive-analytics-report" className="bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '210mm' }}>
                     <style>{`
-                      @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
-                      #comprehensive-analytics-report { font-family: 'Tajawal', sans-serif !important; }
+                      @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+                      #comprehensive-analytics-report {
+                        font-family: 'Tajawal', sans-serif !important;
+                        -webkit-font-smoothing: antialiased;
+                        -moz-osx-font-smoothing: grayscale;
+                      }
+                      #comprehensive-analytics-report * {
+                        font-family: 'Tajawal', sans-serif !important;
+                      }
                       .page-break { page-break-after: always; break-after: page; }
-                      .pdf-page { padding: 40px; min-height: 297mm; position: relative; box-sizing: border-box; }
-                      .pdf-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10px; }
-                      .pdf-th { background-color: #f1f5f9; font-weight: 900; padding: 10px; border: 1px solid #e2e8f0; text-align: center; }
-                      .pdf-td { padding: 8px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold; }
+                      .pdf-page { padding: 45px; min-height: 297mm; position: relative; box-sizing: border-box; background: white; }
+                      .pdf-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 11px; font-family: 'Tajawal', sans-serif !important; }
+                      .pdf-th { background-color: #f8fafc; font-weight: 900; padding: 12px 10px; border: 1px solid #cbd5e1; text-align: center; font-family: 'Tajawal', sans-serif !important; font-size: 11px; color: #020617; }
+                      .pdf-td { padding: 10px 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: 800; font-family: 'Tajawal', sans-serif !important; font-size: 11px; color: #1e293b; }
                     `}</style>
                     
                     {/* PAGE 1: Cover Page */}
                     <div className="pdf-page flex flex-col items-center justify-center page-break text-center">
                       <div className="absolute top-10 left-10 text-xs font-bold text-slate-400">الصفحة 1 من 4</div>
-                      <img src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-48 h-48 rounded-full object-contain shadow-sm border border-slate-100 bg-white mb-12" />
+                      <img src={logoBase64 || getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-48 h-48 rounded-full object-contain shadow-sm border border-slate-100 bg-white mb-12" crossOrigin="anonymous" />
                       <h1 className="text-4xl font-black text-coptic-blue mb-6 leading-tight">التقرير التحليلي الشامل لمؤشرات<br/>وإحصائيات مهرجان الكرازة {activeYear}</h1>
                       <h2 className="text-2xl font-bold text-slate-600 mb-16">{churchName || 'إيبارشية / منطقة 18'}</h2>
                       
@@ -6001,7 +6222,7 @@ function AppComponent() {
                     <div className="pdf-page page-break bg-white">
                       <div className="flex justify-between items-center border-b-2 border-slate-100 pb-4 mb-8">
                         <div className="flex items-center gap-4">
-                          <img src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-12 h-12 rounded-full object-contain" />
+                          <img src={logoBase64 || getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-12 h-12 rounded-full object-contain" crossOrigin="anonymous" />
                           <h2 className="text-xl font-black text-slate-800">تحليل النمو والكثافة</h2>
                         </div>
                         <div className="text-xs font-bold text-slate-400">الصفحة 2 من 4</div>
@@ -6034,7 +6255,7 @@ function AppComponent() {
                     <div className="pdf-page page-break bg-white">
                       <div className="flex justify-between items-center border-b-2 border-slate-100 pb-4 mb-8">
                         <div className="flex items-center gap-4">
-                          <img src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-12 h-12 rounded-full object-contain" />
+                          <img src={logoBase64 || getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-12 h-12 rounded-full object-contain" crossOrigin="anonymous" />
                           <h2 className="text-xl font-black text-slate-800">الفجوات اللوجستية ومؤشر الاستبقاء</h2>
                         </div>
                         <div className="text-xs font-bold text-slate-400">الصفحة 3 من 4</div>
@@ -6084,7 +6305,7 @@ function AppComponent() {
                     <div className="pdf-page bg-white" style={{ minHeight: 'unset' }}>
                       <div className="flex justify-between items-center border-b-2 border-slate-100 pb-4 mb-8">
                         <div className="flex items-center gap-4">
-                          <img src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-12 h-12 rounded-full object-contain" />
+                          <img src={logoBase64 || getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-12 h-12 rounded-full object-contain" crossOrigin="anonymous" />
                           <h2 className="text-xl font-black text-slate-800">مصفوفة بيانات المشتركين التفصيلية</h2>
                         </div>
                         <div className="text-xs font-bold text-slate-400">الصفحة 4 من 4</div>
@@ -6145,20 +6366,21 @@ function AppComponent() {
                     </div>
                   </div>
                   
-                  <div id="printing-statement-table" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl">
+                  <div id="printing-statement-table" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '297mm' }}>
                     <style>{`
-                      @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
-                      .font-arabic { font-family: 'Tajawal', sans-serif !important; }
+                      @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+                      #printing-statement-table, .font-arabic { font-family: 'Tajawal', sans-serif !important; }
+                      #printing-statement-table * { font-family: 'Tajawal', sans-serif !important; }
                       table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-                      th { background-color: #f1f5f9; font-weight: 900; }
-                      td, th { padding: 12px 8px !important; line-height: 1.8 !important; border: 1px solid #e2e8f0; text-align: center; }
+                      th { background-color: #f8fafc; font-weight: 900; color: #0f172a; border: 1px solid #cbd5e1; }
+                      td, th { padding: 12px 8px !important; line-height: 1.8 !important; border: 1px solid #cbd5e1; text-align: center; font-weight: 800; }
                       .text-right-col { text-align: right !important; }
                       .text-primary { color: #0F172A; }
                       .summary-row { background-color: #f1f5f9; font-weight: 900; }
                     `}</style>
                     <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-8">
                       <div className="flex items-center gap-4">
-                        <img src={getValidLogoUrl((siteSettings as any)?.logoUrl, logo)} alt="Logo" className="w-12 h-12 object-contain" crossOrigin="anonymous" />
+                        <img src={logoBase64 || getValidLogoUrl((siteSettings as any)?.logoUrl, logo)} alt="Logo" className="w-12 h-12 object-contain" crossOrigin="anonymous" />
                         <div>
                           <h1 className="text-xl font-black text-primary">بيان طباعة مسابقات الأفراد</h1>
                           <p className="text-xs font-bold text-slate-500 mt-1">
@@ -7000,28 +7222,31 @@ function AppComponent() {
               </div>
             </div>
 
-            {/* Print-only Invoice Template */}
-            <div className="hidden">
-              <div ref={invoiceRef} className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl">
+            {/* Print-only Invoice Template - Rendered off-screen with ultra-precision for high-DPI font calculations and sizing */}
+            <div style={{ position: 'absolute', left: '-9999px', top: '0', zIndex: -100, pointerEvents: 'none', width: '210mm' }}>
+              <div ref={invoiceRef} className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '210mm' }}>
                 <style>{`
-                  @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
+                  @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
                   .font-arabic { 
                     font-family: 'Tajawal', sans-serif !important; 
                     -webkit-font-smoothing: antialiased;
                     -moz-osx-font-smoothing: grayscale;
                   }
+                  .font-arabic * {
+                    font-family: 'Tajawal', sans-serif !important;
+                  }
                   table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-                  th { background-color: #f1f5f9; font-weight: 900; }
-                  td, th { padding: 16px 12px !important; line-height: 2.2 !important; border-bottom: 1px solid #e2e8f0; text-align: right; }
+                  th { background-color: #f8fafc; font-weight: 900; color: #020617; border-bottom: 2px solid #cbd5e1; }
+                  td, th { padding: 16px 12px !important; line-height: 2.2 !important; border-bottom: 1px solid #cbd5e1; text-align: right; font-weight: 800; }
                   .text-primary { color: #0F172A; }
                   .tabular-nums { font-variant-numeric: tabular-nums; }
                 `}</style>
                 <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-10">
                   <div className="flex items-center gap-4">
-                    {userRole === 'church' && <img src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-16 h-16 rounded-full object-contain shadow-sm border border-slate-100 bg-white" />}
+                    {userRole === 'church' && <img src={logoBase64 || getValidLogoUrl(userProfile?.logoUrl, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-16 h-16 rounded-full object-contain shadow-sm border border-slate-100 bg-white" crossOrigin="anonymous" />}
                     <div>
                       <h1 className="text-4xl font-black text-coptic-blue mb-2">مهرجان الكرازة {activeYear}</h1>
-                      <p className="text-coptic-gold font-black uppercase tracking-widest text-sm">فاتورة طلب كتب رسمية - نسخة إدارية</p>
+                      <p className="text-coptic-gold font-bold uppercase tracking-widest text-sm">فاتورة طلب كتب رسمية - نسخة إدارية</p>
                     </div>
                   </div>
                   <div className="text-left">
@@ -7076,20 +7301,21 @@ function AppComponent() {
               </div>
 
               {/* Detailed Orders Report for Admin PDF */}
-              <div id="detailed-orders-report-admin" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl">
+              <div id="detailed-orders-report-admin" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '210mm' }}>
                 <style>{`
-                  @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
-                  .font-arabic { font-family: 'Tajawal', sans-serif !important; }
+                  @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+                  #detailed-orders-report-admin, .font-arabic { font-family: 'Tajawal', sans-serif !important; }
+                  #detailed-orders-report-admin * { font-family: 'Tajawal', sans-serif !important; }
                   table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-                  th { background-color: #f1f5f9; font-weight: 900; }
-                  td, th { padding: 16px 12px !important; line-height: 2.2 !important; border-bottom: 1px solid #e2e8f0; text-align: right; }
+                  th { background-color: #f8fafc; font-weight: 900; color: #020617; border-bottom: 2px solid #cbd5e1; }
+                  td, th { padding: 16px 12px !important; line-height: 2.2 !important; border-bottom: 1px solid #cbd5e1; text-align: right; font-weight: 800; }
                 `}</style>
                 <div className="text-center border-b-4 border-coptic-blue pb-8 mb-10 relative">
                   <div className="absolute top-0 right-0 flex items-center justify-center">
-                    <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-16 h-16 object-contain" />
+                    <img src={logoBase64 || getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-16 h-16 object-contain" crossOrigin="anonymous" />
                   </div>
                   <h1 className="text-4xl font-black text-coptic-blue mb-2">تقرير طلبات الكتب التفصيلي المجمع</h1>
-                  <p className="text-coptic-gold font-black uppercase tracking-widest text-sm">مهرجان الكرازة {activeYear}</p>
+                  <p className="text-coptic-gold font-bold uppercase tracking-widest text-sm">مهرجان الكرازة {activeYear}</p>
                   <p className="text-xs text-slate-400 mt-4">تاريخ استخراج التقرير: {new Date().toLocaleString('ar-EG')}</p>
                 </div>
 
