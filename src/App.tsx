@@ -72,6 +72,7 @@ import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore - html2pdf.js doesn't have great types but works
 import html2pdf from 'html2pdf.js';
 import * as XLSX from 'xlsx';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from 'recharts';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, EffectFade, Navigation, Pagination, EffectCreative } from 'swiper/modules';
 
@@ -439,6 +440,11 @@ const getValidLogoUrl = (url: string | null | undefined, fallback: string | null
   return finalUrl;
 };
 
+const normalizeArabic = (str: string) => {
+  if (!str) return '';
+  return str.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').trim();
+};
+
 function AppComponent() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -799,9 +805,8 @@ function AppComponent() {
       if (globalChurchFilter !== 'الكل' && p.churchName !== globalChurchFilter && userRole === 'admin') return;
       if (userRole === 'church' && p.churchName !== churchName) return;
 
-      const church = p.churchName;
-      const stage = p.stage;
-      if (!church || !stage) return;
+      const church = p.churchName || 'غير محدد';
+      const stage = p.stage || 'غير محدد';
 
       if (!groups[church]) {
         groups[church] = {
@@ -827,15 +832,21 @@ function AppComponent() {
       const stg = churchData.stages[stage];
       if (p.competitions && p.competitions.length > 0) {
         let hasCountedSub = false;
-        if (p.competitions.includes('دراسي')) { stg.darasi++; hasCountedSub = true; }
-        if (p.competitions.includes('محفوظات')) { stg.mahfouthat++; hasCountedSub = true; }
-        if (p.competitions.includes('قبطي مستوى أول')) { stg.coptic1++; hasCountedSub = true; }
-        if (p.competitions.includes('قبطي مستوى ثاني')) { stg.coptic2++; hasCountedSub = true; }
+        const normalizedComps = p.competitions.map((c: string) => normalizeArabic(c));
+        
+        if (normalizedComps.some((c: string) => c.includes(normalizeArabic('دراسي')))) { stg.darasi++; hasCountedSub = true; }
+        if (normalizedComps.some((c: string) => c.includes(normalizeArabic('محفوظات')))) { stg.mahfouthat++; hasCountedSub = true; }
+        if (normalizedComps.some((c: string) => c.includes(normalizeArabic('قبطي مستوى أول')) || c.includes(normalizeArabic('مستوى اول')))) { stg.coptic1++; hasCountedSub = true; }
+        if (normalizedComps.some((c: string) => c.includes(normalizeArabic('قبطي مستوى ثاني')) || c.includes(normalizeArabic('مستوى ثاني')))) { stg.coptic2++; hasCountedSub = true; }
         
         if (hasCountedSub) {
            stg.subscribers++;
            churchData.totalSubscribers++;
         }
+      } else {
+        // Missing fields defaulting: If they have no specific competitions listed, count them as one generic subscriber if they are active
+        stg.subscribers++;
+        churchData.totalSubscribers++;
       }
     });
 
@@ -882,6 +893,79 @@ function AppComponent() {
     });
     return cols;
   }, [aggregatedChurchPrintingTotals]);
+
+  // Analytical Metrics for the Advanced Dashboard
+  const analyticsData = useMemo(() => {
+    const demographicsData = STAGE_ORDER.map(stg => ({
+      name: stg,
+      "المشتركين": participants.filter(p => p.stage === stg).length
+    })).filter(d => d["المشتركين"] > 0);
+
+    const booksPerStage: Record<string, number> = {};
+    (orders || []).forEach(order => {
+        (order.details || []).forEach((item: any) => {
+            const stg = item.stage;
+            if (stg) {
+               booksPerStage[stg] = (booksPerStage[stg] || 0) + (item.quantity || 0);
+            }
+        });
+    });
+
+    const retentionData = STAGE_ORDER.map(stg => {
+        let students = 0;
+        let books = booksPerStage[stg] || 0;
+        
+        if (userRole === 'admin') {
+            students = participants.filter(p => p.stage === stg && (globalChurchFilter === 'الكل' || p.churchName === globalChurchFilter)).length;
+        } else {
+            students = participants.filter(p => p.stage === stg && p.churchName === churchName).length;
+        }
+        
+        return {
+           name: stg,
+           "استمارات مضافة": students,
+           "كتب تم طلبها": books,
+        };
+    }).filter(d => d["استمارات مضافة"] > 0 || d["كتب تم طلبها"] > 0);
+
+    let compsCount: any = { "مادة واحدة": 0, "مادتين": 0, "٣ مواد أو أكثر": 0 };
+    participants.forEach(p => {
+       if (globalChurchFilter !== 'الكل' && p.churchName !== globalChurchFilter && userRole === 'admin') return;
+       if (userRole === 'church' && p.churchName !== churchName) return;
+       const len = p.competitions?.length || 0;
+       if (len === 1) compsCount["مادة واحدة"]++;
+       else if (len === 2) compsCount["مادتين"]++;
+       else if (len >= 3) compsCount["٣ مواد أو أكثر"]++;
+    });
+    const engagementData = [
+       { name: 'مادة واحدة', value: compsCount["مادة واحدة"] },
+       { name: 'مادتين', value: compsCount["مادتين"] },
+       { name: '٣ مواد أو أكثر', value: compsCount["٣ مواد أو أكثر"] }
+    ].filter(d => d.value > 0);
+
+    return { demographicsData, retentionData, engagementData };
+  }, [participants, orders, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
+
+  const COLORS = ['#0f172a', '#d97706', '#e11d48', '#059669', '#2563eb', '#8b5cf6'];
+
+  const exportComprehensivePDF = () => {
+    const element = document.getElementById('comprehensive-analytics-report');
+    if (!element) return;
+    
+    element.style.display = 'block';
+    
+    const opt = {
+      margin: [10, 10, 10, 10],
+      filename: `التقرير_التحليلي_الشامل_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString('ar-EG')}.pdf`,
+      image: { type: 'jpeg', quality: 1 },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    
+    html2pdf().set(opt).from(element).save().then(() => {
+        element.style.display = 'none';
+    });
+  };
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -1875,7 +1959,7 @@ function AppComponent() {
     setIsParticipantsLoading(true);
     try {
       let baseQueryQ = collection(db, 'participants');
-      const constraints: any[] = [where('year', '==', activeYear), orderBy('name'), limit(20)];
+      const constraints: any[] = [where('year', '==', activeYear), orderBy('name')];
       const countConstraints: any[] = [where('year', '==', activeYear)];
       
       // Admin global filters
@@ -1965,7 +2049,7 @@ function AppComponent() {
         getCountFromServer(baseQuery).then(snap => setTotalOrdersCount(snap.data().count)).catch();
       }
 
-      const constraints: any[] = [orderBy('timestamp', 'desc'), limit(20)];
+      const constraints: any[] = [orderBy('timestamp', 'desc')];
       
       if (!isFirst && isNext && lastOrderDoc) {
         constraints.push(startAfter(lastOrderDoc));
@@ -1990,7 +2074,7 @@ function AppComponent() {
     setIsOnlineResultsLoading(true);
     try {
       const baseQuery = collection(db, 'online_results');
-      const constraints: any[] = [orderBy('submissionTimestamp', 'desc'), limit(20)];
+      const constraints: any[] = [orderBy('submissionTimestamp', 'desc')];
       
       if (!isFirst && isNext && lastOnlineResultDoc) {
         constraints.push(startAfter(lastOnlineResultDoc));
@@ -2014,7 +2098,7 @@ function AppComponent() {
     setIsResultsLoading(true);
     try {
       let baseQueryQ = collection(db, 'results');
-      const constraints: any[] = [where('year', '==', activeYear), orderBy('submissionTimestamp', 'desc'), limit(20)];
+      const constraints: any[] = [where('year', '==', activeYear), orderBy('submissionTimestamp', 'desc')];
       const countConstraints: any[] = [where('year', '==', activeYear)];
       
       if (userRole === 'admin') {
@@ -2070,7 +2154,7 @@ function AppComponent() {
     setIsTeamsLoading(true);
     try {
       let baseQueryQ = collection(db, 'activity_teams');
-      const constraints: any[] = [where('year', '==', activeYear), orderBy('teamName'), limit(20)];
+      const constraints: any[] = [where('year', '==', activeYear), orderBy('teamName')];
       const countConstraints: any[] = [where('year', '==', activeYear)];
       
       if (userRole === 'admin') {
@@ -5418,8 +5502,72 @@ function AppComponent() {
             )}
 
             {adminActiveTab === 'dashboard' && (
-              <div className="space-y-16 mt-16">
+              <div className="space-y-16 mt-16 font-arabic">
                 
+                <div className="flex justify-between items-center bg-slate-50 p-6 rounded-3xl border border-slate-200">
+                  <div>
+                    <h2 className="text-xl font-black text-slate-800">اللوحة التحليلية الشاملة</h2>
+                    <p className="text-sm text-slate-500 font-bold mt-1">مؤشرات إحصائية ورسوم بيانية لبيانات التسجيل والحاسبة</p>
+                  </div>
+                  <button onClick={exportComprehensivePDF} className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black shadow-lg hover:bg-slate-800 transition-all text-sm flex items-center gap-2">
+                    <Download size={16} /> تصدير التقرير التحليلي (PDF)
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                    <h3 className="font-black text-slate-800 mb-6 text-lg">منحنى توزيع المشتركين (كثافة المراحل)</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={analyticsData.demographicsData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fill: '#64748b', fontSize: 12, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                          <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontFamily: 'Tajawal' }} />
+                          <Bar dataKey="المشتركين" fill="#0f172a" radius={[6, 6, 0, 0]}>
+                            {analyticsData.demographicsData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                    <h3 className="font-black text-slate-800 mb-6 text-lg">معدل الانخراط والمشاركة (عدد المسابقات)</h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={analyticsData.engagementData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                            {analyticsData.engagementData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontFamily: 'Tajawal' }} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-2">
+                    <h3 className="font-black text-slate-800 mb-6 text-lg">مؤشر الاستبقاء (الكتب المطلوبة vs الاستمارات المسجلة)</h3>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={analyticsData.retentionData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fill: '#64748b', fontSize: 12, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                          <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontFamily: 'Tajawal' }} />
+                          <Legend verticalAlign="top" height={36} wrapperStyle={{ fontFamily: 'Tajawal', fontWeight: 'bold' }} />
+                          <Area type="monotone" dataKey="كتب تم طلبها" stroke="#94a3b8" fill="#e2e8f0" />
+                          <Area type="monotone" dataKey="استمارات مضافة" stroke="#0f172a" fill="#0f172a" fillOpacity={0.2} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Advanced Data Aggregation for Printing Statement */}
                 <section>
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -5519,6 +5667,194 @@ function AppComponent() {
 
                 {/* Print-only Printing Statement Template */}
                 <div className="hidden">
+                  <div id="comprehensive-analytics-report" className="bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '210mm' }}>
+                    <style>{`
+                      @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
+                      #comprehensive-analytics-report { font-family: 'Tajawal', sans-serif !important; }
+                      .page-break { page-break-after: always; break-after: page; }
+                      .pdf-page { padding: 40px; min-height: 297mm; position: relative; box-sizing: border-box; }
+                      .pdf-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10px; }
+                      .pdf-th { background-color: #f1f5f9; font-weight: 900; padding: 10px; border: 1px solid #e2e8f0; text-align: center; }
+                      .pdf-td { padding: 8px; border: 1px solid #e2e8f0; text-align: center; font-weight: bold; }
+                    `}</style>
+                    
+                    {/* PAGE 1: Cover Page */}
+                    <div className="pdf-page flex flex-col items-center justify-center page-break text-center">
+                      <div className="absolute top-10 left-10 text-xs font-bold text-slate-400">الصفحة 1 من 4</div>
+                      <img src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-48 h-48 rounded-full object-contain shadow-sm border border-slate-100 bg-white mb-12" />
+                      <h1 className="text-4xl font-black text-coptic-blue mb-6 leading-tight">التقرير التحليلي الشامل لمؤشرات<br/>وإحصائيات مهرجان الكرازة {activeYear}</h1>
+                      <h2 className="text-2xl font-bold text-slate-600 mb-16">{churchName || 'إيبارشية / منطقة 18'}</h2>
+                      
+                      <div className="grid grid-cols-2 gap-8 w-full max-w-2xl text-right">
+                        <div className="border border-slate-200 rounded-3xl p-8 bg-slate-50">
+                          <p className="text-slate-500 font-bold mb-2">إجمالي المشتركين الفعليين</p>
+                          <p className="text-5xl font-black text-slate-900">{totalParticipantsCount}</p>
+                        </div>
+                        <div className="border border-slate-200 rounded-3xl p-8 bg-slate-50">
+                          <p className="text-slate-500 font-bold mb-2">إجمالي طلبات الكتب</p>
+                          <p className="text-5xl font-black text-slate-900">{totalOrdersCount}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-24 text-slate-400 font-bold">
+                        تاريخ الإصدار: {new Date().toLocaleDateString('ar-EG')} - حصري للإدارة والقيادات
+                      </div>
+                    </div>
+
+                    {/* PAGE 2: Demographics & Growth */}
+                    <div className="pdf-page page-break bg-white">
+                      <div className="flex justify-between items-center border-b-2 border-slate-100 pb-4 mb-8">
+                        <div className="flex items-center gap-4">
+                          <img src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-12 h-12 rounded-full object-contain" />
+                          <h2 className="text-xl font-black text-slate-800">تحليل النمو والكثافة</h2>
+                        </div>
+                        <div className="text-xs font-bold text-slate-400">الصفحة 2 من 4</div>
+                      </div>
+                      
+                      <h3 className="font-black text-slate-700 text-lg mb-6 border-r-4 border-coptic-blue pr-4">منحنى توزيع المشتركين (كثافة المراحل)</h3>
+                      <div className="h-[400px] mb-12">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={analyticsData.demographicsData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                            <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                            <Bar dataKey="المشتركين" fill="#0f172a" label={{ position: 'top', fontSize: 10, fontWeight: 'bold' }}>
+                              {analyticsData.demographicsData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      <h3 className="font-black text-slate-700 text-lg mb-6 border-r-4 border-coptic-gold pr-4">معدل الانخراط والمشاركة</h3>
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={analyticsData.engagementData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={80} outerRadius={120} label={({name, percent}) => `${name} (${(percent * 100).toFixed(0)}%)`}>
+                              {analyticsData.engagementData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                            </Pie>
+                            <Legend wrapperStyle={{ fontSize: 12, fontWeight: 'bold', fontFamily: 'Tajawal' }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+
+                    {/* PAGE 3: Logistical Gaps */}
+                    <div className="pdf-page page-break bg-white">
+                      <div className="flex justify-between items-center border-b-2 border-slate-100 pb-4 mb-8">
+                        <div className="flex items-center gap-4">
+                          <img src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-12 h-12 rounded-full object-contain" />
+                          <h2 className="text-xl font-black text-slate-800">الفجوات اللوجستية ومؤشر الاستبقاء</h2>
+                        </div>
+                        <div className="text-xs font-bold text-slate-400">الصفحة 3 من 4</div>
+                      </div>
+
+                      <h3 className="font-black text-slate-700 text-lg mb-6 border-r-4 border-emerald-600 pr-4">مقارنة: الكتب المطلوبة vs الاستمارات المسجلة</h3>
+                      <div className="h-[350px] mb-8">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={analyticsData.retentionData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                            <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                            <Legend verticalAlign="top" wrapperStyle={{ fontFamily: 'Tajawal', fontWeight: 'bold', paddingBottom: '20px' }} />
+                            <Area type="monotone" dataKey="كتب تم طلبها" stroke="#94a3b8" fill="#e2e8f0" />
+                            <Area type="monotone" dataKey="استمارات مضافة" stroke="#0f172a" fill="#0f172a" fillOpacity={0.2} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+
+                      <h3 className="font-black text-slate-700 text-lg mb-4 border-r-4 border-red-600 pr-4">جدول الفجوات التحليلي (التسرب اللوجستي)</h3>
+                      <table className="pdf-table">
+                        <thead>
+                          <tr>
+                            <th className="pdf-th">المرحلة</th>
+                            <th className="pdf-th">الكتب المطلوبة</th>
+                            <th className="pdf-th">الاستمارات المسجلة</th>
+                            <th className="pdf-th">مؤشر العجز / الفائض</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {analyticsData.retentionData.map((row, i) => {
+                            const gap = row["كتب تم طلبها"] - row["استمارات مضافة"];
+                            return (
+                              <tr key={i}>
+                                <td className="pdf-td bg-slate-50">{row.name}</td>
+                                <td className="pdf-td">{row["كتب تم طلبها"]}</td>
+                                <td className="pdf-td">{row["استمارات مضافة"]}</td>
+                                <td className="pdf-td" style={{ color: gap > 0 ? '#059669' : gap < 0 ? '#dc2626' : '#475569' }} dir="ltr">
+                                  {gap > 0 ? `+${gap} (فائض كتب)` : gap < 0 ? `${gap} (عجز كتب)` : 'متطابق'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* PAGE 4: Detailed Metrics Matrix */}
+                    <div className="pdf-page bg-white" style={{ minHeight: 'unset' }}>
+                      <div className="flex justify-between items-center border-b-2 border-slate-100 pb-4 mb-8">
+                        <div className="flex items-center gap-4">
+                          <img src={getValidLogoUrl(userProfile?.logoUrl, appLogo)} alt="Logo" className="w-12 h-12 rounded-full object-contain" />
+                          <h2 className="text-xl font-black text-slate-800">مصفوفة بيانات المشتركين التفصيلية</h2>
+                        </div>
+                        <div className="text-xs font-bold text-slate-400">الصفحة 4 من 4</div>
+                      </div>
+
+                      <table className="pdf-table">
+                        <thead>
+                          <tr>
+                            <th rowSpan={2} className="pdf-th">الكنيسة</th>
+                            <th rowSpan={2} className="pdf-th">الإجمالي</th>
+                            {STAGE_ORDER.map(stg => (
+                              <th key={stg} colSpan={activeStagesCols[stg]?.length || 1} className="pdf-th">{stg}</th>
+                            ))}
+                          </tr>
+                          <tr>
+                            {STAGE_ORDER.map(stg => (
+                              activeStagesCols[stg]?.map(col => (
+                                <th key={`${stg}-${col}`} className="pdf-th">
+                                  {col === 'darasi' ? 'در' : col === 'mahfouthat' ? 'مح' : col === 'coptic1' ? 'ق1' : 'ق2'}
+                                </th>
+                              )) || <th key={stg} className="pdf-th">-</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {aggregatedChurchPrintingData.map((row, idx) => (
+                            <tr key={idx}>
+                              <td className="pdf-td bg-slate-50" style={{ whiteSpace: 'nowrap' }}>{row.church}</td>
+                              <td className="pdf-td">{row.totalSubscribers}</td>
+                              {STAGE_ORDER.map(stg => {
+                                const subCols = activeStagesCols[stg] || [];
+                                const stgData = row.stages[stg];
+                                return subCols.length > 0 ? subCols.map(col => (
+                                  <td key={`${stg}-${col}`} className="pdf-td text-slate-600">
+                                    {stgData?.[col] || 0}
+                                  </td>
+                                )) : <td key={stg} className="pdf-td">-</td>
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-slate-100">
+                            <td className="pdf-td">الإجمالي</td>
+                            <td className="pdf-td">{aggregatedChurchPrintingTotals.subscribers}</td>
+                            {STAGE_ORDER.map(stg => {
+                                const subCols = activeStagesCols[stg] || [];
+                                const stgData = aggregatedChurchPrintingTotals.stages[stg];
+                                return subCols.length > 0 ? subCols.map(col => (
+                                  <td key={`${stg}-${col}`} className="pdf-td">
+                                    {stgData?.[col] || 0}
+                                  </td>
+                                )) : <td key={stg} className="pdf-td">-</td>
+                            })}
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                  
                   <div id="printing-statement-table" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl">
                     <style>{`
                       @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap');
