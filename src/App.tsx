@@ -72,6 +72,8 @@ import OmrGenerator from './components/OmrGenerator';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore - html2pdf.js doesn't have great types but works
 import html2pdf from 'html2pdf.js';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from 'recharts';
 import { Swiper, SwiperSlide } from 'swiper/react';
@@ -482,6 +484,7 @@ function AppComponent() {
   const [isUpdatingYear, setIsUpdatingYear] = useState(false);
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
   const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [pdfExportProgress, setPdfExportProgress] = useState<string>('');
   const [validationSettings, setValidationSettings] = useState<any>({
     templates: [],
     ageMappings: [],
@@ -959,32 +962,102 @@ function AppComponent() {
 
   const COLORS = ['#0f172a', '#d97706', '#e11d48', '#059669', '#2563eb', '#8b5cf6'];
 
-  const exportComprehensivePDF = () => {
+  const exportComprehensivePDF = async () => {
     const element = document.getElementById('comprehensive-analytics-report');
     if (!element) return;
     
     setIsExportingPDF(true);
+    setPdfExportProgress('جاري تحضير هيكل البيانات والمخططات...');
     
-    setTimeout(async () => {
-      try {
-        element.style.display = 'block';
-        
-        const opt = {
-          margin: [10, 10, 10, 10] as [number, number, number, number],
-          filename: `التقرير_التحليلي_الشامل_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString('ar-EG')}.pdf`,
-          image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: { scale: 1.5, useCORS: true, letterRendering: true, backgroundColor: '#ffffff', logging: false },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-        };
-        
-        await html2pdf().set(opt).from(element).save();
-      } catch (error) {
-        console.error('Error generating PDF:', error);
-      } finally {
-        element.style.display = 'none';
-        setIsExportingPDF(false);
+    // Give some time for the loading overlay to render fully
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    let originalParentStyle = '';
+    let originalStyle = '';
+    const parent = element.parentElement;
+    
+    try {
+      if (parent) {
+        originalParentStyle = parent.getAttribute('style') || '';
+        parent.style.position = 'absolute';
+        parent.style.left = '-9999px';
+        parent.style.top = '0';
+        parent.style.display = 'block';
+        parent.style.visibility = 'visible';
+        parent.style.width = '210mm';
       }
-    }, 300);
+      originalStyle = element.getAttribute('style') || '';
+      element.style.display = 'block';
+      element.style.width = '210mm';
+      element.style.visibility = 'visible';
+      
+      const pages = Array.from(element.querySelectorAll('.pdf-page')) as HTMLElement[];
+      if (pages.length === 0) {
+        throw new Error('لم يتم العثور على صفحات التقرير (.pdf-page)');
+      }
+      
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        setPdfExportProgress(`جاري معالجة وتجهيز الصفحة ${i + 1} من ${pages.length}...`);
+        
+        // Wait specifically to clear JS event loop and let Recharts finish rendering in the DOM if needed
+        await new Promise(resolve => setTimeout(resolve, 400));
+        
+        // Capture the target page in HD quality (300 DPI)
+        const canvas = await html2canvas(page, {
+          scale: 3.0, // Scale 3.0 ensures high-definition text and chart rendering, perfectly clear even at high zoom
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+        
+        const imgData = canvas.toDataURL('image/jpeg', 0.9);
+        
+        if (i > 0) {
+          pdf.addPage();
+        }
+        
+        // Append current page drawing to PDF document
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+        
+        // Free canvas resource immediately
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+      
+      setPdfExportProgress('جاري الانتهاء وحفظ ملف التقرير...');
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      const fileName = `التقرير_التحليلي_الشامل_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString('ar-EG')}.pdf`;
+      pdf.save(fileName);
+      setNotification('تم تصدير التقرير التحليلي الشامل بنجاح!');
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      setNotification('حدث خطأ أثناء تصدير التقرير بصيغة PDF. يرجى مراجعة الإدارة.');
+    } finally {
+      // Revert styles back to hidden state
+      if (parent) {
+        if (originalParentStyle) {
+          parent.setAttribute('style', originalParentStyle);
+        } else {
+          parent.removeAttribute('style');
+        }
+      }
+      if (originalStyle) {
+        element.setAttribute('style', originalStyle);
+      } else {
+        element.removeAttribute('style');
+      }
+      element.style.display = 'none';
+      
+      setIsExportingPDF(false);
+      setPdfExportProgress('');
+    }
   };
 
   const [confirmModal, setConfirmModal] = useState<{
@@ -5935,29 +6008,25 @@ function AppComponent() {
                       </div>
                       
                       <h3 className="font-black text-slate-700 text-lg mb-6 border-r-4 border-coptic-blue pr-4">منحنى توزيع المشتركين (كثافة المراحل)</h3>
-                      <div className="h-[400px] mb-12">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={analyticsData.demographicsData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                            <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                            <Bar dataKey="المشتركين" fill="#0f172a" label={{ position: 'top', fontSize: 10, fontWeight: 'bold' }}>
-                              {analyticsData.demographicsData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
+                      <div className="flex justify-center mb-12" style={{ height: '320px' }}>
+                        <BarChart width={680} height={320} data={analyticsData.demographicsData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                          <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                          <Bar dataKey="المشتركين" fill="#0f172a" label={{ position: 'top', fontSize: 10, fontWeight: 'bold' }}>
+                            {analyticsData.demographicsData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                          </Bar>
+                        </BarChart>
                       </div>
 
                       <h3 className="font-black text-slate-700 text-lg mb-6 border-r-4 border-coptic-gold pr-4">معدل الانخراط والمشاركة</h3>
-                      <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie data={analyticsData.engagementData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={80} outerRadius={120} label={({name, percent}) => `${name} (${(percent * 100).toFixed(0)}%)`}>
-                              {analyticsData.engagementData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                            </Pie>
-                            <Legend wrapperStyle={{ fontSize: 12, fontWeight: 'bold', fontFamily: 'Tajawal' }} />
-                          </PieChart>
-                        </ResponsiveContainer>
+                      <div className="flex justify-center" style={{ height: '260px' }}>
+                        <PieChart width={680} height={260}>
+                          <Pie data={analyticsData.engagementData} dataKey="value" nameKey="name" cx={340} cy={110} innerRadius={50} outerRadius={90} label={({name, percent}) => `${name} (${(percent * 100).toFixed(0)}%)`}>
+                            {analyticsData.engagementData.map((e, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                          </Pie>
+                          <Legend wrapperStyle={{ fontSize: 12, fontWeight: 'bold', fontFamily: 'Tajawal' }} />
+                        </PieChart>
                       </div>
                     </div>
 
@@ -5972,17 +6041,15 @@ function AppComponent() {
                       </div>
 
                       <h3 className="font-black text-slate-700 text-lg mb-6 border-r-4 border-emerald-600 pr-4">مقارنة: الكتب المطلوبة vs الاستمارات المسجلة</h3>
-                      <div className="h-[350px] mb-8">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={analyticsData.retentionData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                            <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                            <Legend verticalAlign="top" wrapperStyle={{ fontFamily: 'Tajawal', fontWeight: 'bold', paddingBottom: '20px' }} />
-                            <Area type="monotone" dataKey="كتب تم طلبها" stroke="#94a3b8" fill="#e2e8f0" />
-                            <Area type="monotone" dataKey="استمارات مضافة" stroke="#0f172a" fill="#0f172a" fillOpacity={0.2} />
-                          </AreaChart>
-                        </ResponsiveContainer>
+                      <div className="flex justify-center mb-8" style={{ height: '300px' }}>
+                        <AreaChart width={680} height={300} data={analyticsData.retentionData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                          <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                          <Legend verticalAlign="top" wrapperStyle={{ fontFamily: 'Tajawal', fontWeight: 'bold', paddingBottom: '20px' }} />
+                          <Area type="monotone" dataKey="كتب تم طلبها" stroke="#94a3b8" fill="#e2e8f0" />
+                          <Area type="monotone" dataKey="استمارات مضافة" stroke="#0f172a" fill="#0f172a" fillOpacity={0.2} />
+                        </AreaChart>
                       </div>
 
                       <h3 className="font-black text-slate-700 text-lg mb-4 border-r-4 border-red-600 pr-4">جدول الفجوات التحليلي (التسرب اللوجستي)</h3>
@@ -7989,6 +8056,11 @@ function AppComponent() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[200] flex flex-col items-center justify-center p-4">
             <Loader2 className="animate-spin text-white w-16 h-16 mb-4" />
             <h2 className="text-2xl font-black text-white mb-2 text-center drop-shadow-md">جاري إعداد وتجهيز التقرير التحليلي الشامل، برجاء الانتظار...</h2>
+            {pdfExportProgress && (
+              <p className="text-base font-bold text-coptic-gold mt-2 bg-slate-950/40 px-6 py-2 rounded-full border border-coptic-gold/20 backdrop-blur-md">
+                {pdfExportProgress}
+              </p>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
