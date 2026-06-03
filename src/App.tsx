@@ -1489,49 +1489,49 @@ function AppComponent() {
   };
 
   useEffect(() => {
-    if (userRole === 'admin') {
-      // 1. solicitar permisos de notificación al admin (Admin Permission & Initialization)
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        if (window.Notification.permission === 'default') {
-          window.Notification.requestPermission();
-        }
+    if (!isAuthReady || !isLoggedIn || userRole !== 'admin') return;
+
+    // 1. solicitar permisos de notificación al admin (Admin Permission & Initialization)
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (window.Notification.permission === 'default') {
+        window.Notification.requestPermission();
       }
-
-      const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-        setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
-
-      // 2. Lightweight real-time listener regarding subscriber increments on churches collection
-      const unsubChurchesNotifier = onSnapshot(collection(db, 'churches'), (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-          const data = change.doc.data();
-          const churchNameVal = data.name;
-          const currentSubscribers = data.subscribers || 0;
-          
-          if (churchNameVal) {
-            const previousSubscribers = previousSubscribersRef.current[churchNameVal];
-            
-            // The Trigger Rule: transition from exactly 0 to >= 1
-            if (previousSubscribers === 0 && currentSubscribers >= 1) {
-              if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
-                new window.Notification("🔔 كنيسة جديدة بدأت التسجيل!", {
-                  body: `كنيسة (${churchNameVal}) بدأت الآن في تسجيل مخدوميها في المهرجان.`,
-                  icon: "/logo.png"
-                });
-              }
-            }
-            
-            previousSubscribersRef.current[churchNameVal] = currentSubscribers;
-          }
-        });
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'churches'));
-
-      return () => {
-        unsubUsers();
-        unsubChurchesNotifier();
-      };
     }
-  }, [userRole]);
+
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
+
+    // 2. Lightweight real-time listener regarding subscriber increments on churches collection
+    const unsubChurchesNotifier = onSnapshot(collection(db, 'churches'), (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        const data = change.doc.data();
+        const churchNameVal = data.name;
+        const currentSubscribers = data.subscribers || 0;
+        
+        if (churchNameVal) {
+          const previousSubscribers = previousSubscribersRef.current[churchNameVal];
+          
+          // The Trigger Rule: transition from exactly 0 to >= 1
+          if (previousSubscribers === 0 && currentSubscribers >= 1) {
+            if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
+              new window.Notification("🔔 كنيسة جديدة بدأت التسجيل!", {
+                body: `كنيسة (${churchNameVal}) بدأت الآن في تسجيل مخدوميها في المهرجان.`,
+                icon: "/logo.png"
+              });
+            }
+          }
+          
+          previousSubscribersRef.current[churchNameVal] = currentSubscribers;
+        }
+      });
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'churches'));
+
+    return () => {
+      unsubUsers();
+      unsubChurchesNotifier();
+    };
+  }, [isAuthReady, isLoggedIn, userRole]);
 
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
