@@ -811,7 +811,8 @@ export const LiveExamGateway: React.FC = () => {
         stage: activeExam.stage,
         year: String(CURRENT_YEAR),
         [`مسابقة ${selectedCompetition}`]: totalScore,
-        submissionTimestamp: new Date().toISOString()
+        submissionTimestamp: new Date().toISOString(),
+        timestamp: new Date().toISOString()
       };
 
       batch.set(doc(db, 'results', activeStudent.id), payload, { merge: true });

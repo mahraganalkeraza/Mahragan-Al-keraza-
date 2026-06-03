@@ -61,7 +61,8 @@ import {
   Sliders,
   ChevronUp,
   ChevronDown,
-  Layers
+  Layers,
+  Printer
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
@@ -893,6 +894,55 @@ function AppComponent() {
     country: '',
     competitions: ['', '', ''] 
   });
+
+  // Background check on Firestore to warn with real-time duplicate checks in church context
+  const [participantDuplicateWarning, setParticipantDuplicateWarning] = useState<string | null>(null);
+  const [isCheckingParticipantDuplicate, setIsCheckingParticipantDuplicate] = useState(false);
+
+  useEffect(() => {
+    const trimmedName = newParticipant.name ? newParticipant.name.trim() : '';
+    if (!trimmedName || trimmedName.length < 3 || !churchName) {
+      setParticipantDuplicateWarning(null);
+      setIsCheckingParticipantDuplicate(false);
+      return;
+    }
+
+    // Skip warning if editing same participant with same unchanged name
+    if (editingParticipant && editingParticipant.name.trim() === trimmedName) {
+      setParticipantDuplicateWarning(null);
+      setIsCheckingParticipantDuplicate(false);
+      return;
+    }
+
+    const delayDebounceId = setTimeout(async () => {
+      setIsCheckingParticipantDuplicate(true);
+      try {
+        const q = query(
+          collection(db, 'participants'),
+          where('churchName', '==', churchName),
+          where('name', '==', trimmedName),
+          limit(1)
+        );
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          const matchedDoc = querySnapshot.docs[0].data();
+          const pStage = matchedDoc.stage || 'غير محددة';
+          setParticipantDuplicateWarning(
+            `تنبيه: يوجد مشترك مسجل بالفعل بنفس هذا الاسم في كنيستك للمرحلة: ${pStage}. يرجى توخي الحذر والتأكد من الاسم ثلاثياً لتجنب التكرار.`
+          );
+        } else {
+          setParticipantDuplicateWarning(null);
+        }
+      } catch (err) {
+        console.warn("Error running participant duplicate background check:", err);
+        setParticipantDuplicateWarning(null);
+      } finally {
+        setIsCheckingParticipantDuplicate(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(delayDebounceId);
+  }, [newParticipant.name, churchName, editingParticipant]);
   const [batchUploadStatus, setBatchUploadStatus] = useState<string | null>(null);
   const [batchUploadErrors, setBatchUploadErrors] = useState<{row: number, error: string}[]>([]);
   const [isUploadingBatch, setIsUploadingBatch] = useState(false);
@@ -1366,6 +1416,14 @@ function AppComponent() {
       setCarouselItems(items.sort((a, b) => (a.order || 0) - (b.order || 0)));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'carousel'));
 
+    let inquiriesQ = userRole === 'admin' 
+        ? query(collection(db, 'inquiries'), where('year', '==', activeYear), orderBy('timestamp', 'desc'))
+        : query(collection(db, 'inquiries'), where('churchName', '==', churchName), where('year', '==', activeYear), orderBy('timestamp', 'desc'));
+    
+    const unsubInquiries = onSnapshot(inquiriesQ, (snapshot) => {
+      setInquiries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Inquiry)));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'inquiries'));
+
     const unsubCalculatorSettings = onSnapshot(query(collection(db, 'calculator_settings'), where('year', '==', activeYear)), (snapshot) => {
       setCalculatorSettings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       setIsCalculatorLoading(false);
@@ -1395,6 +1453,7 @@ function AppComponent() {
     return () => {
       unsubNews();
       unsubCarousel();
+      unsubInquiries();
       unsubCalculatorSettings();
       unsubFooterSettings();
       unsubAboutSettings();
@@ -2298,7 +2357,7 @@ function AppComponent() {
       if (isFirst || (!isFirst && !isNext)) {
         getCountFromServer(query(baseQueryQ, ...constraints)).then(snap => {
           setTotalParticipantsCount(snap.data().count);
-        }).catch(console.error);
+        }).catch(err => console.error("Firestore Core Error: ", err.message));
       }
       
       const q = query(baseQueryQ, ...constraints);
@@ -2309,8 +2368,8 @@ function AppComponent() {
       
       if (isFirst) setParticipantPageCount(1);
       
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("Firestore Core Error: ", err.message);
       setNotification('خطأ في جلب بيانات المشتركين. تأكد من وجود الفهارس (Indexes) اللازمة.');
     } finally {
       setIsParticipantsLoading(false);
@@ -2356,7 +2415,7 @@ function AppComponent() {
         : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
       
       if (isFirst || (!isFirst && !isNext)) {
-        getCountFromServer(baseQuery).then(snap => setTotalOrdersCount(snap.data().count)).catch();
+        getCountFromServer(baseQuery).then(snap => setTotalOrdersCount(snap.data().count)).catch(err => console.error("Firestore Core Error: ", err.message));
       }
 
       const constraints: any[] = [orderBy('timestamp', 'desc')];
@@ -2376,7 +2435,11 @@ function AppComponent() {
       if (isFirst) setOrderPageCount(1);
       else if (isNext) setOrderPageCount(prev => prev + 1);
       
-    } catch (err) { console.error(err); } finally { setIsOrdersLoading(false); }
+    } catch (err: any) { 
+      console.error("Firestore Core Error: ", err.message); 
+    } finally { 
+      setIsOrdersLoading(false); 
+    }
   };
 
   const fetchOnlineResultsPage = async (isNext = true, isFirst = false) => {
@@ -2384,8 +2447,12 @@ function AppComponent() {
     setIsOnlineResultsLoading(true);
     try {
       const baseQuery = collection(db, 'online_results');
-      const constraints: any[] = [orderBy('submissionTimestamp', 'desc')];
+      const constraints: any[] = [where('year', '==', activeYear), orderBy('timestamp', 'desc')];
       
+      if (userRole === 'church') {
+        constraints.unshift(where('churchName', '==', churchName));
+      }
+
       if (!isFirst && isNext && lastOnlineResultDoc) {
         constraints.push(startAfter(lastOnlineResultDoc));
       }
@@ -2400,7 +2467,11 @@ function AppComponent() {
       
       if (isFirst) setOnlineResultPageCount(1);
       else if (isNext) setOnlineResultPageCount(prev => prev + 1);
-    } catch (err) { console.error(err); } finally { setIsOnlineResultsLoading(false); }
+    } catch (err: any) { 
+      console.error("Firestore Core Error: ", err.message); 
+    } finally { 
+      setIsOnlineResultsLoading(false); 
+    }
   };
 
   const fetchResultsPage = async (isNext = true, isFirst = false, search = '') => {
@@ -2408,7 +2479,7 @@ function AppComponent() {
     setIsResultsLoading(true);
     try {
       let baseQueryQ = collection(db, 'results');
-      const constraints: any[] = [where('year', '==', activeYear), orderBy('submissionTimestamp', 'desc')];
+      const constraints: any[] = [where('year', '==', activeYear), orderBy('timestamp', 'desc')];
       const countConstraints: any[] = [where('year', '==', activeYear)];
       
       if (userRole === 'admin') {
@@ -2438,7 +2509,7 @@ function AppComponent() {
       if (isFirst || (!isFirst && !isNext)) {
         getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
           setTotalResultsCount(snap.data().count);
-        }).catch();
+        }).catch(err => console.error("Firestore Core Error: ", err.message));
       }
 
       if (!isFirst && isNext && lastResultDoc) {
@@ -2456,14 +2527,18 @@ function AppComponent() {
       if (isFirst) setResultPageCount(1);
       else if (isNext) setResultPageCount(prev => prev + 1);
       
-    } catch (err) { console.error(err); } finally { setIsResultsLoading(false); }
+    } catch (err: any) { 
+      console.error("Firestore Core Error: ", err.message); 
+    } finally { 
+      setIsResultsLoading(false); 
+    }
   };
 
   const fetchTeamsPage = async (isNext = true, isFirst = false, search = '') => {
     if (!isLoggedIn) return;
     setIsTeamsLoading(true);
     try {
-      let baseQueryQ = collection(db, 'activity_teams');
+      let baseQueryQ = collection(db, 'activityTeams');
       const constraints: any[] = [where('year', '==', activeYear), orderBy('teamName')];
       const countConstraints: any[] = [where('year', '==', activeYear)];
       
@@ -2485,7 +2560,7 @@ function AppComponent() {
       if (isFirst || (!isFirst && !isNext)) {
         getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
           setTotalTeamsCount(snap.data().count);
-        }).catch();
+        }).catch(err => console.error("Firestore Core Error: ", err.message));
       }
 
       if (!isFirst && isNext && lastTeamDoc) {
@@ -4252,6 +4327,15 @@ function AppComponent() {
                           className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue"
                           required
                         />
+                        {isCheckingParticipantDuplicate && (
+                          <p className="text-[10px] text-slate-400 animate-pulse font-medium mt-1">جاري التحقق من قاعدة البيانات...</p>
+                        )}
+                        {participantDuplicateWarning && (
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mt-1.5 flex items-start gap-2 text-amber-800 text-[11px] font-bold leading-relaxed shadow-sm transition-all animate-fade-in">
+                            <span className="shrink-0 text-amber-500 font-bold">⚠️</span>
+                            <span>{participantDuplicateWarning}</span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-2">
@@ -6100,6 +6184,13 @@ function AppComponent() {
                       >
                         <FileText size={14} /> بيان الطباعة (PDF)
                       </button>
+                      <button 
+                        onClick={exportPrintingStatementPDF}
+                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-slate-200 transition-colors shadow-sm border border-slate-200"
+                        title="طباعة بيان الامتحانات الكلي"
+                      >
+                        <Printer size={14} /> طباعة (بيان كلي)
+                      </button>
                     </div>
                   </div>
                   
@@ -7412,6 +7503,15 @@ function AppComponent() {
                           className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none"
                           required
                         />
+                        {isCheckingParticipantDuplicate && (
+                          <p className="text-[10px] text-slate-400 animate-pulse font-medium mt-1">جاري التحقق من قاعدة البيانات...</p>
+                        )}
+                        {participantDuplicateWarning && (
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mt-1.5 flex items-start gap-2 text-amber-800 text-[11px] font-bold leading-relaxed shadow-sm transition-all animate-fade-in">
+                            <span className="shrink-0 text-amber-500 font-bold">⚠️</span>
+                            <span>{participantDuplicateWarning}</span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-2">
@@ -8290,51 +8390,6 @@ function AppComponent() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Mobile Bottom Navigation - Distinctive & Functional */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-slate-200 px-4 py-2.5 flex justify-around items-center z-[50] shadow-[0_-8px_30px_rgba(0,0,0,0.1)] pb-safe">
-        <button 
-          onClick={() => setActiveSection('home')} 
-          className={`flex flex-col items-center gap-1 min-w-[64px] transition-all ${activeSection === 'home' ? 'text-primary' : 'text-slate-400'}`}
-        >
-          <div className={`p-1 rounded-lg ${activeSection === 'home' ? 'bg-primary/5' : ''}`}>
-            <Home size={22} className={activeSection === 'home' ? 'animate-pulse' : ''} />
-          </div>
-          <span className="text-[10px] font-black">الرئيسية</span>
-        </button>
-        
-        <button 
-          onClick={() => setShowExamGateway(true)} 
-          className="flex flex-col items-center gap-1 min-w-[64px] text-slate-400 group"
-        >
-          <div className="p-1 rounded-lg group-active:bg-indigo-50">
-            <BookOpen size={22} />
-          </div>
-          <span className="text-[10px] font-black">الامتحانات</span>
-        </button>
-
-        <div className="w-12" /> {/* Space for floating button or center visual */}
-
-        <button 
-          onClick={() => setActiveSection('calculator')} 
-          className={`flex flex-col items-center gap-1 min-w-[64px] transition-all ${activeSection === 'calculator' ? 'text-primary' : 'text-slate-400'}`}
-        >
-          <div className={`p-1 rounded-lg ${activeSection === 'calculator' ? 'bg-primary/5' : ''}`}>
-            <Calculator size={22} />
-          </div>
-          <span className="text-[10px] font-black">الحاسبة</span>
-        </button>
-
-        <button 
-          onClick={() => setIsMenuOpen(true)} 
-          className="flex flex-col items-center gap-1 min-w-[64px] text-slate-400 group"
-        >
-          <div className="p-1 rounded-lg group-active:bg-slate-50">
-            <Menu size={22} />
-          </div>
-          <span className="text-[10px] font-black">القائمة</span>
-        </button>
-      </div>
 
       <Lightbox
         open={lightboxOpen}

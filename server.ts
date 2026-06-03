@@ -4,9 +4,15 @@ import path from "path";
 
 async function startServer() {
   const app = express();
-  // We use process.env.PORT to allow deployment environments to inject the correct port.
-  // The AI Studio environment explicitly uses port 3000.
-  const PORT = Number(process.env.PORT) || 3000;
+  
+  // Health check endpoint to verify network fetches
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok" });
+  });
+
+  // Strict enforcement of port 3000 under any condition to prevent port conflicts
+  // The infrastructure dynamically routes externally to 3000.
+  const PORT = 3000;
 
   if (process.env.NODE_ENV !== "production") {
     // Development mode
