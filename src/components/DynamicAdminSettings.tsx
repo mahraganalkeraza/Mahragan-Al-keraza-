@@ -141,7 +141,6 @@ export default function DynamicAdminSettings() {
         name: newChurchName, 
         loginCode: newChurchCode, 
         isEnabled: true,
-        subscribers: 0,
         createdAt: new Date().toISOString()
       };
 
