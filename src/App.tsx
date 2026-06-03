@@ -603,6 +603,7 @@ function AppComponent() {
   const [logoBase64, setLogoBase64] = useState<string>('');
   const [isUpdatingYear, setIsUpdatingYear] = useState(false);
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
+  const previousSubscribersRef = useRef<Record<string, number>>({});
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const [pdfExportProgress, setPdfExportProgress] = useState<string>('');
   const [validationSettings, setValidationSettings] = useState<any>({
@@ -1461,12 +1462,73 @@ function AppComponent() {
     };
   }, [isAuthReady, isLoggedIn, userRole, churchName, activeYear]);
 
+  const updateChurchSubscribers = async (cName: string) => {
+    if (!cName) return;
+    try {
+      // 1. Query participants count for this church and year
+      const participantsQuery = query(
+        collection(db, 'participants'),
+        where('churchName', '==', cName),
+        where('year', '==', activeYear)
+      );
+      const snap = await getCountFromServer(participantsQuery);
+      const count = snap.data().count;
+
+      // 2. Load the church document from 'churches' collection and update subscribers count
+      const churchQuery = query(collection(db, 'churches'), where('name', '==', cName));
+      const churchSnap = await getDocs(churchQuery);
+      if (!churchSnap.empty) {
+        const churchDoc = churchSnap.docs[0];
+        await updateDoc(doc(db, 'churches', churchDoc.id), {
+          subscribers: count
+        });
+      }
+    } catch (err) {
+      console.error('Error updating church subscribers:', err);
+    }
+  };
+
   useEffect(() => {
     if (userRole === 'admin') {
+      // 1. solicitar permisos de notificación al admin (Admin Permission & Initialization)
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (window.Notification.permission === 'default') {
+          window.Notification.requestPermission();
+        }
+      }
+
       const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
         setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
-      return () => unsubUsers();
+
+      // 2. Lightweight real-time listener regarding subscriber increments on churches collection
+      const unsubChurchesNotifier = onSnapshot(collection(db, 'churches'), (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const data = change.doc.data();
+          const churchNameVal = data.name;
+          if (!churchNameVal) return;
+          const currentSubscribers = data.subscribers || 0;
+          
+          const previousSubscribers = previousSubscribersRef.current[churchNameVal] || 0;
+          
+          // The Trigger Rule: transition from exactly 0 to >= 1
+          if (previousSubscribers === 0 && currentSubscribers >= 1) {
+            if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
+              new window.Notification("🔔 كنيسة جديدة بدأت التسجيل!", {
+                body: `كنيسة (${churchNameVal}) بدأت الآن في تسجيل مخدوميها في المهرجان.`,
+                icon: "/logo.png"
+              });
+            }
+          }
+          
+          previousSubscribersRef.current[churchNameVal] = currentSubscribers;
+        });
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'churches'));
+
+      return () => {
+        unsubUsers();
+        unsubChurchesNotifier();
+      };
     }
   }, [userRole]);
 
@@ -2040,6 +2102,7 @@ function AppComponent() {
         setBatchUploadStatus("تم رفع البيانات بنجاح!");
         setTimeout(() => setBatchUploadStatus(null), 3000);
         setIsUploadingBatch(false);
+        await updateChurchSubscribers(churchName);
       }
 
     } catch (err) {
@@ -2984,6 +3047,7 @@ function AppComponent() {
              } as any as Participant;
              setParticipants(prev => [...prev, newStudent]);
              setTotalParticipantsCount(prev => prev + 1);
+             await updateChurchSubscribers(churchName);
           }
         }
 
@@ -3068,6 +3132,10 @@ function AppComponent() {
       batch.delete(doc(db, 'online_results', id));
       await batch.commit();
 
+      // Get the church name before deleting
+      const deletedParticipant = participants.find(p => p.id === id);
+      const targetChurch = deletedParticipant?.churchName || churchName;
+
       // Instant local state sync
       setParticipants(prev => prev.filter(p => p.id !== id));
       setTotalParticipantsCount(prev => Math.max(0, prev - 1));
@@ -3075,6 +3143,8 @@ function AppComponent() {
       setShowDeleteModal(false);
       setParticipantToDelete(null);
       setDeleteConfirmText('');
+
+      await updateChurchSubscribers(targetChurch);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `participants/${id}`);
     }
@@ -3204,6 +3274,7 @@ function AppComponent() {
         gender: '',
         competitions: ['دراسي', '', ''] 
       });
+      await updateChurchSubscribers(churchName);
     } catch (error: any) {
       handleFirestoreError(error, OperationType.WRITE, 'participants');
     } finally {
