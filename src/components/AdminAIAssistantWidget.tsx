@@ -2,6 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Send, RotateCcw, MessageSquare } from 'lucide-react';
 import Draggable from 'react-draggable';
 
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
+
 export default function AdminAIAssistantWidget({ participants = [], churches = [] }: { participants?: any[], churches?: any[] }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<{role: 'user'|'model', text: string}[]>([]);
@@ -15,6 +18,21 @@ export default function AdminAIAssistantWidget({ participants = [], churches = [
   
   const nodeRef = useRef(null);
 
+  async function getGlobalAdminSnapshot() {
+    try {
+      const churchesSnap = await getDocs(collection(db, "churches"));
+      const resultsSnap = await getDocs(collection(db, "online_results"));
+      
+      return JSON.stringify({
+        churches: churchesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+        totalResultsRecorded: resultsSnap.size
+      });
+    } catch (error) {
+      console.error("CRITICAL ADMIN FIRESTORE ERROR:", error);
+      throw error; // Let the Error Boundary handle it gracefully
+    }
+  }
+
   const sendMessage = async () => {
     if (!input.trim()) return;
     setIsLoading(true);
@@ -26,6 +44,8 @@ export default function AdminAIAssistantWidget({ participants = [], churches = [
     
     try {
       // Create lightweight context
+      const globalData = await getGlobalAdminSnapshot();
+
       const churchStats = churches.map(c => ({
         name: c.name,
         subscribers: c.subscribers || participants.filter(p => p.churchName === c.name).length
@@ -38,6 +58,7 @@ export default function AdminAIAssistantWidget({ participants = [], churches = [
            acc[p.stage] = (acc[p.stage] || 0) + 1;
            return acc;
         }, {}),
+        globalFirestoreData: globalData // stringified JSON
       };
 
       const aiHistory = messages.map(m => ({
