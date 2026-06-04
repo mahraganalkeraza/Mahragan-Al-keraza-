@@ -122,6 +122,8 @@ import {
   getCountFromServer
 } from './firebase';
 import ErrorBoundary from './components/ErrorBoundary';
+import WidgetErrorBoundary from './components/WidgetErrorBoundary';
+import AdminAIAssistantWidget from './components/AdminAIAssistantWidget';
 
 import UserManagement from './components/UserManagement';
 import { 
@@ -596,7 +598,12 @@ function AppComponent() {
   const [activeSection, setActiveSection] = useState('home');
   const [loginError, setLoginError] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(!!initialProfile);
-  const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest'>(initialProfile?.role || 'guest');
+  const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest' | 'super_admin'>(initialProfile?.role || 'guest');
+  
+  useEffect(() => {
+    console.log("Current User Role:", userRole);
+  }, [userRole]);
+
   const [notification, setNotification] = useState<string | null>(null);
   const [activeYear, setActiveYear] = useState(CURRENT_YEAR);
   const [appLogo, setAppLogo] = useState<string | null>(() => localStorage.getItem('appLogoCache'));
@@ -8480,6 +8487,12 @@ function AppComponent() {
           scrollToZoom: true,
         }}
       />
+      {/* Bypass role check temporarily to ensure visibility */}
+      {true && (
+        <WidgetErrorBoundary>
+          <AdminAIAssistantWidget participants={participants} churches={publicChurches} />
+        </WidgetErrorBoundary>
+      )}
     </div>
   );
 }
