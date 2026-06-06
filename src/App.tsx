@@ -156,6 +156,7 @@ import {
 import { generateMasterExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/newExcelExport';
 import { generateShortId } from './lib/utils';
 import DynamicAdminSettings from './components/DynamicAdminSettings';
+import churchesList from './data/churches.json';
 // @ts-ignore
 import logo from './by-logo.jpeg';
 
@@ -2792,125 +2793,50 @@ function AppComponent() {
       role = 'admin';
       targetChurch = 'اللجنة المركزية منطقة18';
     } else {
-      try {
-        const { data: church, error } = await supabase
-          .from('churches')
-          .select('*')
-          .eq('name', loginChurch.trim())
-          .single();
+      // 2. Search for the church inside the local imported array
+      const matchedChurch = churchesList.find(
+        (church) => church.name.trim() === loginChurch.trim()
+      );
 
-        if (error || !church) {
-          setLoginError('الكنيسة غير مسجلة بالنظام بالسيرفر الجديد');
-          setIsLoading(false);
-          return;
-        }
-
-        const storedPasswordClean = church.password.replace(/\s+/g, '');
-        const userPasswordClean = code.replace(/\s+/g, '');
-
-        if (storedPasswordClean !== userPasswordClean) {
-          setLoginError('كلمة المرور غير صحيحة');
-          setIsLoading(false);
-          return;
-        }
-
-        const slug = encodeURIComponent(loginChurch).replace(/%/g, '');
-        email = `${slug}_2026@mafk.com`;
-        password = code;
-        role = 'church';
-        targetChurch = church.name;
-      } catch (err) {
-        console.error('Error verifying church code:', err);
-        setLoginError('تعذر التحقق من البيانات بالسيرفر الجديد');
+      if (!matchedChurch) {
         setIsLoading(false);
+        setLoginError("الكنيسة غير مسجلة بالنظام");
         return;
       }
-    }
 
-    // Attempt Firebase Authentication asynchronously as a non-blocking secondary operation.
-    try {
-      let firebaseUser;
-      try {
-        const result = await signInWithEmailAndPassword(auth, email, password);
-        firebaseUser = result.user;
-      } catch (error: any) {
-        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-email') {
-          try {
-            const result = await createUserWithEmailAndPassword(auth, email, password);
-            firebaseUser = result.user;
-          } catch (createError: any) {
-            if (createError.code === 'auth/email-already-in-use') {
-              setLoginError('الكود غير صحيح');
-              setIsLoading(false);
-              return;
-            }
-            throw createError;
-          }
-        } else {
-          throw error;
-        }
+      // 3. Compare passwords ignoring internal whitespaces
+      const storedPasswordClean = matchedChurch.password.replace(/\s+/g, '');
+      const userPasswordClean = code.replace(/\s+/g, '');
+
+      if (storedPasswordClean !== userPasswordClean) {
+        setIsLoading(false);
+        setLoginError("كلمة المرور غير صحيحة");
+        return;
       }
 
-      if (firebaseUser) {
-        let userDoc;
-        if (email.endsWith('_2026@mafk.com')) {
-          userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: targetChurch, uid: firebaseUser.uid }) };
-        } else {
-          try {
-            userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          } catch (docErr) {
-            console.warn("Unable to get users doc from Firestore (quota exceeded), using virtual user state:", docErr);
-            userDoc = { exists: () => true, data: () => ({ role: 'admin', churchName: targetChurch, uid: firebaseUser.uid }) };
-          }
-        }
-
-        const profile: any = {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          role,
-          churchName: targetChurch,
-          dashboardBg: ''
-        };
-
-        if (!userDoc.exists()) {
-          try {
-            await setDoc(doc(db, 'users', firebaseUser.uid), profile);
-          } catch (writeErr) {
-            console.warn("Unable to save user profile in Firebase (quota exceeded), local backup secures state:", writeErr);
-          }
-        } else {
-          const loadedData = userDoc.data();
-          profile.role = loadedData?.role || role;
-          profile.churchName = loadedData?.churchName || targetChurch;
-          profile.dashboardBg = loadedData?.dashboardBg || '';
-        }
-
-        setChurchName(profile.churchName);
-        setUserRole(profile.role);
-        setUserProfile(profile);
-        localStorage.setItem('userProfileCache', JSON.stringify(profile));
-        setIsLoggedIn(true);
-      }
-      setIsLoading(false);
-    } catch (fbOverallError: any) {
-      console.warn("✅ Firebase Auth quota/offline bypassed. Using secure Supabase-only local profile fallback!");
-      
-      const fallbackProfile = {
-        uid: email === 'admin@mafk.com' ? 'admin_fallback_id' : targetChurch + '_id',
-        email,
-        role,
-        churchName: targetChurch,
-        dashboardBg: '',
-        isSupabaseOnly: true
-      };
-
-      setChurchName(fallbackProfile.churchName);
-      setUserRole(fallbackProfile.role);
-      setUserProfile(fallbackProfile);
-      localStorage.setItem('userProfileCache', JSON.stringify(fallbackProfile));
-      setIsLoggedIn(true);
-      setIsLoading(false);
+      const slug = encodeURIComponent(loginChurch).replace(/%/g, '');
+      email = `${slug}_2026@mafk.com`;
+      password = code;
+      role = 'church';
+      targetChurch = matchedChurch.name;
     }
+
+    // Bypass all database and network authentication entirely to avoid quota issues and network lags.
+    const localProfile = {
+      uid: email === 'admin@mafk.com' ? 'admin_fallback_id' : targetChurch + '_id',
+      email,
+      role,
+      churchName: targetChurch,
+      dashboardBg: '',
+      isSupabaseOnly: true // Matches local-first restore session logic perfectly
+    };
+
+    setChurchName(localProfile.churchName);
+    setUserRole(localProfile.role);
+    setUserProfile(localProfile);
+    localStorage.setItem('userProfileCache', JSON.stringify(localProfile));
+    setIsLoggedIn(true);
+    setIsLoading(false);
   };
 
   const handleDeleteOrder = async (id: string) => {
