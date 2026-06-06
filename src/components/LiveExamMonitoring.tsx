@@ -14,6 +14,16 @@ enum OperationType {
 
 function handleFirestoreError(error: any, op: OperationType, path: string) {
   console.error(`Firestore Error [${op}] at ${path}:`, error);
+  const errMsg = (error?.message || String(error)).toLowerCase();
+  const isQuota = errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('billing') || errMsg.includes('limit exceeded') || errMsg.includes('capacity');
+  if (isQuota) {
+    if (typeof window !== 'undefined') {
+      (window as any).firestoreQuotaExceeded = true;
+      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+    }
+    console.warn(`[LiveExam Quota Non-Blocking Warn] Blocked throwing crashing error on Firebase Quota Limit for operation: ${op} on path: ${path}`);
+    return;
+  }
   const authInfo = {
     uid: auth.currentUser?.uid,
     email: auth.currentUser?.email,

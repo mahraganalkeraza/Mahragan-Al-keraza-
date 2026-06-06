@@ -178,6 +178,30 @@ export const withExponentialBackoff = async <T,>(operation: () => Promise<T>, ma
   throw new Error('Maximum retries exceeded');
 };
 
+function strictCleanText(val: string): string {
+  if (!val) return "";
+  return val
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(/[أإآا]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي");
+}
+
+function compareChurchNames(inputName: string, targetName: string): boolean {
+  const normalize = (str: string) => {
+    if (!str) return '';
+    return str
+      .trim()
+      .replace(/[أإآا]/g, 'ا') // توحيد كل أنواع الألف
+      .replace(/ة/g, 'ه')      // توحيد التاء المربوطة
+      .replace(/ى/g, 'ي')      // توحيد الألف المقصورة
+      .replace(/\s+/g, '');    // حذف أي مسافات
+  };
+
+  return normalize(inputName) === normalize(targetName);
+}
+
 function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carouselItems: CarouselItem[], appLogo: string | null }) {
   const [selectedSlide, setSelectedSlide] = useState<any>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -728,7 +752,19 @@ function AppComponent() {
           setAppLogo(null);
         }
       }
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
+    }, (error) => {
+      const errMsg = (error?.message || String(error)).toLowerCase();
+      const isQuota = errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('billing') || errMsg.includes('limit exceeded') || errMsg.includes('capacity');
+      if (isQuota) {
+        if (typeof window !== 'undefined') {
+          (window as any).firestoreQuotaExceeded = true;
+          window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+        }
+        console.warn("[Config Quota Bypass] Firebase settings/app_config locked. Utilizing default/cached year and logo settings.");
+        return;
+      }
+      handleFirestoreError(error, OperationType.GET, 'settings/app_config');
+    });
 
     const fetchCachedMetadata = async () => {
       const now = new Date().getTime();
@@ -744,12 +780,47 @@ function AppComponent() {
             }
           } catch (e) {}
         }
-        const data = await fetchFn();
-        localStorage.setItem(`cache_${key}`, JSON.stringify({ timestamp: now, data }));
-        return data;
+        try {
+          const data = await fetchFn();
+          localStorage.setItem(`cache_${key}`, JSON.stringify({ timestamp: now, data }));
+          return data;
+        } catch (err: any) {
+          const errMsg = (err?.message || String(err)).toLowerCase();
+          const isQuota = errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('billing') || errMsg.includes('limit') || errMsg.includes('capacity');
+          if (isQuota) {
+            if (typeof window !== 'undefined') {
+              (window as any).firestoreQuotaExceeded = true;
+              window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+            }
+          }
+          console.warn(`[Metadata Quota Fallback] Bypassed Firestore fetch for ${key} due to quota/network limit:`, err);
+          if (key === 'churches') {
+            return churchesList.map(c => ({ name: c.name, email: '', isEnabled: true, logoUrl: '' }));
+          }
+          if (key === 'levels') {
+            return [
+              { name: "حضانات", comps: [] },
+              { name: "ابتدائي", comps: [] },
+              { name: "إعدادي", comps: [] },
+              { name: "ثانوي", comps: [] },
+              { name: "جامعيين وخريجين", comps: [] },
+              { name: "حرفيين", comps: [] }
+            ];
+          }
+          if (key === 'activityStages' || key === 'hymnStages') {
+            return [];
+          }
+          if (key === 'validation') {
+            return { templates: [], ageMappings: [], rules: { nameLength: true, genderMatch: false, mandatoryRows: true } };
+          }
+          return null;
+        }
       };
 
       try {
+        // [Offline-First Override] Completely bypassed fetching churches from Firestore to avoid Quota Limits & Network Lags.
+        // We use the local predefined offline-first `churchesList` roster instead.
+        /*
         const churchesData = await loadCachedOrFetch('churches', async () => {
           const docs = await silentDualFetch('churches');
           return docs
@@ -762,6 +833,7 @@ function AppComponent() {
             .filter(c => c.isEnabled);
         });
         setPublicChurches(churchesData);
+        */
 
         const levelsData = await loadCachedOrFetch('levels', async () => {
           const docs = await silentDualFetch('levels');
@@ -792,7 +864,7 @@ function AppComponent() {
           rules: validationData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
         });
       } catch (e) {
-        console.error("Error fetching cached metadata:", e);
+        console.warn("[Metadata Catch Bypass] Error fetching cached metadata:", e);
       }
     };
 
@@ -2795,9 +2867,9 @@ function AppComponent() {
       role = 'admin';
       targetChurch = 'اللجنة المركزية منطقة18';
     } else {
-      // 2. Search for the church inside the local imported array
+      // 2. Search for the church inside the local imported array using smart compareChurchNames matching
       const matchedChurch = churchesList.find(
-        (church) => church.name.trim() === loginChurch.trim()
+        (church) => compareChurchNames(loginChurch, church.name)
       );
 
       if (!matchedChurch) {
@@ -2816,7 +2888,7 @@ function AppComponent() {
         return;
       }
 
-      const slug = encodeURIComponent(loginChurch).replace(/%/g, '');
+      const slug = encodeURIComponent(matchedChurch.name).replace(/%/g, '');
       email = `${slug}_2026@mafk.com`;
       password = code;
       role = 'church';

@@ -81,11 +81,14 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   console.warn('Firestore Error caught: ', serialized);
 
   const errMsg = errInfo.error.toLowerCase();
-  if (errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('billing') || errMsg.includes('limit exceeded')) {
+  const isQuota = errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('billing') || errMsg.includes('limit exceeded') || errMsg.includes('capacity');
+  if (isQuota) {
     if (typeof window !== 'undefined') {
       (window as any).firestoreQuotaExceeded = true;
       window.dispatchEvent(new CustomEvent('firestore-quota-exceeded', { detail: errInfo }));
     }
+    console.warn(`[Quota Non-Blocking Warn] Blocked throwing crashing error on Firebase Quota Limit for operation: ${operationType} on path: ${path}`);
+    return;
   }
 
   throw new Error(serialized);
