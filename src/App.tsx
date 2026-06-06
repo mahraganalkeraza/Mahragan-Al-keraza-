@@ -156,7 +156,7 @@ import {
 import { generateMasterExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/newExcelExport';
 import { generateShortId } from './lib/utils';
 import DynamicAdminSettings from './components/DynamicAdminSettings';
-import churchesList from './data/churches.json';
+import { churchesList } from './data/churchesData';
 // @ts-ignore
 import logo from './by-logo.jpeg';
 
@@ -904,7 +904,9 @@ function AppComponent() {
   const [examLinks, setExamLinks] = useState<Record<string, string>>({});
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
-  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>([]);
+  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>(() => 
+    churchesList.map(c => ({ name: c.name, email: '', logoUrl: '' }))
+  );
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxImages, setLightboxImages] = useState<{src: string}[]>([]);
