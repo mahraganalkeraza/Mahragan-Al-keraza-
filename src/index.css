@@ -92,12 +92,18 @@ button.quick-access-card {
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
 
-button.quick-access-card:hover,
-button.quick-access-card:active {
+button.quick-access-card:hover {
   filter: brightness(0.9);
   background-color: #006064 !important; /* Keep original background color */
   color: #ffff00 !important;            /* Very bright yellow to stay visible */
   box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+button.quick-access-card:active {
+  filter: brightness(0.8);
+  background-color: #006064 !important;
+  color: #ffff00 !important;
+  box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06) !important;
 }
 @media print {
   .no-print {
