@@ -44,6 +44,8 @@ export interface Participant {
   competitions: string[];
   timestamp: string;
   year?: string;
+  tshirtSize?: string;
+  personalImage?: string;
 }
 
 export interface TeamMember {

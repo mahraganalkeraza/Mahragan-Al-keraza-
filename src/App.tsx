@@ -62,7 +62,8 @@ import {
   ChevronUp,
   ChevronDown,
   Layers,
-  Printer
+  Printer,
+  AlertTriangle
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
@@ -867,6 +868,14 @@ function AppComponent() {
     stageOverrides: {}
   });
 
+  const [systemControls, setSystemControls] = useState<{
+    isRegistrationOpen: boolean;
+    isBookCalculatorOpen: boolean;
+  }>({
+    isRegistrationOpen: true,
+    isBookCalculatorOpen: true
+  });
+
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({
     phone: '',
     facebook: '',
@@ -1144,31 +1153,47 @@ function AppComponent() {
         });
     });
 
-    const retentionData = STAGE_ORDER.map(stg => {
-        let students = 0;
-        let books = booksPerStage[stg] || 0;
+    const retentionData = (userRole === 'admin' ? publicChurches.map(c => c.name) : [churchName]).map(cName => {
+        let competitionsDemand = 0;
+        let orderedBooks = 0;
         
-        if (userRole === 'admin') {
-            students = participants.filter(p => p.stage === stg && (globalChurchFilter === 'الكل' || p.churchName === globalChurchFilter)).length;
-        } else {
-            students = participants.filter(p => p.stage === stg && p.churchName === churchName).length;
-        }
+        // Sum competitions enrollments for this church
+        const churchParticipants = participants.filter(p => p.churchName === cName);
+        churchParticipants.forEach(p => {
+             competitionsDemand += (p.competitions?.length || 0);
+        });
+
+        // Sum ordered books for this church
+        (orders || []).forEach(order => {
+            if (order.churchName === cName) {
+                (order.details || []).forEach((item: any) => {
+                    orderedBooks += (item.quantity || 0);
+                });
+            }
+        });
         
         return {
-           name: stg,
-           "استمارات مضافة": students,
-           "كتب تم طلبها": books,
+           name: cName || 'غير محدد',
+           "الاحتياج الفعلي": competitionsDemand,
+           "كتب تم طلبها": orderedBooks,
         };
-    }).filter(d => d["استمارات مضافة"] > 0 || d["كتب تم طلبها"] > 0);
+    }).filter(d => d["الاحتياج الفعلي"] > 0 || d["كتب تم طلبها"] > 0);
 
     let compsCount: any = { "مادة واحدة": 0, "مادتين": 0, "٣ مواد أو أكثر": 0 };
+    const compTypesMap: Record<string, number> = {};
+    
     participants.forEach(p => {
        if (globalChurchFilter !== 'الكل' && p.churchName !== globalChurchFilter && userRole === 'admin') return;
        if (userRole === 'church' && p.churchName !== churchName) return;
+       
        const len = p.competitions?.length || 0;
        if (len === 1) compsCount["مادة واحدة"]++;
        else if (len === 2) compsCount["مادتين"]++;
        else if (len >= 3) compsCount["٣ مواد أو أكثر"]++;
+
+       (p.competitions || []).forEach((c: string) => {
+           compTypesMap[c] = (compTypesMap[c] || 0) + 1;
+       });
     });
     const engagementData = [
        { name: 'مادة واحدة', value: compsCount["مادة واحدة"] },
@@ -1176,7 +1201,12 @@ function AppComponent() {
        { name: '٣ مواد أو أكثر', value: compsCount["٣ مواد أو أكثر"] }
     ].filter(d => d.value > 0);
 
-    return { demographicsData, retentionData, engagementData };
+    const competitionTypesData = Object.keys(compTypesMap).map(k => ({
+       name: k,
+       value: compTypesMap[k]
+    })).filter(d => d.value > 0);
+
+    return { demographicsData, retentionData, engagementData, competitionTypesData };
   }, [participants, orders, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
 
   const COLORS = ['#0f172a', '#d97706', '#e11d48', '#059669', '#2563eb', '#8b5cf6'];
@@ -1458,6 +1488,12 @@ function AppComponent() {
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/exam_config'));
 
+    const unsubSystemControls = onSnapshot(doc(db, 'settings', 'system_controls'), (snapshot) => {
+      if (snapshot.exists()) {
+        setSystemControls(snapshot.data() as any);
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/system_controls'));
+
     return () => {
       unsubNews();
       unsubCarousel();
@@ -1466,6 +1502,7 @@ function AppComponent() {
       unsubFooterSettings();
       unsubAboutSettings();
       unsubExamConfig();
+      unsubSystemControls();
     };
   }, [isAuthReady, isLoggedIn, userRole, churchName, activeYear]);
 
@@ -1689,6 +1726,19 @@ function AppComponent() {
     } catch (error) {
       console.error("Error saving settings:", error);
       alert('حدث خطأ أثناء حفظ الإعدادات');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateSystemControls = async (newControls: any) => {
+    setIsLoading(true);
+    try {
+      await setDoc(doc(db, 'settings', 'system_controls'), newControls);
+      setNotification('تم تحديث إعدادات النظام المركذية');
+    } catch (e) {
+      console.error(e);
+      setNotification('خطأ في التحديث');
     } finally {
       setIsLoading(false);
     }
@@ -4367,6 +4417,116 @@ function AppComponent() {
                 </div>
               </div>
 
+              {/* Local Church Analytics Dashboard */}
+              <div className="mb-8 space-y-6">
+                <h4 className="font-black text-slate-800 text-xl flex items-center gap-2 mb-6">
+                    <Layers size={24} className="text-coptic-blue" /> إحصائيات وتتبع الكنيسة
+                </h4>
+                
+                {(() => {
+                  const localParticipants = participants.filter(p => p.churchName === churchName);
+                  const totalSubscribers = localParticipants.length;
+                  
+                  // Card A: Educational Stages
+                  const stageCounts = STAGE_ORDER.map(stg => ({
+                    name: stg,
+                    count: localParticipants.filter(p => p.stage === stg).length
+                  })).filter(d => d.count > 0);
+
+                  // Card B: Total Competitions
+                  const totalCompetitionsEnrollments = localParticipants.reduce((acc, p) => acc + (p.competitions ? p.competitions.filter(c => c).length : 0), 0);
+
+                  // Insight D: Top Competitions
+                  const compCounts: Record<string, number> = {};
+                  localParticipants.forEach(p => {
+                      (p.competitions || []).forEach(c => {
+                          if (c) compCounts[c] = (compCounts[c] || 0) + 1;
+                      });
+                  });
+                  const topComps = Object.entries(compCounts)
+                    .sort((a,b) => b[1] - a[1])
+                    .slice(0, 3)
+                    .map(([name, value]) => ({ name, value }));
+
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      
+                      {/* Card A: Subscribers by Educational Stage */}
+                      <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 flex flex-col shadow-sm">
+                        <h5 className="font-bold text-slate-700 bg-white px-4 py-2 rounded-xl mb-4 text-center border border-slate-100 shadow-sm inline-flex items-center justify-center gap-2">
+                          <Users size={16} className="text-coptic-blue"/> توزيع المخدومين حسب المراحل
+                        </h5>
+                        {stageCounts.length > 0 ? (
+                          <div className="space-y-3 mt-2">
+                            {stageCounts.map((stage, idx) => (
+                              <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                <span className="font-bold text-slate-700">{stage.name}</span>
+                                <span className="font-black text-coptic-blue bg-blue-50 px-3 py-1 rounded-lg text-sm">{stage.count} مشترك</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex-1 flex items-center justify-center">
+                            <span className="text-slate-400 text-sm font-bold italic">لا يوجد مشتركين بعد</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Card B: True Competition Enrollment Metrics */}
+                      <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 flex flex-col justify-center items-center shadow-sm text-center">
+                        <h5 className="font-bold text-slate-700 bg-white px-4 py-2 rounded-xl mb-6 border border-slate-100 shadow-sm w-full inline-flex items-center justify-center gap-2">
+                          <BookOpen size={16} className="text-emerald-600"/> إجمالي الاشتراكات في المسابقات
+                        </h5>
+                        <div className="w-24 h-24 bg-emerald-50 rounded-full flex items-center justify-center mb-4 border-4 border-white shadow-md">
+                          <span className="text-3xl font-black text-emerald-600 tabular-nums">{totalCompetitionsEnrollments}</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-800">إجمالي المسابقات المسجلة</p>
+                        <p className="text-sm font-bold text-slate-500 mt-2 bg-white px-4 py-1.5 rounded-full border border-slate-100">
+                          من إجمالي: {totalSubscribers} مشترك
+                        </p>
+                      </div>
+
+                      {/* Insight D: Top Enrolled Competitions */}
+                      <div className="bg-slate-50 rounded-2xl p-6 border border-slate-100 items-center justify-center flex flex-col shadow-sm">
+                        <h5 className="font-bold text-slate-700 bg-white px-4 py-2 rounded-xl mb-2 text-center border border-slate-100 shadow-sm w-full inline-flex items-center justify-center gap-2">
+                          <Trophy size={16} className="text-coptic-gold"/> المسابقات الأكثر إقبالاً
+                        </h5>
+                        <div className="h-48 w-full relative">
+                          {topComps.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie data={topComps} innerRadius={45} outerRadius={70} stroke="none" dataKey="value" paddingAngle={5}>
+                                  {topComps.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                                </Pie>
+                                <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontFamily: 'Tajawal'}} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-slate-400 text-sm font-bold italic">لا توجد اشتراكات بعد</span>
+                            </div>
+                          )}
+                        </div>
+                        {topComps.length > 0 && (
+                          <div className="w-full mt-4 space-y-2">
+                            {topComps.map((comp, idx) => (
+                              <div key={idx} className="flex justify-between items-center text-xs font-bold text-slate-600 bg-white px-3 py-2 rounded-lg border border-slate-100">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-3 h-3 rounded-full" style={{backgroundColor: COLORS[idx % COLORS.length]}}></div>
+                                  <span className="truncate max-w-[120px]" title={comp.name}>{comp.name}</span>
+                                </div>
+                                <span>{comp.value} مشترك</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
+                  );
+                })()}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-4">
                   <h4 className="font-black text-slate-800 flex items-center gap-2">
@@ -4389,11 +4549,18 @@ function AppComponent() {
                   )}
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 relative">
                   <h4 className="font-black text-slate-800 flex items-center gap-2">
                     <UserPlus size={20} className="text-coptic-blue" /> تسجيل المشتركين
                   </h4>
-                  <form onSubmit={handleAddParticipant} className="bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4">
+                  {!systemControls.isRegistrationOpen && (
+                    <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center rounded-3xl" style={{ marginTop: '2.5rem' }}>
+                      <span className="bg-rose-100 text-rose-700 px-6 py-2 rounded-full font-black text-sm border border-rose-200 shadow-sm animate-pulse">
+                        [تم انتهاء وقت التسجيل المحدد من الإدارة]
+                      </span>
+                    </div>
+                  )}
+                  <form onSubmit={handleAddParticipant} className={`bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4 ${!systemControls.isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}`}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase">اسم المخدوم ثلاثياً</label>
@@ -5950,7 +6117,42 @@ function AppComponent() {
                 <section className="p-8 bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden relative">
                   <div className="absolute top-0 inset-x-0 h-2 bg-primary" />
                   <h4 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8">
-                    <Sliders className="text-primary" /> لوحة التحكم المركزية للامتحانات
+                    <Sliders className="text-primary" /> لوحة التحكم المركزية للطوارئ
+                  </h4>
+
+                  {/* System Core Switches */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between">
+                      <div className="mb-4">
+                        <h5 className="text-lg font-black text-slate-800 flex items-center gap-2"><UserPlus size={20} className="text-coptic-blue"/> التسجيل الموحد</h5>
+                        <p className="text-sm text-slate-500 font-bold mt-1">فتح أو غلق استمارات التسجيل في الكنائس لمنع إضافة مشتركين جدد</p>
+                      </div>
+                      <button 
+                        onClick={() => handleUpdateSystemControls({...systemControls, isRegistrationOpen: !systemControls.isRegistrationOpen})}
+                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${systemControls.isRegistrationOpen ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}
+                      >
+                        {systemControls.isRegistrationOpen ? <CheckCircle2 size={18}/> : <X size={18}/>}
+                        {systemControls.isRegistrationOpen ? 'تسجيل المشتركين مفتوح' : 'مغلق الآن'}
+                      </button>
+                    </div>
+
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between">
+                      <div className="mb-4">
+                        <h5 className="text-lg font-black text-slate-800 flex items-center gap-2"><Calculator size={20} className="text-primary"/> طلبات الكتب</h5>
+                        <p className="text-sm text-slate-500 font-bold mt-1">السماح للكنائس بإضافة أو تعديل طلبات الكتب والحاسبة</p>
+                      </div>
+                      <button 
+                        onClick={() => handleUpdateSystemControls({...systemControls, isBookCalculatorOpen: !systemControls.isBookCalculatorOpen})}
+                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${systemControls.isBookCalculatorOpen ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}
+                      >
+                        {systemControls.isBookCalculatorOpen ? <CheckCircle2 size={18}/> : <X size={18}/>}
+                        {systemControls.isBookCalculatorOpen ? 'حاسبة الكتب مفتوحة' : 'مغلقة الآن'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <h4 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8 mt-12 border-t pt-8 border-slate-100">
+                    <BookOpen className="text-primary" /> لوحة التحكم المركزية للامتحانات
                   </h4>
 
                   {/* Global Switch */}
@@ -6223,8 +6425,8 @@ function AppComponent() {
                   </div>
 
                   <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-2">
-                    <h3 className="font-black text-slate-800 mb-6 text-lg">مؤشر الاستبقاء (الكتب المطلوبة vs الاستمارات المسجلة)</h3>
-                    <div className="h-80">
+                    <h3 className="font-black text-slate-800 mb-6 text-lg">الطلب الحقيقي للكتب (الكتب المطلوبة vs مسابقات المشتركين)</h3>
+                    <div className="h-80 mb-8">
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={analyticsData.retentionData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -6233,9 +6435,39 @@ function AppComponent() {
                           <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontFamily: 'Tajawal' }} />
                           <Legend verticalAlign="top" height={36} wrapperStyle={{ fontFamily: 'Tajawal', fontWeight: 'bold' }} />
                           <Area type="monotone" dataKey="كتب تم طلبها" stroke="#94a3b8" fill="#e2e8f0" />
-                          <Area type="monotone" dataKey="استمارات مضافة" stroke="#0f172a" fill="#0f172a" fillOpacity={0.2} />
+                          <Area type="monotone" dataKey="الاحتياج الفعلي" stroke="#0f172a" fill="#0f172a" fillOpacity={0.2} />
                         </AreaChart>
                       </ResponsiveContainer>
+                    </div>
+                    
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-right text-sm">
+                        <thead className="bg-slate-50 text-slate-600 font-bold">
+                          <tr>
+                            <th className="p-4 border-b">اسم الكنيسة</th>
+                            <th className="p-4 border-b">إجمالي الكتب المطلوبة</th>
+                            <th className="p-4 border-b">الاحتياج الفعلي (بناءً على المسابقات)</th>
+                            <th className="p-4 border-b">الفجوة / العجز</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {analyticsData.retentionData.map((row, idx) => {
+                            const gap = row["كتب تم طلبها"] - row["الاحتياج الفعلي"];
+                            const rowBg = gap < 0 ? 'bg-red-50' : gap > 0 ? 'bg-yellow-50' : 'bg-white';
+                            const gapText = gap < 0 ? `${gap} (عجز)` : gap > 0 ? `+${gap} (فائض)` : 'متطابق';
+                            const textColor = gap < 0 ? 'text-red-700' : gap > 0 ? 'text-yellow-700' : 'text-slate-600';
+
+                            return (
+                              <tr key={idx} className={`border-b last:border-0 ${rowBg}`}>
+                                <td className="p-4 font-bold text-slate-800">{row.name}</td>
+                                <td className="p-4">{row["كتب تم طلبها"]}</td>
+                                <td className="p-4">{row["الاحتياج الفعلي"]}</td>
+                                <td className={`p-4 font-black ${textColor}`} dir="ltr">{gapText}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
@@ -6430,7 +6662,7 @@ function AppComponent() {
                         <div className="text-xs font-bold text-slate-400">الصفحة 3 من 4</div>
                       </div>
 
-                      <h3 className="font-black text-slate-700 text-lg mb-6 border-r-4 border-emerald-600 pr-4">مقارنة: الكتب المطلوبة vs الاستمارات المسجلة</h3>
+                      <h3 className="font-black text-slate-700 text-lg mb-6 border-r-4 border-emerald-600 pr-4">مقارنة: الكتب المطلوبة vs الطلب الحقيقي للكتب (بناءً على اشتراكات المسابقات)</h3>
                       <div className="flex justify-center mb-8" style={{ height: '300px' }}>
                         <AreaChart width={680} height={300} data={analyticsData.retentionData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -6438,29 +6670,29 @@ function AppComponent() {
                           <YAxis tick={{ fontSize: 10, fontWeight: 'bold' }} />
                           <Legend verticalAlign="top" wrapperStyle={{ fontFamily: 'Tajawal', fontWeight: 'bold', paddingBottom: '20px' }} />
                           <Area type="monotone" dataKey="كتب تم طلبها" stroke="#94a3b8" fill="#e2e8f0" />
-                          <Area type="monotone" dataKey="استمارات مضافة" stroke="#0f172a" fill="#0f172a" fillOpacity={0.2} />
+                          <Area type="monotone" dataKey="الاحتياج الفعلي" stroke="#0f172a" fill="#0f172a" fillOpacity={0.2} />
                         </AreaChart>
                       </div>
 
-                      <h3 className="font-black text-slate-700 text-lg mb-4 border-r-4 border-red-600 pr-4">جدول الفجوات التحليلي (التسرب اللوجستي)</h3>
+                      <h3 className="font-black text-slate-700 text-lg mb-4 border-r-4 border-red-600 pr-4">جدول الفجوات التحليلي (تغطية المسابقات)</h3>
                       <table className="pdf-table">
                         <thead>
                           <tr>
-                            <th className="pdf-th">المرحلة</th>
+                            <th className="pdf-th">الكنيسة</th>
                             <th className="pdf-th">الكتب المطلوبة</th>
-                            <th className="pdf-th">الاستمارات المسجلة</th>
+                            <th className="pdf-th">الطلب الحقيقي للكتب</th>
                             <th className="pdf-th">مؤشر العجز / الفائض</th>
                           </tr>
                         </thead>
                         <tbody>
                           {analyticsData.retentionData.map((row, i) => {
-                            const gap = row["كتب تم طلبها"] - row["استمارات مضافة"];
+                            const gap = row["كتب تم طلبها"] - row["الاحتياج الفعلي"];
                             return (
                               <tr key={i}>
                                 <td className="pdf-td bg-slate-50">{row.name}</td>
                                 <td className="pdf-td">{row["كتب تم طلبها"]}</td>
-                                <td className="pdf-td">{row["استمارات مضافة"]}</td>
-                                <td className="pdf-td" style={{ color: gap > 0 ? '#059669' : gap < 0 ? '#dc2626' : '#475569' }} dir="ltr">
+                                <td className="pdf-td">{row["الاحتياج الفعلي"]}</td>
+                                <td className="pdf-td" style={{ color: gap > 0 ? '#b45309' : gap < 0 ? '#dc2626' : '#059669' }} dir="ltr">
                                   {gap > 0 ? `+${gap} (فائض كتب)` : gap < 0 ? `${gap} (عجز كتب)` : 'متطابق'}
                                 </td>
                               </tr>
@@ -7299,22 +7531,30 @@ function AppComponent() {
             {/* Calculator Table */}
             <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
               <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between bg-slate-50/50 gap-4">
-                <div className="flex items-center gap-3">
-                  <BookOpen className="text-coptic-blue" />
-                  <h3 className="font-bold text-lg">حاسبة طلب الكتب</h3>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-3">
+                    <BookOpen className="text-coptic-blue" />
+                    <h3 className="font-bold text-lg">حاسبة طلب الكتب</h3>
+                  </div>
+                  {!systemControls.isBookCalculatorOpen && (
+                    <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-lg text-[10px] font-black w-fit mt-1 animate-pulse">
+                      [مغلقة حالياً من قبل الإدارة المركزية]
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button 
                     onClick={handleClearQuantities}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-all text-sm font-bold shadow-md"
+                    disabled={!systemControls.isBookCalculatorOpen}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-all text-sm font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Trash2 size={16} /> مسح الكميات
                   </button>
                   <button 
                     onClick={handleSubmitOrder}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !systemControls.isBookCalculatorOpen}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all text-sm font-bold shadow-md ${
-                      isSubmitting ? 'bg-slate-400 cursor-not-allowed' : 'bg-coptic-red text-white hover:bg-opacity-90'
+                      isSubmitting || !systemControls.isBookCalculatorOpen ? 'bg-slate-400 cursor-not-allowed' : 'bg-coptic-red text-white hover:bg-opacity-90'
                     }`}
                   >
                     {isSubmitting ? 'جاري الإرسال...' : 'تسجيل الطلب للجنة'}
@@ -7369,7 +7609,8 @@ function AppComponent() {
                                           min="0"
                                           value={quantities[setting.id] || ''}
                                           onChange={(e) => handleQuantityChange(setting.id, e.target.value)}
-                                          className="w-16 px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-center font-black text-sm outline-none focus:bg-white focus:border-primary transition-all shrink-0 font-arabic tabular-nums"
+                                          disabled={!systemControls.isBookCalculatorOpen}
+                                          className="w-16 px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-center font-black text-sm outline-none focus:bg-white focus:border-primary transition-all shrink-0 font-arabic tabular-nums disabled:opacity-50 disabled:cursor-not-allowed"
                                           placeholder="0"
                                         />
                                       </div>
@@ -7553,14 +7794,23 @@ function AppComponent() {
               {/* Team Registration form content starts below directly */}
 
               <div className="space-y-8">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
-                  <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
-                    <UserPlus size={28} className="text-primary" /> تسجيل مشترك جديد
-                  </h4>
-                  <p className="text-slate-500 text-sm font-bold">يرجى ملء البيانات التالية بدقة</p>
-                </div>
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+                    <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
+                      <UserPlus size={28} className="text-primary" /> تسجيل مشترك جديد
+                    </h4>
+                    <p className="text-slate-500 text-sm font-bold">يرجى ملء البيانات التالية بدقة</p>
+                  </div>
 
-                <div className="grid grid-cols-1 gap-8">
+                {!systemControls.isRegistrationOpen ? (
+                  <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
+                    <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mb-2">
+                      <UserPlus size={32} className="text-rose-600" />
+                    </div>
+                    <h4 className="text-2xl font-black text-rose-700">تم غلق التسجيل</h4>
+                    <p className="text-slate-500 font-bold max-w-md">نعتذر، لقد تم انتهاء وقت التسجيل المحدد لكافة الكنائس من قبل الإدارة المركزية.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-8">
                   {/* Basic Information Card */}
                   <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
                     <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
@@ -7715,6 +7965,7 @@ function AppComponent() {
                     </button>
                   </div>
                 </div>
+              )}
 
                 {/* Registered Participants List */}
                 <div className="pt-12 border-t border-slate-100 space-y-6">
@@ -7798,8 +8049,17 @@ function AppComponent() {
                         <Plus size={24} className="text-primary" />
                         <h4 className="font-black text-xl text-slate-800">نموذج تسجيل فريق</h4>
                       </div>
-                      <form id="team-registration-form" onSubmit={handleAddTeam} className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
-                        {editingTeam && (
+                      
+                      <div className="relative">
+                        {!systemControls.isRegistrationOpen && (
+                          <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center rounded-xl">
+                            <span className="bg-rose-100 text-rose-700 px-6 py-2 rounded-full font-black text-sm border border-rose-200 shadow-sm animate-pulse">
+                              [تم انتهاء وقت التسجيل المحدد من الإدارة]
+                            </span>
+                          </div>
+                        )}
+                        <form id="team-registration-form" onSubmit={handleAddTeam} className={`bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8 ${!systemControls.isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}`}>
+                          {editingTeam && (
                           <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between">
                             <p className="text-sm font-bold text-blue-700">أنت الآن تقوم بتعديل بيانات فريق مسجل</p>
                             <button 
@@ -8030,6 +8290,7 @@ function AppComponent() {
                           {isSubmittingTeam ? 'جاري التسجيل...' : 'تسجيل الفريق'}
                         </button>
                       </form>
+                      </div>
                     </div>
 
                     <div className="space-y-6">
