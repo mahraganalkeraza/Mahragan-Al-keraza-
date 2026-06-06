@@ -5,15 +5,18 @@ import { getDatabase, ref as rdbRef, set as rdbSet, onValue, onDisconnect, off, 
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 // Import the Firebase configuration
-import firebaseConfig from '../firebase-applet-config.json';
+import firebaseConfigJson from '../firebase-applet-config.json';
 
 // Initialize Firebase SDK
-export const firebaseApp = initializeApp(firebaseConfig);
-export const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+export const firebaseApp = initializeApp(firebaseConfigJson);
+export const db = getFirestore(firebaseApp, firebaseConfigJson.firestoreDatabaseId);
+
+export const firebaseConfig = firebaseConfigJson;
+
 
 enableIndexedDbPersistence(db).catch((err) => {
   if (err.code == 'failed-precondition') {
-    console.warn('Multiple tabs open, persistence can only be enabled in one tab at a a time.');
+    console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
   } else if (err.code == 'unimplemented') {
     console.warn('The current browser does not support all of the features required to enable persistence');
   }
@@ -22,7 +25,6 @@ enableIndexedDbPersistence(db).catch((err) => {
 export const auth = getAuth(firebaseApp);
 export const storage = getStorage(firebaseApp);
 export const rdb = getDatabase(firebaseApp);
-export { firebaseConfig };
 
 export const CURRENT_YEAR = '2026';
 
@@ -76,10 +78,10 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   };
   
   const serialized = JSON.stringify(errInfo);
-  console.error('Firestore Error: ', serialized);
+  console.warn('Firestore Error caught: ', serialized);
 
   const errMsg = errInfo.error.toLowerCase();
-  if (errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('billing')) {
+  if (errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('billing') || errMsg.includes('limit exceeded')) {
     if (typeof window !== 'undefined') {
       (window as any).firestoreQuotaExceeded = true;
       window.dispatchEvent(new CustomEvent('firestore-quota-exceeded', { detail: errInfo }));
@@ -91,23 +93,27 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
 // Global interceptors for unhandled database/quota errors
 if (typeof window !== 'undefined') {
-  const handleAnyQuotaError = (msg: string) => {
-    const errorStr = String(msg).toLowerCase();
-    if (errorStr.includes('quota') || errorStr.includes('resource_exhausted') || errorStr.includes('over_quota') || errorStr.includes('quota limit exceeded')) {
-      (window as any).firestoreQuotaExceeded = true;
-      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
-    }
-  };
-
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason;
     if (reason) {
-      handleAnyQuotaError(reason.message || reason.error || String(reason));
+      const msg = reason.message || reason.error || String(reason);
+      const errorStr = String(msg).toLowerCase();
+      if (errorStr.includes('quota') || errorStr.includes('resource_exhausted') || errorStr.includes('over_quota') || errorStr.includes('quota limit exceeded')) {
+        (window as any).firestoreQuotaExceeded = true;
+        window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+        event.preventDefault(); // Stop from logging as uncaught rejection
+      }
     }
   });
 
   window.addEventListener('error', (event) => {
-    handleAnyQuotaError(event.message || String(event.error));
+    const msg = event.message || String(event.error);
+    const errorStr = String(msg).toLowerCase();
+    if (errorStr.includes('quota') || errorStr.includes('resource_exhausted') || errorStr.includes('over_quota') || errorStr.includes('quota limit exceeded')) {
+      (window as any).firestoreQuotaExceeded = true;
+      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+      event.preventDefault(); // Stop from logging as uncaught exception
+    }
   });
 }
 

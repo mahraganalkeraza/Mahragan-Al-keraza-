@@ -3,6 +3,47 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 
+const GEMINI_API_KEYS = [
+  process.env.GEMINI_API_KEY,
+  process.env.GEMINI_API_KEY_BACKUP_1,
+  process.env.GEMINI_API_KEY_BACKUP_2,
+].filter(Boolean) as string[];
+
+let currentKeyIndex = 0;
+
+async function callGeminiWithRotation(contents: any, config: any) {
+  // Try all keys, starting from currentKeyIndex
+  for (let i = 0; i < GEMINI_API_KEYS.length; i++) {
+    const key = GEMINI_API_KEYS[currentKeyIndex];
+    const ai = new GoogleGenAI({ 
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    try {
+      return await ai.models.generateContent({ 
+        model: "gemini-3.5-flash",
+        contents,
+        config
+      });
+    } catch (error: any) {
+      const errStr = error ? error.toString() : '';
+      if (error?.status === 429 || errStr.includes('quota') || errStr.includes('Limit') || errStr.includes('RESOURCE_EXHAUSTED')) {
+        console.warn(`Key ${currentKeyIndex} exhausted (${error.status}). Rotating to backup key...`);
+        currentKeyIndex = (currentKeyIndex + 1) % GEMINI_API_KEYS.length;
+        continue;
+      } else {
+        throw error;
+      }
+    }
+  }
+  throw new Error("All backup AI quota paths are fully exhausted.");
+}
+
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '50mb' }));
@@ -13,19 +54,11 @@ async function startServer() {
   });
 
   app.post("/api/gemini", async (req, res) => {
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ error: "Gemini API key not configured" });
+    if (GEMINI_API_KEYS.length === 0) {
+      return res.status(500).json({ error: "No Gemini API keys configured" });
     }
   
     const { prompt, history = [], context = {} } = req.body;
-    const ai = new GoogleGenAI({ 
-      apiKey: process.env.GEMINI_API_KEY,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
     
     try {
       let totalResultsRecorded = 0;
@@ -53,15 +86,11 @@ ${(context.churchesStats || []).map((c: any) => `- كنيسة ${c.name}: عدد 
         { role: "user", parts: [{ text: `[SYSTEM CONTEXT]\n${lightweightSummary}\n\nUSER PROMPT: ${prompt}` }] }
       ];
 
-      const response = await ai.models.generateContent({ 
-        model: "gemini-3.5-flash",
-        contents,
-        config: {
-          systemInstruction: `You are the Super Admin Manager for the Coptic Festival 'Mahragan El Kraza' in District 18 (المنطقة 18).
+      const response = await callGeminiWithRotation(contents, {
+        systemInstruction: `You are the Super Admin Manager for the Coptic Festival 'Mahragan El Kraza' in District 18 (المنطقة 18).
 You have access to the global unfiltered statistics (e.g., student counts, stages, and church subscribers) provided in the [SYSTEM CONTEXT].
 Always answer accurately, using the given data counts, and explain clearly.
 Write your responses in helpful, concise Arabic. Do not invent any numbers that are not in the context.`,
-        }
       });
   
       res.json({ text: response.text });
