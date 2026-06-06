@@ -122,8 +122,9 @@ import {
   serverTimestamp,
   getCountFromServer
 } from './firebase';
-import localChurchData from './data/churches.json';
+import { supabase } from './lib/supabaseClient';
 import { syncEmergencyDataToFirestore, autoSyncSupabaseToFirebase } from './services/emergencySync';
+import { saveGlobalData, fetchAllCombinedData, silentDualFetch, silentDualWrite, submitNewRegistration } from './services/dataService';
 import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
 
@@ -274,7 +275,7 @@ function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carous
             return `<span class="${className}"></span>`;
           }
         }}
-        loop={true}
+        loop={false}
         className="h-full w-full"
       >
         {slides.map((item, index) => (
@@ -629,6 +630,28 @@ function AppComponent() {
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    async function checkSupabaseConnection() {
+      if (!supabase) {
+        console.warn("⚠️ Supabase client is not initialized (check URL or Key environmental variables).");
+        return;
+      }
+      try {
+        // Attempt a lightweight dummy query to the 'churches' table
+        const { error } = await supabase.from('churches').select('count', { count: 'exact', head: true });
+        
+        if (error) {
+          console.error("❌ Supabase Connection Failed:", error.message);
+        } else {
+          console.log("✅ Supabase Connection Status: 100% OPERATIONAL & CONNECTED!");
+        }
+      } catch (err) {
+        console.error("❌ Supabase Crash during test:", err);
+      }
+    }
+    checkSupabaseConnection();
+  }, []);
   
   useEffect(() => {
     console.log("Current User Role:", userRole);
@@ -727,36 +750,34 @@ function AppComponent() {
 
       try {
         const churchesData = await loadCachedOrFetch('churches', async () => {
-          const snap = await getDocs(collection(db, 'churches'));
-          return snap.docs
+          const docs = await silentDualFetch('churches');
+          return docs
             .map(d => ({ 
-              name: d.data().name, 
+              name: d.name, 
               email: '', 
-              isEnabled: d.data().isEnabled !== false,
-              logoUrl: d.data().logoUrl || ''
+              isEnabled: d.isEnabled !== false,
+              logoUrl: d.logoUrl || ''
             }))
             .filter(c => c.isEnabled);
         });
         setPublicChurches(churchesData);
 
         const levelsData = await loadCachedOrFetch('levels', async () => {
-          const snap = await getDocs(collection(db, 'levels'));
-          return snap.docs.map(d => ({ 
-            name: d.data().name, 
-            comps: d.data().allowedCompetitions || [] 
+          const docs = await silentDualFetch('levels');
+          return docs.map(d => ({ 
+            name: d.name, 
+            comps: d.allowedCompetitions || [] 
           }));
         });
         setDynamicLevels(levelsData.sort((a: any, b: any) => sortStages(a.name, b.name)));
 
         const activityStagesData = await loadCachedOrFetch('activityStages', async () => {
-          const snap = await getDocs(collection(db, 'activityStages'));
-          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          return await silentDualFetch('activityStages');
         });
         setActivityStages(activityStagesData);
 
         const hymnStagesData = await loadCachedOrFetch('hymnStages', async () => {
-          const snap = await getDocs(collection(db, 'hymnStages'));
-          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          return await silentDualFetch('hymnStages');
         });
         setHymnStages(hymnStagesData);
 
@@ -963,15 +984,13 @@ function AppComponent() {
     const delayDebounceId = setTimeout(async () => {
       setIsCheckingParticipantDuplicate(true);
       try {
-        const q = query(
-          collection(db, 'participants'),
+        const matchedDocs = await silentDualFetch('participants', [
           where('churchName', '==', churchName),
           where('name', '==', trimmedName),
           limit(1)
-        );
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          const matchedDoc = querySnapshot.docs[0].data();
+        ]);
+        if (matchedDocs.length > 0) {
+          const matchedDoc = matchedDocs[0];
           const pStage = matchedDoc.stage || 'غير محددة';
           setParticipantDuplicateWarning(
             `تنبيه: يوجد مشترك مسجل بالفعل بنفس هذا الاسم في كنيستك للمرحلة: ${pStage}. يرجى توخي الحذر والتأكد من الاسم ثلاثياً لتجنب التكرار.`
@@ -1449,13 +1468,12 @@ function AppComponent() {
   useEffect(() => {
     async function fetchData() {
         try {
-            const schedulesSnap = await getDocs(query(collection(db, 'schedules'), where('year', '==', activeYear)));
-            setSchedules(schedulesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Schedule)));
+            const schedulesData = await silentDualFetch('schedules', [where('year', '==', activeYear)]);
+            setSchedules(schedulesData as Schedule[]);
             
-            const examLinksSnap = await getDocs(query(collection(db, 'examLinks'), where('year', '==', activeYear)));
+            const examLinksData = await silentDualFetch('examLinks', [where('year', '==', activeYear)]);
             const links: Record<string, string> = {};
-            examLinksSnap.docs.forEach(doc => {
-                const data = doc.data() as ExamLink;
+            examLinksData.forEach((data: any) => {
                 links[data.stage] = data.url;
             });
             setExamLinks(links);
@@ -1474,15 +1492,15 @@ function AppComponent() {
 
     async function fetchStaticData() {
         try {
-            const newsSnap = await getDocs(query(collection(db, 'news'), where('year', '==', activeYear), orderBy('timestamp', 'desc'), limit(10)));
-            setNews(newsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as News)));
+            const newsData = await silentDualFetch('news', [where('year', '==', activeYear), orderBy('timestamp', 'desc'), limit(10)]);
+            setNews(newsData as News[]);
             
-            const carouselSnap = await getDocs(query(collection(db, 'carousel'), where('year', '==', activeYear)));
-            const items = carouselSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CarouselItem));
+            const carouselData = await silentDualFetch('carousel', [where('year', '==', activeYear)]);
+            const items = carouselData as CarouselItem[];
             setCarouselItems(items.sort((a, b) => (a.order || 0) - (b.order || 0)));
             
-            const calculatorSettingsSnap = await getDocs(query(collection(db, 'calculator_settings'), where('year', '==', activeYear)));
-            setCalculatorSettings(calculatorSettingsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const calculatorSettingsData = await silentDualFetch('calculator_settings', [where('year', '==', activeYear)]);
+            setCalculatorSettings(calculatorSettingsData);
             setIsCalculatorLoading(false);
             
             const footerSnap = await getDoc(doc(db, 'settings', 'footer'));
@@ -1506,22 +1524,35 @@ function AppComponent() {
     if (!cName) return;
     try {
       // 1. Query participants count for this church and year
-      const participantsQuery = query(
-        collection(db, 'participants'),
-        where('churchName', '==', cName),
-        where('year', '==', activeYear)
-      );
-      const snap = await getCountFromServer(participantsQuery);
-      const count = snap.data().count;
+      let count = 0;
+      try {
+        const participantsQuery = query(
+          collection(db, 'participants'),
+          where('churchName', '==', cName),
+          where('year', '==', activeYear)
+        );
+        const snap = await getCountFromServer(participantsQuery);
+        count = snap.data().count;
+      } catch (countErr) {
+        console.warn('Error reading count from server, falling back to silentDualFetch calculation:', countErr);
+        const pDocs = await silentDualFetch('participants', [
+          where('churchName', '==', cName),
+          where('year', '==', activeYear)
+        ]);
+        count = pDocs.length;
+      }
 
       // 2. Load the church document from 'churches' collection and update subscribers count
-      const churchQuery = query(collection(db, 'churches'), where('name', '==', cName));
-      const churchSnap = await getDocs(churchQuery);
-      if (!churchSnap.empty) {
-        const churchDoc = churchSnap.docs[0];
-        await updateDoc(doc(db, 'churches', churchDoc.id), {
-          subscribers: count
-        });
+      const churchDocs = await silentDualFetch('churches', [where('name', '==', cName)]);
+      if (churchDocs.length > 0) {
+        const churchDoc = churchDocs[0];
+        try {
+          await updateDoc(doc(db, 'churches', churchDoc.id), {
+            subscribers: count
+          });
+        } catch (updateErr) {
+          console.warn('Error updating church subscribers count in Firebase:', updateErr);
+        }
       }
     } catch (err) {
       console.error('Error updating church subscribers:', err);
@@ -1633,7 +1664,7 @@ function AppComponent() {
         });
         setEditingNews(null);
       } else {
-        await addDoc(collection(db, 'news'), {
+        await saveGlobalData('news', {
           title: newNews.title,
           content: newNews.content,
           imageUrl,
@@ -1660,7 +1691,7 @@ function AppComponent() {
         await updateDoc(doc(db, 'schedules', editingSchedule.id), { ...newSchedule, year: activeYear });
         setEditingSchedule(null);
       } else {
-        await addDoc(collection(db, 'schedules'), { ...newSchedule, year: activeYear });
+        await saveGlobalData('schedules', { ...newSchedule, year: activeYear });
       }
       setNewSchedule({ examName: 'دراسي ومحفوظات وقبطي', date: '', time: '', location: '' });
       alert('تم حفظ الجدول بنجاح!');
@@ -1695,7 +1726,7 @@ function AppComponent() {
         });
         setEditingCarousel(null);
       } else {
-        await addDoc(collection(db, 'carousel'), {
+        await saveGlobalData('carousel', {
           title: newCarousel.title,
           url,
           order: newCarousel.order,
@@ -2169,12 +2200,16 @@ function AppComponent() {
 
   const handleUpdateExamLink = async (stage: string, url: string) => {
     try {
-      const q = query(collection(db, 'examLinks'), where('stage', '==', stage), where('year', '==', activeYear));
-      const snapshot = await getDocs(q);
-      if (snapshot.empty) {
-        await addDoc(collection(db, 'examLinks'), { stage, url, year: activeYear });
+      const docs = await silentDualFetch('examLinks', [where('stage', '==', stage), where('year', '==', activeYear)]);
+      if (docs.length === 0) {
+        await saveGlobalData('examLinks', { stage, url, year: activeYear });
       } else {
-        await updateDoc(doc(db, 'examLinks', snapshot.docs[0].id), { url, year: activeYear });
+        try {
+          await updateDoc(doc(db, 'examLinks', docs[0].id), { url, year: activeYear });
+        } catch (updateErr) {
+          console.warn("Firebase update failed, using saveGlobalData fallback write:", updateErr);
+          await saveGlobalData('examLinks', { id: docs[0].id, stage, url, year: activeYear });
+        }
       }
       alert('تم تحديث الرابط بنجاح');
     } catch (error) {
@@ -2370,13 +2405,9 @@ function AppComponent() {
     setDuplicateRecords([]);
     
     try {
-      const q = query(
-        collection(db, 'participants'),
+      const parts = await silentDualFetch('participants', [
         where('year', '==', activeYear)
-      );
-      
-      const snap = await getDocs(q);
-      const parts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
+      ]) as Participant[];
       
       const duplicatesMap: Record<string, Participant[]> = {};
       
@@ -2473,13 +2504,16 @@ function AppComponent() {
       if (isFirst || (!isFirst && !isNext)) {
         getCountFromServer(query(baseQueryQ, ...constraints)).then(snap => {
           setTotalParticipantsCount(snap.data().count);
-        }).catch(err => console.error("Firestore Core Error: ", err.message));
+        }).catch(async (err) => {
+          console.warn("Firestore count query failed, recalculating from fallback fetch...");
+          try {
+            const fallbackDocs = await silentDualFetch('participants', constraints);
+            setTotalParticipantsCount(fallbackDocs.length);
+          } catch (e) {}
+        });
       }
       
-      const q = query(baseQueryQ, ...constraints);
-      const snap = await getDocs(q);
-      
-      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
+      const newList = await silentDualFetch('participants', constraints) as Participant[];
       setParticipants(newList);
       
       if (isFirst) setParticipantPageCount(1);
@@ -2531,7 +2565,13 @@ function AppComponent() {
         : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
       
       if (isFirst || (!isFirst && !isNext)) {
-        getCountFromServer(baseQuery).then(snap => setTotalOrdersCount(snap.data().count)).catch(err => console.error("Firestore Core Error: ", err.message));
+        getCountFromServer(baseQuery).then(snap => setTotalOrdersCount(snap.data().count)).catch(async (err) => {
+          console.warn("Firestore count query failed, recalculating from fallback fetch...");
+          try {
+            const fallbackDocs = await silentDualFetch('orders', [where('year', '==', activeYear)]);
+            setTotalOrdersCount(fallbackDocs.length);
+          } catch (e) {}
+        });
       }
 
       const constraints: any[] = [orderBy('timestamp', 'desc')];
@@ -2540,13 +2580,14 @@ function AppComponent() {
         constraints.push(startAfter(lastOrderDoc));
       }
       
-      const q = query(baseQuery, ...constraints);
-      const snap = await getDocs(q);
-      
-      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+      const queryConstraints = [
+        where('year', '==', activeYear),
+        ...(userRole !== 'admin' ? [where('churchName', '==', churchName)] : []),
+        ...constraints
+      ];
+      const newList = await silentDualFetch('orders', queryConstraints) as Order[];
       setOrders(newList);
-      setLastOrderDoc(snap.docs[snap.docs.length - 1]);
-      setIsOrdersEnd(snap.docs.length < 20);
+      setIsOrdersEnd(true);
       
       if (isFirst) setOrderPageCount(1);
       else if (isNext) setOrderPageCount(prev => prev + 1);
@@ -2562,7 +2603,6 @@ function AppComponent() {
     if (!isLoggedIn) return;
     setIsOnlineResultsLoading(true);
     try {
-      const baseQuery = collection(db, 'online_results');
       const constraints: any[] = [where('year', '==', activeYear), orderBy('timestamp', 'desc')];
       
       if (userRole === 'church') {
@@ -2573,13 +2613,9 @@ function AppComponent() {
         constraints.push(startAfter(lastOnlineResultDoc));
       }
       
-      const q = query(baseQuery, ...constraints);
-      const snap = await getDocs(q);
-      
-      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const newList = await silentDualFetch('online_results', constraints);
       setOnlineResults(newList);
-      setLastOnlineResultDoc(snap.docs[snap.docs.length - 1]);
-      setIsOnlineResultsEnd(snap.docs.length < 20);
+      setIsOnlineResultsEnd(true);
       
       if (isFirst) setOnlineResultPageCount(1);
       else if (isNext) setOnlineResultPageCount(prev => prev + 1);
@@ -2625,20 +2661,22 @@ function AppComponent() {
       if (isFirst || (!isFirst && !isNext)) {
         getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
           setTotalResultsCount(snap.data().count);
-        }).catch(err => console.error("Firestore Core Error: ", err.message));
+        }).catch(async (err) => {
+          console.warn("Firestore count query failed, recalculating from fallback fetch...");
+          try {
+            const fallbackDocs = await silentDualFetch('results', countConstraints);
+            setTotalResultsCount(fallbackDocs.length);
+          } catch (e) {}
+        });
       }
 
       if (!isFirst && isNext && lastResultDoc) {
         constraints.push(startAfter(lastResultDoc));
       }
       
-      const q = query(baseQueryQ, ...constraints);
-      const snap = await getDocs(q);
-      
-      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Result));
+      const newList = await silentDualFetch('results', constraints) as Result[];
       setResults(newList);
-      setLastResultDoc(snap.docs[snap.docs.length - 1]);
-      setIsResultsEnd(snap.docs.length < 20);
+      setIsResultsEnd(true);
       
       if (isFirst) setResultPageCount(1);
       else if (isNext) setResultPageCount(prev => prev + 1);
@@ -2676,20 +2714,22 @@ function AppComponent() {
       if (isFirst || (!isFirst && !isNext)) {
         getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
           setTotalTeamsCount(snap.data().count);
-        }).catch(err => console.error("Firestore Core Error: ", err.message));
+        }).catch(async (err) => {
+          console.warn("Firestore count query failed, recalculating from fallback fetch...");
+          try {
+            const fallbackDocs = await silentDualFetch('activityTeams', countConstraints);
+            setTotalTeamsCount(fallbackDocs.length);
+          } catch (e) {}
+        });
       }
 
       if (!isFirst && isNext && lastTeamDoc) {
         constraints.push(startAfter(lastTeamDoc));
       }
       
-      const q = query(baseQueryQ, ...constraints);
-      const snap = await getDocs(q);
-      
-      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityTeam));
+      const newList = await silentDualFetch('activityTeams', constraints) as ActivityTeam[];
       setActivityTeams(newList);
-      setLastTeamDoc(snap.docs[snap.docs.length - 1]);
-      setIsTeamsEnd(snap.docs.length < 20);
+      setIsTeamsEnd(true);
       
       if (isFirst) setTeamPageCount(1);
       else if (isNext) setTeamPageCount(prev => prev + 1);
@@ -2742,16 +2782,23 @@ function AppComponent() {
       targetChurch = 'اللجنة المركزية منطقة18';
     } else {
       try {
-        const foundChurch = localChurchData.find((c: any) => c.name === loginChurch);
-        
-        if (!foundChurch) {
-          setLoginError('الكنيسة غير موجودة');
+        const { data: church, error } = await supabase
+          .from('churches')
+          .select('*')
+          .eq('name', loginChurch.trim())
+          .single();
+
+        if (error || !church) {
+          setLoginError('الكنيسة غير مسجلة بالنظام');
           setIsLoading(false);
           return;
         }
 
-        if (code !== foundChurch.password) {
-          setLoginError('كود الكنيسة غير صحيح');
+        const storedPassword = church.password.replace(/\s+/g, '');
+        const userPassword = code.replace(/\s+/g, '');
+
+        if (storedPassword !== userPassword) {
+          setLoginError('كلمة المرور غير صحيحة');
           setIsLoading(false);
           return;
         }
@@ -2794,7 +2841,11 @@ function AppComponent() {
       if (firebaseUser) {
         let userDoc;
         if (email.endsWith('_2026@mafk.com')) {
-           const church = localChurchData.find((c: any) => c.code === password);
+           const { data: church } = await supabase
+             .from('churches')
+             .select('name')
+             .eq('password', password.replace(/\s+/g, ''))
+             .single();
            userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: church?.name || 'كنيسة', uid: firebaseUser.uid }) };
         } else {
            userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
@@ -2894,7 +2945,7 @@ function AppComponent() {
         setEditingResult(null);
         alert('تم تحديث النتيجة بنجاح');
       } else {
-        await addDoc(collection(db, 'results'), {
+        await saveGlobalData('results', {
           ...newResult,
           timestamp: new Date().toISOString(),
           year: activeYear
@@ -2974,7 +3025,7 @@ function AppComponent() {
       reply: ''
     };
     try {
-      await addDoc(collection(db, 'inquiries'), { ...newInquiry, year: activeYear });
+      await saveGlobalData('inquiries', { ...newInquiry, year: activeYear });
       setInquiryMessage('');
       alert('تم إرسال استفسارك بنجاح، سيقوم المسئول بالرد عليك قريباً.');
     } catch (error) {
@@ -3062,7 +3113,7 @@ function AppComponent() {
         setEditingTeam(null);
         alert('تم تحديث النشاط بنجاح.');
       } else {
-        const docRef = await withExponentialBackoff(() => addDoc(collection(db, 'activityTeams'), { ...team, year: activeYear }));
+        const docRef = await withExponentialBackoff(() => saveGlobalData('activityTeams', { ...team, year: activeYear }));
         
         // Instant state sync for adding team
         const createdTeam: ActivityTeam = {
@@ -3089,7 +3140,7 @@ function AppComponent() {
                year: activeYear
              };
              const customId = generateShortId();
-             await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...newParticipant, serial: customId }));
+             await submitNewRegistration({ id: customId, serial: customId, ...newParticipant }, 'participants');
              
              // Instant state sync for newly added student from activity
              const newStudent: Participant = {
@@ -3215,7 +3266,7 @@ function AppComponent() {
       if (resDoc.exists()) {
         const data = resDoc.data();
         // 1. Archive Old Attempt
-        await addDoc(collection(db, 'results', studentId, 'previous_attempts'), {
+        await saveGlobalData(['results', studentId, 'previous_attempts'], {
           ...data,
           archivedAt: new Date().toISOString(),
           archivedBy: user?.email || 'admin'
@@ -3306,7 +3357,7 @@ function AppComponent() {
           country: 'مصر'
         };
         const customId = generateShortId();
-        await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...participantData, serial: customId }));
+        await submitNewRegistration({ id: customId, serial: customId, ...participantData }, 'participants');
         
         // Instant state sync for adding a new student
         const newStudent: Participant = {
@@ -3455,7 +3506,7 @@ function AppComponent() {
         }))
       };
 
-      const docRef = await withExponentialBackoff(() => addDoc(collection(db, 'orders'), { ...newOrder, year: activeYear }));
+      const docRef = await saveGlobalData('orders', { ...newOrder, year: activeYear });
       
       // Instant state sync
       const finalOrder: Order = {
