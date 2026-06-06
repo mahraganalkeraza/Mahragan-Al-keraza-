@@ -47,7 +47,7 @@ async function startServer() {
       }];
 
       let response = await ai.models.generateContent({ 
-        model: "gemini-2.5-flash",
+        model: "gemini-1.5-flash",
         contents,
         tools,
         config: {
@@ -84,7 +84,7 @@ Always provide concise, helpful answers in Arabic.`,
         const previousContent = response.candidates?.[0]?.content;
         if (previousContent) {
            response = await ai.models.generateContent({
-             model: "gemini-2.5-flash",
+             model: "gemini-1.5-flash",
              contents: [
                ...contents,
                previousContent,

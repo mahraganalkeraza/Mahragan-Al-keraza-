@@ -5,8 +5,27 @@ import Draggable from 'react-draggable';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
-export default function AdminAIAssistantWidget({ participants = [], churches = [] }: { participants?: any[], churches?: any[] }) {
+export default function AdminAIAssistantWidget({ 
+  participants = [], 
+  churches = [], 
+  isOpen: isOpenProp, 
+  onClose 
+}: { 
+  participants?: any[], 
+  churches?: any[], 
+  isOpen?: boolean, 
+  onClose?: () => void 
+}) {
   const [isOpen, setIsOpen] = useState(false);
+  const isCurrentlyOpen = isOpenProp !== undefined ? isOpenProp : isOpen;
+
+  const handleClose = () => {
+    if (onClose) {
+      onClose();
+    } else {
+      setIsOpen(false);
+    }
+  };
   const [messages, setMessages] = useState<{role: 'user'|'model', text: string}[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -114,29 +133,55 @@ export default function AdminAIAssistantWidget({ participants = [], churches = [
 
   return (
     <>
-      <div style={{
-        position: 'fixed',
-        bottom: '40px',
-        right: '40px',
-        width: '65px',
-        height: '65px',
-        backgroundColor: '#1e3a8a', // Dark Premium Blue
-        borderRadius: '50%',
-        zIndex: '999999', // Forces it above tables, sidebars, and overlays
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxShadow: '0px 4px 20px rgba(0, 0, 0, 0.4)',
-        cursor: 'pointer'
-      }} onClick={() => setIsOpen(!isOpen)}>
-        {isOpen ? <Bot size={24} color="white" /> : <MessageSquare size={24} color="white" />}
-      </div>
+      {isOpenProp === undefined && (
+        <Draggable
+          nodeRef={nodeRef}
+          position={position}
+          onDrag={handleDrag}
+          onStop={onDragStop}
+          bounds="window"
+        >
+          <div 
+            ref={nodeRef}
+            className="active:scale-95 group"
+            style={{
+              position: 'fixed',
+              bottom: '32px',
+              right: position.x === 0 && !isDragging ? '32px' : 'auto', // Keep default right positioning if not explicitly dragged
+              left: position.x === 0 && !isDragging ? 'auto' : undefined,
+              width: '64px',
+              height: '64px',
+              backgroundColor: '#1e3a8a',
+              borderRadius: '50%',
+              zIndex: '999999',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 0 20px rgba(30, 58, 138, 0.8)',
+              cursor: isDragging ? 'grabbing' : 'pointer',
+              transition: isDragging ? 'none' : 'all 0.2s ease', // Smooth snapping when released
+              touchAction: 'none', // Prevent scrolling while dragging
+              animation: isDragging ? 'none' : 'admin-pulse-glow 2s infinite'
+            }} 
+            onClick={(e) => {
+               // Prevent click event when dragging 
+               if (!isDragging) setIsOpen(!isOpen);
+            }}
+          >
+            {isOpen ? (
+              <MessageSquare size={26} color="white" className="filter drop-shadow-md" />
+            ) : (
+              <span style={{ fontSize: '28px' }}>✨</span>
+            )}
+          </div>
+        </Draggable>
+      )}
 
-      {isOpen && (
-        <div className="fixed bottom-[115px] right-[40px] z-[999999] w-[400px] max-w-[90vw] bg-white rounded-2xl shadow-2xl border border-slate-100 p-4" dir="rtl">
+      {isCurrentlyOpen && (
+        <div className="fixed bottom-[110px] right-[32px] md:right-[40px] z-[999999] w-[400px] max-w-[90vw] bg-white rounded-2xl shadow-2xl border border-slate-100 p-4" dir="rtl">
           <div className="flex justify-between items-center mb-4">
              <h3 className="font-black text-slate-800 flex items-center gap-2"><Bot size={20}/> مساعد الأدمن الذكي (بصلاحيات عالمية)</h3>
-             <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full w-8 h-8 flex items-center justify-center">×</button>
+             <button onClick={handleClose} className="text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full w-8 h-8 flex items-center justify-center">×</button>
           </div>
           <div className="h-72 overflow-y-auto mb-4 p-4 bg-slate-50 rounded-xl space-y-3 shadow-inner">
              {messages.length === 0 && (
