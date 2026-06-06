@@ -601,6 +601,20 @@ function AppComponent() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!initialProfile);
   const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest' | 'super_admin'>(initialProfile?.role || 'guest');
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
+
+  useEffect(() => {
+    const handleQuotaExceeded = () => {
+      setIsQuotaExceeded(true);
+    };
+    window.addEventListener('firestore-quota-exceeded', handleQuotaExceeded);
+    if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
+      setIsQuotaExceeded(true);
+    }
+    return () => {
+      window.removeEventListener('firestore-quota-exceeded', handleQuotaExceeded);
+    };
+  }, []);
   
   useEffect(() => {
     console.log("Current User Role:", userRole);
@@ -3846,6 +3860,12 @@ function AppComponent() {
 
   return (
     <div className="min-h-screen bg-bg-soft font-sans selection:bg-accent/30 relative" dir="rtl">
+      {isQuotaExceeded && (
+        <div className="bg-amber-600 text-white py-3 px-4 text-center text-xs md:text-sm font-bold flex items-center justify-center gap-2 z-[999999] relative shadow-md" dir="rtl">
+          <span>⚠️</span>
+          <span>تنبيه: تم تجاوز الحد الأقصى لقراءة البيانات اليومية المجانية لقاعدة البيانات (Firestore Quota Limit Exceeded). يرجى المحاولة غداً أو لاحقاً.</span>
+        </div>
+      )}
       {/* Global Watermark */}
       <div 
         className="fixed inset-0 pointer-events-none z-0 opacity-[0.03]"
@@ -4390,7 +4410,7 @@ function AppComponent() {
               </div>
             </div>
 
-            <QuickActionsHub userRole={userRole} onAction={setActiveSection} />
+            <QuickActionsHub userRole={userRole === 'super_admin' ? 'admin' : userRole} onAction={setActiveSection} />
             <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div className="flex items-center gap-4">

@@ -46,20 +46,26 @@ export default function AdminAIAssistantWidget({
         churches: churchesSnap.docs.map(d => ({ id: d.id, ...d.data() })),
         totalResultsRecorded: resultsSnap.size
       });
-    } catch (error) {
-      console.error("CRITICAL ADMIN FIRESTORE ERROR:", error);
-      throw error; // Let the Error Boundary handle it gracefully
+    } catch (err: any) {
+      console.warn("CRITICAL ADMIN FIRESTORE ERROR (Using local parameters fallback):", err);
+      return JSON.stringify({
+        churches: [],
+        totalResultsRecorded: 0,
+        quotaExceeded: true,
+        errorMsg: err?.message || String(err)
+      });
     }
   }
 
   const sendMessage = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() && !error) return; // Allow triggering retry if error exists even if input is empty
     setIsLoading(true);
     setError(null);
-    const userMsg = input;
-    setInput('');
-    const newMessages = [...messages, {role: 'user' as const, text: userMsg}];
-    setMessages(newMessages);
+    const userMsg = input || "إعادة المحاولة";
+    if (input.trim()) {
+      setInput('');
+      setMessages(prev => [...prev, {role: 'user' as const, text: userMsg}]);
+    }
     
     try {
       // Create lightweight context
@@ -94,12 +100,16 @@ export default function AdminAIAssistantWidget({
           context
         }) // no churchName restrictions
       });
-      if (!resp.ok) throw new Error("Failed to reach AI");
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => null);
+        throw new Error(errData?.error || `Failed to reach AI (Status: ${resp.status})`);
+      }
       const data = await resp.json();
-      setMessages([...newMessages, {role: 'model', text: data.text}]);
-    } catch (e) {
-      setError("حدث خطأ في جلب البيانات، إضغط لإعادة المحاولة");
-      setMessages(messages); // Revert or leave as is
+      setMessages(prev => [...prev, {role: 'model', text: data.text}]);
+    } catch (e: any) {
+      console.error("Assistant Error detail:", e);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      setError(errMsg);
     } finally {
       setIsLoading(false);
     }
@@ -180,7 +190,7 @@ export default function AdminAIAssistantWidget({
       {isCurrentlyOpen && (
         <div className="fixed bottom-[110px] right-[32px] md:right-[40px] z-[999999] w-[400px] max-w-[90vw] bg-white rounded-2xl shadow-2xl border border-slate-100 p-4" dir="rtl">
           <div className="flex justify-between items-center mb-4">
-             <h3 className="font-black text-slate-800 flex items-center gap-2"><Bot size={20}/> مساعد الأدمن الذكي (بصلاحيات عالمية)</h3>
+             <h2 className="font-black text-slate-800 flex items-center gap-2"><Bot size={20}/> المساعد الذكي (خاص بالمنطقة 18)</h2>
              <button onClick={handleClose} className="text-slate-400 hover:text-slate-600 bg-slate-100 rounded-full w-8 h-8 flex items-center justify-center">×</button>
           </div>
           <div className="h-72 overflow-y-auto mb-4 p-4 bg-slate-50 rounded-xl space-y-3 shadow-inner">
@@ -197,20 +207,51 @@ export default function AdminAIAssistantWidget({
                 </div>
              ))}
              {isLoading && (
-                 <div className="bg-white border rounded-lg mr-auto p-3 text-sm text-slate-500 shadow-sm flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce"></span>
-                    <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce delay-75"></span>
-                    <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce delay-150"></span>
-                 </div>
+                  <div className="bg-white border rounded-lg mr-auto p-3 text-sm text-slate-500 shadow-sm flex items-center gap-2">
+                     <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce"></span>
+                     <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce delay-75"></span>
+                     <span className="w-2 h-2 rounded-full bg-slate-400 animate-bounce delay-150"></span>
+                  </div>
              )}
-             {error && (
-                <div className="bg-red-50 p-4 rounded-xl text-center">
-                  <p className="text-red-700 font-bold mb-2 text-sm">{error}</p>
-                  <button className="flex items-center gap-2 mx-auto justify-center w-full py-2 bg-red-100 text-red-800 rounded-lg text-sm" onClick={sendMessage}>
-                     <RotateCcw size={16}/> إرسال مجدداً
-                  </button>
-                </div>
-             )}
+             {error && (() => {
+                const urlRegex = /(https:\/\/console\.firebase\.google\.com[^\s"']*)/g;
+                const match = error.match(urlRegex);
+                if (match) {
+                  const indexUrl = match[0].replace(/[.,;)]+$/, "");
+                  return (
+                    <div className="bg-red-50 p-4 rounded-xl text-right" dir="rtl">
+                      <p className="text-red-700 font-extrabold mb-2 text-sm">
+                        🚨 خطأ في فيربيز: يتطلب هذا الاستعلام فهارس (Composite Indexes).
+                      </p>
+                      <p className="text-[11px] text-slate-600 mb-4 font-mono leading-relaxed bg-white p-3 border border-red-100 rounded-lg select-all max-h-24 overflow-y-auto">
+                        {error}
+                      </p>
+                      <a
+                        href={indexUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-center w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-sm shadow-md transition-all animate-pulse mb-3 select-none"
+                      >
+                         🚀 اضغط هنا لإنشاء الفهرس المركب فوراً في Firebase Console
+                      </a>
+                      <button 
+                        className="flex items-center gap-2 mx-auto justify-center w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold shadow-sm" 
+                        onClick={sendMessage}
+                      >
+                         <RotateCcw size={16}/> إرسال مجدداً بعد الضغط والإنشاء
+                      </button>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="bg-red-50 p-4 rounded-xl text-center">
+                    <p className="text-red-700 font-bold mb-2 text-sm">{error}</p>
+                    <button className="flex items-center gap-2 mx-auto justify-center w-full py-2 bg-red-100 text-red-800 rounded-lg text-sm" onClick={sendMessage}>
+                       <RotateCcw size={16}/> إرسال مجدداً
+                    </button>
+                  </div>
+                );
+             })()}
           </div>
           <div className="flex gap-2">
             <input 

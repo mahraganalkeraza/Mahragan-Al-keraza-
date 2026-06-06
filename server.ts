@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 async function startServer() {
   const app = express();
@@ -18,96 +18,56 @@ async function startServer() {
     }
   
     const { prompt, history = [], context = {} } = req.body;
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    
-    try {
-      const contents = [
-        ...history,
-        { role: "user", parts: [{ text: `[SYSTEM CONTEXT INJECTION]\nGLOBAL FIRESTORE DATA SNAPSHOT (Read-Only):\n${context.globalFirestoreData}\n\nUSER PROMPT: ${prompt}` }] }
-      ];
-
-      const tools = [{
-        functionDeclarations: [
-          {
-            name: "getGlobalRegistrationStats",
-            description: "Fetches aggregated registration statistics for all churches.",
-          },
-          {
-            name: "getSpecificChurchStatus",
-            description: "Fetches detailed status for a specific church.",
-            parameters: {
-              type: "OBJECT",
-              properties: {
-                churchName: { type: "STRING" }
-              },
-              required: ["churchName"]
-            }
-          }
-        ]
-      }];
-
-      let response = await ai.models.generateContent({ 
-        model: "gemini-1.5-flash",
-        contents,
-        tools,
-        config: {
-          systemInstruction: `You are the Super Admin Manager for the Coptic Festival 'Mahragan El Kraza'.
-You have access to global unfiltered data across all churches.
-NEVER ask the user to upload files. You have the tools 'getGlobalRegistrationStats' and 'getSpecificChurchStatus' to fetch all necessary data.
-If the user asks for statistics, run the appropriate tool immediately to get the latest data.
-Always provide concise, helpful answers in Arabic.`,
-        }
-      });
-
-      if (response.functionCalls && response.functionCalls.length > 0) {
-        const call = response.functionCalls[0];
-        let resultData = {};
-        
-        if (call.name === "getGlobalRegistrationStats") {
-          resultData = {
-            firestoreData: context.globalFirestoreData ? JSON.parse(context.globalFirestoreData) : {},
-            totalChurches: context.churchesStats?.length || 0,
-            totalStudents: context.totalParticipants || 0,
-            statsByStage: context.stagesStats || {},
-            churches: context.churchesStats || []
-          };
-        } else if (call.name === "getSpecificChurchStatus") {
-          const cName = (call.args as any).churchName;
-          const church = context.churchesStats?.find((c: any) => c.name === cName);
-          if (church) {
-            resultData = church;
-          } else {
-            resultData = { error: "Church not found" };
-          }
-        }
-
-        const previousContent = response.candidates?.[0]?.content;
-        if (previousContent) {
-           response = await ai.models.generateContent({
-             model: "gemini-1.5-flash",
-             contents: [
-               ...contents,
-               previousContent,
-               {
-                 role: "user",
-                 parts: [{
-                   functionResponse: {
-                     name: call.name,
-                     response: resultData
-                   }
-                 }]
-               }
-             ],
-             tools,
-             config: { toolConfig: { includeServerSideToolInvocations: true } }
-           });
+    const ai = new GoogleGenAI({ 
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
         }
       }
+    });
+    
+    try {
+      let totalResultsRecorded = 0;
+      try {
+        if (context.globalFirestoreData) {
+          const parsed = JSON.parse(context.globalFirestoreData);
+          totalResultsRecorded = parsed.totalResultsRecorded || 0;
+        }
+      } catch (e) {
+        console.warn("Could not parse globalFirestoreData:", e);
+      }
+
+      const lightweightSummary = `Total Registered Students: ${context.totalParticipants || 0}
+Total Registered Churches: ${context.churchesStats?.length || 0}
+Total Online Results Recorded: ${totalResultsRecorded}
+
+Database Stats & Details:
+- Registration by Stage: ${JSON.stringify(context.stagesStats || {})}
+- Churches and subscribers count:
+${(context.churchesStats || []).map((c: any) => `- كنيسة ${c.name}: عدد المشتركين ${c.subscribers}`).join('\n')}
+`;
+
+      const contents = [
+        ...history,
+        { role: "user", parts: [{ text: `[SYSTEM CONTEXT]\n${lightweightSummary}\n\nUSER PROMPT: ${prompt}` }] }
+      ];
+
+      const response = await ai.models.generateContent({ 
+        model: "gemini-3.5-flash",
+        contents,
+        config: {
+          systemInstruction: `You are the Super Admin Manager for the Coptic Festival 'Mahragan El Kraza' in District 18 (المنطقة 18).
+You have access to the global unfiltered statistics (e.g., student counts, stages, and church subscribers) provided in the [SYSTEM CONTEXT].
+Always answer accurately, using the given data counts, and explain clearly.
+Write your responses in helpful, concise Arabic. Do not invent any numbers that are not in the context.`,
+        }
+      });
   
       res.json({ text: response.text });
-    } catch (err) {
+    } catch (err: any) {
        console.error("Gemini API error:", err);
-       res.status(500).json({ error: "Failed to generate content" });
+       res.status(500).json({ error: err?.message || "Failed to generate content" });
     }
   });
 

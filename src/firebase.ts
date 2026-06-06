@@ -73,9 +73,42 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     },
     operationType,
     path
+  };
+  
+  const serialized = JSON.stringify(errInfo);
+  console.error('Firestore Error: ', serialized);
+
+  const errMsg = errInfo.error.toLowerCase();
+  if (errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('billing')) {
+    if (typeof window !== 'undefined') {
+      (window as any).firestoreQuotaExceeded = true;
+      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded', { detail: errInfo }));
+    }
   }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+
+  throw new Error(serialized);
+}
+
+// Global interceptors for unhandled database/quota errors
+if (typeof window !== 'undefined') {
+  const handleAnyQuotaError = (msg: string) => {
+    const errorStr = String(msg).toLowerCase();
+    if (errorStr.includes('quota') || errorStr.includes('resource_exhausted') || errorStr.includes('over_quota') || errorStr.includes('quota limit exceeded')) {
+      (window as any).firestoreQuotaExceeded = true;
+      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+    }
+  };
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason;
+    if (reason) {
+      handleAnyQuotaError(reason.message || reason.error || String(reason));
+    }
+  });
+
+  window.addEventListener('error', (event) => {
+    handleAnyQuotaError(event.message || String(event.error));
+  });
 }
 
 // Test connection
