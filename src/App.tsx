@@ -122,7 +122,8 @@ import {
   serverTimestamp,
   getCountFromServer
 } from './firebase';
-import churchData from './data/churches.json';
+import localChurchData from './data/churches.json';
+import { syncEmergencyDataToFirestore, autoSyncSupabaseToFirebase } from './services/emergencySync';
 import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
 
@@ -614,6 +615,19 @@ function AppComponent() {
     return () => {
       window.removeEventListener('firestore-quota-exceeded', handleQuotaExceeded);
     };
+  }, []);
+
+  useEffect(() => {
+    // Sync immediately on boot
+    syncEmergencyDataToFirestore();
+    autoSyncSupabaseToFirebase();
+
+    // Optionally retry every 5 minutes if the tab stays open
+    const interval = setInterval(() => {
+      syncEmergencyDataToFirestore();
+      autoSyncSupabaseToFirebase();
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
   
   useEffect(() => {
@@ -2728,7 +2742,7 @@ function AppComponent() {
       targetChurch = 'اللجنة المركزية منطقة18';
     } else {
       try {
-        const foundChurch = churchData.find((c: any) => c.name === loginChurch);
+        const foundChurch = localChurchData.find((c: any) => c.name === loginChurch);
         
         if (!foundChurch) {
           setLoginError('الكنيسة غير موجودة');
@@ -2780,7 +2794,7 @@ function AppComponent() {
       if (firebaseUser) {
         let userDoc;
         if (email.endsWith('_2026@mafk.com')) {
-           const church = churchData.find((c: any) => c.code === password);
+           const church = localChurchData.find((c: any) => c.code === password);
            userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: church?.name || 'كنيسة', uid: firebaseUser.uid }) };
         } else {
            userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
