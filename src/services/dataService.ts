@@ -157,6 +157,9 @@ export async function silentDualFetch(collectionPath: string | string[], queryCo
   if (supabase) {
     try {
       const { data, error } = await supabase.from(collectionName).select('*');
+      if (error) {
+        console.error(`[Supabase Fetch Error] Table: ${collectionName}`, error);
+      }
       if (!error && data) {
         let results = data;
         if (queryConstraints.length > 0) {
@@ -245,6 +248,7 @@ export async function submitNewRegistration(payload: RegistrationPayload, custom
 
       if (error) {
          console.warn("[Supabase] Failed to write registration:", error.message);
+         alert("Supabase Insert Error: " + error.message);
       } else {
          supabaseSuccess = true;
          fallbackId = data?.id || fallbackId;
