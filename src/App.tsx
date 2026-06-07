@@ -2788,6 +2788,11 @@ function AppComponent() {
     }
   }, [adminActiveTab, activeSection, isLoggedIn, activeYear]);
 
+  function normalizeArabicText(text: string) {
+    if (!text) return '';
+    return text.trim().replace(/\s+/g, '').replace(/[أإآا]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
+  }
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -2799,50 +2804,101 @@ function AppComponent() {
       return;
     }
 
-    let email = '';
-    let password = '';
-    let role: 'admin' | 'church' = 'church';
-    let targetChurch = loginChurch;
-
-    const code = loginCode.trim();
+    const cleanInputCode = loginCode.trim();
+    const cleanInputName = normalizeArabicText(loginChurch);
 
     if (loginChurch === 'مسئول') {
-      if (code !== ADMIN_PASSWORD) {
+      if (cleanInputCode !== ADMIN_PASSWORD) {
         setLoginError('كود المسئول غير صحيح');
         setIsLoading(false);
         return;
       }
-      email = 'admin@mafk.com';
-      password = ADMIN_PASSWORD;
-      role = 'admin';
-      targetChurch = 'اللجنة المركزية منطقة18';
-    } else {
-      const matchedChurch = publicChurches.find(
-        (church) => compareChurchNames(loginChurch, church.name)
-      );
-
-      if (!matchedChurch) {
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, 'admin@mafk.com', ADMIN_PASSWORD);
+        let profileData = {
+          uid: userCredential.user.uid,
+          email: 'admin@mafk.com',
+          role: 'admin',
+          churchName: 'اللجنة المركزية منطقة18',
+          dashboardBg: ''
+        };
+        setUserRole('admin');
+        setChurchName('اللجنة المركزية منطقة18');
+        setUserProfile(profileData);
+        setIsLoggedIn(true);
+      } catch (err: any) {
+        console.error("Login error:", err);
+        setLoginError("حدث خطأ أثناء تسجيل الدخول");
+      } finally {
         setIsLoading(false);
-        setLoginError("الكنيسة غير مسجلة بالنظام");
-        return;
       }
-
-      const slug = encodeURIComponent(matchedChurch.name).replace(/%/g, '');
-      email = `${slug}_2026@mafk.com`;
-      password = code;
-      role = 'church';
-      targetChurch = matchedChurch.name;
+      return;
     }
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      console.log("Attempting Firebase connection for User Auth...");
+
+      // 1. Normalize user input locally (already done above)
+      // 2. Fetch from Firebase
+      const churchesRef = collection(db, "churches"); 
+      const q = query(churchesRef, where("loginCode", "==", cleanInputCode));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+          console.error("❌ [Auth Failed] No church found with this code in Firebase.");
+          setLoginError("كود الكنيسة غير صحيح أو غير مسجل");
+          setIsLoading(false);
+          return;
+      }
+
+      let authenticatedChurch: any = null;
+
+      // 3. Compare Name with Normalization (Crucial for Arabic Data)
+      querySnapshot.forEach((docSnap) => {
+          const churchData = docSnap.data();
+          const cleanDbName = normalizeArabicText(churchData.name || "");
+
+          if (cleanDbName === cleanInputName) {
+              authenticatedChurch = { id: docSnap.id, ...churchData };
+          }
+      });
+
+      if (!authenticatedChurch) {
+           console.error("❌ [Auth Failed] Code matches, but normalized Name does NOT match Firebase record.");
+           setLoginError("اسم الكنيسة لا يتطابق مع الكود المدخل");
+           setIsLoading(false);
+           return;
+      }
+
+      console.log("✅ [Auth Success] Church verified via Firebase:", authenticatedChurch.name);
+      
+      const slug = encodeURIComponent(authenticatedChurch.name).replace(/%/g, '');
+      const email = authenticatedChurch.email || `${slug}_2026@mafk.com`;
+      
+      let userCredential;
+      try {
+        userCredential = await signInWithEmailAndPassword(auth, email, cleanInputCode);
+      } catch (authErr: any) {
+        if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/user-disabled') {
+          console.log("Auto-creating missing Auth user for verified church...");
+          try {
+            userCredential = await createUserWithEmailAndPassword(auth, email, cleanInputCode);
+          } catch (createErr: any) {
+            console.error("Auto-create failed:", createErr);
+            throw createErr;
+          }
+        } else {
+          throw authErr;
+        }
+      }
+
       const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
       
       let profileData = {
         uid: userCredential.user.uid,
         email: email,
-        role: role,
-        churchName: targetChurch,
+        role: 'church',
+        churchName: authenticatedChurch.name,
         dashboardBg: ''
       };
 
@@ -2858,14 +2914,14 @@ function AppComponent() {
       localStorage.setItem('userProfileCache', JSON.stringify(profileData));
       setIsLoggedIn(true);
     } catch (error: any) {
-      console.error("Login error:", error);
-      if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-        setLoginError("كلمة المرور غير صحيحة");
-      } else if (error.code === 'auth/network-request-failed') {
-        setLoginError("تأكد من اتصالك بالإنترنت");
-      } else {
-        setLoginError("حدث خطأ أثناء تسجيل الدخول");
+      // 4. THIS IS THE MOST CRITICAL PART TO DIAGNOSE THE CONNECTION
+      console.error("🔥 [FIREBASE AUTH CRASH] Detailed Error:", error.code, error.message);
+
+      if (error.code === 'permission-denied') {
+           console.warn("🚨 FIRESTORE RULES BLOCK: Please update your Firebase Security Rules to allow reads on this collection.");
       }
+
+      setLoginError("حدث خطأ في الاتصال بقاعدة البيانات. الرجاء المحاولة لاحقاً.");
     } finally {
       setIsLoading(false);
     }
