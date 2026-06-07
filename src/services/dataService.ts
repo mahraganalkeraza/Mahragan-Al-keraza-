@@ -84,7 +84,8 @@ function filterInMemory(data: any[], queryConstraints: any[]): any[] {
 
 /**
  * 1. SILENT DUAL-WRITE HANDLER
- * Safely writes to Supabase, then tries Firebase in the background without throwing console crashes.
+ * Safely writes directly to Supabase. Fallback to Firebase only as backup if Supabase is offline.
+ * Bypasses companion Firestore writes when Supabase succeeds to prevent 429 quota exhaustion.
  */
 export async function silentDualWrite(collectionPath: string | string[], dataPayload: any) {
   const enrichedPayload = { ...dataPayload, created_at: new Date().toISOString() };
@@ -108,28 +109,18 @@ export async function silentDualWrite(collectionPath: string | string[], dataPay
     }
   }
 
-  // B. Try replicating to Firebase silently
-  try {
-    const colRef = Array.isArray(collectionPath) 
-      ? collection(db, ...collectionPath as [string, ...string[]])
-      : collection(db, collectionPath);
-    const docRef = await addDoc(colRef, enrichedPayload);
-    docRefId = docRef.id;
-    console.log(`[Firebase] Data successfully replicated to collection: ${collectionName}`);
-  } catch (firebaseError: any) {
-    const isQuotaError = firebaseError.code === 'resource-exhausted' || firebaseError.message?.includes('quota') || firebaseError.status === 429;
-    
-    if (isQuotaError) {
-      // Intentionally swallow the error completely. No red lines, no console pollution.
-      console.warn("[Firebase Quota Exceeded] Firebase failed, but data is 100% safe in Supabase.");
-      if (!supabaseSuccess) {
-        throw new Error("حدث خطأ أثناء حفظ البيانات بالسيرفر الاحتياطي والأساسي");
-      }
-    } else {
-      console.error("[Firebase Replication Warning]:", firebaseError.message);
-      if (!supabaseSuccess) {
-        throw firebaseError;
-      }
+  // B. ONLY try replicating to Firebase if Supabase write failed
+  if (!supabaseSuccess) {
+    try {
+      const colRef = Array.isArray(collectionPath) 
+        ? collection(db, ...collectionPath as [string, ...string[]])
+        : collection(db, collectionPath);
+      const docRef = await addDoc(colRef, enrichedPayload);
+      docRefId = docRef.id;
+      console.log(`[Firebase Fallback] Data successfully written to backup collection: ${collectionName}`);
+    } catch (firebaseError: any) {
+      console.error("[Firebase Fallback Error] Backup database write failed:", firebaseError.message);
+      throw firebaseError;
     }
   }
 
@@ -198,7 +189,8 @@ interface RegistrationPayload {
 }
 
 /**
- * SECURE & NON-BLOCKING DUAL-WRITE REGISTRATION SERVICE
+ * SECURE & NON-BLOCKING DIRECT-WRITE REGISTRATION SERVICE
+ * Writes directly to Supabase and completely bypasses Firestore companion writes when successful.
  */
 export async function submitNewRegistration(payload: RegistrationPayload, customTableName?: string) {
   const TABLE_NAME = customTableName || 'participants';
@@ -229,28 +221,10 @@ export async function submitNewRegistration(payload: RegistrationPayload, custom
     }
 
     if (supabaseSuccess) {
-      // 2. BACKGROUND REPLICATION: Fire-and-forget write to Firebase
-      const firestoreWritePromise = payload.id
-        ? setDoc(doc(db, TABLE_NAME, payload.id), { ...enrichedPayload, supabase_synced_id: fallbackId })
-        : addDoc(collection(db, TABLE_NAME), { ...enrichedPayload, supabase_synced_id: fallbackId || null });
-
-      firestoreWritePromise
-        .then(() => {
-          console.log(`[Firebase] Parallel replication completed silently in background for ${TABLE_NAME}.`);
-        })
-        .catch((fbError: any) => {
-          // Suppress and handle Firebase failures
-          const isQuota = fbError.code === 'resource-exhausted' || fbError.status === 429 || fbError.message?.includes('quota');
-          if (isQuota) {
-            console.warn("[Firebase Sync Deferred] Quota locked, write skipped. Record is safe in Supabase.");
-          } else {
-            console.error("[Firebase Non-Quota Sync Error]:", fbError.message);
-          }
-        });
-
+      // Bypasses Firebase replication completely to avoid database write quotas
       return { success: true, message: "تم التسجيل بنجاح", id: fallbackId };
     } else {
-      // 3. FALLBACK PRIMARY WRITE: Block and wait for Firebase if no Supabase
+      // 2. FALLBACK PRIMARY WRITE: Block and wait for Firebase if no Supabase is available
       let fbRefId = payload.id;
       if (payload.id) {
          await setDoc(doc(db, TABLE_NAME, payload.id), { ...enrichedPayload });
@@ -258,17 +232,12 @@ export async function submitNewRegistration(payload: RegistrationPayload, custom
          const newRef = await addDoc(collection(db, TABLE_NAME), { ...enrichedPayload });
          fbRefId = newRef.id;
       }
-      console.log(`[Firebase] Primary write completed for ${TABLE_NAME}.`);
+      console.log(`[Firebase Fallback] Primary write completed for ${TABLE_NAME}.`);
       return { success: true, message: "تم التسجيل بنجاح", id: fbRefId };
     }
 
   } catch (error: any) {
-    const isQuotaError = error.code === 'resource-exhausted' || error.message?.includes('quota') || error.status === 429;
-    if (isQuotaError) {
-      console.error("[Firebase Quota Block] Failed to register participant.");
-      throw new Error("عذراً، ضغط شديد على السيرفر، يرجى المحاولة بعد قليل.");
-    }
-    console.error("[Critical UI Block] Firebase failed to write registration:", error.message || error);
-    throw new Error("عذراً، حدث خطأ أثناء الاتصال بالسيرفر الرئيسي، يرجى المحاولة مرة أخرى");
+    console.error("[Critical UI Block] Registration write failure:", error.message || error);
+    throw new Error("عذراً، حدث خطأ أثناء الاتصال بالسيرفر، يرجى المحاولة مرة أخرى");
   }
 }

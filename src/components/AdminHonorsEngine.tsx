@@ -29,11 +29,44 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
   const loadSettings = async () => {
     setIsLoading(true);
     try {
-      const [snap, stagesSnap, compSnap] = await Promise.all([
-        getDoc(doc(db, 'settings', 'examWeights')),
-        getDocs(collection(db, 'levels')),
-        getDocs(collection(db, 'competitions'))
-      ]);
+      let stagesList: string[] = [];
+      let subjectsList: string[] = [];
+
+      // Try cache first
+      const cacheLevelsStr = localStorage.getItem('cache_levels');
+      if (cacheLevelsStr) {
+        try {
+          const parsed = JSON.parse(cacheLevelsStr);
+          if (Array.isArray(parsed.data)) {
+            stagesList = parsed.data.map((l: any) => l.name).filter(Boolean);
+          }
+        } catch (e) {}
+      }
+
+      const cacheCompsStr = localStorage.getItem('cache_competitions');
+      if (cacheCompsStr) {
+        try {
+          const parsed = JSON.parse(cacheCompsStr);
+          if (Array.isArray(parsed.data)) {
+            subjectsList = parsed.data.map((c: any) => c.name).filter(Boolean);
+          }
+        } catch (e) {}
+      }
+
+      const promises: Promise<any>[] = [getDoc(doc(db, 'settings', 'examWeights'))];
+      
+      const shouldFetchStages = stagesList.length === 0;
+      const shouldFetchSubjects = subjectsList.length === 0;
+
+      if (shouldFetchStages) {
+        promises.push(getDocs(collection(db, 'levels')));
+      }
+      if (shouldFetchSubjects) {
+        promises.push(getDocs(collection(db, 'competitions')));
+      }
+
+      const results = await Promise.all(promises);
+      const snap = results[0];
 
       if (snap.exists()) {
         const data = snap.data();
@@ -41,8 +74,18 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
         if (data.minThreshold !== undefined) setMinThreshold(data.minThreshold);
       }
 
-      setSystemStages(stagesSnap.docs.map(d => d.data().name).filter(Boolean));
-      setSystemSubjects(compSnap.docs.map(d => d.data().name).filter(Boolean));
+      let pointer = 1;
+      if (shouldFetchStages) {
+        const stagesSnap = results[pointer++];
+        stagesList = stagesSnap.docs.map((d: any) => d.data().name).filter(Boolean);
+      }
+      if (shouldFetchSubjects) {
+        const compSnap = results[pointer++];
+        subjectsList = compSnap.docs.map((d: any) => d.data().name).filter(Boolean);
+      }
+
+      setSystemStages(stagesList);
+      setSystemSubjects(subjectsList);
     } catch (e) {
       console.error('Failed to load honors config', e);
     }

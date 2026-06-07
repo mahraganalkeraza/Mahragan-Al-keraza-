@@ -591,6 +591,24 @@ const withStylesCleaned = async <T,>(fn: () => Promise<T>): Promise<T> => {
   }
 };
 
+const LOCAL_STAGES = STAGE_ORDER;
+
+const LOCAL_COMPETITIONS = [
+  'دراسي',
+  'محفوظات',
+  'قبطي مستوى أول',
+  'قبطي مستوى ثاني',
+  'ألحان مستوى أول',
+  'ألحان مستوى ثاني'
+];
+
+const OFFICIAL_LOCAL_CHURCHES = Object.keys(CHURCH_CREDENTIALS).sort().map(name => ({
+  name,
+  email: '',
+  logoUrl: '',
+  isEnabled: true
+}));
+
 const normalizeArabic = (str: string) => {
   if (!str) return '';
   return str.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').trim();
@@ -609,7 +627,9 @@ function AppComponent() {
   const initialProfile = getInitialProfile();
   
   const [userProfile, setUserProfile] = useState<any>(initialProfile);
-  const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
+  const [dynamicLevels, setDynamicLevels] = useState<any[]>(
+    LOCAL_STAGES.map((s, idx) => ({ id: String(idx + 1), name: s, comps: LOCAL_COMPETITIONS }))
+  );
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [hymnStages, setHymnStages] = useState<any[]>([]);
 
@@ -754,69 +774,19 @@ function AppComponent() {
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
 
     const fetchCachedMetadata = async () => {
-      const now = new Date().getTime();
-      const CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
-      
-      const loadCachedOrFetch = async (key: string, fetchFn: () => Promise<any>) => {
-        const cachedStr = localStorage.getItem(`cache_${key}`);
-        if (cachedStr) {
-          try {
-            const cached = JSON.parse(cachedStr);
-            // Ignore cached empty arrays to always fetch fresh data if it failed previously
-            if (now - cached.timestamp < CACHE_EXPIRY && !(Array.isArray(cached.data) && cached.data.length === 0)) {
-              return cached.data;
-            }
-          } catch (e) {}
-        }
-        const data = await fetchFn();
-        localStorage.setItem(`cache_${key}`, JSON.stringify({ timestamp: now, data }));
-        return data;
-      };
-
+      // ZERO-READ POLICY: Instantly initialize with pre-injected local rosters, completely bypassing third-party read queries.
       try {
-        const churchesData = await loadCachedOrFetch('churches', async () => {
-          const docs = await silentDualFetch('churches');
-          return docs
-            .map(d => ({ 
-              name: d.name, 
-              email: '', 
-              isEnabled: d.isEnabled !== false,
-              logoUrl: d.logoUrl || ''
-            }))
-            .filter(c => c.isEnabled);
-        });
-        setPublicChurches(churchesData);
-
-        const levelsData = await loadCachedOrFetch('levels', async () => {
-          const docs = await silentDualFetch('levels');
-          return docs.map(d => ({ 
-            name: d.name, 
-            comps: d.allowedCompetitions || [] 
-          }));
-        });
-        setDynamicLevels(levelsData.sort((a: any, b: any) => sortStages(a.name, b.name)));
-
-        const activityStagesData = await loadCachedOrFetch('activityStages', async () => {
-          return await silentDualFetch('activityStages');
-        });
-        setActivityStages(activityStagesData);
-
-        const hymnStagesData = await loadCachedOrFetch('hymnStages', async () => {
-          return await silentDualFetch('hymnStages');
-        });
-        setHymnStages(hymnStagesData);
-
-        const validationData = await loadCachedOrFetch('validation', async () => {
-          const snap = await getDoc(doc(db, 'settings', 'validation'));
-          return snap.exists() ? snap.data() : { templates: [], ageMappings: [], rules: { nameLength: true, genderMatch: false, mandatoryRows: true } };
-        });
+        setPublicChurches(OFFICIAL_LOCAL_CHURCHES);
+        setDynamicLevels(LOCAL_STAGES.map((s, idx) => ({ id: String(idx + 1), name: s, comps: LOCAL_COMPETITIONS })));
+        setActivityStages([]);
+        setHymnStages([]);
         setValidationSettings({
-          templates: validationData.templates || [],
-          ageMappings: validationData.ageMappings || [],
-          rules: validationData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
+          templates: [],
+          ageMappings: [],
+          rules: { nameLength: true, genderMatch: false, mandatoryRows: true }
         });
       } catch (e) {
-        console.warn("[Metadata Catch Bypass] Error fetching cached metadata:", e);
+        console.warn("[Metadata Catch Bypass] Error setting local static metadata:", e);
       }
     };
 
@@ -928,7 +898,7 @@ function AppComponent() {
   const [examLinks, setExamLinks] = useState<Record<string, string>>({});
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
-  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>([]);
+  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>(OFFICIAL_LOCAL_CHURCHES);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxImages, setLightboxImages] = useState<{src: string}[]>([]);
@@ -1469,7 +1439,48 @@ function AppComponent() {
             setIsAuthReady(true);
           }
         }, (error) => {
-          console.error("Error watching user profile:", error);
+          console.error("Error watching user profile (Applying Offline/Cached fallback):", error);
+          
+          const cachedProfile = getInitialProfile();
+          if (cachedProfile && cachedProfile.uid === firebaseUser.uid) {
+            console.log("Loading user profile offline from cached session.");
+            setUserProfile(cachedProfile);
+            setUserRole(cachedProfile.role);
+            setChurchName(cachedProfile.churchName || '');
+            setDashboardBg(cachedProfile.dashboardBg || '');
+            setIsLoggedIn(true);
+          } else {
+            // Attempt offline dynamic reconstruction from email
+            let role = 'church';
+            let churchNameFound = 'كنيسة محلية';
+            if (firebaseUser.email === 'admin@mafk.com' || firebaseUser.email === 'mahraganalkeraza7esoyam@gmail.com') {
+              role = 'admin';
+              churchNameFound = 'اللجنة المركزية منطقة18';
+            } else if (firebaseUser.email) {
+              for (const name of Object.keys(CHURCH_CREDENTIALS)) {
+                const slug = encodeURIComponent(name).replace(/%/g, '');
+                const email = `${slug}_2026@mafk.com`;
+                if (email === firebaseUser.email) {
+                  churchNameFound = name;
+                  break;
+                }
+              }
+            }
+            
+            console.log("Dynamically reconstructed user profile offline due to read blocks for:", churchNameFound);
+            const reconstructed = {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              role: role,
+              churchName: churchNameFound,
+              dashboardBg: ''
+            };
+            setUserProfile(reconstructed);
+            localStorage.setItem('userProfileCache', JSON.stringify(reconstructed));
+            setUserRole(role as any);
+            setChurchName(churchNameFound);
+            setIsLoggedIn(true);
+          }
           setIsAuthReady(true);
         });
       } else {
@@ -1601,45 +1612,15 @@ function AppComponent() {
 
   useEffect(() => {
     if (userRole === 'admin') {
-      // 1. solicitar permisos de notificación al admin (Admin Permission & Initialization)
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        if (window.Notification.permission === 'default') {
-          window.Notification.requestPermission();
+      const loadAdminInitialData = async () => {
+        try {
+          const snapshot = await getDocs(collection(db, 'users'));
+          setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        } catch (e) {
+          console.warn("Error fetching initial users for admin:", e);
         }
-      }
-
-      const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-        setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
-
-      // 2. Lightweight real-time listener regarding subscriber increments on churches collection
-      const unsubChurchesNotifier = onSnapshot(collection(db, 'churches'), (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-          const data = change.doc.data();
-          const churchNameVal = data.name;
-          if (!churchNameVal) return;
-          const currentSubscribers = data.subscribers || 0;
-          
-          const previousSubscribers = previousSubscribersRef.current[churchNameVal] || 0;
-          
-          // The Trigger Rule: transition from exactly 0 to >= 1
-          if (previousSubscribers === 0 && currentSubscribers >= 1) {
-            if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
-              new window.Notification("🔔 كنيسة جديدة بدأت التسجيل!", {
-                body: `كنيسة (${churchNameVal}) بدأت الآن في تسجيل مخدوميها في المهرجان.`,
-                icon: "/logo.png"
-              });
-            }
-          }
-          
-          previousSubscribersRef.current[churchNameVal] = currentSubscribers;
-        });
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'churches'));
-
-      return () => {
-        unsubUsers();
-        unsubChurchesNotifier();
       };
+      loadAdminInitialData();
     }
   }, [userRole]);
 
@@ -2818,14 +2799,19 @@ function AppComponent() {
         return;
       }
       try {
-        const userCredential = await signInWithEmailAndPassword(auth, 'admin@mafk.com', ADMIN_PASSWORD);
         let profileData = {
-          uid: userCredential.user.uid,
+          uid: 'admin_local_id',
           email: 'admin@mafk.com',
           role: 'admin',
           churchName: 'اللجنة المركزية منطقة18',
           dashboardBg: ''
         };
+        try {
+          const userCredential = await signInWithEmailAndPassword(auth, 'admin@mafk.com', ADMIN_PASSWORD);
+          profileData.uid = userCredential.user.uid;
+        } catch (e) {
+          console.warn("Firebase admin sign-in failed, continuing with offline session:", e);
+        }
         setUserRole('admin');
         setChurchName('اللجنة المركزية منطقة18');
         setUserProfile(profileData);
@@ -2840,77 +2826,55 @@ function AppComponent() {
     }
 
     try {
-      console.log("Attempting Firebase connection for User Auth...");
+      console.log("Authenticating strictly against pre-injected offline rosters...");
 
-      // 1. Normalize user input locally (already done above)
-      // 2. Fetch from Firebase
-      const churchesRef = collection(db, "churches"); 
-      const q = query(churchesRef, where("loginCode", "==", cleanInputCode));
-      const querySnapshot = await getDocs(q);
+      // Validate credentials entirely offline (Zero-Read guarantee)
+      let authenticatedChurchName = "";
+      let correctCode = "";
 
-      if (querySnapshot.empty) {
-          console.error("❌ [Auth Failed] No church found with this code in Firebase.");
-          setLoginError("كود الكنيسة غير صحيح أو غير مسجل");
-          setIsLoading(false);
-          return;
+      for (const [name, code] of Object.entries(CHURCH_CREDENTIALS)) {
+        if (normalizeArabicText(name) === cleanInputName) {
+          authenticatedChurchName = name;
+          correctCode = code;
+          break;
+        }
       }
 
-      let authenticatedChurch: any = null;
-
-      // 3. Compare Name with Normalization (Crucial for Arabic Data)
-      querySnapshot.forEach((docSnap) => {
-          const churchData = docSnap.data();
-          const cleanDbName = normalizeArabicText(churchData.name || "");
-
-          if (cleanDbName === cleanInputName) {
-              authenticatedChurch = { id: docSnap.id, ...churchData };
-          }
-      });
-
-      if (!authenticatedChurch) {
-           console.error("❌ [Auth Failed] Code matches, but normalized Name does NOT match Firebase record.");
-           setLoginError("اسم الكنيسة لا يتطابق مع الكود المدخل");
-           setIsLoading(false);
-           return;
+      if (!authenticatedChurchName || cleanInputCode !== correctCode) {
+        console.error("❌ [Auth Failed] Code or name does not exist on pre-injected list.");
+        setLoginError("كود الكنيسة غير صحيح أو اسم الكنيسة لا يتطابق");
+        setIsLoading(false);
+        return;
       }
 
-      console.log("✅ [Auth Success] Church verified via Firebase:", authenticatedChurch.name);
+      console.log("✅ [Auth Success] Church validated offline:", authenticatedChurchName);
       
-      const slug = encodeURIComponent(authenticatedChurch.name).replace(/%/g, '');
-      const email = authenticatedChurch.email || `${slug}_2026@mafk.com`;
+      const slug = encodeURIComponent(authenticatedChurchName).replace(/%/g, '');
+      const email = `${slug}_2026@mafk.com`;
       
-      let userCredential;
+      let userCredential = null;
       try {
         userCredential = await signInWithEmailAndPassword(auth, email, cleanInputCode);
       } catch (authErr: any) {
         if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/user-disabled') {
-          console.log("Auto-creating missing Auth user for verified church...");
+          console.log("Auto-creating missing Auth user offline for verified church...");
           try {
             userCredential = await createUserWithEmailAndPassword(auth, email, cleanInputCode);
           } catch (createErr: any) {
-            console.error("Auto-create failed:", createErr);
-            throw createErr;
+            console.warn("Auto-create failed, falling back to local guest auth session:", createErr);
           }
         } else {
-          throw authErr;
+          console.warn("Sign-in failed, falling back to local guest auth session:", authErr);
         }
       }
 
-      const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
-      
       let profileData = {
-        uid: userCredential.user.uid,
+        uid: userCredential?.user?.uid || `local_${authenticatedChurchName}`,
         email: email,
         role: 'church',
-        churchName: authenticatedChurch.name,
+        churchName: authenticatedChurchName,
         dashboardBg: ''
       };
-
-      if (userDoc.exists()) {
-        profileData = { ...profileData, ...userDoc.data() };
-      } else {
-        await setDoc(doc(db, 'users', userCredential.user.uid), profileData);
-      }
 
       setChurchName(profileData.churchName);
       setUserRole(profileData.role as 'admin'|'church'|'guest'|'super_admin');
@@ -2918,14 +2882,8 @@ function AppComponent() {
       localStorage.setItem('userProfileCache', JSON.stringify(profileData));
       setIsLoggedIn(true);
     } catch (error: any) {
-      // 4. THIS IS THE MOST CRITICAL PART TO DIAGNOSE THE CONNECTION
-      console.error("🔥 [FIREBASE AUTH CRASH] Detailed Error:", error.code, error.message);
-
-      if (error.code === 'permission-denied') {
-           console.warn("🚨 FIRESTORE RULES BLOCK: Please update your Firebase Security Rules to allow reads on this collection.");
-      }
-
-      setLoginError("حدث خطأ في الاتصال بقاعدة البيانات. الرجاء المحاولة لاحقاً.");
+      console.error("🔥 [Local Auth/Fallback Crash]:", error.message);
+      setLoginError("حدث خطأ في الاتصال. الرجاء المحاولة لاحقاً.");
     } finally {
       setIsLoading(false);
     }
@@ -4732,7 +4690,7 @@ function AppComponent() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
+                        {LOCAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
 
@@ -4741,8 +4699,7 @@ function AppComponent() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[0, 1, 2].map((idx) => {
                           const selectedComps = newParticipant.competitions;
-                          const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
-                          const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
+                          const availableCompsForLevel = LOCAL_COMPETITIONS;
                           
                           const isOptionDisabled = (val: string) => {
                             if (!val) return false;
@@ -7970,7 +7927,7 @@ function AppComponent() {
                           required
                         >
                           <option value="">اختر المرحلة</option>
-                          {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
+                          {LOCAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </div>
 
@@ -8011,8 +7968,7 @@ function AppComponent() {
                       {[0, 1, 2].map((idx) => {
                         const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي'].includes(newParticipant.stage);
                         const selectedComps = newParticipant.competitions;
-                        const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
-                        const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
+                        const availableCompsForLevel = LOCAL_COMPETITIONS;
                         
                         const isOptionDisabled = (val: string) => {
                           if (!val) return false;

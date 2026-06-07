@@ -81,33 +81,31 @@ export default function UserManagement() {
     }
   };
 
-  useEffect(() => {
-    // Sync users (Auth accounts)
-    const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
+  const fetchUsersAndChurches = async () => {
+    setIsLoading(true);
+    try {
+      const usersSnap = await getDocs(collection(db, "users"));
       const usersData: User[] = [];
-      snapshot.docs.forEach((doc) => {
+      usersSnap.docs.forEach((doc) => {
         if (doc.data().role !== "admin") {
           usersData.push({ uid: doc.id, ...doc.data() } as User);
         }
       });
       setUsers(usersData);
+
+      const churchesSnap = await getDocs(collection(db, "churches"));
+      const bankData = churchesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setChurchesBank(bankData);
       setIsLoading(false);
-    }, (err) => {
-      console.error("Error fetching users:", err);
+    } catch (err: any) {
+      console.error("Error fetching users/churches:", err);
       setError("حدث خطأ أثناء جلب المستخدمين");
       setIsLoading(false);
-    });
+    }
+  };
 
-    // Sync churches bank (Dynamic settings)
-    const unsubscribeChurches = onSnapshot(collection(db, "churches"), (snapshot) => {
-      const bankData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setChurchesBank(bankData);
-    });
-
-    return () => {
-      unsubscribeUsers();
-      unsubscribeChurches();
-    };
+  useEffect(() => {
+    fetchUsersAndChurches();
   }, []);
 
   const handleEdit = (user: User) => {
@@ -260,6 +258,7 @@ export default function UserManagement() {
         setSuccess("تم تحديث بيانات الكيان والمجلدات المرتبطة بنجاح");
       }
 
+      await fetchUsersAndChurches();
       handleCancel();
     } catch (err: any) {
       setError(err.message || "حدث خطأ فني أثناء المعالجة");
@@ -287,6 +286,7 @@ export default function UserManagement() {
 
       await batch.commit();
       setSuccess("تم حذف الكيان وكافة البيانات المرتبطة بنجاح");
+      await fetchUsersAndChurches();
     } catch (err) {
       console.error("Deletion error:", err);
       setError("تعذر إتمام عملية الحذف");
@@ -308,6 +308,7 @@ export default function UserManagement() {
         await updateDoc(doc(db, "churches", bankSnap.docs[0].id), { isEnabled: newStatus });
       }
       setSuccess(`تم ${newStatus ? 'تفعيل' : 'تعطيل'} الحساب بنجاح`);
+      await fetchUsersAndChurches();
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
       console.error("Error toggling status:", err);
