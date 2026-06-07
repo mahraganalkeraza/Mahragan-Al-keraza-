@@ -694,16 +694,8 @@ function AppComponent() {
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
   useEffect(() => {
-    const handleQuotaExceeded = () => {
-      setIsQuotaExceeded(true);
-    };
-    window.addEventListener('firestore-quota-exceeded', handleQuotaExceeded);
-    if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
-      setIsQuotaExceeded(true);
-    }
-    return () => {
-      window.removeEventListener('firestore-quota-exceeded', handleQuotaExceeded);
-    };
+    // Permanently disable quota banner as we are using Supabase as primary
+    setIsQuotaExceeded(false);
   }, []);
 
   useEffect(() => {
@@ -803,6 +795,7 @@ function AppComponent() {
   }, [userProfile?.logoUrl, appLogo]);
 
   useEffect(() => {
+    /* 
     let unsubAppConfig: (() => void) | null = null;
     try {
       unsubAppConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
@@ -825,7 +818,7 @@ function AppComponent() {
     } catch (e) {
       console.warn("Could not establish app_config Firestore subscription:", e);
     }
-
+    */
     const fetchCachedMetadata = async () => {
       // 100% dynamic loading from Supabase, completely bypassing Firestore of Firebase due to quota limits
       try {
@@ -910,12 +903,13 @@ function AppComponent() {
     window.addEventListener('supabase-metadata-updated', handleUpdateEvent);
 
     return () => {
-      if (unsubAppConfig) unsubAppConfig();
+      // unsubAppConfig && unsubAppConfig();
       window.removeEventListener('supabase-metadata-updated', handleUpdateEvent);
     };
   }, []);
 
   useEffect(() => {
+    /*
     if (!isLoggedIn || userRole !== 'church') return;
 
     const newsCollection = collection(db, 'news');
@@ -931,6 +925,7 @@ function AppComponent() {
     }, (error) => handleFirestoreError(error, OperationType.GET, 'news'));
 
     return () => unsubscribe();
+    */
   }, [isLoggedIn, userRole]);
   const [loginChurch, setLoginChurch] = useState('');
   const [loginCode, setLoginCode] = useState('');
@@ -5127,7 +5122,7 @@ function AppComponent() {
                     >
                       <option value="الكل">عرض الكل</option>
                       {Array.from(new Set(publicChurches.map((c: any) => c.name))).sort().map(church => (
-                        <option key={church} value={church}>{church}</option>
+                        <option key={`church-filter-${church}`} value={church}>{church}</option>
                       ))}
                     </select>
                   </div>
@@ -6539,7 +6534,7 @@ function AppComponent() {
                       </h5>
                       <div className="max-h-[300px] overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-2 no-scrollbar">
                         {Object.keys(CHURCH_CREDENTIALS).sort().map(church => (
-                          <div key={church} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+                          <div key={`church-${church}`} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
                             <span className="font-bold text-sm text-slate-700">{church}</span>
                             <button 
                               onClick={() => {

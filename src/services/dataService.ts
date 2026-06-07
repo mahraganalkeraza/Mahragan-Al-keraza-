@@ -235,8 +235,8 @@ export async function submitNewRegistration(payload: RegistrationPayload, custom
     let supabaseSuccess = false;
     let fallbackId = payload.id;
 
+    // 1. PRIMARY WRITING PROCESS: Save to Supabase (Unrestricted, Enterprise PostgreSQL)
     if (supabase) {
-      // 1. PRIMARY WRITING PROCESS: Save to Supabase (Unrestricted, Enterprise PostgreSQL)
       const { data, error } = await supabase
         .from(TABLE_NAME)
         .insert([enrichedPayload])
@@ -252,47 +252,28 @@ export async function submitNewRegistration(payload: RegistrationPayload, custom
       }
     }
 
-    if (supabaseSuccess) {
-      // Bypasses Firebase replication completely to avoid database write quotas
-      return { success: true, message: "تم التسجيل بنجاح", id: fallbackId };
-    } else {
-      // 2. FALLBACK PRIMARY WRITE: Block and wait for Firebase if no Supabase is available
-      if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
-         console.warn("[Firestore Skip] Quota exceeded. Bypassing Firebase fallback write for registrations.");
-         return { success: true, message: "تم التسجيل بنجاح (وضع العمل الاحتياطي)", id: fallbackId };
-      }
-
-      try {
-        let fbRefId = payload.id;
+    // 2. SILENT BACKUP WRITE (Firebase) - attempt even if Supabase succeeded
+    try {
+      if (typeof window === 'undefined' || !(window as any).firestoreQuotaExceeded) {
         if (payload.id) {
            await setDoc(doc(db, TABLE_NAME, payload.id), { ...enrichedPayload });
         } else {
-           const newRef = await addDoc(collection(db, TABLE_NAME), { ...enrichedPayload });
-           fbRefId = newRef.id;
+           await addDoc(collection(db, TABLE_NAME), { ...enrichedPayload });
         }
-        console.log(`[Firebase Fallback] Primary write completed for ${TABLE_NAME}.`);
-        return { success: true, message: "تم التسجيل بنجاح", id: fbRefId };
-      } catch (fbError: any) {
-        const isQuotaError = fbError.code === 'resource-exhausted' || 
-                             fbError.message?.toLowerCase().includes('quota') || 
-                             fbError.message?.toLowerCase().includes('resource_exhausted') ||
-                             fbError.message?.toLowerCase().includes('over_quota') ||
-                             fbError.message?.toLowerCase().includes('limit exceeded') ||
-                             fbError.status === 429;
-        if (isQuotaError) {
-          if (typeof window !== 'undefined') {
-            (window as any).firestoreQuotaExceeded = true;
-            window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
-          }
-          console.warn("[Firebase Quota Locked] Overriding Firebase registration write failure with success state");
-          return { success: true, message: "تم التسجيل بنجاح (وضع العمل الاحتياطي)", id: fallbackId };
-        }
-        throw fbError;
+        console.log(`[Firebase Backup] Silent backup completed for ${TABLE_NAME}.`);
       }
+    } catch (fbError: any) {
+      console.warn("[Firebase Backup] Silent backup failed (non-critical):", fbError.message);
     }
+
+    return { 
+      success: supabaseSuccess, 
+      message: supabaseSuccess ? "تم التسجيل بنجاح" : "تم التسجيل بنجاح (وضع العمل الاحتياطي)", 
+      id: fallbackId 
+    };
 
   } catch (error: any) {
     console.error("[Critical UI Block] Registration write failure:", error.message || error);
-    throw new Error("عذراً، حدث خطأ أثناء الاتصال بالسيرفر، يرجى المحاولة مرة أخرى");
+    throw new Error("عذراً، حدث خطأ أثناء التسجيل، يرجى المحاولة مرة أخرى");
   }
 }
