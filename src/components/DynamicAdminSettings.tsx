@@ -7,6 +7,7 @@ import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as I
 import * as XLSX from 'xlsx';
 import { sortStages } from '../constants';
 import { runOneTimeCollectionMigration, MIGRATABLE_COLLECTIONS, MigrationStatus } from '../utils/oneTimeMigration';
+import { supabase } from '../lib/supabaseClient';
 
 // Initialize secondary app for creating user accounts from the bank
 const getSecondaryAuth = () => {
@@ -61,21 +62,56 @@ export default function DynamicAdminSettings() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const churchesSnap = await getDocs(collection(db, 'churches'));
-      setChurches(churchesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
 
-      const levelsSnap = await getDocs(collection(db, 'levels'));
-      setLevels(levelsSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => sortStages(a.name, b.name)));
+      // 1. Fetch churches
+      const { data: dbChurches, error: errCh } = await supabase.from('churches').select('*');
+      if (!errCh && dbChurches) {
+        setChurches(dbChurches.map(c => ({
+          id: c.id,
+          name: c.name,
+          loginCode: c.password || c.loginCode || "",
+          isEnabled: c.isEnabled !== false,
+          logoUrl: c.logoUrl || "",
+          subscribers: c.subscribers || 0,
+          createdAt: c.createdAt || c.created_at
+        })));
+      }
 
-      const compSnap = await getDocs(collection(db, 'competitions'));
-      setCompetitions(compSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      // 2. Fetch stages/levels
+      const { data: dbStages, error: errStg } = await supabase.from('stages').select('*');
+      const { data: dbLevels, error: errLvl } = await supabase.from('levels').select('*');
+      const combinedStages = dbStages || dbLevels || [];
+      setLevels(combinedStages.map(s => ({
+        id: s.id,
+        name: s.name,
+        allowedCompetitions: s.allowedCompetitions || s.allowed_competitions || []
+      })).sort((a: any, b: any) => sortStages(a.name, b.name)));
 
-      const activityStagesSnap = await getDocs(collection(db, 'activityStages'));
-      setActivityStages(activityStagesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      // 3. Fetch competitions
+      const { data: dbCompetitions, error: errComp } = await supabase.from('competitions').select('*');
+      if (!errComp && dbCompetitions) {
+        setCompetitions(dbCompetitions.map(c => ({
+          id: c.id,
+          name: c.name
+        })));
+      }
 
-      const hymnStagesSnap = await getDocs(collection(db, 'hymnStages'));
-      setHymnStages(hymnStagesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      // 4. Fetch activity stages
+      const { data: dbActStages, error: errAct } = await supabase.from('activityStages').select('*');
+      if (!errAct && dbActStages) {
+        setActivityStages(dbActStages.map(s => ({ id: s.id, name: s.name })));
+      }
 
+      // 5. Fetch hymn stages
+      const { data: dbHymnStages, error: errHymn } = await supabase.from('hymnStages').select('*');
+      if (!errHymn && dbHymnStages) {
+        setHymnStages(dbHymnStages.map(s => ({ id: s.id, name: s.name })));
+      }
+
+      // Fetch config & validation from Firestore (keeping non-maxed settings)
       const configSnap = await getDoc(doc(db, 'settings', 'app_config'));
       if (configSnap.exists()) {
         setAppLogo(configSnap.data().appLogo || null);
@@ -90,7 +126,7 @@ export default function DynamicAdminSettings() {
         });
       }
     } catch (e) {
-      console.error(e);
+      console.error("Error fetching data from Supabase:", e);
     }
     setIsLoading(false);
   };
@@ -198,7 +234,6 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newChurchName || !newChurchCode) return;
     
-    // Firebase Auth requires password to be at least 6 characters
     if (newChurchCode.length < 6) {
       alert("يرجى إدخال رمز دخول (كلمة مرور) لا يقل عن 6 أحرف حتى يعمل حساب الدخول بشكل صحيح.");
       return;
@@ -206,61 +241,51 @@ export default function DynamicAdminSettings() {
 
     setIsSaving(true);
     try {
-      // 1. Create entry in churches bank
-      const newChurchRef = doc(collection(db, 'churches'));
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
+
       const churchData = { 
         name: newChurchName, 
+        password: newChurchCode, 
         loginCode: newChurchCode, 
         isEnabled: true,
         subscribers: 0,
-        createdAt: new Date().toISOString()
+        created_at: new Date().toISOString()
       };
 
-      // 2. Create corresponding Auth account and user profile if it doesn't exist
-      // Generate standard email
-      const emailSlug = encodeURIComponent(newChurchName).replace(/%/g, "");
-      const email = `${emailSlug}_${Date.now()}@mafk.com`;
-      
-      const secondsAuth = getSecondaryAuth();
-      const userCredential = await createUserWithEmailAndPassword(
-        secondsAuth,
-        email,
-        newChurchCode
-      );
-      const newUid = userCredential.user.uid;
-      await signOut(secondsAuth);
-
-      const batch = writeBatch(db);
-      batch.set(newChurchRef, churchData);
-      batch.set(doc(db, 'users', newUid), {
-        uid: newUid,
-        email: email,
-        role: "church",
-        churchName: newChurchName,
-        password: newChurchCode,
-        isEnabled: true,
-        logoUrl: ""
-      });
-
-      await batch.commit();
+      const { error: insErr } = await supabase.from('churches').insert([churchData]);
+      if (insErr) throw insErr;
 
       setNewChurchName(''); setNewChurchCode('');
+      
+      // Dispatch global refresh event
+      window.dispatchEvent(new Event('supabase-metadata-updated'));
+
       fetchData();
       alert('تمت إضافة الكنيسة وتنشيط حساب الدخول بنجاح!');
-    } catch (e) { 
+    } catch (e: any) { 
       console.error("Add Church Bank error:", e);
-      handleFirestoreError(e, OperationType.CREATE, 'churches');
+      alert('فشل إضافة الكنيسة: ' + (e.message || String(e)));
     } finally {
       setIsSaving(false);
     }
   };
   const deleteChurch = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'churches', id));
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
+      const { error } = await supabase.from('churches').delete().eq('id', id);
+      if (error) throw error;
+
+      // Dispatch global refresh event
+      window.dispatchEvent(new Event('supabase-metadata-updated'));
+
       setDeleteConfirmation(null);
       fetchData();
-    } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `churches/${id}`);
+    } catch (e: any) {
+      alert('فشل الحذف: ' + (e.message || String(e)));
     }
   };
 
@@ -269,21 +294,38 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newCompName) return;
     try {
-      await addDoc(collection(db, 'competitions'), { name: newCompName });
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
+      const { error } = await supabase.from('competitions').insert([{ name: newCompName }]);
+      if (error) throw error;
+
       setNewCompName('');
+
+      // Dispatch global refresh event
+      window.dispatchEvent(new Event('supabase-metadata-updated'));
+
       fetchData();
-    } catch (e) { 
+    } catch (e: any) { 
       console.error(e);
-      handleFirestoreError(e, OperationType.CREATE, 'competitions');
+      alert('خطأ: ' + (e.message || String(e)));
     }
   };
   const deleteCompetition = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'competitions', id));
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
+      const { error } = await supabase.from('competitions').delete().eq('id', id);
+      if (error) throw error;
+
+      // Dispatch global refresh event
+      window.dispatchEvent(new Event('supabase-metadata-updated'));
+
       setDeleteConfirmation(null);
       fetchData();
-    } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `competitions/${id}`);
+    } catch (e: any) {
+      alert('خطأ: ' + (e.message || String(e)));
     }
   };
 
@@ -292,21 +334,51 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newLevelName) return;
     try {
-      await addDoc(collection(db, 'levels'), { name: newLevelName, allowedCompetitions: selectedCompetitions });
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
+      const payload = { 
+        name: newLevelName, 
+        allowedCompetitions: selectedCompetitions,
+        allowed_competitions: selectedCompetitions
+      };
+
+      await supabase.from('stages').insert([payload]);
+      await supabase.from('levels').insert([payload]);
+
       setNewLevelName(''); setSelectedCompetitions([]);
+
+      // Dispatch global refresh event
+      window.dispatchEvent(new Event('supabase-metadata-updated'));
+
       fetchData();
-    } catch (e) { 
+    } catch (e: any) { 
       console.error(e);
-      handleFirestoreError(e, OperationType.CREATE, 'levels');
+      alert('خطأ: ' + (e.message || String(e)));
     }
   };
   const deleteLevel = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'levels', id));
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
+
+      const stageToDel = levels.find(l => l.id === id);
+      if (stageToDel) {
+        await supabase.from('stages').delete().eq('name', stageToDel.name);
+        await supabase.from('levels').delete().eq('name', stageToDel.name);
+      }
+
+      await supabase.from('stages').delete().eq('id', id);
+      await supabase.from('levels').delete().eq('id', id);
+
+      // Dispatch global refresh event
+      window.dispatchEvent(new Event('supabase-metadata-updated'));
+
       setDeleteConfirmation(null);
       fetchData();
-    } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `levels/${id}`);
+    } catch (e: any) {
+      alert('خطأ: ' + (e.message || String(e)));
     }
   };
 
@@ -315,21 +387,31 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newHymnStageName) return;
     try {
-      await addDoc(collection(db, 'hymnStages'), { name: newHymnStageName });
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
+      const { error } = await supabase.from('hymnStages').insert([{ name: newHymnStageName }]);
+      if (error) throw error;
+
       setNewHymnStageName('');
       fetchData();
-    } catch (e) { 
+    } catch (e: any) { 
       console.error(e);
-      handleFirestoreError(e, OperationType.CREATE, 'hymnStages');
+      alert('خطأ: ' + (e.message || String(e)));
     }
   };
   const deleteHymnStage = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'hymnStages', id));
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
+      const { error } = await supabase.from('hymnStages').delete().eq('id', id);
+      if (error) throw error;
+
       setDeleteConfirmation(null);
       fetchData();
-    } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `hymnStages/${id}`);
+    } catch (e: any) {
+      alert('خطأ: ' + (e.message || String(e)));
     }
   };
 
@@ -338,21 +420,31 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newActivityStageName) return;
     try {
-      await addDoc(collection(db, 'activityStages'), { name: newActivityStageName });
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
+      const { error } = await supabase.from('activityStages').insert([{ name: newActivityStageName }]);
+      if (error) throw error;
+
       setNewActivityStageName('');
       fetchData();
-    } catch (e) { 
+    } catch (e: any) { 
       console.error(e);
-      handleFirestoreError(e, OperationType.CREATE, 'activityStages');
+      alert('خطأ: ' + (e.message || String(e)));
     }
   };
   const deleteActivityStage = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'activityStages', id));
+      if (!supabase) {
+        throw new Error("سيرفر قاعدة البيانات غير متصل");
+      }
+      const { error } = await supabase.from('activityStages').delete().eq('id', id);
+      if (error) throw error;
+
       setDeleteConfirmation(null);
       fetchData();
-    } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `activityStages/${id}`);
+    } catch (e: any) {
+      alert('خطأ: ' + (e.message || String(e)));
     }
   };
 

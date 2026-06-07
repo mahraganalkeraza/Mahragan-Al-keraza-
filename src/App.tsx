@@ -123,6 +123,7 @@ import {
   getCountFromServer
 } from './firebase';
 import { supabase } from './lib/supabaseClient';
+import { autoSeedSupabaseTables } from './utils/supabaseSeeding';
 import { syncEmergencyDataToFirestore, autoSyncSupabaseToFirebase } from './services/emergencySync';
 import { saveGlobalData, fetchAllCombinedData, silentDualFetch, silentDualWrite, submitNewRegistration } from './services/dataService';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -759,25 +760,92 @@ function AppComponent() {
   }, [userProfile?.logoUrl, appLogo]);
 
   useEffect(() => {
-    const unsubAppConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        setActiveYear(data.activeYear || CURRENT_YEAR);
-        if (data.appLogo) {
-          localStorage.setItem('appLogoCache', data.appLogo);
-          setAppLogo(data.appLogo);
-        } else {
-          localStorage.removeItem('appLogoCache');
-          setAppLogo(null);
+    let unsubAppConfig: (() => void) | null = null;
+    try {
+      unsubAppConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          setActiveYear(data.activeYear || CURRENT_YEAR);
+          if (data.appLogo) {
+            localStorage.setItem('appLogoCache', data.appLogo);
+            setAppLogo(data.appLogo);
+          } else {
+            localStorage.removeItem('appLogoCache');
+            setAppLogo(null);
+          }
         }
-      }
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
+      }, (error) => {
+        console.warn("Bypassing app_config Firestore subscription due to read quota limit.");
+        const cachedLogo = localStorage.getItem('appLogoCache');
+        if (cachedLogo) setAppLogo(cachedLogo);
+      });
+    } catch (e) {
+      console.warn("Could not establish app_config Firestore subscription:", e);
+    }
 
     const fetchCachedMetadata = async () => {
-      // ZERO-READ POLICY: Instantly initialize with pre-injected local rosters, completely bypassing third-party read queries.
+      // 100% dynamic loading from Supabase, completely bypassing Firestore of Firebase due to quota limits
       try {
-        setPublicChurches(OFFICIAL_LOCAL_CHURCHES);
-        setDynamicLevels(LOCAL_STAGES.map((s, idx) => ({ id: String(idx + 1), name: s, comps: LOCAL_COMPETITIONS })));
+        if (supabase) {
+          // Check/seed tables if empty
+          await autoSeedSupabaseTables();
+        }
+
+        let churchesList = OFFICIAL_LOCAL_CHURCHES;
+        let stagesList = LOCAL_STAGES;
+        let competitionsList = LOCAL_COMPETITIONS;
+
+        if (supabase) {
+          try {
+            console.log("[Supabase Sync] Fetching dynamic metadata from Supabase database...");
+            
+            // Fetch churches
+            const { data: dbChurches, error: chError } = await supabase
+              .from('churches')
+              .select('name');
+              
+            if (dbChurches && dbChurches.length > 0 && !chError) {
+              churchesList = dbChurches.map((c: any) => ({
+                name: c.name,
+                email: '',
+                logoUrl: '',
+                isEnabled: true
+              }));
+              console.log("[Supabase Sync] Successfully loaded", dbChurches.length, "churches from Supabase.");
+            } else {
+              console.warn("[Supabase Sync] Churches table was empty, utilizing pre-injected offline fallback.");
+            }
+
+            // Fetch stages
+            const { data: dbStages, error: stgError } = await supabase
+              .from('stages')
+              .select('name');
+              
+            if (dbStages && dbStages.length > 0 && !stgError) {
+              stagesList = dbStages.map((s: any) => s.name);
+              console.log("[Supabase Sync] Successfully loaded", dbStages.length, "stages from Supabase.");
+            } else {
+              console.warn("[Supabase Sync] Stages table was empty, utilizing pre-injected offline fallback.");
+            }
+
+            // Fetch competitions
+            const { data: dbComps, error: compError } = await supabase
+              .from('competitions')
+              .select('name');
+              
+            if (dbComps && dbComps.length > 0 && !compError) {
+              competitionsList = dbComps.map((c: any) => c.name);
+              console.log("[Supabase Sync] Successfully loaded", dbComps.length, "competitions from Supabase.");
+            } else {
+              console.warn("[Supabase Sync] Competitions table was empty, utilizing pre-injected offline fallback.");
+            }
+          } catch (supErr) {
+            console.error("[Supabase Sync] Error during dynamic Supabase fetch, using offline fallbacks:", supErr);
+          }
+        }
+
+        setPublicChurches(churchesList);
+        setDynamicLevels(stagesList.map((s, idx) => ({ id: String(idx + 1), name: s, comps: competitionsList })));
         setActivityStages([]);
         setHymnStages([]);
         setValidationSettings({
@@ -786,14 +854,21 @@ function AppComponent() {
           rules: { nameLength: true, genderMatch: false, mandatoryRows: true }
         });
       } catch (e) {
-        console.warn("[Metadata Catch Bypass] Error setting local static metadata:", e);
+        console.warn("[Metadata Catch Bypass] Error setting metadata:", e);
       }
     };
 
     fetchCachedMetadata();
 
+    const handleUpdateEvent = () => {
+      console.log("[Supabase Sync] Dynamic metadata update event received. Reloading...");
+      fetchCachedMetadata();
+    };
+    window.addEventListener('supabase-metadata-updated', handleUpdateEvent);
+
     return () => {
-      unsubAppConfig();
+      if (unsubAppConfig) unsubAppConfig();
+      window.removeEventListener('supabase-metadata-updated', handleUpdateEvent);
     };
   }, []);
 
@@ -1396,96 +1471,56 @@ function AppComponent() {
   }, [activeSection]);
 
   useEffect(() => {
-    let unsubscribeProfile: (() => void) | null = null;
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        // Use real-time listener for current user profile to enforce blocking instantly
-        unsubscribeProfile = onSnapshot(doc(db, 'users', firebaseUser.uid), async (userDoc) => {
-          if (userDoc.exists()) {
-            const profile = userDoc.data();
-            if (profile.isEnabled === false) {
-              await signOut(auth);
-              setNotification("تم تعطيل حسابك بقرار من الإدارة. يرجى التواصل مع المسئول.");
-              setIsLoggedIn(false);
-              setUser(null);
-              setUserProfile(null);
-              localStorage.removeItem('userProfileCache');
-              setChurchName('');
-              return;
-            }
-            setUserProfile(profile);
-            localStorage.setItem('userProfileCache', JSON.stringify(profile));
-            setUserRole(profile.role);
-            setChurchName(profile.churchName || '');
-            setLocation(profile.country || '');
-            setDashboardBg(profile.dashboardBg || '');
-            setIsLoggedIn(true);
-            setIsAuthReady(true);
-          } else if (firebaseUser.email === 'admin@mafk.com' || firebaseUser.email === 'mahraganalkeraza7esoyam@gmail.com') {
-            setUserRole('admin');
-            setChurchName(firebaseUser.displayName || 'اللجنة المركزية منطقة18');
-            setIsLoggedIn(true);
-            setIsAuthReady(true);
-          } else {
-            // User doc missing. If they are a church, sign them out so they can log in via handleLogin and recreate their profile.
-            console.warn("User document missing in Firestore. Forcing sign out for reconstruction.");
-            await signOut(auth);
-            setIsLoggedIn(false);
-            setUser(null);
-            setUserProfile(null);
-            localStorage.removeItem('userProfileCache');
-            setChurchName('');
-            setIsAuthReady(true);
-          }
-        }, (error) => {
-          console.error("Error watching user profile (Applying Offline/Cached fallback):", error);
-          
-          const cachedProfile = getInitialProfile();
-          if (cachedProfile && cachedProfile.uid === firebaseUser.uid) {
-            console.log("Loading user profile offline from cached session.");
-            setUserProfile(cachedProfile);
-            setUserRole(cachedProfile.role);
-            setChurchName(cachedProfile.churchName || '');
-            setDashboardBg(cachedProfile.dashboardBg || '');
-            setIsLoggedIn(true);
-          } else {
-            // Attempt offline dynamic reconstruction from email
-            let role = 'church';
-            let churchNameFound = 'كنيسة محلية';
-            if (firebaseUser.email === 'admin@mafk.com' || firebaseUser.email === 'mahraganalkeraza7esoyam@gmail.com') {
-              role = 'admin';
-              churchNameFound = 'اللجنة المركزية منطقة18';
-            } else if (firebaseUser.email) {
-              for (const name of Object.keys(CHURCH_CREDENTIALS)) {
-                const slug = encodeURIComponent(name).replace(/%/g, '');
-                const email = `${slug}_2026@mafk.com`;
-                if (email === firebaseUser.email) {
-                  churchNameFound = name;
-                  break;
-                }
+        console.log("Firebase Auth User active. Loading profile from cache or dynamic reconstruction to bypass Firestore read quota.");
+        
+        const cachedProfile = getInitialProfile();
+        if (cachedProfile && (cachedProfile.uid === firebaseUser.uid || cachedProfile.email === firebaseUser.email)) {
+          setUserProfile(cachedProfile);
+          setUserRole(cachedProfile.role);
+          setChurchName(cachedProfile.churchName || '');
+          setLocation(cachedProfile.country || '');
+          setDashboardBg(cachedProfile.dashboardBg || '');
+          setIsLoggedIn(true);
+          setIsAuthReady(true);
+        } else {
+          // Reconstruct profile dynamically from email
+          let role = 'church';
+          let churchNameFound = 'كنيسة محلية';
+          if (firebaseUser.email === 'admin@mafk.com' || firebaseUser.email === 'mahraganalkeraza7esoyam@gmail.com') {
+            role = 'admin';
+            churchNameFound = 'اللجنة المركزية منطقة18';
+          } else if (firebaseUser.email) {
+            for (const name of Object.keys(CHURCH_CREDENTIALS)) {
+              const slug = encodeURIComponent(name).replace(/%/g, '');
+              const email = `${slug}_2026@mafk.com`;
+              if (email === firebaseUser.email) {
+                churchNameFound = name;
+                break;
               }
             }
-            
-            console.log("Dynamically reconstructed user profile offline due to read blocks for:", churchNameFound);
-            const reconstructed = {
-              uid: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              role: role,
-              churchName: churchNameFound,
-              dashboardBg: ''
-            };
-            setUserProfile(reconstructed);
-            localStorage.setItem('userProfileCache', JSON.stringify(reconstructed));
-            setUserRole(role as any);
-            setChurchName(churchNameFound);
-            setIsLoggedIn(true);
           }
+          
+          const reconstructed = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            role: role,
+            churchName: churchNameFound,
+            dashboardBg: ''
+          };
+          setUserProfile(reconstructed);
+          localStorage.setItem('userProfileCache', JSON.stringify(reconstructed));
+          setUserRole(role as any);
+          setChurchName(churchNameFound);
+          setIsLoggedIn(true);
           setIsAuthReady(true);
-        });
+        }
       } else {
+        // Fallback check if cached profile exists (e.g. offline/Supabase authenticated)
         const cachedProfile = getInitialProfile();
-        if (cachedProfile && cachedProfile.isSupabaseOnly) {
+        if (cachedProfile) {
           setUser(null);
           setUserProfile(cachedProfile);
           setUserRole(cachedProfile.role);
@@ -1502,16 +1537,11 @@ function AppComponent() {
           setChurchName('');
           setDashboardBg('');
           setIsAuthReady(true);
-          if (unsubscribeProfile) {
-            unsubscribeProfile();
-            unsubscribeProfile = null;
-          }
         }
       }
     });
     return () => {
       unsubscribeAuth();
-      if (unsubscribeProfile) unsubscribeProfile();
     };
   }, []);
 
@@ -2826,28 +2856,58 @@ function AppComponent() {
     }
 
     try {
-      console.log("Authenticating strictly against pre-injected offline rosters...");
+      console.log("Authenticating strictly against Supabase...");
 
-      // Validate credentials entirely offline (Zero-Read guarantee)
       let authenticatedChurchName = "";
       let correctCode = "";
 
-      for (const [name, code] of Object.entries(CHURCH_CREDENTIALS)) {
-        if (normalizeArabicText(name) === cleanInputName) {
-          authenticatedChurchName = name;
-          correctCode = code;
-          break;
+      if (supabase) {
+        console.log("[Supabase Auth] Querying churches from Supabase...");
+        const { data: dbChurches, error: err } = await supabase.from('churches').select('*');
+        if (err) throw err;
+
+        let matchedChurch = null;
+        if (dbChurches && dbChurches.length > 0) {
+          matchedChurch = dbChurches.find(c => {
+            const nameValue = c.name || '';
+            return normalizeArabicText(nameValue) === cleanInputName;
+          });
+        }
+
+        const enteredPassword = cleanInputCode.trim().toLowerCase();
+
+        if (matchedChurch && (matchedChurch.password || '').trim().toLowerCase() === enteredPassword) {
+          authenticatedChurchName = matchedChurch.name;
+          correctCode = matchedChurch.password;
+          console.log("✅ [Auth Success] Found matched church in Supabase with correct password:", authenticatedChurchName);
+        } else {
+          console.error("❌ [Auth Failed] Code or name does not exist or matches incorrectly on Supabase.");
+          setLoginError("كود الكنيسة غير صحيح أو اسم الكنيسة لا يتطابق");
+          setIsLoading(false);
+          return;
+        }
+      } else {
+        console.log("[Local Auth] Supabase not active. Falling back to local offline credentials.");
+        let foundLocal = false;
+        const enteredPassword = cleanInputCode.trim().toLowerCase();
+        for (const [name, code] of Object.entries(CHURCH_CREDENTIALS)) {
+          if (normalizeArabicText(name) === cleanInputName) {
+            if (enteredPassword === code.trim().toLowerCase()) {
+              authenticatedChurchName = name;
+              correctCode = code;
+              foundLocal = true;
+              break;
+            }
+          }
+        }
+
+        if (!foundLocal) {
+          console.error("❌ [Auth Failed] Code or name does not exist or matches incorrectly on local config.");
+          setLoginError("كود الكنيسة غير صحيح أو اسم الكنيسة لا يتطابق");
+          setIsLoading(false);
+          return;
         }
       }
-
-      if (!authenticatedChurchName || cleanInputCode !== correctCode) {
-        console.error("❌ [Auth Failed] Code or name does not exist on pre-injected list.");
-        setLoginError("كود الكنيسة غير صحيح أو اسم الكنيسة لا يتطابق");
-        setIsLoading(false);
-        return;
-      }
-
-      console.log("✅ [Auth Success] Church validated offline:", authenticatedChurchName);
       
       const slug = encodeURIComponent(authenticatedChurchName).replace(/%/g, '');
       const email = `${slug}_2026@mafk.com`;
@@ -8821,39 +8881,7 @@ function AppComponent() {
           scrollToZoom: true,
         }}
       />
-      {/* EMERGENCY GLOBAL INJECTION - FORCING VISIBILITY FOR ADMIN */}
-      {(userRole === 'admin' || userRole === 'super_admin') && (
-        <>
-          <div 
-            style={{
-              position: 'fixed',
-              bottom: '32px',
-              right: '32px',
-              width: '64px',
-              height: '64px',
-              backgroundColor: '#1e3a8a', // The original premium Mahragan Dark Blue
-              borderRadius: '50%',
-              zIndex: 9999999, // Forces top-layer rendering above ALL tables and panels
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 25px rgba(30, 58, 138, 0.9)', // Dynamic premium glowing layout
-              cursor: 'pointer',
-              pointerEvents: 'auto',
-              animation: 'admin-pulse-glow 2s infinite'
-            }} 
-            className="active:scale-95 transition-all duration-200"
-            onClick={() => {
-              console.log("Admin AI FAB Clicked");
-              setIsAiModalOpen(!isAiModalOpen);
-            }}
-          >
-            <span style={{ fontSize: '28px' }}>{isAiModalOpen ? '💬' : '✨'}</span>
-          </div>
-
-          {/* AI FAB Removed */}
-        </>
-      )}
+      {/* AI Floating Button completely disabled */}
     </div>
   );
 }

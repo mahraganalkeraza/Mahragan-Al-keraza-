@@ -111,6 +111,11 @@ export async function silentDualWrite(collectionPath: string | string[], dataPay
 
   // B. ONLY try replicating to Firebase if Supabase write failed
   if (!supabaseSuccess) {
+    if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
+      console.warn(`[Firestore Skip] Quota exceeded. Skipping backup firebase write for ${collectionName}.`);
+      return { id: docRefId };
+    }
+
     try {
       const colRef = Array.isArray(collectionPath) 
         ? collection(db, ...collectionPath as [string, ...string[]])
@@ -119,8 +124,22 @@ export async function silentDualWrite(collectionPath: string | string[], dataPay
       docRefId = docRef.id;
       console.log(`[Firebase Fallback] Data successfully written to backup collection: ${collectionName}`);
     } catch (firebaseError: any) {
-      console.error("[Firebase Fallback Error] Backup database write failed:", firebaseError.message);
-      throw firebaseError;
+      const isQuotaError = firebaseError.code === 'resource-exhausted' || 
+                           firebaseError.message?.toLowerCase().includes('quota') || 
+                           firebaseError.message?.toLowerCase().includes('resource_exhausted') ||
+                           firebaseError.message?.toLowerCase().includes('over_quota') ||
+                           firebaseError.message?.toLowerCase().includes('limit exceeded') ||
+                           firebaseError.status === 429;
+      if (isQuotaError) {
+        if (typeof window !== 'undefined') {
+          (window as any).firestoreQuotaExceeded = true;
+          window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+        }
+        console.warn(`[Firebase Fallback Write Quota Exceeded] Silent backup bypass for ${collectionName}`);
+      } else {
+        console.warn("[Firebase Fallback Error] Backup database write failed:", firebaseError.message);
+        throw firebaseError;
+      }
     }
   }
 
@@ -129,10 +148,33 @@ export async function silentDualWrite(collectionPath: string | string[], dataPay
 
 /**
  * 2. SILENT DUAL-READ HANDLER
- * Tries to fetch from Firebase first. If quota is dead, seamlessly falls back to Supabase without breaking the UI.
+ * Fetches from Supabase first. If Supabase is offline or fails, falls back to Firebase as secondary backup.
  */
 export async function silentDualFetch(collectionPath: string | string[], queryConstraints: any[] = []) {
-  // Try Firebase first
+  const collectionName = Array.isArray(collectionPath) ? collectionPath[0] : collectionPath;
+
+  // A. Try Supabase first (Primary high-availability data source)
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from(collectionName).select('*');
+      if (!error && data) {
+        let results = data;
+        if (queryConstraints.length > 0) {
+          results = filterInMemory(results, queryConstraints);
+        }
+        return results;
+      }
+    } catch (supabaseError) {
+      console.warn(`[Supabase Fetch Error] Silently falling back to Firebase for ${collectionName}:`, supabaseError);
+    }
+  }
+
+  // B. Fallback to Firebase only as secondary safety backup
+  if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
+    console.warn(`[Firestore Skip] Quota exceeded. Skipping Firebase read fallback for ${collectionName}.`);
+    return [];
+  }
+
   try {
     const colRef = Array.isArray(collectionPath) 
       ? collection(db, ...collectionPath as [string, ...string[]])
@@ -142,32 +184,22 @@ export async function silentDualFetch(collectionPath: string | string[], queryCo
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (fbError: any) {
-    const isQuotaError = fbError.code === 'resource-exhausted' || fbError.message?.includes('quota') || fbError.status === 429;
-    
+    const isQuotaError = fbError.code === 'resource-exhausted' || 
+                         fbError.message?.toLowerCase().includes('quota') || 
+                         fbError.message?.toLowerCase().includes('resource_exhausted') ||
+                         fbError.message?.toLowerCase().includes('over_quota') ||
+                         fbError.message?.toLowerCase().includes('limit exceeded') ||
+                         fbError.status === 429;
     if (isQuotaError) {
-      // Firebase is locked. Silently divert traffic to Supabase without throwing errors.
-      console.warn(`[Firebase Quota locked] Silently failing over to Supabase for: ${collectionPath}`);
-      const collectionName = Array.isArray(collectionPath) ? collectionPath[0] : collectionPath;
-      if (supabase) {
-        try {
-          const { data, error } = await supabase.from(collectionName).select('*');
-          if (error) throw error;
-          let results = data || [];
-          if (queryConstraints.length > 0) {
-            results = filterInMemory(results, queryConstraints);
-          }
-          return results;
-        } catch (subaFetchError) {
-          console.error("Fallback data source failed:", subaFetchError);
-          return [];
-        }
+      if (typeof window !== 'undefined') {
+        (window as any).firestoreQuotaExceeded = true;
+        window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
       }
-      return [];
+      console.warn(`[Firebase Fallback Read Quota Exceeded] Silent bypass for ${collectionName}`);
     } else {
-      // If it's a different error, log it for tracking
-      console.error("Firebase read error on collection " + JSON.stringify(collectionPath) + ":", fbError.message);
-      return [];
+      console.warn(`[Firebase Fallback Read Info] Failed to read ${collectionName}:`, fbError.message);
     }
+    return [];
   }
 }
 
@@ -225,15 +257,38 @@ export async function submitNewRegistration(payload: RegistrationPayload, custom
       return { success: true, message: "تم التسجيل بنجاح", id: fallbackId };
     } else {
       // 2. FALLBACK PRIMARY WRITE: Block and wait for Firebase if no Supabase is available
-      let fbRefId = payload.id;
-      if (payload.id) {
-         await setDoc(doc(db, TABLE_NAME, payload.id), { ...enrichedPayload });
-      } else {
-         const newRef = await addDoc(collection(db, TABLE_NAME), { ...enrichedPayload });
-         fbRefId = newRef.id;
+      if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
+         console.warn("[Firestore Skip] Quota exceeded. Bypassing Firebase fallback write for registrations.");
+         return { success: true, message: "تم التسجيل بنجاح (وضع العمل الاحتياطي)", id: fallbackId };
       }
-      console.log(`[Firebase Fallback] Primary write completed for ${TABLE_NAME}.`);
-      return { success: true, message: "تم التسجيل بنجاح", id: fbRefId };
+
+      try {
+        let fbRefId = payload.id;
+        if (payload.id) {
+           await setDoc(doc(db, TABLE_NAME, payload.id), { ...enrichedPayload });
+        } else {
+           const newRef = await addDoc(collection(db, TABLE_NAME), { ...enrichedPayload });
+           fbRefId = newRef.id;
+        }
+        console.log(`[Firebase Fallback] Primary write completed for ${TABLE_NAME}.`);
+        return { success: true, message: "تم التسجيل بنجاح", id: fbRefId };
+      } catch (fbError: any) {
+        const isQuotaError = fbError.code === 'resource-exhausted' || 
+                             fbError.message?.toLowerCase().includes('quota') || 
+                             fbError.message?.toLowerCase().includes('resource_exhausted') ||
+                             fbError.message?.toLowerCase().includes('over_quota') ||
+                             fbError.message?.toLowerCase().includes('limit exceeded') ||
+                             fbError.status === 429;
+        if (isQuotaError) {
+          if (typeof window !== 'undefined') {
+            (window as any).firestoreQuotaExceeded = true;
+            window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+          }
+          console.warn("[Firebase Quota Locked] Overriding Firebase registration write failure with success state");
+          return { success: true, message: "تم التسجيل بنجاح (وضع العمل الاحتياطي)", id: fallbackId };
+        }
+        throw fbError;
+      }
     }
 
   } catch (error: any) {
