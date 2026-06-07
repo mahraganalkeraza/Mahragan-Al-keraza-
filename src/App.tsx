@@ -178,6 +178,23 @@ export const withExponentialBackoff = async <T,>(operation: () => Promise<T>, ma
   throw new Error('Maximum retries exceeded');
 };
 
+const LOCAL_STAGES = [
+  { id: "1", name: "حضانة" }, { id: "2", name: "أولى وثانية" },
+  { id: "3", name: "ثالثة ورابعة" }, { id: "4", name: "خامسة وسادسة" },
+  { id: "5", name: "إعدادي" }, { id: "6", name: "ثانوي" },
+  { id: "7", name: "جامعة" }, { id: "8", name: "خريجون" },
+  { id: "9", name: "خدام وإعداد الخدام" }, { id: "10", name: "قانا الجليل" },
+  { id: "11", name: "تعليم كبار" }, { id: "12", name: "سمعان الشيخ" },
+  { id: "13", name: "حرفيون" }, { id: "14", name: "ديديموس" },
+  { id: "15", name: "بولس وسيلا" }, { id: "16", name: "صم وبكم" },
+  { id: "17", name: "ذوي القدرات" }
+];
+
+const LOCAL_COMPETITIONS = [
+  { id: "1", name: "دراسي" }, { id: "2", name: "محفوظات" },
+  { id: "3", name: "قبطي مستوى أول" }, { id: "4", name: "قبطي مستوى ثان" }
+];
+
 function strictCleanText(val: string): string {
   if (!val) return "";
   return val
@@ -610,7 +627,7 @@ function AppComponent() {
   const initialProfile = getInitialProfile();
   
   const [userProfile, setUserProfile] = useState<any>(initialProfile);
-  const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
+  const [dynamicLevels, setDynamicLevels] = useState<any[]>(LOCAL_STAGES.map(s => ({ ...s, comps: LOCAL_COMPETITIONS.map(c => c.name) })));
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [hymnStages, setHymnStages] = useState<any[]>([]);
 
@@ -798,14 +815,10 @@ function AppComponent() {
             return churchesList.map(c => ({ name: c.name, email: '', isEnabled: true, logoUrl: '' }));
           }
           if (key === 'levels') {
-            return [
-              { name: "حضانات", comps: [] },
-              { name: "ابتدائي", comps: [] },
-              { name: "إعدادي", comps: [] },
-              { name: "ثانوي", comps: [] },
-              { name: "جامعيين وخريجين", comps: [] },
-              { name: "حرفيين", comps: [] }
-            ];
+            return LOCAL_STAGES.map(stage => ({
+              ...stage,
+              comps: LOCAL_COMPETITIONS.map(c => c.name)
+            }));
           }
           if (key === 'activityStages' || key === 'hymnStages') {
             return [];
@@ -4714,12 +4727,12 @@ function AppComponent() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
+                        {LOCAL_STAGES.map((stage) => <option key={stage.id} value={stage.name}>{stage.name}</option>)}
                       </select>
                     </div>
 
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase">نوع المسابقات (بحد أقصى ٣)</label>
+                       <label className="text-[10px] font-black text-slate-400 uppercase">نوع المسابقات (بحد أقصى ٣)</label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[0, 1, 2].map((idx) => {
                           const selectedComps = newParticipant.competitions;
@@ -4747,8 +4760,8 @@ function AppComponent() {
                               className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue"
                             >
                               <option value="">-- اختر المسابقة --</option>
-                              {availableCompsForLevel.map((comp: string) => (
-                                <option key={comp} value={comp} disabled={isOptionDisabled(comp)}>{comp}</option>
+                              {LOCAL_COMPETITIONS.map((comp) => (
+                                <option key={comp.id} value={comp.name} disabled={isOptionDisabled(comp.name)}>{comp.name}</option>
                               ))}
                             </select>
                           );
@@ -7380,7 +7393,7 @@ function AppComponent() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
+                        {LOCAL_STAGES.map((stage) => <option key={stage.id} value={stage.name}>{stage.name}</option>)}
                       </select>
                     </div>
                     <div>
