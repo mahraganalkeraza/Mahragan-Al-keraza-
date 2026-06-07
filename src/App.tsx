@@ -2553,15 +2553,34 @@ function AppComponent() {
       constraints.push(orderBy('name'));
       
       if (isFirst || (!isFirst && !isNext)) {
-        getCountFromServer(query(baseQueryQ, ...constraints)).then(snap => {
+        try {
+          const snap = await getCountFromServer(query(baseQueryQ, ...constraints));
           setTotalParticipantsCount(snap.data().count);
-        }).catch(async (err) => {
-          console.warn("Firestore count query failed, recalculating from fallback fetch...");
+        } catch (err) {
+          console.warn("Firestore participants count query failed, immediately falling back to Supabase...");
           try {
-            const fallbackDocs = await silentDualFetch('participants', constraints);
-            setTotalParticipantsCount(fallbackDocs.length);
-          } catch (e) {}
-        });
+            if (supabase) {
+              const filterCh = userRole === 'admin' 
+                ? (partChurchFilter !== 'الكل' ? partChurchFilter : null)
+                : churchName;
+              let queryBuilder = supabase.from('participants').select('id');
+              if (filterCh) {
+                queryBuilder = queryBuilder.eq('churchName', filterCh);
+              }
+              if (partStageFilter !== 'الكل') {
+                queryBuilder = queryBuilder.eq('stage', partStageFilter);
+              }
+              const { data, error } = await queryBuilder;
+              if (!error && data) {
+                setTotalParticipantsCount(data.length);
+              } else {
+                setTotalParticipantsCount(0);
+              }
+            }
+          } catch (e) {
+            console.error("Supabase count fallback failed for participants:", e);
+          }
+        }
       }
       
       const newList = await silentDualFetch('participants', constraints) as Participant[];
@@ -2616,13 +2635,29 @@ function AppComponent() {
         : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
       
       if (isFirst || (!isFirst && !isNext)) {
-        getCountFromServer(baseQuery).then(snap => setTotalOrdersCount(snap.data().count)).catch(async (err) => {
-          console.warn("Firestore count query failed, recalculating from fallback fetch...");
+        try {
+          const snap = await getCountFromServer(baseQuery);
+          setTotalOrdersCount(snap.data().count);
+        } catch (err) {
+          console.warn("Firestore orders count query failed, immediately falling back to Supabase...");
           try {
-            const fallbackDocs = await silentDualFetch('orders', [where('year', '==', activeYear)]);
-            setTotalOrdersCount(fallbackDocs.length);
-          } catch (e) {}
-        });
+            if (supabase) {
+              const filterCh = userRole === 'admin' ? null : churchName;
+              let queryBuilder = supabase.from('orders').select('id');
+              if (filterCh) {
+                queryBuilder = queryBuilder.eq('churchName', filterCh);
+              }
+              const { data, error } = await queryBuilder;
+              if (!error && data) {
+                setTotalOrdersCount(data.length);
+              } else {
+                setTotalOrdersCount(0);
+              }
+            }
+          } catch (e) {
+            console.error("Supabase count fallback failed for orders:", e);
+          }
+        }
       }
 
       const constraints: any[] = [orderBy('timestamp', 'desc')];
@@ -2710,15 +2745,31 @@ function AppComponent() {
       }
       
       if (isFirst || (!isFirst && !isNext)) {
-        getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
+        try {
+          const snap = await getCountFromServer(query(baseQueryQ, ...countConstraints));
           setTotalResultsCount(snap.data().count);
-        }).catch(async (err) => {
-          console.warn("Firestore count query failed, recalculating from fallback fetch...");
+        } catch (err) {
+          console.warn("Firestore results count query failed, immediately falling back to Supabase...");
           try {
-            const fallbackDocs = await silentDualFetch('results', countConstraints);
-            setTotalResultsCount(fallbackDocs.length);
-          } catch (e) {}
-        });
+            if (supabase) {
+              const filterCh = userRole === 'admin' 
+                ? (globalChurchFilter !== 'الكل' ? globalChurchFilter : null)
+                : churchName;
+              let queryBuilder = supabase.from('results').select('id');
+              if (filterCh) {
+                queryBuilder = queryBuilder.eq('churchName', filterCh);
+              }
+              const { data, error } = await queryBuilder;
+              if (!error && data) {
+                setTotalResultsCount(data.length);
+              } else {
+                setTotalResultsCount(0);
+              }
+            }
+          } catch (e) {
+            console.error("Supabase count fallback failed for results:", e);
+          }
+        }
       }
 
       if (!isFirst && isNext && lastResultDoc) {
@@ -2763,15 +2814,31 @@ function AppComponent() {
       }
       
       if (isFirst || (!isFirst && !isNext)) {
-        getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
+        try {
+          const snap = await getCountFromServer(query(baseQueryQ, ...countConstraints));
           setTotalTeamsCount(snap.data().count);
-        }).catch(async (err) => {
-          console.warn("Firestore count query failed, recalculating from fallback fetch...");
+        } catch (err) {
+          console.warn("Firestore teams count query failed, immediately falling back to Supabase...");
           try {
-            const fallbackDocs = await silentDualFetch('activityTeams', countConstraints);
-            setTotalTeamsCount(fallbackDocs.length);
-          } catch (e) {}
-        });
+            if (supabase) {
+              const filterCh = userRole === 'admin' 
+                ? (globalChurchFilter !== 'الكل' ? globalChurchFilter : null)
+                : churchName;
+              let queryBuilder = supabase.from('activityTeams').select('id');
+              if (filterCh) {
+                queryBuilder = queryBuilder.eq('churchName', filterCh);
+              }
+              const { data, error } = await queryBuilder;
+              if (!error && data) {
+                setTotalTeamsCount(data.length);
+              } else {
+                setTotalTeamsCount(0);
+              }
+            }
+          } catch (e) {
+            console.error("Supabase count fallback failed for teams:", e);
+          }
+        }
       }
 
       if (!isFirst && isNext && lastTeamDoc) {

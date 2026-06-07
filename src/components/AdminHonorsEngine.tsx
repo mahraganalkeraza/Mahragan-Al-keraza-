@@ -4,6 +4,7 @@ import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import { Result } from '../types';
 import { Save, Download, Award, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { supabase } from '../lib/supabaseClient';
 
 interface WeightsMap {
   [stage: string]: {
@@ -53,56 +54,95 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
         } catch (e) {}
       }
 
-      const promises: Promise<any>[] = [getDoc(doc(db, 'settings', 'examWeights'))];
-      
-      const shouldFetchStages = stagesList.length === 0;
-      const shouldFetchSubjects = subjectsList.length === 0;
-
-      if (shouldFetchStages) {
-        promises.push(getDocs(collection(db, 'levels')));
-      }
-      if (shouldFetchSubjects) {
-        promises.push(getDocs(collection(db, 'competitions')));
-      }
-
-      const results = await Promise.all(promises);
-      const snap = results[0];
-
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.weights) setWeights(data.weights);
-        if (data.minThreshold !== undefined) setMinThreshold(data.minThreshold);
+      // Try Supabase for stages & subjects if they aren't filled yet
+      if (stagesList.length === 0 && supabase) {
+        try {
+          const { data, error } = await supabase.from('stages').select('*');
+          if (!error && data) {
+            stagesList = data.map((s: any) => s.name);
+          }
+        } catch (sErr) {
+          console.warn('Supabase fetch failed for stages weight settings:', sErr);
+        }
       }
 
-      let pointer = 1;
-      if (shouldFetchStages) {
-        const stagesSnap = results[pointer++];
-        stagesList = stagesSnap.docs.map((d: any) => d.data().name).filter(Boolean);
+      if (subjectsList.length === 0 && supabase) {
+        try {
+          const { data, error } = await supabase.from('competitions').select('*');
+          if (!error && data) {
+            subjectsList = data.map((c: any) => c.name);
+          }
+        } catch (cErr) {
+          console.warn('Supabase fetch failed for comps weight settings:', cErr);
+        }
       }
-      if (shouldFetchSubjects) {
-        const compSnap = results[pointer++];
-        subjectsList = compSnap.docs.map((d: any) => d.data().name).filter(Boolean);
+
+      // Fallback weights and threshold from local storage if firestore quota fails
+      const storedWeights = localStorage.getItem('honors_weights_backup');
+      const storedThreshold = localStorage.getItem('honors_min_threshold_backup');
+      if (storedWeights) {
+        try {
+          setWeights(JSON.parse(storedWeights));
+        } catch (e) {}
+      }
+      if (storedThreshold) {
+        setMinThreshold(Number(storedThreshold));
+      }
+
+      // Try to load weights from Firestore
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'examWeights'));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.weights) {
+            setWeights(data.weights);
+            localStorage.setItem('honors_weights_backup', JSON.stringify(data.weights));
+          }
+          if (data.minThreshold !== undefined) {
+            setMinThreshold(data.minThreshold);
+            localStorage.setItem('honors_min_threshold_backup', String(data.minThreshold));
+          }
+        }
+      } catch (fbErr) {
+        console.warn("[Firebase Fallback] Failed to fetch exam weights from firestore:", fbErr);
+      }
+
+      // If they are still completely empty, fallback dynamically to list
+      if (stagesList.length === 0) {
+        stagesList = ["المرحلة الإعدادية", "المرحلة الثانوية", "المرحلة الابتدائية (خامس وسادس)"];
+      }
+      if (subjectsList.length === 0) {
+        subjectsList = ["دراسي", "طقوس وقبطي", "ألحان تسبحة", "محفوظات"];
       }
 
       setSystemStages(stagesList);
       setSystemSubjects(subjectsList);
     } catch (e) {
-      console.error('Failed to load honors config', e);
+      console.error('Failed to load honors config fully', e);
     }
     setIsLoading(false);
   };
 
   const saveSettings = async () => {
     setIsSaving(true);
+    // Back up to localStorage first
+    localStorage.setItem('honors_weights_backup', JSON.stringify(weights));
+    localStorage.setItem('honors_min_threshold_backup', String(minThreshold));
+
     try {
       await setDoc(doc(db, 'settings', 'examWeights'), {
         weights,
         minThreshold
       });
       alert('تم حفظ إعدادات ودرجات التكريم بنجاح!');
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('حدث خطأ أثناء الحفظ.');
+      const isQuota = e.code === 'resource-exhausted' || String(e).toLowerCase().includes('quota');
+      if (isQuota) {
+        alert('تم حفظ الإعدادات محلياً في المتصفح بنجاح! لامتلاء الحصة السحابية المجانية لـ Firebase، تم تفعيل الوضع المحلي المتين لمتابعة العمل دون توقف.');
+      } else {
+        alert('حدث خطأ أثناء الحفظ: ' + (e.message || String(e)));
+      }
     }
     setIsSaving(false);
   };

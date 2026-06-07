@@ -112,18 +112,26 @@ export default function DynamicAdminSettings() {
       }
 
       // Fetch config & validation from Firestore (keeping non-maxed settings)
-      const configSnap = await getDoc(doc(db, 'settings', 'app_config'));
-      if (configSnap.exists()) {
-        setAppLogo(configSnap.data().appLogo || null);
+      try {
+        const configSnap = await getDoc(doc(db, 'settings', 'app_config'));
+        if (configSnap.exists()) {
+          setAppLogo(configSnap.data().appLogo || null);
+        }
+      } catch (fbConfigErr) {
+        console.warn("[Firebase Fallback] Failed to retrieve app config due to quota/network constraints:", fbConfigErr);
       }
 
-      const valSnap = await getDoc(doc(db, 'settings', 'validation'));
-      if (valSnap.exists()) {
-        setValidationSettings({
-          templates: valSnap.data().templates || [],
-          ageMappings: valSnap.data().ageMappings || [],
-          rules: valSnap.data().rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
-        });
+      try {
+        const valSnap = await getDoc(doc(db, 'settings', 'validation'));
+        if (valSnap.exists()) {
+          setValidationSettings({
+            templates: valSnap.data().templates || [],
+            ageMappings: valSnap.data().ageMappings || [],
+            rules: valSnap.data().rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
+          });
+        }
+      } catch (fbValErr) {
+        console.warn("[Firebase Fallback] Failed to retrieve validation config due to quota/network constraints:", fbValErr);
       }
     } catch (e) {
       console.error("Error fetching data from Supabase:", e);
