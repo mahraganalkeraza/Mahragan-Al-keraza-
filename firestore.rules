@@ -92,7 +92,7 @@ service cloud.firestore {
 
     function isValidOrder(data) {
       return data.keys().hasAll(['churchName', 'details', 'grandTotal', 'timestamp']) &&
-             data.keys().size() <= 10 &&
+             data.keys().size() <= 15 &&
              data.churchName is string && data.churchName.size() < 200 &&
              data.details is list && data.details.size() <= 100 &&
              data.grandTotal is number &&
@@ -103,16 +103,11 @@ service cloud.firestore {
 
     function isValidParticipant(data) {
       return data.keys().hasAll(['name', 'stage', 'churchName', 'competitions']) &&
-             data.keys().size() <= 10 &&
+             data.keys().size() <= 20 &&
              data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
              data.stage is string && data.stage.size() < 100 &&
              data.churchName is string && data.churchName.size() < 200 &&
-             data.competitions is list && data.competitions.size() <= 10 &&
-             (!('timestamp' in data) || data.timestamp is string) &&
-             (!('year' in data) || data.year is string) &&
-             (!('country' in data) || data.country is string) &&
-             (!('gender' in data) || data.gender is string) &&
-             (!('serial' in data) || data.serial is string);
+             data.competitions is list && data.competitions.size() <= 10;
     }
 
     function isValidInquiry(data) {
@@ -145,7 +140,7 @@ service cloud.firestore {
 
     function isValidResult(data) {
       return data.keys().hasAll(['studentName', 'churchName', 'stage', 'score', 'grade', 'timestamp']) &&
-             data.keys().size() <= 15 &&
+             data.keys().size() <= 20 &&
              data.studentName is string && data.studentName.size() > 0 && data.studentName.size() < 200 &&
              data.churchName is string && data.churchName.size() < 200 &&
              data.stage is string && data.stage.size() < 100 &&
@@ -215,16 +210,13 @@ service cloud.firestore {
 
     function isValidActivityTeam(data) {
       return data.keys().hasAll(['churchName', 'activityType', 'members', 'maleCount', 'femaleCount', 'timestamp']) &&
-             data.keys().size() <= 9 &&
+             data.keys().size() <= 15 &&
              data.churchName is string &&
              data.activityType is string &&
              data.members is list &&
              data.maleCount is number &&
              data.femaleCount is number &&
-             data.timestamp is string &&
-             (!('choirLevel' in data) || data.choirLevel is string) &&
-             (!('instrumentType' in data) || data.instrumentType is string) &&
-             (!('year' in data) || data.year is string);
+             data.timestamp is string;
     }
 
     function isValidAppConfig(data) {
@@ -275,7 +267,7 @@ service cloud.firestore {
                     (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
       allow update: if (isAdmin() || (isEmailVerified() && isChurch(resource.data.churchName))) && 
                     isValidParticipant(incoming()) &&
-                    (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'stage', 'gender', 'country', 'competitions', 'timestamp', 'serial']));
+                    (isAdmin() || incoming().diff(existing()).affectedKeys().hasOnly(['name', 'stage', 'gender', 'country', 'competitions', 'timestamp', 'serial', 'created_at', 'supabase_synced_id', 'year']));
       allow delete: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
     }
 

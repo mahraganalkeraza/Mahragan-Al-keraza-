@@ -208,47 +208,67 @@ export async function submitNewRegistration(payload: RegistrationPayload, custom
   };
 
   try {
-    if (!supabase) {
-      throw new Error("Supabase client is not initialized.");
+    let supabaseSuccess = false;
+    let fallbackId = payload.id;
+
+    if (supabase) {
+      // 1. PRIMARY WRITING PROCESS: Save to Supabase (Unrestricted, Enterprise PostgreSQL)
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .insert([enrichedPayload])
+        .select()
+        .maybeSingle();
+
+      if (error) {
+         console.warn("[Supabase] Failed to write registration:", error.message);
+      } else {
+         supabaseSuccess = true;
+         fallbackId = data?.id || fallbackId;
+         console.log(`[Supabase] Live registration secured successfully in table: ${TABLE_NAME}`);
+      }
     }
 
-    // 1. PRIMARY WRITING PROCESS: Save to Supabase (Unrestricted, Enterprise PostgreSQL)
-    // The UI is waiting for this. It runs fast and securely.
-    const { data, error } = await supabase
-      .from(TABLE_NAME)
-      .insert([enrichedPayload])
-      .select()
-      .maybeSingle();
+    if (supabaseSuccess) {
+      // 2. BACKGROUND REPLICATION: Fire-and-forget write to Firebase
+      const firestoreWritePromise = payload.id
+        ? setDoc(doc(db, TABLE_NAME, payload.id), { ...enrichedPayload, supabase_synced_id: fallbackId })
+        : addDoc(collection(db, TABLE_NAME), { ...enrichedPayload, supabase_synced_id: fallbackId || null });
 
-    if (error) throw error;
-    console.log(`[Supabase] Live registration secured successfully in table: ${TABLE_NAME}`);
+      firestoreWritePromise
+        .then(() => {
+          console.log(`[Firebase] Parallel replication completed silently in background for ${TABLE_NAME}.`);
+        })
+        .catch((fbError: any) => {
+          // Suppress and handle Firebase failures
+          const isQuota = fbError.code === 'resource-exhausted' || fbError.status === 429 || fbError.message?.includes('quota');
+          if (isQuota) {
+            console.warn("[Firebase Sync Deferred] Quota locked, write skipped. Record is safe in Supabase.");
+          } else {
+            console.error("[Firebase Non-Quota Sync Error]:", fbError.message);
+          }
+        });
 
-    // 2. BACKGROUND REPLICATION: Fire-and-forget write to Firebase
-    // We intentionally do NOT use 'await' here. This ensures the browser does not hang
-    // or wait for Firebase's network response or quota availability.
-    const firestoreWritePromise = payload.id
-      ? setDoc(doc(db, TABLE_NAME, payload.id), { ...enrichedPayload, supabase_synced_id: data?.id || payload.id })
-      : addDoc(collection(db, TABLE_NAME), { ...enrichedPayload, supabase_synced_id: data?.id || null });
+      return { success: true, message: "تم التسجيل بنجاح", id: fallbackId };
+    } else {
+      // 3. FALLBACK PRIMARY WRITE: Block and wait for Firebase if no Supabase
+      let fbRefId = payload.id;
+      if (payload.id) {
+         await setDoc(doc(db, TABLE_NAME, payload.id), { ...enrichedPayload });
+      } else {
+         const newRef = await addDoc(collection(db, TABLE_NAME), { ...enrichedPayload });
+         fbRefId = newRef.id;
+      }
+      console.log(`[Firebase] Primary write completed for ${TABLE_NAME}.`);
+      return { success: true, message: "تم التسجيل بنجاح", id: fbRefId };
+    }
 
-    firestoreWritePromise
-      .then(() => {
-        console.log(`[Firebase] Parallel replication completed silently in background for ${TABLE_NAME}.`);
-      })
-      .catch((fbError: any) => {
-        // Suppress and handle Firebase failures (such as quota resource-exhausted 429) silently
-        const isQuota = fbError.code === 'resource-exhausted' || fbError.status === 429 || fbError.message?.includes('quota');
-        if (isQuota) {
-          console.warn("[Firebase Sync Deferred] Quota locked, write skipped. Record is 100% safe in Supabase.");
-        } else {
-          console.error("[Firebase Non-Quota Sync Error]:", fbError.message);
-        }
-      });
-
-    // Return immediate success to the UI component right after Supabase completes
-    return { success: true, message: "تم التسجيل بنجاح وتأمين البيانات بالسيرفر", id: data?.id };
-
-  } catch (supabaseError: any) {
-    console.error("[Critical UI Block] Supabase failed to write registration:", supabaseError.message);
+  } catch (error: any) {
+    const isQuotaError = error.code === 'resource-exhausted' || error.message?.includes('quota') || error.status === 429;
+    if (isQuotaError) {
+      console.error("[Firebase Quota Block] Failed to register participant.");
+      throw new Error("عذراً، ضغط شديد على السيرفر، يرجى المحاولة بعد قليل.");
+    }
+    console.error("[Critical UI Block] Firebase failed to write registration:", error.message || error);
     throw new Error("عذراً، حدث خطأ أثناء الاتصال بالسيرفر الرئيسي، يرجى المحاولة مرة أخرى");
   }
 }
