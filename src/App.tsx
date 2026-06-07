@@ -1458,10 +1458,14 @@ function AppComponent() {
             setIsLoggedIn(true);
             setIsAuthReady(true);
           } else {
-            setIsLoggedIn(true);
-            if (firebaseUser.email?.endsWith('@mafk.com')) {
-              setUserRole('church');
-            }
+            // User doc missing. If they are a church, sign them out so they can log in via handleLogin and recreate their profile.
+            console.warn("User document missing in Firestore. Forcing sign out for reconstruction.");
+            await signOut(auth);
+            setIsLoggedIn(false);
+            setUser(null);
+            setUserProfile(null);
+            localStorage.removeItem('userProfileCache');
+            setChurchName('');
             setIsAuthReady(true);
           }
         }, (error) => {
