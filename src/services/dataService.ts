@@ -174,7 +174,7 @@ export async function silentDualFetch(collectionPath: string | string[], queryCo
       return [];
     } else {
       // If it's a different error, log it for tracking
-      console.error("Firebase read error:", fbError.message);
+      console.error("Firebase read error on collection " + JSON.stringify(collectionPath) + ":", fbError.message);
       return [];
     }
   }

@@ -156,7 +156,6 @@ import {
 import { generateMasterExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/newExcelExport';
 import { generateShortId } from './lib/utils';
 import DynamicAdminSettings from './components/DynamicAdminSettings';
-import { churchesList } from './data/churchesData';
 // @ts-ignore
 import logo from './by-logo.jpeg';
 
@@ -177,23 +176,6 @@ export const withExponentialBackoff = async <T,>(operation: () => Promise<T>, ma
   }
   throw new Error('Maximum retries exceeded');
 };
-
-const LOCAL_STAGES = [
-  { id: "1", name: "حضانة" }, { id: "2", name: "أولى وثانية" },
-  { id: "3", name: "ثالثة ورابعة" }, { id: "4", name: "خامسة وسادسة" },
-  { id: "5", name: "إعدادي" }, { id: "6", name: "ثانوي" },
-  { id: "7", name: "جامعة" }, { id: "8", name: "خريجون" },
-  { id: "9", name: "خدام وإعداد الخدام" }, { id: "10", name: "قانا الجليل" },
-  { id: "11", name: "تعليم كبار" }, { id: "12", name: "سمعان الشيخ" },
-  { id: "13", name: "حرفيون" }, { id: "14", name: "ديديموس" },
-  { id: "15", name: "بولس وسيلا" }, { id: "16", name: "صم وبكم" },
-  { id: "17", name: "ذوي القدرات" }
-];
-
-const LOCAL_COMPETITIONS = [
-  { id: "1", name: "دراسي" }, { id: "2", name: "محفوظات" },
-  { id: "3", name: "قبطي مستوى أول" }, { id: "4", name: "قبطي مستوى ثان" }
-];
 
 function strictCleanText(val: string): string {
   if (!val) return "";
@@ -627,7 +609,7 @@ function AppComponent() {
   const initialProfile = getInitialProfile();
   
   const [userProfile, setUserProfile] = useState<any>(initialProfile);
-  const [dynamicLevels, setDynamicLevels] = useState<any[]>(LOCAL_STAGES.map(s => ({ ...s, comps: LOCAL_COMPETITIONS.map(c => c.name) })));
+  const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [hymnStages, setHymnStages] = useState<any[]>([]);
 
@@ -769,19 +751,7 @@ function AppComponent() {
           setAppLogo(null);
         }
       }
-    }, (error) => {
-      const errMsg = (error?.message || String(error)).toLowerCase();
-      const isQuota = errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('billing') || errMsg.includes('limit exceeded') || errMsg.includes('capacity');
-      if (isQuota) {
-        if (typeof window !== 'undefined') {
-          (window as any).firestoreQuotaExceeded = true;
-          window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
-        }
-        console.warn("[Config Quota Bypass] Firebase settings/app_config locked. Utilizing default/cached year and logo settings.");
-        return;
-      }
-      handleFirestoreError(error, OperationType.GET, 'settings/app_config');
-    });
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
 
     const fetchCachedMetadata = async () => {
       const now = new Date().getTime();
@@ -792,48 +762,18 @@ function AppComponent() {
         if (cachedStr) {
           try {
             const cached = JSON.parse(cachedStr);
-            if (now - cached.timestamp < CACHE_EXPIRY) {
+            // Ignore cached empty arrays to always fetch fresh data if it failed previously
+            if (now - cached.timestamp < CACHE_EXPIRY && !(Array.isArray(cached.data) && cached.data.length === 0)) {
               return cached.data;
             }
           } catch (e) {}
         }
-        try {
-          const data = await fetchFn();
-          localStorage.setItem(`cache_${key}`, JSON.stringify({ timestamp: now, data }));
-          return data;
-        } catch (err: any) {
-          const errMsg = (err?.message || String(err)).toLowerCase();
-          const isQuota = errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('billing') || errMsg.includes('limit') || errMsg.includes('capacity');
-          if (isQuota) {
-            if (typeof window !== 'undefined') {
-              (window as any).firestoreQuotaExceeded = true;
-              window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
-            }
-          }
-          console.warn(`[Metadata Quota Fallback] Bypassed Firestore fetch for ${key} due to quota/network limit:`, err);
-          if (key === 'churches') {
-            return churchesList.map(c => ({ name: c.name, email: '', isEnabled: true, logoUrl: '' }));
-          }
-          if (key === 'levels') {
-            return LOCAL_STAGES.map(stage => ({
-              ...stage,
-              comps: LOCAL_COMPETITIONS.map(c => c.name)
-            }));
-          }
-          if (key === 'activityStages' || key === 'hymnStages') {
-            return [];
-          }
-          if (key === 'validation') {
-            return { templates: [], ageMappings: [], rules: { nameLength: true, genderMatch: false, mandatoryRows: true } };
-          }
-          return null;
-        }
+        const data = await fetchFn();
+        localStorage.setItem(`cache_${key}`, JSON.stringify({ timestamp: now, data }));
+        return data;
       };
 
       try {
-        // [Offline-First Override] Completely bypassed fetching churches from Firestore to avoid Quota Limits & Network Lags.
-        // We use the local predefined offline-first `churchesList` roster instead.
-        /*
         const churchesData = await loadCachedOrFetch('churches', async () => {
           const docs = await silentDualFetch('churches');
           return docs
@@ -846,7 +786,6 @@ function AppComponent() {
             .filter(c => c.isEnabled);
         });
         setPublicChurches(churchesData);
-        */
 
         const levelsData = await loadCachedOrFetch('levels', async () => {
           const docs = await silentDualFetch('levels');
@@ -989,9 +928,7 @@ function AppComponent() {
   const [examLinks, setExamLinks] = useState<Record<string, string>>({});
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
-  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>(() => 
-    churchesList.map(c => ({ name: c.name, email: '', logoUrl: '' }))
-  );
+  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxImages, setLightboxImages] = useState<{src: string}[]>([]);
@@ -2880,24 +2817,13 @@ function AppComponent() {
       role = 'admin';
       targetChurch = 'اللجنة المركزية منطقة18';
     } else {
-      // 2. Search for the church inside the local imported array using smart compareChurchNames matching
-      const matchedChurch = churchesList.find(
+      const matchedChurch = publicChurches.find(
         (church) => compareChurchNames(loginChurch, church.name)
       );
 
       if (!matchedChurch) {
         setIsLoading(false);
         setLoginError("الكنيسة غير مسجلة بالنظام");
-        return;
-      }
-
-      // 3. Compare passwords ignoring internal whitespaces
-      const storedPasswordClean = matchedChurch.password.replace(/\s+/g, '');
-      const userPasswordClean = code.replace(/\s+/g, '');
-
-      if (storedPasswordClean !== userPasswordClean) {
-        setIsLoading(false);
-        setLoginError("كلمة المرور غير صحيحة");
         return;
       }
 
@@ -2908,22 +2834,41 @@ function AppComponent() {
       targetChurch = matchedChurch.name;
     }
 
-    // Bypass all database and network authentication entirely to avoid quota issues and network lags.
-    const localProfile = {
-      uid: email === 'admin@mafk.com' ? 'admin_fallback_id' : targetChurch + '_id',
-      email,
-      role,
-      churchName: targetChurch,
-      dashboardBg: '',
-      isSupabaseOnly: true // Matches local-first restore session logic perfectly
-    };
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
+      
+      let profileData = {
+        uid: userCredential.user.uid,
+        email: email,
+        role: role,
+        churchName: targetChurch,
+        dashboardBg: ''
+      };
 
-    setChurchName(localProfile.churchName);
-    setUserRole(localProfile.role);
-    setUserProfile(localProfile);
-    localStorage.setItem('userProfileCache', JSON.stringify(localProfile));
-    setIsLoggedIn(true);
-    setIsLoading(false);
+      if (userDoc.exists()) {
+        profileData = { ...profileData, ...userDoc.data() };
+      } else {
+        await setDoc(doc(db, 'users', userCredential.user.uid), profileData);
+      }
+
+      setChurchName(profileData.churchName);
+      setUserRole(profileData.role as 'admin'|'church'|'guest'|'super_admin');
+      setUserProfile(profileData);
+      localStorage.setItem('userProfileCache', JSON.stringify(profileData));
+      setIsLoggedIn(true);
+    } catch (error: any) {
+      console.error("Login error:", error);
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+        setLoginError("كلمة المرور غير صحيحة");
+      } else if (error.code === 'auth/network-request-failed') {
+        setLoginError("تأكد من اتصالك بالإنترنت");
+      } else {
+        setLoginError("حدث خطأ أثناء تسجيل الدخول");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleDeleteOrder = async (id: string) => {
@@ -4727,7 +4672,7 @@ function AppComponent() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {LOCAL_STAGES.map((stage) => <option key={stage.id} value={stage.name}>{stage.name}</option>)}
+                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
                       </select>
                     </div>
 
@@ -4760,8 +4705,8 @@ function AppComponent() {
                               className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue"
                             >
                               <option value="">-- اختر المسابقة --</option>
-                              {LOCAL_COMPETITIONS.map((comp) => (
-                                <option key={comp.id} value={comp.name} disabled={isOptionDisabled(comp.name)}>{comp.name}</option>
+                              {availableCompsForLevel.map((comp: string) => (
+                                <option key={comp} value={comp} disabled={isOptionDisabled(comp)}>{comp}</option>
                               ))}
                             </select>
                           );
@@ -7393,7 +7338,7 @@ function AppComponent() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {LOCAL_STAGES.map((stage) => <option key={stage.id} value={stage.name}>{stage.name}</option>)}
+                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
                       </select>
                     </div>
                     <div>
