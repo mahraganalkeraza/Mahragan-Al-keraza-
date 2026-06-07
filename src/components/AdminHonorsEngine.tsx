@@ -115,8 +115,8 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
         subjectsList = ["دراسي", "طقوس وقبطي", "ألحان تسبحة", "محفوظات"];
       }
 
-      setSystemStages(stagesList);
-      setSystemSubjects(subjectsList);
+      setSystemStages(Array.from(new Set(stagesList)));
+      setSystemSubjects(Array.from(new Set(subjectsList)));
     } catch (e) {
       console.error('Failed to load honors config fully', e);
     }

@@ -130,6 +130,35 @@ import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
 
 import UserManagement from './components/UserManagement';
+
+// EMERGENCY TOGGLE: Set this to TRUE to bypass Firebase for counters
+const FORCE_SUPABASE_COUNTERS = true;
+
+// Helper function for daily sync (DISABLED due to quota limits)
+async function syncParticipantsToSupabase() {
+  /*
+  try {
+    console.log("Starting daily participants sync...");
+    const snapshot = await getDocs(collection(db, 'participants'));
+    const participants = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    if (supabase && participants.length > 0) {
+      // Upsert to Supabase
+      const { error } = await supabase.from('participants').upsert(participants);
+      
+      if (error) {
+        console.error("Sync failed:", error);
+      } else {
+        console.log("Sync successful!");
+        localStorage.setItem('last_sync_participants', Date.now().toString());
+      }
+    }
+  } catch (error) {
+    console.error("Sync error:", error);
+  }
+  */
+}
+
 import { 
   Inquiry, 
   Order, 
@@ -618,6 +647,20 @@ const normalizeArabic = (str: string) => {
 function AppComponent() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    const runSync = async () => {
+        const lastSync = localStorage.getItem('last_sync_participants');
+        const now = Date.now();
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+        
+        if (!lastSync || now - parseInt(lastSync) > twentyFourHours) {
+            await syncParticipantsToSupabase();
+        }
+    };
+    
+    runSync();
+  }, []);
 
   const getInitialProfile = () => {
     try {
@@ -2553,11 +2596,8 @@ function AppComponent() {
       constraints.push(orderBy('name'));
       
       if (isFirst || (!isFirst && !isNext)) {
-        try {
-          const snap = await getCountFromServer(query(baseQueryQ, ...constraints));
-          setTotalParticipantsCount(snap.data().count);
-        } catch (err) {
-          console.warn("Firestore participants count query failed, immediately falling back to Supabase...");
+        if (FORCE_SUPABASE_COUNTERS) {
+          console.log("⚠️ Emergency Mode: Fetching stats ONLY from Supabase (participants)...");
           try {
             if (supabase) {
               const filterCh = userRole === 'admin' 
@@ -2579,6 +2619,35 @@ function AppComponent() {
             }
           } catch (e) {
             console.error("Supabase count fallback failed for participants:", e);
+          }
+        } else {
+          try {
+            const snap = await getCountFromServer(query(baseQueryQ, ...constraints));
+            setTotalParticipantsCount(snap.data().count);
+          } catch (err) {
+            console.warn("Firestore participants count query failed, immediately falling back to Supabase...");
+            try {
+              if (supabase) {
+                const filterCh = userRole === 'admin' 
+                  ? (partChurchFilter !== 'الكل' ? partChurchFilter : null)
+                  : churchName;
+                let queryBuilder = supabase.from('participants').select('id');
+                if (filterCh) {
+                  queryBuilder = queryBuilder.eq('churchName', filterCh);
+                }
+                if (partStageFilter !== 'الكل') {
+                  queryBuilder = queryBuilder.eq('stage', partStageFilter);
+                }
+                const { data, error } = await queryBuilder;
+                if (!error && data) {
+                  setTotalParticipantsCount(data.length);
+                } else {
+                  setTotalParticipantsCount(0);
+                }
+              }
+            } catch (e) {
+              console.error("Supabase count fallback failed for participants:", e);
+            }
           }
         }
       }
@@ -2635,11 +2704,8 @@ function AppComponent() {
         : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
       
       if (isFirst || (!isFirst && !isNext)) {
-        try {
-          const snap = await getCountFromServer(baseQuery);
-          setTotalOrdersCount(snap.data().count);
-        } catch (err) {
-          console.warn("Firestore orders count query failed, immediately falling back to Supabase...");
+        if (FORCE_SUPABASE_COUNTERS) {
+          console.log("⚠️ Emergency Mode: Fetching stats ONLY from Supabase (orders)...");
           try {
             if (supabase) {
               const filterCh = userRole === 'admin' ? null : churchName;
@@ -2656,6 +2722,30 @@ function AppComponent() {
             }
           } catch (e) {
             console.error("Supabase count fallback failed for orders:", e);
+          }
+        } else {
+          try {
+            const snap = await getCountFromServer(baseQuery);
+            setTotalOrdersCount(snap.data().count);
+          } catch (err) {
+            console.warn("Firestore orders count query failed, immediately falling back to Supabase...");
+            try {
+              if (supabase) {
+                const filterCh = userRole === 'admin' ? null : churchName;
+                let queryBuilder = supabase.from('orders').select('id');
+                if (filterCh) {
+                  queryBuilder = queryBuilder.eq('churchName', filterCh);
+                }
+                const { data, error } = await queryBuilder;
+                if (!error && data) {
+                  setTotalOrdersCount(data.length);
+                } else {
+                  setTotalOrdersCount(0);
+                }
+              }
+            } catch (e) {
+              console.error("Supabase count fallback failed for orders:", e);
+            }
           }
         }
       }
@@ -2745,11 +2835,8 @@ function AppComponent() {
       }
       
       if (isFirst || (!isFirst && !isNext)) {
-        try {
-          const snap = await getCountFromServer(query(baseQueryQ, ...countConstraints));
-          setTotalResultsCount(snap.data().count);
-        } catch (err) {
-          console.warn("Firestore results count query failed, immediately falling back to Supabase...");
+        if (FORCE_SUPABASE_COUNTERS) {
+          console.log("⚠️ Emergency Mode: Fetching stats ONLY from Supabase (results)...");
           try {
             if (supabase) {
               const filterCh = userRole === 'admin' 
@@ -2768,6 +2855,32 @@ function AppComponent() {
             }
           } catch (e) {
             console.error("Supabase count fallback failed for results:", e);
+          }
+        } else {
+          try {
+            const snap = await getCountFromServer(query(baseQueryQ, ...countConstraints));
+            setTotalResultsCount(snap.data().count);
+          } catch (err) {
+            console.warn("Firestore results count query failed, immediately falling back to Supabase...");
+            try {
+              if (supabase) {
+                const filterCh = userRole === 'admin' 
+                  ? (globalChurchFilter !== 'الكل' ? globalChurchFilter : null)
+                  : churchName;
+                let queryBuilder = supabase.from('results').select('id');
+                if (filterCh) {
+                  queryBuilder = queryBuilder.eq('churchName', filterCh);
+                }
+                const { data, error } = await queryBuilder;
+                if (!error && data) {
+                  setTotalResultsCount(data.length);
+                } else {
+                  setTotalResultsCount(0);
+                }
+              }
+            } catch (e) {
+              console.error("Supabase count fallback failed for results:", e);
+            }
           }
         }
       }
@@ -2814,11 +2927,8 @@ function AppComponent() {
       }
       
       if (isFirst || (!isFirst && !isNext)) {
-        try {
-          const snap = await getCountFromServer(query(baseQueryQ, ...countConstraints));
-          setTotalTeamsCount(snap.data().count);
-        } catch (err) {
-          console.warn("Firestore teams count query failed, immediately falling back to Supabase...");
+        if (FORCE_SUPABASE_COUNTERS) {
+          console.log("⚠️ Emergency Mode: Fetching stats ONLY from Supabase (teams)...");
           try {
             if (supabase) {
               const filterCh = userRole === 'admin' 
@@ -2837,6 +2947,32 @@ function AppComponent() {
             }
           } catch (e) {
             console.error("Supabase count fallback failed for teams:", e);
+          }
+        } else {
+          try {
+            const snap = await getCountFromServer(query(baseQueryQ, ...countConstraints));
+            setTotalTeamsCount(snap.data().count);
+          } catch (err) {
+            console.warn("Firestore teams count query failed, immediately falling back to Supabase...");
+            try {
+              if (supabase) {
+                const filterCh = userRole === 'admin' 
+                  ? (globalChurchFilter !== 'الكل' ? globalChurchFilter : null)
+                  : churchName;
+                let queryBuilder = supabase.from('activityTeams').select('id');
+                if (filterCh) {
+                  queryBuilder = queryBuilder.eq('churchName', filterCh);
+                }
+                const { data, error } = await queryBuilder;
+                if (!error && data) {
+                  setTotalTeamsCount(data.length);
+                } else {
+                  setTotalTeamsCount(0);
+                }
+              }
+            } catch (e) {
+              console.error("Supabase count fallback failed for teams:", e);
+            }
           }
         }
       }
