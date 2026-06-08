@@ -127,6 +127,7 @@ import {
 import churchData from './data/churches.json';
 import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
+import { supabase } from './lib/supabaseClient';
 
 import UserManagement from './components/UserManagement';
 import { 
@@ -3295,19 +3296,28 @@ function AppComponent() {
       "مارينا وافي ملاك", "ساره نبيل صدقي", "مريم عادل ابراهيم", "ماريان لياس بشري"
     ];
 
-    const batch = writeBatch(db);
-    participantsList.forEach((name) => {
-        const docRef = doc(collection(db, "participants"));
-        batch.set(docRef, {
-            name: name,
-            churchName: "دير الجرنوس",
-            stage: "جامعة",
-            competitionType: "دراسي",
-            timestamp: new Date().toISOString()
-        });
-    });
-    await batch.commit();
-    alert("تم إضافة 20 مشترك بنجاح!");
+    try {
+      const recordsToInsert = participantsList.map((name) => {
+          const customId = generateShortId();
+          return {
+              serial: customId,
+              id: customId,
+              name: name,
+              churchName: "دير الجرنوس",
+              stage: "جامعة",
+              competitions: ["دراسي"],
+              timestamp: new Date().toISOString()
+          };
+      });
+      
+      const { error } = await supabase.from('registrations').insert(recordsToInsert);
+      if (error) throw error;
+      
+      alert("تم إضافة 20 مشترك بنجاح إلى Supabase!");
+    } catch (e: any) {
+      console.error("Bulk insert failed:", e);
+      alert("فشل في الإضافة: " + e.message);
+    }
   };
 
   const handleAddParticipant = async (e: React.FormEvent) => {
@@ -3340,7 +3350,17 @@ function AppComponent() {
           competitions: newParticipant.competitions.filter(c => c !== ''),
           timestamp: new Date().toLocaleString('ar-EG')
         };
-        await withExponentialBackoff(() => updateDoc(doc(db, 'participants', editingParticipant.id), updatedFields));
+        
+        // Supabase Migration: Update record
+        const { error } = await supabase
+            .from('registrations')
+            .update(updatedFields)
+            .eq('serial', editingParticipant.serial || editingParticipant.id);
+            
+        if (error) throw error;
+        
+        // Also keep updating Firebase (just in case it works for some, or to keep both in sync, but we might hit quota. Or we can comment it out)
+        // await withExponentialBackoff(() => updateDoc(doc(db, 'participants', editingParticipant.id), updatedFields));
         
         // Instant state sync for edit
         const updatedParticipant: Participant = {
@@ -3352,24 +3372,37 @@ function AppComponent() {
         setEditingParticipant(null);
         alert('تم تحديث بيانات المشترك بنجاح.');
       } else {
-        const participantData = {
-          churchName,
-          name: newParticipant.name,
-          stage: newParticipant.stage,
-          gender: newParticipant.gender,
-          competitions: newParticipant.competitions.filter(c => c !== ''),
-          timestamp: new Date().toLocaleString('ar-EG'),
-          year: activeYear,
-          country: 'مصر'
-        };
         const customId = generateShortId();
-        await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...participantData, serial: customId }));
+        
+        const { data, error } = await supabase
+          .from('registrations')
+          .insert([{
+            id: customId,
+            serial: customId,
+            name: newParticipant.name,
+            churchName: churchName,
+            stage: newParticipant.stage,
+            gender: newParticipant.gender,
+            competitions: newParticipant.competitions.filter(c => c !== ''),
+            country: 'مصر',
+            year: activeYear,
+            timestamp: new Date().toISOString()
+          }]);
+            
+        if (error) throw error;
         
         // Instant state sync for adding a new student
         const newStudent: Participant = {
           id: customId,
           serial: customId,
-          ...participantData
+          churchName,
+          name: newParticipant.name,
+          stage: newParticipant.stage,
+          gender: newParticipant.gender,
+          competitions: newParticipant.competitions.filter(c => c !== ''),
+          timestamp: new Date().toISOString(),
+          year: activeYear,
+          country: 'مصر'
         } as any as Participant;
         setParticipants(prev => [...prev, newStudent]);
         setTotalParticipantsCount(prev => prev + 1);

@@ -36,6 +36,7 @@ export interface Order {
 
 export interface Participant {
   id: string;
+  serial?: string;
   churchName: string;
   country: string;
   name: string;
