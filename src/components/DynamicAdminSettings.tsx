@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, writeBatch, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, writeBatch, onSnapshot, query, where } from 'firebase/firestore';
 import { initializeApp, getApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { db, storage, ref, uploadBytesResumable, getDownloadURL, handleFirestoreError, OperationType, firebaseConfig } from '../firebase';
@@ -665,8 +665,21 @@ export default function DynamicAdminSettings() {
   const toggleGlobalReadAccess = async (status: boolean) => {
     setIsSaving(true);
     try {
+      // 1. Update the master config flag
       await setDoc(doc(db, 'settings', 'app_config'), { globalReadAccess: status }, { merge: true });
       setGlobalReadAccess(status);
+
+      // 2. Perform batch update for all church users in users collection
+      const usersQuery = query(collection(db, 'users'), where('role', '==', 'church'));
+      const snapshot = await getDocs(usersQuery);
+      
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((doc) => {
+        batch.update(doc.ref, { isAllowedToRead: status });
+      });
+      await batch.commit();
+      
+      alert(status ? 'تم تفعيل القراءة لجميع الكنائس كقاعدة عامة' : 'تم إيقاف القراءة عن جميع الكنائس كقاعدة عامة');
     } catch (err) {
       console.error("Error toggling global read access:", err);
       alert('حدث خطأ أثناء تغيير صلاحية القراءة العامة');
@@ -766,11 +779,11 @@ export default function DynamicAdminSettings() {
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">Code: {church.loginCode}</span>
                         <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${
-                          (globalReadAccess !== false && church.isAllowedToRead !== false)
+                          church.isAllowedToRead !== false
                             ? "bg-indigo-100 text-indigo-700" 
                             : "bg-amber-100 text-amber-700"
                         }`}>
-                          {(globalReadAccess !== false && church.isAllowedToRead !== false) ? "قراءة" : "منع"}
+                          {church.isAllowedToRead !== false ? "قراءة" : "منع"}
                         </span>
                       </div>
                     </div>

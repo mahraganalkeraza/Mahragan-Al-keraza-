@@ -2951,8 +2951,20 @@ function AppComponent() {
 
   const toggleGlobalReadAccess = async (status: boolean) => {
     try {
+      // 1. Update master state in config
       await setDoc(doc(db, 'settings', 'app_config'), { globalReadAccess: status }, { merge: true });
-      setNotification(`تم ${status ? 'تفعيل' : 'إيقاف'} القراءة للجميع بنجاح`);
+      
+      // 2. Perform batch update on all church users
+      const usersQuery = query(collection(db, 'users'), where('role', '==', 'church'));
+      const snapshot = await getDocs(usersQuery);
+      
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((d) => {
+        batch.update(d.ref, { isAllowedToRead: status });
+      });
+      await batch.commit();
+
+      setNotification(`تم ${status ? 'تفعيل' : 'إيقاف'} القراءة للجميع (تحديث شامل بنجاح)`);
     } catch (err) {
       console.error("Error toggling global access:", err);
       setNotification("حدث خطأ أثناء تغيير صلاحية القراءة العامة");
@@ -4366,7 +4378,7 @@ function AppComponent() {
               </button>
             </div>
 
-            {(globalReadAccess === false || userProfile?.isAllowedToRead === false) ? (
+            {userProfile?.isAllowedToRead === false ? (
               <div className="bg-white p-12 rounded-3xl shadow-xl border border-slate-100 text-center space-y-6">
                 <div className="w-24 h-24 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
                   <Lock size={48} />
@@ -6141,7 +6153,7 @@ function AppComponent() {
 
             {adminActiveTab === 'users_management' && (
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
-                <UserManagement globalReadAccess={globalReadAccess} />
+                <UserManagement />
               </section>
             )}
 
