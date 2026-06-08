@@ -24,8 +24,8 @@ if (supabaseUrl && supabaseUrl.startsWith('http')) {
     select(columns: string = '*', options?: any) {
       const exec = () => {
         const data = this.getData();
-        if (columns === 'count' && options?.count === 'exact') {
-          return { data: null, count: data.length, error: null };
+        if (options?.count === 'exact' || (columns === 'count' && options?.count === 'exact')) {
+          return { data: options?.head ? null : data, count: data.length, error: null };
         }
         return { data, error: null };
       };

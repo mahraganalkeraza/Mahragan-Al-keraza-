@@ -168,11 +168,15 @@ export async function silentDualFetch(collectionPath: string | string[], queryCo
         return results;
       }
     } catch (supabaseError) {
-      console.warn(`[Supabase Fetch Error] Silently falling back to Firebase for ${collectionName}:`, supabaseError);
+      console.warn(`[Supabase Fetch Error] ${collectionName}:`, supabaseError);
     }
+    
+    // As per user request: enforce 100% Supabase UI data. Do NOT fallback to Firebase read if Supabase is initializing.
+    console.warn(`[Enforced Mode] Skipping Firebase read fallback for ${collectionName}. Data must come from Supabase.`);
+    return [];
   }
 
-  // B. Fallback to Firebase only as secondary safety backup
+  // If supabase is totally disabled/not configured, ONLY THEN fallback (to avoid breaking local dev without env variables)
   if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
     console.warn(`[Firestore Skip] Quota exceeded. Skipping Firebase read fallback for ${collectionName}.`);
     return [];
