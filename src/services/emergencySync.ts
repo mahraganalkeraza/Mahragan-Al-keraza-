@@ -14,7 +14,7 @@ export async function syncEmergencyDataToFirestore() {
   for (const record of localData) {
     try {
       // Attempt to write the local record to the original Firestore collection
-      await addDoc(collection(db, "registrations"), record);
+      await addDoc(collection(db, "participants"), record);
       console.log(`Successfully synced record for: ${record.churchName || 'Unknown Church'}`);
     } catch (error: any) {
       // If Firestore is STILL blocked or fails, keep the record in the queue
@@ -51,7 +51,7 @@ export async function autoSyncSupabaseToFirebase() {
     try {
       // Push to Firebase
       const { id, synced_to_firebase, ...firebasePayload } = record; // remove supabase meta
-      await addDoc(collection(db, "registrations"), firebasePayload);
+      await addDoc(collection(db, "participants"), firebasePayload);
       
       // Mark as synced in Supabase
       await supabase

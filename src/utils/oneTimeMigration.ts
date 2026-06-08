@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
 import { db } from '../firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, setDoc, doc } from 'firebase/firestore';
 
 export interface MigrationStatus {
   collectionName: string;
@@ -145,4 +145,125 @@ export async function runOneTimeCollectionMigration(collectionName: string): Pro
       error: error.message || String(error)
     };
   }
+}
+
+export async function recoverAllSecretAndLockedData(): Promise<string> {
+  if (!supabase) return "Supabase client not initialized.";
+  let log = "";
+
+  try {
+    console.log("[Recovery] Starting database recovery sweep...");
+
+    // 1. Recover from Firestore collection "registrations" (if any)
+    try {
+      const fbRegsSnap = await getDocs(collection(db, "registrations"));
+      if (!fbRegsSnap.empty) {
+        log += `Found ${fbRegsSnap.docs.length} records in Firestore 'registrations' collection.\n`;
+        const { data: existingParticipants, error: epErr } = await supabase.from('participants').select('name, churchName, stage');
+        const existingKeys = new Set(
+          (existingParticipants || []).map((p: any) => `${p.name}_${p.churchName}_${p.stage}`)
+        );
+
+        let recoveredCount = 0;
+        for (const doc of fbRegsSnap.docs) {
+          const data = doc.data();
+          const key = `${data.name}_${data.churchName}_${data.stage}`;
+          if (!existingKeys.has(key)) {
+            // Insert into Supabase participants
+            const { error: insErr } = await supabase.from('participants').insert([{
+              id: doc.id,
+              ...data,
+              created_at: data.created_at || data.createdAt || data.timestamp || new Date().toISOString()
+            }]);
+            if (!insErr) {
+              recoveredCount++;
+              // Also add to participants in Firebase to keep backup synced
+              try {
+                await setDoc(doc.ref, { ...data }, { merge: true });
+              } catch (fbResaveErr) {
+                console.warn("Firestore copy resave warning:", fbResaveErr);
+              }
+            } else {
+              console.error("Failed to insert into Supabase:", insErr.message);
+            }
+          }
+        }
+        log += `Successfully recovered ${recoveredCount} records from Firestore 'registrations' collection to Supabase 'participants' table.\n`;
+      } else {
+        log += "Firestore 'registrations' collection is empty or not found.\n";
+      }
+    } catch (e: any) {
+      log += `Firestore 'registrations' recovery skipped or failed: ${e.message}\n`;
+    }
+
+    // 2. Recover from Supabase "registrations_backup" table (if exists)
+    try {
+      const { data: backupRegs, error: brErr } = await supabase.from('registrations_backup').select('*');
+      if (brErr) {
+        log += `Supabase 'registrations_backup' table check skipped or not present: ${brErr.message}\n`;
+      } else if (backupRegs && backupRegs.length > 0) {
+        log += `Found ${backupRegs.length} records in Supabase 'registrations_backup' table.\n`;
+        
+        // Fetch existing participants from Supabase to prevent duplicates
+        const { data: existingParticipants } = await supabase.from('participants').select('name, churchName, stage');
+        const existingKeys = new Set(
+          (existingParticipants || []).map((p: any) => `${p.name}_${p.churchName}_${p.stage}`)
+        );
+
+        let recoveredCount = 0;
+        for (const record of backupRegs) {
+          const key = `${record.name}_${record.churchName}_${record.stage}`;
+          if (!existingKeys.has(key)) {
+            const { id, synced_to_firebase, ...payload } = record;
+            const { error: insErr } = await supabase.from('participants').insert([{
+              id,
+              ...payload,
+              created_at: record.created_at || new Date().toISOString()
+            }]);
+            if (!insErr) {
+              recoveredCount++;
+            } else {
+              console.warn("Error copying backup reg:", insErr);
+            }
+          }
+        }
+        log += `Successfully recovered ${recoveredCount} records from Supabase 'registrations_backup' table to 'participants' table.\n`;
+      } else {
+        log += "Supabase 'registrations_backup' table has 0 rows.\n";
+      }
+    } catch (e: any) {
+      log += `Supabase 'registrations_backup' check skipped: ${e.message}\n`;
+    }
+
+    // 3. Let's make sure everything in emergency_registrations from localStorage is also migrated
+    try {
+      const local = localStorage.getItem('emergency_registrations');
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (parsed && parsed.length > 0) {
+          log += `Found ${parsed.length} pending local records in 'emergency_registrations' localStorage. Syncing...\n`;
+          let syncedLocal = 0;
+          for (const item of parsed) {
+            const { error: insErr } = await supabase.from('participants').insert([{
+              ...item,
+              created_at: item.created_at || new Date().toISOString()
+            }]);
+            if (!insErr) syncedLocal++;
+          }
+          log += `Synced ${syncedLocal} localStorage emergency registrations to Supabase.\n`;
+          if (syncedLocal === parsed.length) {
+            localStorage.removeItem('emergency_registrations');
+          }
+        }
+      }
+    } catch (e: any) {
+      log += `LocalStorage emergency recovery failed: ${e.message}\n`;
+    }
+
+    console.log("[Recovery] Sweep finished: \n", log);
+  } catch (err: any) {
+    console.error("[Recovery Critical failure]:", err);
+    log += `Critical recovery error: ${err.message}\n`;
+  }
+  return log;
 }
