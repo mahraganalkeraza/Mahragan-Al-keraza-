@@ -6,6 +6,7 @@ import { db, storage, ref, uploadBytesResumable, getDownloadURL, handleFirestore
 import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as ImageIcon, Upload, Loader2, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { sortStages } from '../constants';
+import PaginationComponent from './Pagination';
 
 // Initialize secondary app for creating user accounts from the bank
 const getSecondaryAuth = () => {
@@ -20,6 +21,8 @@ const getSecondaryAuth = () => {
 
 export default function DynamicAdminSettings() {
   const [churches, setChurches] = useState<any[]>([]);
+  const [churchPage, setChurchPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
   const [levels, setLevels] = useState<any[]>([]);
   const [competitions, setCompetitions] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'churches' | 'levels' | 'competitions' | 'activityStages' | 'hymnStages' | 'logo' | 'validation' | 'purge' | 'migration'>('churches');
@@ -669,12 +672,20 @@ export default function DynamicAdminSettings() {
       await setDoc(doc(db, 'settings', 'app_config'), { globalReadAccess: status }, { merge: true });
       setGlobalReadAccess(status);
 
-      // 2. Perform batch update for all church users in users collection
+      // 2. Perform batch update for all church users and church documents
       const usersQuery = query(collection(db, 'users'), where('role', '==', 'church'));
-      const snapshot = await getDocs(usersQuery);
+      const churchesQuery = collection(db, 'churches');
+      
+      const [usersSnap, churchesSnap] = await Promise.all([
+        getDocs(usersQuery),
+        getDocs(churchesQuery)
+      ]);
       
       const batch = writeBatch(db);
-      snapshot.docs.forEach((doc) => {
+      usersSnap.docs.forEach((doc) => {
+        batch.update(doc.ref, { isAllowedToRead: status });
+      });
+      churchesSnap.docs.forEach((doc) => {
         batch.update(doc.ref, { isAllowedToRead: status });
       });
       await batch.commit();
@@ -771,7 +782,9 @@ export default function DynamicAdminSettings() {
             </form>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {churches.map(church => (
+              {churches
+                .slice((churchPage - 1) * ITEMS_PER_PAGE, churchPage * ITEMS_PER_PAGE)
+                .map(church => (
                 <div key={church.id} className="p-4 border border-slate-100 rounded-xl flex items-center justify-between shadow-sm">
                   <div className="flex items-center gap-3">
                     <div>
@@ -792,6 +805,12 @@ export default function DynamicAdminSettings() {
                 </div>
               ))}
             </div>
+            <PaginationComponent 
+              currentPage={churchPage}
+              totalItems={churches.length}
+              itemsPerPage={ITEMS_PER_PAGE}
+              onPageChange={setChurchPage}
+            />
           </div>
         )}
 

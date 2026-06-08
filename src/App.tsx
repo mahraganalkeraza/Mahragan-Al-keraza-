@@ -70,6 +70,7 @@ import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
 import { LiveExamMonitoring } from './components/LiveExamMonitoring';
 import { ResultsViewer } from './components/ResultsViewer';
+import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
 import { motion, AnimatePresence } from 'motion/react';
@@ -777,6 +778,10 @@ function AppComponent() {
   const [adminActiveTab, setAdminActiveTab] = useState('dashboard');
   const [newsSearch, setNewsSearch] = useState('');
   const [newsFilterDate, setNewsFilterDate] = useState('');
+  const [newsPage, setNewsPage] = useState(1);
+  const [inquiryPage, setInquiryPage] = useState(1);
+  const [analyticsPage, setAnalyticsPage] = useState(1);
+  const [printingPage, setPrintingPage] = useState(1);
   const [resultsFilterStage, setResultsFilterStage] = useState('الكل');
   const [resultsFilterGrade, setResultsFilterGrade] = useState('الكل');
   const [isScanning, setIsScanning] = useState(false);
@@ -841,6 +846,8 @@ function AppComponent() {
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
   const [lastOrderDoc, setLastOrderDoc] = useState<any>(null);
   const [orderPageCount, setOrderPageCount] = useState(1);
+  const [churchOrderPage, setChurchOrderPage] = useState(1);
+  const [churchInquiryPage, setChurchInquiryPage] = useState(1);
   const [isOrdersEnd, setIsOrdersEnd] = useState(false);
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
 
@@ -2954,16 +2961,26 @@ function AppComponent() {
       // 1. Update master state in config
       await setDoc(doc(db, 'settings', 'app_config'), { globalReadAccess: status }, { merge: true });
       
-      // 2. Perform batch update on all church users
+      // 2. Perform batch update on all church users and church info docs
       const usersQuery = query(collection(db, 'users'), where('role', '==', 'church'));
-      const snapshot = await getDocs(usersQuery);
+      const churchesQuery = collection(db, 'churches');
+      
+      const [usersSnap, churchesSnap] = await Promise.all([
+        getDocs(usersQuery),
+        getDocs(churchesQuery)
+      ]);
       
       const batch = writeBatch(db);
-      snapshot.docs.forEach((d) => {
+      usersSnap.docs.forEach((d) => {
         batch.update(d.ref, { isAllowedToRead: status });
       });
+      churchesSnap.docs.forEach((d) => {
+        batch.update(d.ref, { isAllowedToRead: status });
+      });
+      
       await batch.commit();
 
+      setGlobalReadAccess(status);
       setNotification(`تم ${status ? 'تفعيل' : 'إيقاف'} القراءة للجميع (تحديث شامل بنجاح)`);
     } catch (err) {
       console.error("Error toggling global access:", err);
@@ -3267,6 +3284,30 @@ function AppComponent() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const bulkInsertParticipants = async () => {
+    const participantsList = [
+      "ديانا طلعت حلمي", "ايلاريا رضا ابراهيم", "كرستينا محفوظ جرجس", "مرثا محفوظ جرجس",
+      "انجي عايد صموئيل", "مارينا عايد ناجح", "فاديه فهيم رمزي", "رفقه اشرف جرجس",
+      "مارتينا حنا ملاك", "شيرين بسام مكسيموس", "دينا هاني فوزي", "مهرائيل اشرف ميلاد",
+      "مادونا نبيل جرجس", "ميرنا مجدي ميلاد", "مريم عيد رزق", "كرستينا يوسف عياد",
+      "مارينا وافي ملاك", "ساره نبيل صدقي", "مريم عادل ابراهيم", "ماريان لياس بشري"
+    ];
+
+    const batch = writeBatch(db);
+    participantsList.forEach((name) => {
+        const docRef = doc(collection(db, "participants"));
+        batch.set(docRef, {
+            name: name,
+            churchName: "دير الجرنوس",
+            stage: "جامعة",
+            competitionType: "دراسي",
+            timestamp: new Date().toISOString()
+        });
+    });
+    await batch.commit();
+    alert("تم إضافة 20 مشترك بنجاح!");
   };
 
   const handleAddParticipant = async (e: React.FormEvent) => {
@@ -4324,44 +4365,54 @@ function AppComponent() {
             </div>
 
             <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
-              {/* Universal Filter Engine - Results View */}
-              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <Search size={20} className="text-primary" />
-                  <h4 className="font-black text-slate-800 text-sm italic uppercase">محرك البحث الشامل</h4>
+              {userProfile?.isAllowedToRead === false ? (
+                <div className="text-center py-20 bg-amber-50 rounded-3xl border border-amber-100">
+                  <Lock className="mx-auto text-amber-500 mb-4" size={48} />
+                  <h3 className="text-2xl font-black text-amber-800">عذراً، عرض النتائج متوقف حالياً</h3>
+                  <p className="text-amber-600 font-bold mt-2">يرجى التواصل مع الإدارة للمزيد من التفاصيل.</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="relative">
-                    <input 
-                      type="text"
-                      placeholder="ابحث بالاسم..."
-                      value={globalNameFilter}
-                      onChange={(e) => setGlobalNameFilter(e.target.value)}
-                      className="w-full pr-4 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
-                    />
+              ) : (
+                <>
+                  {/* Universal Filter Engine - Results View */}
+                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Search size={20} className="text-primary" />
+                      <h4 className="font-black text-slate-800 text-sm italic uppercase">محرك البحث الشامل</h4>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="relative">
+                        <input 
+                          type="text"
+                          placeholder="ابحث بالاسم..."
+                          value={globalNameFilter}
+                          onChange={(e) => setGlobalNameFilter(e.target.value)}
+                          className="w-full pr-4 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
+                        />
+                      </div>
+                      <select 
+                        value={globalStageFilter}
+                        onChange={(e) => setGlobalStageFilter(e.target.value)}
+                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
+                      >
+                        <option value="الكل">كل المراحل</option>
+                        {dynamicLevels.sort((a,b)=>sortStages(a.name, b.name)).map(l => <option key={l.id || l.name} value={l.name}>{l.name}</option>)}
+                      </select>
+                      <select 
+                        value={resultsFilterGrade}
+                        onChange={(e) => setResultsFilterGrade(e.target.value)}
+                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
+                      >
+                        <option value="الكل">كل التقديرات</option>
+                        {['ممتاز', 'جيد جداً', 'جيد', 'مقبول'].map(g => (
+                          <option key={g} value={g}>{g}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <select 
-                    value={globalStageFilter}
-                    onChange={(e) => setGlobalStageFilter(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
-                  >
-                    <option value="الكل">كل المراحل</option>
-                    {dynamicLevels.sort((a,b)=>sortStages(a.name, b.name)).map(l => <option key={l.id || l.name} value={l.name}>{l.name}</option>)}
-                  </select>
-                  <select 
-                    value={resultsFilterGrade}
-                    onChange={(e) => setResultsFilterGrade(e.target.value)}
-                    className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
-                  >
-                    <option value="الكل">كل التقديرات</option>
-                    {['ممتاز', 'جيد جداً', 'جيد', 'مقبول'].map(g => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
 
-              <ResultsViewer results={filteredResultsList} isAdmin={userRole === 'admin'} />
+                  <ResultsViewer results={filteredResultsList} isAdmin={userRole === 'admin'} />
+                </>
+              )}
             </div>
           </motion.div>
         )}
@@ -4378,22 +4429,8 @@ function AppComponent() {
               </button>
             </div>
 
-            {userProfile?.isAllowedToRead === false ? (
-              <div className="bg-white p-12 rounded-3xl shadow-xl border border-slate-100 text-center space-y-6">
-                <div className="w-24 h-24 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Lock size={48} />
-                </div>
-                <h3 className="text-3xl font-black text-slate-800">عذراً، تم غلق لوحة التحكم مؤقتاً</h3>
-                <p className="text-xl font-bold text-slate-500 max-w-2xl mx-auto leading-relaxed">
-                  بقرار من اللجنة المركزية، تم تعليق صلاحية الوصول والمراجعة للوحة تحكم كنيستكم مؤقتاً.
-                  <br />
-                  <span className="text-primary mt-4 block underline">يرجى التواصل مع المسئول عن المهرجان للمزيد من التفاصيل.</span>
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Universal Filter Engine - Church View */}
-                <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 space-y-4">
+            {/* Universal Filter Engine - Church View */}
+            <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 space-y-4">
                   <div className="flex items-center gap-2 mb-4">
                     <Search size={20} className="text-primary" />
                     <h4 className="font-black text-slate-800 text-lg">محرك البحث الشامل</h4>
@@ -4572,17 +4609,33 @@ function AppComponent() {
                   <h4 className="font-black text-slate-800 flex items-center gap-2">
                     <History size={20} className="text-coptic-gold" /> سجل طلبات الكتب
                   </h4>
-                  {orders.filter(o => o.churchName === churchName).length > 0 ? (
-                    <div className="space-y-3">
-                      {orders.filter(o => o.churchName === churchName).map(order => (
-                        <div key={order.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <div className="flex justify-between mb-2">
-                            <span className="text-xs font-bold text-coptic-blue">{order.timestamp}</span>
-                            <span className="font-bold text-coptic-red">{order.grandTotal} ج.م</span>
+                  {userProfile?.isAllowedToRead === false ? (
+                    <div className="p-8 bg-amber-50 rounded-2xl border border-amber-100 text-center">
+                      <Lock className="mx-auto text-amber-500 mb-2" size={24} />
+                      <p className="text-xs text-amber-700 font-bold">تم إيقاف عرض القوائم مؤقتاً</p>
+                    </div>
+                  ) : orders.filter(o => o.churchName === churchName).length > 0 ? (
+                    <div className="space-y-4">
+                      <div className="space-y-3">
+                        {orders
+                          .filter(o => o.churchName === churchName)
+                          .slice((churchOrderPage - 1) * ITEMS_PER_PAGE, churchOrderPage * ITEMS_PER_PAGE)
+                          .map(order => (
+                          <div key={order.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div className="flex justify-between mb-2">
+                              <span className="text-xs font-bold text-coptic-blue">{order.timestamp}</span>
+                              <span className="font-bold text-coptic-red">{order.grandTotal} ج.م</span>
+                            </div>
+                            <p className="text-xs text-slate-500">عدد المراحل: {order.details.length}</p>
                           </div>
-                          <p className="text-xs text-slate-500">عدد المراحل: {order.details.length}</p>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                      <PaginationComponent 
+                        currentPage={churchOrderPage}
+                        totalItems={orders.filter(o => o.churchName === churchName).length}
+                        itemsPerPage={ITEMS_PER_PAGE}
+                        onPageChange={setChurchOrderPage}
+                      />
                     </div>
                   ) : (
                     <p className="text-sm text-slate-400 italic">لا توجد طلبات سابقة</p>
@@ -4720,81 +4773,75 @@ function AppComponent() {
                     </div>
 
                       <div className="max-h-[400px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                        {filteredParticipantsList
-                          .map(p => (
-                          <div key={p.id} className="group relative p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-all">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <p className="text-sm font-black text-slate-800">{p.name}</p>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <p className="text-[10px] font-bold text-coptic-blue">{p.stage}</p>
-                              <span className="text-[9px] text-slate-400 font-black px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{p.gender || 'غير محدد'}</span>
+                        {userProfile?.isAllowedToRead === false ? (
+                          <div className="text-center py-12 bg-amber-50 rounded-3xl border border-amber-200">
+                            <Lock className="mx-auto text-amber-500 mb-2" size={32} />
+                            <p className="text-sm text-amber-700 font-black">تم إيقاف عرض القوائم مؤقتاً</p>
+                            <p className="text-[10px] text-amber-600 font-bold mt-1">تواصل مع الإدارة للمزيد من التفاصيل</p>
+                          </div>
+                        ) : (
+                          <>
+                            {filteredParticipantsList
+                              .slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
+                              .map(p => (
+                              <div key={p.id} className="group relative p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <p className="text-sm font-black text-slate-800">{p.name}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <p className="text-[10px] font-bold text-coptic-blue">{p.stage}</p>
+                                  <span className="text-[9px] text-slate-400 font-black px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{p.gender || 'غير محدد'}</span>
+                                </div>
+                              </div>
+                              <div>
+                                <button 
+                                  onClick={() => {
+                                    handleEditParticipant(p);
+                                    setActiveSection('registration');
+                                  }}
+                                  className="p-1.5 text-coptic-blue hover:text-primary transition-colors"
+                                  title="تعديل المشترك"
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    setParticipantToDelete(p.id);
+                                    setShowDeleteModal(true);
+                                  }} 
+                                  className="p-1.5 text-rose-500 hover:text-red-700 transition-colors"
+                                  title="حذف المشترك"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {(p.competitions || []).map((comp, i) => (
+                                <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-black rounded-full">
+                                  {comp}
+                                </span>
+                              ))}
                             </div>
                           </div>
-                          <div>
-                            <button 
-                              onClick={() => {
-                                handleEditParticipant(p);
-                                setActiveSection('registration');
-                              }}
-                              className="p-1.5 text-coptic-blue hover:text-primary transition-colors"
-                              title="تعديل المشترك"
-                            >
-                              <Pencil size={16} />
-                            </button>
-                            <button 
-                              onClick={() => {
-                                setParticipantToDelete(p.id);
-                                setShowDeleteModal(true);
-                              }} 
-                              className="p-1.5 text-rose-500 hover:text-red-700 transition-colors"
-                              title="حذف المشترك"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                        ))}
+                        {filteredParticipantsList.length === 0 && (
+                          <div className="text-center py-12 bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                            <UserPlus className="mx-auto text-slate-300 mb-2" size={32} />
+                            <p className="text-xs text-slate-400 font-bold">لا يوجد مشتركين مسجلين بعد</p>
                           </div>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {(p.competitions || []).map((comp, i) => (
-                            <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-black rounded-full">
-                              {comp}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                    {filteredParticipantsList.length === 0 && (
-                      <div className="text-center py-12 bg-slate-50 rounded-3xl border border-dashed border-slate-200">
-                        <UserPlus className="mx-auto text-slate-300 mb-2" size={32} />
-                        <p className="text-xs text-slate-400 font-bold">لا يوجد مشتركين مسجلين بعد</p>
-                      </div>
-                    )}
-                  </div>
+                        )}
+                        </>
+                      )}
+                    </div>
 
                   {/* Pagination Controls for Church Dashboard */}
-                  {filteredParticipantsList.length > ITEMS_PER_PAGE && (
-                    <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-100 italic text-slate-400">
-                      <div className="flex items-center gap-4">
-                        <button 
-                           disabled={currentPage === 1}
-                           onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                           className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all cursor-pointer"
-                           type="button"
-                        >
-                           <ChevronRight size={18} className="text-slate-600" />
-                        </button>
-                        <span className="font-black text-slate-800 not-italic text-sm">صفحة {currentPage} من {Math.ceil(filteredParticipantsList.length / ITEMS_PER_PAGE)}</span>
-                        <button 
-                           disabled={currentPage * ITEMS_PER_PAGE >= filteredParticipantsList.length}
-                           onClick={() => setCurrentPage(prev => prev + 1)}
-                           className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all cursor-pointer"
-                           type="button"
-                        >
-                           <ChevronLeft size={18} className="text-slate-600" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  <PaginationComponent 
+                    currentPage={currentPage}
+                    totalItems={filteredParticipantsList.length}
+                    itemsPerPage={ITEMS_PER_PAGE}
+                    onPageChange={setCurrentPage}
+                  />
                 </div>
               </div>
 
@@ -4802,27 +4849,43 @@ function AppComponent() {
                   <h4 className="font-black text-slate-800 flex items-center gap-2">
                     <MessageSquare size={20} className="text-coptic-blue" /> ردود الاستفسارات
                   </h4>
-                  <div className="space-y-3">
-                    {(inquiries || []).filter(inq => inq.churchName === churchName).map(inq => (
-                      <div key={inq.id} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm">
-                        <p className="text-sm font-bold text-slate-700 mb-2">{inq.message}</p>
-                        {inq.reply ? (
-                          <div className="mt-2 p-3 bg-coptic-blue/5 rounded-xl border-r-4 border-coptic-blue">
-                            <p className="text-xs font-black text-coptic-blue mb-1">رد المسئول:</p>
-                            <p className="text-sm text-slate-600">{inq.reply}</p>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-full">في انتظار الرد...</span>
-                        )}
-                      </div>
-                    ))}
+                  {userProfile?.isAllowedToRead === false ? (
+                    <div className="p-8 bg-amber-50 rounded-2xl border border-amber-100 text-center">
+                      <Lock className="mx-auto text-amber-500 mb-2" size={24} />
+                      <p className="text-xs text-amber-700 font-bold">تم إيقاف عرض القوائم مؤقتاً</p>
+                    </div>
+                  ) : (
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      {(inquiries || [])
+                        .filter(inq => inq.churchName === churchName)
+                        .slice((churchInquiryPage - 1) * ITEMS_PER_PAGE, churchInquiryPage * ITEMS_PER_PAGE)
+                        .map(inq => (
+                        <div key={inq.id} className="p-4 bg-white border border-slate-100 rounded-2xl shadow-sm">
+                          <p className="text-sm font-bold text-slate-700 mb-2">{inq.message}</p>
+                          {inq.reply ? (
+                            <div className="mt-2 p-3 bg-coptic-blue/5 rounded-xl border-r-4 border-coptic-blue">
+                              <p className="text-xs font-black text-coptic-blue mb-1">رد المسئول:</p>
+                              <p className="text-sm text-slate-600">{inq.reply}</p>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-full">في انتظار الرد...</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <PaginationComponent 
+                      currentPage={churchInquiryPage}
+                      totalItems={(inquiries || []).filter(inq => inq.churchName === churchName).length}
+                      itemsPerPage={ITEMS_PER_PAGE}
+                      onPageChange={setChurchInquiryPage}
+                    />
                   </div>
+                )}
                 </div>
               </div>
             </div>
-          </>
-        )}
-      </motion.div>
+          </motion.div>
         )}
 
         {activeSection === 'settings' && userRole === 'church' && (
@@ -5119,7 +5182,9 @@ function AppComponent() {
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {filteredNews.map((item) => (
+                      {filteredNews
+                        .slice((newsPage - 1) * 20, newsPage * 20)
+                        .map((item) => (
                         <div key={item.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex gap-4 items-center shadow-sm">
                           <img 
                             src={item.imageUrl} 
@@ -5152,6 +5217,12 @@ function AppComponent() {
                         </div>
                       ))}
                     </div>
+                    <PaginationComponent 
+                      currentPage={newsPage}
+                      totalItems={filteredNews.length}
+                      itemsPerPage={20}
+                      onPageChange={setNewsPage}
+                    />
                   </div>
                 </section>
 
@@ -5430,26 +5501,12 @@ function AppComponent() {
                 </div>
 
                 <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
-                  <div className="flex items-center gap-4">
-                    <button 
-                       disabled={participantPageCount === 1 || isParticipantsLoading}
-                       onClick={() => {
-                          const prevPage = participantPageCount - 1;
-                          setParticipantPageCount(prevPage);
-                       }}
-                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all"
-                    >
-                       <ChevronRight size={20} className="text-slate-600" />
-                    </button>
-                    <span className="font-black text-slate-800 not-italic text-sm">صفحة {participantPageCount}</span>
-                    <button 
-                       disabled={participantPageCount * 20 >= participants.length || isParticipantsLoading}
-                       onClick={() => setParticipantPageCount(prev => prev + 1)}
-                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all"
-                    >
-                       <ChevronLeft size={20} className="text-slate-600" />
-                    </button>
-                  </div>
+                  <PaginationComponent 
+                    currentPage={participantPageCount}
+                    totalItems={participants.length}
+                    itemsPerPage={20}
+                    onPageChange={setParticipantPageCount}
+                  />
                   {isParticipantsLoading && (
                     <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
                        <Loader2 className="animate-spin" size={14} /> جاري التحميل...
@@ -5505,6 +5562,7 @@ function AppComponent() {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {activityTeams
+                        .slice((teamPageCount - 1) * 20, teamPageCount * 20)
                         .map(t => (
                           <tr key={t.id} className="bg-white hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-slate-800 text-sm">{t.activityType}</td>
@@ -5535,27 +5593,12 @@ function AppComponent() {
                 </div>
 
                 <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
-                  <div className="flex items-center gap-4">
-                    <button 
-                       disabled={teamPageCount === 1 || isTeamsLoading}
-                       onClick={() => {
-                          const prevPage = teamPageCount - 1;
-                          setTeamPageCount(prevPage);
-                          fetchTeamsPage(false, prevPage === 1, teamSearch);
-                       }}
-                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
-                    >
-                       <ChevronRight size={20} />
-                    </button>
-                    <span className="font-black text-slate-800 not-italic text-sm">صفحة {teamPageCount}</span>
-                    <button 
-                       disabled={isTeamsEnd || isTeamsLoading}
-                       onClick={() => fetchTeamsPage(true, false, teamSearch)}
-                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
-                    >
-                       <ChevronLeft size={20} />
-                    </button>
-                  </div>
+                  <PaginationComponent 
+                    currentPage={teamPageCount}
+                    totalItems={activityTeams.length}
+                    itemsPerPage={20}
+                    onPageChange={setTeamPageCount}
+                  />
                   {isTeamsLoading && (
                     <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
                        <Loader2 className="animate-spin" size={14} /> جاري التحميل...
@@ -5606,27 +5649,12 @@ function AppComponent() {
                 <ResultsViewer results={results} isAdmin={userRole === 'admin'} onReset={(id) => handleResetExam(id)} />
 
                 <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
-                  <div className="flex items-center gap-4">
-                    <button 
-                       disabled={resultPageCount === 1 || isResultsLoading}
-                       onClick={() => {
-                          const prevPage = resultPageCount - 1;
-                          setResultPageCount(prevPage);
-                          fetchResultsPage(false, prevPage === 1, resultSearch);
-                       }}
-                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
-                    >
-                       <ChevronRight size={20} />
-                    </button>
-                    <span className="font-black text-slate-800 not-italic text-sm">صفحة {resultPageCount}</span>
-                    <button 
-                       disabled={isResultsEnd || isResultsLoading}
-                       onClick={() => fetchResultsPage(true, false, resultSearch)}
-                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
-                    >
-                       <ChevronLeft size={20} />
-                    </button>
-                  </div>
+                  <PaginationComponent 
+                    currentPage={resultPageCount}
+                    totalItems={results.length}
+                    itemsPerPage={20}
+                    onPageChange={setResultPageCount}
+                  />
                   {isResultsLoading && (
                     <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
                        <Loader2 className="animate-spin" size={14} /> جاري التحميل...
@@ -5685,7 +5713,9 @@ function AppComponent() {
                            Object.keys(r).forEach(k => { if (r[k] !== undefined && r[k] !== null) acc[id][k] = r[k]; });
                         }
                         return acc;
-                      }, {})).map((r: any, i: number) => {
+                      }, {}))
+                      .slice((onlineResultPageCount - 1) * 20, onlineResultPageCount * 20)
+                      .map((r: any, i: number) => {
                         let drasy = r['مسابقة دراسي'] ?? (r.competition === 'دراسي' ? r.finalScore : '-');
                         let mahfozat = r['مسابقة محفوظات'] ?? (r.competition === 'محفوظات' ? r.finalScore : '-');
                         let coptic1 = r['مسابقة قبطي مستوى أول'] ?? (r.competition === 'قبطي مستوى أول' ? r.finalScore : '-');
@@ -5723,27 +5753,12 @@ function AppComponent() {
                 </div>
 
                 <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
-                  <div className="flex items-center gap-4">
-                    <button 
-                       disabled={onlineResultPageCount === 1 || isOnlineResultsLoading}
-                       onClick={() => {
-                          const prevPage = onlineResultPageCount - 1;
-                          setOnlineResultPageCount(prevPage);
-                          fetchOnlineResultsPage(false, prevPage === 1);
-                       }}
-                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all"
-                    >
-                       <ChevronRight size={20} className="text-slate-600" />
-                    </button>
-                    <span className="font-black text-slate-800 not-italic text-sm">صفحة {onlineResultPageCount}</span>
-                    <button 
-                       disabled={isOnlineResultsEnd || isOnlineResultsLoading}
-                       onClick={() => fetchOnlineResultsPage(true, false)}
-                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all"
-                    >
-                       <ChevronLeft size={20} className="text-slate-600" />
-                    </button>
-                  </div>
+                  <PaginationComponent 
+                    currentPage={onlineResultPageCount}
+                    totalItems={onlineResults.length}
+                    itemsPerPage={20}
+                    onPageChange={setOnlineResultPageCount}
+                  />
                   {isOnlineResultsLoading && (
                     <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
                        <Loader2 className="animate-spin" size={14} /> جاري التحميل...
@@ -5781,6 +5796,7 @@ function AppComponent() {
                     <tbody className="divide-y divide-slate-100">
                       {(orders || [])
                         .filter(o => adminFilterChurch === 'الكل' || o.churchName === adminFilterChurch)
+                        .slice((orderPageCount - 1) * 20, orderPageCount * 20)
                         .map(o => (
                           <tr key={o.id} className="bg-white hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-slate-800 text-sm">{o.churchName}</td>
@@ -5811,27 +5827,12 @@ function AppComponent() {
                 </div>
 
                 <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
-                  <div className="flex items-center gap-4">
-                    <button 
-                       disabled={orderPageCount === 1 || isOrdersLoading}
-                       onClick={() => {
-                          const prevPage = orderPageCount - 1;
-                          setOrderPageCount(prevPage);
-                          fetchOrdersPage(false, prevPage === 1);
-                       }}
-                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
-                    >
-                       <ChevronRight size={20} />
-                    </button>
-                    <span className="font-black text-slate-800 not-italic text-sm">صفحة {orderPageCount}</span>
-                    <button 
-                       disabled={isOrdersEnd || isOrdersLoading}
-                       onClick={() => fetchOrdersPage(true, false)}
-                       className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
-                    >
-                       <ChevronLeft size={20} />
-                    </button>
-                  </div>
+                  <PaginationComponent 
+                    currentPage={orderPageCount}
+                    totalItems={(orders || []).filter(o => adminFilterChurch === 'الكل' || o.churchName === adminFilterChurch).length}
+                    itemsPerPage={20}
+                    onPageChange={setOrderPageCount}
+                  />
                   {isOrdersLoading && (
                     <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
                        <Loader2 className="animate-spin" size={14} /> جاري التحميل...
@@ -5852,6 +5853,7 @@ function AppComponent() {
                 <div className="space-y-6">
                   {(inquiries || [])
                     .filter(i => adminFilterChurch === 'الكل' || i.churchName === adminFilterChurch)
+                    .slice((inquiryPage - 1) * 20, inquiryPage * 20)
                     .map(i => (
                       <div key={i.id} className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
                         <div className="flex justify-between items-start mb-4">
@@ -5887,6 +5889,12 @@ function AppComponent() {
                         </div>
                       </div>
                     ))}
+                  <PaginationComponent 
+                    currentPage={inquiryPage}
+                    totalItems={(inquiries || []).filter(i => adminFilterChurch === 'الكل' || i.churchName === adminFilterChurch).length}
+                    itemsPerPage={20}
+                    onPageChange={setInquiryPage}
+                  />
                 </div>
               </section>
             )}
@@ -6546,7 +6554,9 @@ function AppComponent() {
                           </tr>
                         </thead>
                         <tbody>
-                          {analyticsData.retentionData.map((row, idx) => {
+                          {(analyticsData.retentionData || [])
+                            .slice((analyticsPage - 1) * 20, analyticsPage * 20)
+                            .map((row, idx) => {
                             const gap = row["كتب تم طلبها"] - row["الاحتياج الفعلي"];
                             const rowBg = gap < 0 ? 'bg-red-50' : gap > 0 ? 'bg-yellow-50' : 'bg-white';
                             const gapText = gap < 0 ? `${gap} (عجز)` : gap > 0 ? `+${gap} (فائض)` : 'متطابق';
@@ -6564,6 +6574,12 @@ function AppComponent() {
                         </tbody>
                       </table>
                     </div>
+                    <PaginationComponent 
+                      currentPage={analyticsPage}
+                      totalItems={(analyticsData.retentionData || []).length}
+                      itemsPerPage={20}
+                      onPageChange={setAnalyticsPage}
+                    />
                   </div>
                 </div>
 
@@ -6627,7 +6643,9 @@ function AppComponent() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {aggregatedChurchPrintingData.map((row, idx) => (
+                        {(aggregatedChurchPrintingData || [])
+                          .slice((printingPage - 1) * 20, printingPage * 20)
+                          .map((row, idx) => (
                           <tr key={idx} className="hover:bg-slate-50 transition-colors">
                             <td className="p-3 font-bold text-slate-800 border-l border-slate-100 whitespace-nowrap">{row.church}</td>
                             <td className="p-3 font-black text-slate-800 text-center border-l border-slate-100 bg-slate-50/50">{row.totalSubscribers}</td>
@@ -6643,7 +6661,7 @@ function AppComponent() {
                             })}
                           </tr>
                         ))}
-                        {aggregatedChurchPrintingData.length === 0 && (
+                        {(aggregatedChurchPrintingData || []).length === 0 && (
                           <tr>
                             <td colSpan={50} className="p-8 text-center text-slate-400 font-bold">
                               لا توجد بيانات متاحة
@@ -6669,6 +6687,12 @@ function AppComponent() {
                       </tfoot>
                     </table>
                   </div>
+                  <PaginationComponent 
+                    currentPage={printingPage}
+                    totalItems={(aggregatedChurchPrintingData || []).length}
+                    itemsPerPage={20}
+                    onPageChange={setPrintingPage}
+                  />
                 </section>
 
                 {/* Print-only Templates - Rendered off-screen to ensure charts are pre-measured, fonts are fully loaded, and assets are fully calculated */}
@@ -7891,6 +7915,11 @@ function AppComponent() {
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
                     <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
                       <UserPlus size={28} className="text-primary" /> تسجيل مشترك جديد
+                      {userRole === 'admin' && (
+                        <button onClick={bulkInsertParticipants} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-black hover:bg-purple-700">
+                          حقن بيانات 20 مشترك (خاص)
+                        </button>
+                      )}
                     </h4>
                     <p className="text-slate-500 text-sm font-bold">يرجى ملء البيانات التالية بدقة</p>
                   </div>

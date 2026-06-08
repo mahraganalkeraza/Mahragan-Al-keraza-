@@ -21,6 +21,7 @@ import {
   updatePassword,
   signOut,
 } from "firebase/auth";
+import PaginationComponent from "./Pagination";
 import firebaseConfig from "../../firebase-applet-config.json";
 import {
   Trash2,
@@ -62,6 +63,9 @@ interface UserManagementProps {
 export default function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
   const [churchesBank, setChurchesBank] = useState<any[]>([]);
+  const [churchPage, setChurchPage] = useState(1);
+  const [userPage, setUserPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<User>>({});
@@ -540,7 +544,9 @@ export default function UserManagement() {
             </motion.div>
           )}
 
-          {filteredUsers.map((user) => (
+          {filteredUsers
+            .slice((userPage - 1) * ITEMS_PER_PAGE, userPage * ITEMS_PER_PAGE)
+            .map((user) => (
             <motion.div
               key={user.uid}
               layout
@@ -761,6 +767,13 @@ export default function UserManagement() {
           ))}
         </AnimatePresence>
       </div>
+
+      <PaginationComponent 
+        currentPage={userPage}
+        totalItems={filteredUsers.length}
+        itemsPerPage={ITEMS_PER_PAGE}
+        onPageChange={setUserPage}
+      />
 
       {/* Delete Confirmation Modal */}
       <AnimatePresence>

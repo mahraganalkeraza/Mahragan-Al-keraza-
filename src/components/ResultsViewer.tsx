@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Result } from '../types';
 import { RefreshCcw, ShieldAlert } from 'lucide-react';
 import { AdminHonorsEngine } from './AdminHonorsEngine';
+import PaginationComponent from './Pagination';
 
 export const ResultsViewer: React.FC<{ 
   results: Result[], 
@@ -9,6 +10,8 @@ export const ResultsViewer: React.FC<{
   isAdmin?: boolean 
 }> = ({ results, onReset, isAdmin }) => {
   const [honorsRanks, setHonorsRanks] = useState<Record<string, { rank: number; colorClass: string, percentage: number, title: string }>>({});
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
 
   const MASTER_HEADERS = [
     'وقت التسليم',
@@ -69,7 +72,7 @@ export const ResultsViewer: React.FC<{
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {results.slice(0, 500).map((r, index) => {
+              {results.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE).map((r, index) => {
                 const rowData: Record<string, any> = {
                   'وقت التسليم': r.timestamp ? new Date(r.timestamp).toLocaleString('ar-EG') : '',
                   'الاسم': r.studentName,
@@ -122,11 +125,12 @@ export const ResultsViewer: React.FC<{
               })}
             </tbody>
           </table>
-          {results.length > 100 && (
-             <p className="text-center text-sm text-slate-400 font-bold mt-4">
-               تظهر أحدث 100 نتيجة فقط في العرض المباشر لضمان سرعة النظام.
-             </p>
-          )}
+          <PaginationComponent 
+            currentPage={currentPage}
+            totalItems={results.length}
+            itemsPerPage={ITEMS_PER_PAGE}
+            onPageChange={setCurrentPage}
+          />
         </div>
       </div>
 
