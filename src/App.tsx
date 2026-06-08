@@ -841,13 +841,19 @@ function AppComponent() {
               .select('name');
               
             if (dbChurches && dbChurches.length > 0 && !chError) {
-              churchesList = dbChurches.map((c: any) => ({
-                name: c.name,
-                email: '',
-                logoUrl: '',
-                isEnabled: true
-              }));
-              console.log("[Supabase Sync] Successfully loaded", dbChurches.length, "churches from Supabase.");
+              const uniqueChurchesMap = new Map();
+              dbChurches.forEach((c: any) => {
+                if (!uniqueChurchesMap.has(c.name)) {
+                  uniqueChurchesMap.set(c.name, {
+                    name: c.name,
+                    email: '',
+                    logoUrl: '',
+                    isEnabled: true
+                  });
+                }
+              });
+              churchesList = Array.from(uniqueChurchesMap.values());
+              console.log("[Supabase Sync] Successfully loaded", churchesList.length, "unique churches from Supabase.");
             } else {
               console.warn("[Supabase Sync] Churches table was empty, utilizing pre-injected offline fallback.");
             }
@@ -2598,16 +2604,13 @@ function AppComponent() {
               const filterCh = userRole === 'admin' 
                 ? (partChurchFilter !== 'الكل' ? partChurchFilter : null)
                 : churchName;
-              let queryBuilder = supabase.from('participants').select('id');
-              if (filterCh) {
-                queryBuilder = queryBuilder.eq('churchName', filterCh);
+              let queryBuilder = supabase.from('participants').select('*', { count: 'exact', head: true });
+              const { count, error } = await queryBuilder;
+              if (error) {
+                console.error("Supabase Count Fetch Error:", error.message);
               }
-              if (partStageFilter !== 'الكل') {
-                queryBuilder = queryBuilder.eq('stage', partStageFilter);
-              }
-              const { data, error } = await queryBuilder;
-              if (!error && data) {
-                setTotalParticipantsCount(data.length);
+              if (!error && count != null) {
+                setTotalParticipantsCount(count || 0);
               } else {
                 setTotalParticipantsCount(0);
               }
@@ -2626,16 +2629,13 @@ function AppComponent() {
                 const filterCh = userRole === 'admin' 
                   ? (partChurchFilter !== 'الكل' ? partChurchFilter : null)
                   : churchName;
-                let queryBuilder = supabase.from('participants').select('id');
-                if (filterCh) {
-                  queryBuilder = queryBuilder.eq('churchName', filterCh);
+                let queryBuilder = supabase.from('participants').select('*', { count: 'exact', head: true });
+                const { count, error } = await queryBuilder;
+                if (error) {
+                  console.error("Supabase Count Fetch Error:", error.message);
                 }
-                if (partStageFilter !== 'الكل') {
-                  queryBuilder = queryBuilder.eq('stage', partStageFilter);
-                }
-                const { data, error } = await queryBuilder;
-                if (!error && data) {
-                  setTotalParticipantsCount(data.length);
+                if (!error && count != null) {
+                  setTotalParticipantsCount(count || 0);
                 } else {
                   setTotalParticipantsCount(0);
                 }
@@ -2704,13 +2704,11 @@ function AppComponent() {
           try {
             if (supabase) {
               const filterCh = userRole === 'admin' ? null : churchName;
-              let queryBuilder = supabase.from('orders').select('id');
-              if (filterCh) {
-                queryBuilder = queryBuilder.eq('churchName', filterCh);
-              }
-              const { data, error } = await queryBuilder;
-              if (!error && data) {
-                setTotalOrdersCount(data.length);
+              let queryBuilder = supabase.from('orders').select('*', { count: 'exact', head: true });
+              const { count, error } = await queryBuilder;
+              if (error) console.error("Supabase Order Count Error:", error.message);
+              if (!error && count != null) {
+                setTotalOrdersCount(count || 0);
               } else {
                 setTotalOrdersCount(0);
               }
@@ -2727,13 +2725,11 @@ function AppComponent() {
             try {
               if (supabase) {
                 const filterCh = userRole === 'admin' ? null : churchName;
-                let queryBuilder = supabase.from('orders').select('id');
-                if (filterCh) {
-                  queryBuilder = queryBuilder.eq('churchName', filterCh);
-                }
-                const { data, error } = await queryBuilder;
-                if (!error && data) {
-                  setTotalOrdersCount(data.length);
+                let queryBuilder = supabase.from('orders').select('*', { count: 'exact', head: true });
+                const { count, error } = await queryBuilder;
+                if (error) console.error("Supabase Order Count Error:", error.message);
+                if (!error && count != null) {
+                  setTotalOrdersCount(count || 0);
                 } else {
                   setTotalOrdersCount(0);
                 }
@@ -2837,13 +2833,11 @@ function AppComponent() {
               const filterCh = userRole === 'admin' 
                 ? (globalChurchFilter !== 'الكل' ? globalChurchFilter : null)
                 : churchName;
-              let queryBuilder = supabase.from('results').select('id');
-              if (filterCh) {
-                queryBuilder = queryBuilder.eq('churchName', filterCh);
-              }
-              const { data, error } = await queryBuilder;
-              if (!error && data) {
-                setTotalResultsCount(data.length);
+              let queryBuilder = supabase.from('results').select('*', { count: 'exact', head: true });
+              const { count, error } = await queryBuilder;
+              if (error) console.error("Supabase Results Count Error:", error.message);
+              if (!error && count != null) {
+                setTotalResultsCount(count || 0);
               } else {
                 setTotalResultsCount(0);
               }
@@ -2862,13 +2856,11 @@ function AppComponent() {
                 const filterCh = userRole === 'admin' 
                   ? (globalChurchFilter !== 'الكل' ? globalChurchFilter : null)
                   : churchName;
-                let queryBuilder = supabase.from('results').select('id');
-                if (filterCh) {
-                  queryBuilder = queryBuilder.eq('churchName', filterCh);
-                }
-                const { data, error } = await queryBuilder;
-                if (!error && data) {
-                  setTotalResultsCount(data.length);
+                let queryBuilder = supabase.from('results').select('*', { count: 'exact', head: true });
+                const { count, error } = await queryBuilder;
+                if (error) console.error("Supabase Results Count Error:", error.message);
+                if (!error && count != null) {
+                  setTotalResultsCount(count || 0);
                 } else {
                   setTotalResultsCount(0);
                 }
@@ -2929,13 +2921,11 @@ function AppComponent() {
               const filterCh = userRole === 'admin' 
                 ? (globalChurchFilter !== 'الكل' ? globalChurchFilter : null)
                 : churchName;
-              let queryBuilder = supabase.from('activityTeams').select('id');
-              if (filterCh) {
-                queryBuilder = queryBuilder.eq('churchName', filterCh);
-              }
-              const { data, error } = await queryBuilder;
-              if (!error && data) {
-                setTotalTeamsCount(data.length);
+              let queryBuilder = supabase.from('activityTeams').select('*', { count: 'exact', head: true });
+              const { count, error } = await queryBuilder;
+              if (error) console.error("Supabase ActivityTeams Count Error:", error.message);
+              if (!error && count != null) {
+                setTotalTeamsCount(count || 0);
               } else {
                 setTotalTeamsCount(0);
               }
@@ -2954,13 +2944,11 @@ function AppComponent() {
                 const filterCh = userRole === 'admin' 
                   ? (globalChurchFilter !== 'الكل' ? globalChurchFilter : null)
                   : churchName;
-                let queryBuilder = supabase.from('activityTeams').select('id');
-                if (filterCh) {
-                  queryBuilder = queryBuilder.eq('churchName', filterCh);
-                }
-                const { data, error } = await queryBuilder;
-                if (!error && data) {
-                  setTotalTeamsCount(data.length);
+                let queryBuilder = supabase.from('activityTeams').select('*', { count: 'exact', head: true });
+                const { count, error } = await queryBuilder;
+                if (error) console.error("Supabase ActivityTeams Count Error:", error.message);
+                if (!error && count != null) {
+                  setTotalTeamsCount(count || 0);
                 } else {
                   setTotalTeamsCount(0);
                 }
@@ -4350,8 +4338,8 @@ function AppComponent() {
                 >
                   <option value="">اختر الكنيسة</option>
                   <option value="مسئول">دخول مسئول (Admin)</option>
-                  {[...publicChurches].sort((a, b) => a.name.localeCompare(b.name)).map(church => (
-                    <option key={church.name} value={church.name}>{church.name}</option>
+                  {[...new Set(publicChurches.map(c => c.name))].sort((a, b) => a.localeCompare(b)).map(church => (
+                    <option key={church} value={church}>{church}</option>
                   ))}
                 </select>
                 {loginChurch && loginChurch !== 'مسئول' && (
