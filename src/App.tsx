@@ -600,7 +600,6 @@ function AppComponent() {
   const [loginError, setLoginError] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(!!initialProfile);
   const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest' | 'super_admin'>(initialProfile?.role || 'guest');
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
   useEffect(() => {
@@ -8744,39 +8743,6 @@ function AppComponent() {
           scrollToZoom: true,
         }}
       />
-      {/* EMERGENCY GLOBAL INJECTION - FORCING VISIBILITY FOR ADMIN */}
-      {(userRole === 'admin' || userRole === 'super_admin') && (
-        <>
-          <div 
-            style={{
-              position: 'fixed',
-              bottom: '32px',
-              right: '32px',
-              width: '64px',
-              height: '64px',
-              backgroundColor: '#1e3a8a', // The original premium Mahragan Dark Blue
-              borderRadius: '50%',
-              zIndex: 9999999, // Forces top-layer rendering above ALL tables and panels
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 0 25px rgba(30, 58, 138, 0.9)', // Dynamic premium glowing layout
-              cursor: 'pointer',
-              pointerEvents: 'auto',
-              animation: 'admin-pulse-glow 2s infinite'
-            }} 
-            className="active:scale-95 transition-all duration-200"
-            onClick={() => {
-              console.log("Admin AI FAB Clicked");
-              setIsAiModalOpen(!isAiModalOpen);
-            }}
-          >
-            <span style={{ fontSize: '28px' }}>{isAiModalOpen ? '💬' : '✨'}</span>
-          </div>
-
-          {/* AI FAB Removed */}
-        </>
-      )}
     </div>
   );
 }
