@@ -1,6 +1,6 @@
 import { supabase } from '../lib/supabaseClient';
 import { db } from '../firebase';
-import { collection, addDoc, getDocs, query, setDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, setDoc, doc, where } from 'firebase/firestore';
 
 function extractFirestoreFilter(constraint: any): { field: string; op: string; value: any } | null {
   if (!constraint) return null;
@@ -153,6 +153,22 @@ export async function silentDualWrite(collectionPath: string | string[], dataPay
 export async function silentDualFetch(collectionPath: string | string[], queryConstraints: any[] = []) {
   const collectionName = Array.isArray(collectionPath) ? collectionPath[0] : collectionPath;
 
+  // Retrieve logged-in church profile for strict data isolation
+  let userRole = 'guest';
+  let churchName = '';
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('userProfileCache');
+      if (stored) {
+        const profile = JSON.parse(stored);
+        userRole = profile.role || 'guest';
+        churchName = profile.churchName || '';
+      }
+    } catch (e) {
+      console.warn('[Data Isolation] Error reading userProfileCache:', e);
+    }
+  }
+
   // A. Try Supabase first (Primary high-availability data source)
   if (supabase) {
     try {
@@ -164,6 +180,15 @@ export async function silentDualFetch(collectionPath: string | string[], queryCo
         let results = data;
         if (queryConstraints.length > 0) {
           results = filterInMemory(results, queryConstraints);
+        }
+        // Strict Isolation Guard: Filter in memory to guarantee absolutely no leakage of other churches' data
+        if (userRole !== 'admin' && churchName) {
+          results = results.filter((item: any) => {
+            if (item && 'churchName' in item) {
+              return String(item.churchName).trim() === churchName.trim();
+            }
+            return true;
+          });
         }
         return results;
       }
@@ -187,7 +212,19 @@ export async function silentDualFetch(collectionPath: string | string[], queryCo
       ? collection(db, ...collectionPath as [string, ...string[]])
       : collection(db, collectionPath);
     
-    const q = queryConstraints.length > 0 ? query(colRef, ...queryConstraints) : colRef;
+    // Inject secure constraint into Firestore query as well
+    const finalConstraints = [...queryConstraints];
+    if (userRole !== 'admin' && churchName) {
+      const hasChurchFilter = finalConstraints.some(c => {
+         const parsed = extractFirestoreFilter(c);
+         return parsed && parsed.field === 'churchName';
+      });
+      if (!hasChurchFilter) {
+         finalConstraints.push(where('churchName', '==', churchName));
+      }
+    }
+
+    const q = finalConstraints.length > 0 ? query(colRef, ...finalConstraints) : colRef;
     const querySnapshot = await getDocs(q);
     return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (fbError: any) {

@@ -1651,7 +1651,11 @@ function AppComponent() {
       let count = 0;
       if (supabase) {
         try {
-          const { count: rawCount, error } = await supabase.from('participants').select('*', { count: 'exact', head: true });
+          const { count: rawCount, error } = await supabase
+            .from('participants')
+            .select('*', { count: 'exact', head: true })
+            .eq('churchName', cName)
+            .eq('year', activeYear);
           if (!error && rawCount != null) {
             count = rawCount;
           }
@@ -2599,6 +2603,15 @@ function AppComponent() {
         try {
           if (supabase) {
             let queryBuilder = supabase.from('participants').select('*', { count: 'exact', head: true });
+            queryBuilder = queryBuilder.eq('year', activeYear);
+            if (userRole !== 'admin') {
+              queryBuilder = queryBuilder.eq('churchName', churchName);
+            } else if (partChurchFilter !== 'الكل') {
+              queryBuilder = queryBuilder.eq('churchName', partChurchFilter);
+            }
+            if (partStageFilter !== 'الكل') {
+              queryBuilder = queryBuilder.eq('stage', partStageFilter);
+            }
             
             const { count, error } = await queryBuilder;
             if (error) {
@@ -2678,6 +2691,10 @@ function AppComponent() {
         try {
           if (supabase) {
             let queryBuilder = supabase.from('orders').select('*', { count: 'exact', head: true });
+            queryBuilder = queryBuilder.eq('year', activeYear);
+            if (userRole !== 'admin') {
+              queryBuilder = queryBuilder.eq('churchName', churchName);
+            }
             const { count, error } = await queryBuilder;
             if (error) console.error("Supabase Order Count Error:", error.message);
             if (!error && count != null) {
@@ -2787,6 +2804,15 @@ function AppComponent() {
         try {
           if (supabase) {
             let queryBuilder = supabase.from('results').select('*', { count: 'exact', head: true });
+            queryBuilder = queryBuilder.eq('year', activeYear);
+            if (userRole !== 'admin') {
+              queryBuilder = queryBuilder.eq('churchName', churchName);
+            } else if (globalChurchFilter !== 'الكل') {
+              queryBuilder = queryBuilder.eq('churchName', globalChurchFilter);
+            }
+            if (globalStageFilter !== 'الكل') {
+              queryBuilder = queryBuilder.eq('stage', globalStageFilter);
+            }
             const { count, error } = await queryBuilder;
             if (error) console.error("Supabase Results Count Error:", error.message);
             if (!error && count != null) {
@@ -2853,6 +2879,12 @@ function AppComponent() {
         try {
           if (supabase) {
             let queryBuilder = supabase.from('activityTeams').select('*', { count: 'exact', head: true });
+            queryBuilder = queryBuilder.eq('year', activeYear);
+            if (userRole !== 'admin') {
+              queryBuilder = queryBuilder.eq('churchName', churchName);
+            } else if (globalChurchFilter !== 'الكل') {
+              queryBuilder = queryBuilder.eq('churchName', globalChurchFilter);
+            }
             const { count, error } = await queryBuilder;
             if (error) console.error("Supabase ActivityTeams Count Error:", error.message);
             if (!error && count != null) {
