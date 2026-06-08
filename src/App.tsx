@@ -843,6 +843,7 @@ function AppComponent() {
   const [isOrdersLoading, setIsOrdersLoading] = useState(false);
 
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [allChurchParticipants, setAllChurchParticipants] = useState<Participant[]>([]);
   const [totalParticipantsCount, setTotalParticipantsCount] = useState<number>(0);
   const [totalOrdersCount, setTotalOrdersCount] = useState<number>(0);
   const [totalTeamsCount, setTotalTeamsCount] = useState<number>(0);
@@ -2490,6 +2491,24 @@ function AppComponent() {
     }
   };
 
+  const fetchAllChurchParticipants = async () => {
+      if (!isLoggedIn) return;
+      try {
+        let baseQueryQ = collection(db, 'participants');
+        const constraints: any[] = [where('year', '==', activeYear)];
+        if (userRole !== 'admin') {
+          constraints.push(where('churchName', '==', churchName));
+        }
+        
+        const q = query(baseQueryQ, ...constraints);
+        const snap = await getDocs(q);
+        const allList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
+        setAllChurchParticipants(allList);
+      } catch(err) {
+        console.error("Error fetching all participants for stats", err);
+      }
+  };
+
   const fetchLargeData = async (toast = true) => {
     if (!isLoggedIn) return;
     if (userRole === 'church' && !churchName) return;
@@ -2501,7 +2520,8 @@ function AppComponent() {
         fetchParticipantsPage(true, true),
         fetchOrdersPage(true, true),
         fetchTeamsPage(true, true),
-        fetchResultsPage(true, true)
+        fetchResultsPage(true, true),
+        fetchAllChurchParticipants()
       ];
       
       if (userRole === 'admin') {
@@ -4432,7 +4452,7 @@ function AppComponent() {
                 </h4>
                 
                 {(() => {
-                  const localParticipants = participants.filter(p => p.churchName === churchName);
+                  const localParticipants = allChurchParticipants.length > 0 ? allChurchParticipants : participants.filter(p => p.churchName === churchName);
                   const totalSubscribers = localParticipants.length;
                   
                   // Card A: Educational Stages
@@ -7082,7 +7102,7 @@ function AppComponent() {
                                   className="p-2 text-slate-400 hover:text-coptic-blue transition-colors"
                                   title="تعديل"
                                 >
-                                  <FileText size={16} />
+                                  <Pencil size={16} />
                                 </button>
                                 <button 
                                   onClick={() => {
