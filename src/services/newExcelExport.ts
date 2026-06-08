@@ -1,8 +1,7 @@
 import ExcelJS from 'exceljs';
 import { db } from '../firebase';
-import { collection, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { saveAs } from 'file-saver';
-import { silentDualFetch } from './dataService';
 
 export const generateMasterExcel = async (churchName: string | null = null) => {
   try {
@@ -10,19 +9,29 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
     console.log(`Exporting for ${isAdmin ? 'Admin' : churchName}`);
 
     // Fetch sequentially to guarantee resolution
-    const pConstraints = isAdmin ? [] : [where('churchName', '==', churchName)];
-    const participants = await silentDualFetch('participants', pConstraints);
+    let pQuery = isAdmin 
+      ? collection(db, 'participants') 
+      : query(collection(db, 'participants'), where('churchName', '==', churchName));
+      
+    const pSnap = await getDocs(pQuery);
+    const participants = pSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
 
     if (!participants || participants.length === 0) {
       alert('لا توجد بيانات متاحة للتصدير لهذه الكنيسة.');
       return;
     }
 
-    const rConstraints = isAdmin ? [] : [where('churchName', '==', churchName)];
-    const results = await silentDualFetch('results', rConstraints);
+    let rQuery = isAdmin
+      ? collection(db, 'results')
+      : query(collection(db, 'results'), where('churchName', '==', churchName));
+    const rSnap = await getDocs(rQuery);
+    const results = rSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
 
-    const tConstraints = isAdmin ? [] : [where('churchName', '==', churchName)];
-    const teams = await silentDualFetch('activityTeams', tConstraints);
+    let tQuery = isAdmin
+      ? collection(db, 'activityTeams')
+      : query(collection(db, 'activityTeams'), where('churchName', '==', churchName));
+    const tSnap = await getDocs(tQuery);
+    const teams = tSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
     
     // Merge logic
     const studentData: Record<string, any> = {};

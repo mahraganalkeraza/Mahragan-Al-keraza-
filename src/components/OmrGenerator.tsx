@@ -391,44 +391,13 @@ export default function OmrGenerator() {
   useEffect(() => {
     const fetchDynamics = async () => {
       try {
-        let cachedChurches: string[] = [];
-        let cachedLevels: string[] = [];
+        const churchesSnap = await getDocs(collection(db, 'churches'));
+        setChurches(churchesSnap.docs.map(doc => doc.data().name).filter(Boolean));
 
-        const cacheChurchesStr = localStorage.getItem('cache_churches');
-        if (cacheChurchesStr) {
-          try {
-            const parsed = JSON.parse(cacheChurchesStr);
-            if (Array.isArray(parsed.data)) {
-              cachedChurches = parsed.data.map((c: any) => c.name).filter(Boolean);
-            }
-          } catch (e) {}
-        }
-
-        const cacheLevelsStr = localStorage.getItem('cache_levels');
-        if (cacheLevelsStr) {
-          try {
-            const parsed = JSON.parse(cacheLevelsStr);
-            if (Array.isArray(parsed.data)) {
-              cachedLevels = parsed.data.map((l: any) => l.name).filter(Boolean);
-            }
-          } catch (e) {}
-        }
-
-        if (cachedChurches.length > 0) {
-          setChurches(cachedChurches);
-        } else {
-          const churchesSnap = await getDocs(collection(db, 'churches'));
-          setChurches(churchesSnap.docs.map(doc => doc.data().name).filter(Boolean));
-        }
-
-        if (cachedLevels.length > 0) {
-          setLevels(cachedLevels);
-        } else {
-          const levelsSnap = await getDocs(collection(db, 'levels'));
-          setLevels(levelsSnap.docs.map(doc => doc.data().name).filter(Boolean));
-        }
+        const levelsSnap = await getDocs(collection(db, 'levels'));
+        setLevels(levelsSnap.docs.map(doc => doc.data().name).filter(Boolean));
       } catch (err) {
-        console.error("Error fetching dynamics under OMR generator:", err);
+        console.error("Error fetching dynamics:", err);
       }
     };
     fetchDynamics();

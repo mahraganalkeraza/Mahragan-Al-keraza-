@@ -37,7 +37,6 @@ import {
   Upload,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "../lib/supabaseClient";
 
 
 // Initialize secondary app for auth operations
@@ -82,50 +81,33 @@ export default function UserManagement() {
     }
   };
 
-  const fetchUsersAndChurches = async () => {
-    setIsLoading(true);
-    try {
-      if (!supabase) {
-        throw new Error("سيرفر قاعدة البيانات غير متصل");
-      }
-      
-      const { data: dbChurches, error: err } = await supabase
-        .from('churches')
-        .select('*');
-
-      if (err) throw err;
-
-      const bankData = (dbChurches || []).map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        loginCode: c.password || c.loginCode || "",
-        isEnabled: c.isEnabled !== false,
-        logoUrl: c.logoUrl || "",
-        subscribers: c.subscribers || 0,
-        createdAt: c.createdAt || c.created_at
-      }));
-      setChurchesBank(bankData);
-
-      const usersData: User[] = (dbChurches || []).map((c: any) => ({
-        uid: String(c.id),
-        email: `${encodeURIComponent(c.name).replace(/%/g, "")}@mafk.com`,
-        role: "church",
-        churchName: c.name,
-        isEnabled: c.isEnabled !== false,
-        password: c.password || c.loginCode || "",
-        logoUrl: c.logoUrl || ""
-      }));
+  useEffect(() => {
+    // Sync users (Auth accounts)
+    const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
+      const usersData: User[] = [];
+      snapshot.docs.forEach((doc) => {
+        if (doc.data().role !== "admin") {
+          usersData.push({ uid: doc.id, ...doc.data() } as User);
+        }
+      });
       setUsers(usersData);
       setIsLoading(false);
-    } catch (err: any) {
-      console.error("Error fetching users/churches from Supabase:", err);
-      setError("حدث خطأ أثناء جلب الكنائس من قاعدة البيانات");
+    }, (err) => {
+      console.error("Error fetching users:", err);
+      setError("حدث خطأ أثناء جلب المستخدمين");
       setIsLoading(false);
-    }
-  };
+    });
 
-  useEffect(() => {
-    fetchUsersAndChurches();
+    // Sync churches bank (Dynamic settings)
+    const unsubscribeChurches = onSnapshot(collection(db, "churches"), (snapshot) => {
+      const bankData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setChurchesBank(bankData);
+    });
+
+    return () => {
+      unsubscribeUsers();
+      unsubscribeChurches();
+    };
   }, []);
 
   const handleEdit = (user: User) => {
@@ -192,10 +174,6 @@ export default function UserManagement() {
     setSuccess("");
 
     try {
-      if (!supabase) {
-        throw new Error("سيرفر قاعدة البيانات غير متصل");
-      }
-
       let finalLogoUrl = editForm.logoUrl || "";
 
       // Asset Management: Only convert if a new file is chosen
@@ -204,63 +182,84 @@ export default function UserManagement() {
       }
 
       if (isAdding) {
-        const churchPayload = {
-          name: editForm.churchName,
-          password: editForm.password,
-          loginCode: editForm.password,
+        // Create new identity (Auth + Profile)
+        const emailSlug = encodeURIComponent(editForm.churchName).replace(/%/g, "");
+        const email = `${emailSlug}_${Date.now()}@mafk.com`;
+
+        const userCredential = await createUserWithEmailAndPassword(
+          secondaryAuth,
+          email,
+          editForm.password || ""
+        );
+        const newUid = userCredential.user.uid;
+        await signOut(secondaryAuth);
+
+        const newUser: User = {
+          uid: newUid,
+          email,
+          role: "church",
+          churchName: editForm.churchName,
           isEnabled: true,
+          password: editForm.password,
           logoUrl: finalLogoUrl,
-          subscribers: 0,
-          created_at: new Date().toISOString()
         };
 
-        const { error: insErr } = await supabase
-          .from('churches')
-          .insert([churchPayload]);
+        // Batch writes for data integrity
+        const batch = writeBatch(db);
+        batch.set(doc(db, "users", newUid), newUser);
+        
+        // Sync to dynamic login bank
+        const churchBankRef = doc(collection(db, "churches"));
+        batch.set(churchBankRef, {
+          name: editForm.churchName,
+          loginCode: editForm.password,
+          isEnabled: true,
+          logoUrl: finalLogoUrl
+        });
 
-        if (insErr) throw insErr;
+        await batch.commit();
         setSuccess("تم إنشاء كيان الكنيسة وبنك الدخول بنجاح");
       } else if (isEditing) {
+        // Handle precise update for existing entity
         const oldUser = users.find((u) => u.uid === isEditing);
         if (!oldUser) throw new Error("Entity not found in current context");
 
-        const updatePayload = {
-          name: editForm.churchName,
+        const updatedUser = {
+          ...oldUser,
+          churchName: editForm.churchName,
           password: editForm.password,
-          loginCode: editForm.password,
-          isEnabled: editForm.isEnabled !== false,
-          logoUrl: finalLogoUrl
+          logoUrl: finalLogoUrl,
+          isEnabled: editForm.isEnabled ?? oldUser.isEnabled,
         };
 
-        const { error: updErr } = await supabase
-          .from('churches')
-          .update(updatePayload)
-          .eq('id', isEditing);
+        const batch = writeBatch(db);
+        batch.update(doc(db, "users", isEditing), updatedUser);
 
-        if (updErr) throw updErr;
+        // Relational Integrity: Update associated dynamic bank entries
+        const bankQuery = query(collection(db, "churches"), where("name", "==", oldUser.churchName));
+        const bankSnap = await getDocs(bankQuery);
+        bankSnap.docs.forEach(d => {
+          batch.update(d.ref, {
+            name: editForm.churchName,
+            loginCode: editForm.password,
+            isEnabled: editForm.isEnabled ?? oldUser.isEnabled,
+            logoUrl: finalLogoUrl
+          });
+        });
 
-        // Cascade updates to related tables in Supabase for schema integrity
+        // Cascade updates to all related collections (Integrity Guard)
         if (oldUser.churchName !== editForm.churchName) {
           const collections = ['participants', 'activityTeams', 'results', 'orders', 'inquiries'];
-          for (const tbl of collections) {
-            try {
-              await supabase
-                .from(tbl)
-                .update({ churchName: editForm.churchName })
-                .eq('churchName', oldUser.churchName);
-            } catch (cascadeErr) {
-              console.warn(`Cascade update failed for table ${tbl}:`, cascadeErr);
-            }
+          for (const col of collections) {
+            const relSnap = await getDocs(query(collection(db, col), where('churchName', '==', oldUser.churchName)));
+            relSnap.docs.forEach(d => batch.update(d.ref, { churchName: editForm.churchName }));
           }
         }
 
+        await batch.commit();
         setSuccess("تم تحديث بيانات الكيان والمجلدات المرتبطة بنجاح");
       }
 
-      // Dispatch global refresh event so main screen and registration forms update dynamically
-      window.dispatchEvent(new Event('supabase-metadata-updated'));
-
-      await fetchUsersAndChurches();
       handleCancel();
     } catch (err: any) {
       setError(err.message || "حدث خطأ فني أثناء المعالجة");
@@ -274,28 +273,23 @@ export default function UserManagement() {
    * Precise Deletion with Cleaning Logic
    */
   const handleDelete = async (uid: string) => {
+    const userToDel = users.find(u => u.uid === uid);
+    if (!userToDel) return;
+
     setIsSaving(true);
     try {
-      if (!supabase) {
-        throw new Error("سيرفر قاعدة البيانات غير متصل");
-      }
+      const batch = writeBatch(db);
+      batch.delete(doc(db, "users", uid));
 
-      const { error: delErr } = await supabase
-        .from('churches')
-        .delete()
-        .eq('id', uid);
+      const bankQuery = query(collection(db, "churches"), where("name", "==", userToDel.churchName));
+      const bankSnap = await getDocs(bankQuery);
+      bankSnap.docs.forEach(d => batch.delete(d.ref));
 
-      if (delErr) throw delErr;
-
+      await batch.commit();
       setSuccess("تم حذف الكيان وكافة البيانات المرتبطة بنجاح");
-      
-      // Dispatch global refresh event
-      window.dispatchEvent(new Event('supabase-metadata-updated'));
-
-      await fetchUsersAndChurches();
-    } catch (err: any) {
+    } catch (err) {
       console.error("Deletion error:", err);
-      setError(err.message || "تعذر إتمام عملية الحذف");
+      setError("تعذر إتمام عملية الحذف");
     } finally {
       setIsSaving(false);
       setUserToDelete(null);
@@ -304,29 +298,20 @@ export default function UserManagement() {
 
   const toggleStatus = async (user: User) => {
     try {
-      if (!supabase) {
-        throw new Error("سيرفر قاعدة البيانات غير متصل");
-      }
-
       const newStatus = !user.isEnabled;
+      await updateDoc(doc(db, "users", user.uid), { isEnabled: newStatus });
       
-      const { error: updErr } = await supabase
-        .from('churches')
-        .update({ isEnabled: newStatus })
-        .eq('id', user.uid);
-
-      if (updErr) throw updErr;
-
+      // Sync with churches bank
+      const bankQuery = query(collection(db, "churches"), where("name", "==", user.churchName));
+      const bankSnap = await getDocs(bankQuery);
+      if (!bankSnap.empty) {
+        await updateDoc(doc(db, "churches", bankSnap.docs[0].id), { isEnabled: newStatus });
+      }
       setSuccess(`تم ${newStatus ? 'تفعيل' : 'تعطيل'} الحساب بنجاح`);
-      
-      // Dispatch global refresh event
-      window.dispatchEvent(new Event('supabase-metadata-updated'));
-
-      await fetchUsersAndChurches();
       setTimeout(() => setSuccess(""), 3000);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error toggling status:", err);
-      setError(err.message || "حدث خطأ أثناء تغيير حالة الحساب");
+      setError("حدث خطأ أثناء تغيير حالة الحساب");
     }
   };
 
@@ -334,7 +319,6 @@ export default function UserManagement() {
     u.churchName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     u.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
 
   if (isLoading) {
     return (

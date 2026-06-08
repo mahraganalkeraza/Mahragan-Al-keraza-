@@ -123,42 +123,11 @@ import {
   getCountFromServer
 } from './firebase';
 import { supabase } from './lib/supabaseClient';
-import { autoSeedSupabaseTables } from './utils/supabaseSeeding';
 import { syncEmergencyDataToFirestore, autoSyncSupabaseToFirebase } from './services/emergencySync';
-import { saveGlobalData, fetchAllCombinedData, silentDualFetch, silentDualWrite, submitNewRegistration } from './services/dataService';
 import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
 
 import UserManagement from './components/UserManagement';
-
-// EMERGENCY TOGGLE: Set this to TRUE to bypass Firebase for counters
-const FORCE_SUPABASE_COUNTERS = true;
-
-// Helper function for daily sync (DISABLED due to quota limits)
-async function syncParticipantsToSupabase() {
-  /*
-  try {
-    console.log("Starting daily participants sync...");
-    const snapshot = await getDocs(collection(db, 'participants'));
-    const participants = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    if (supabase && participants.length > 0) {
-      // Upsert to Supabase
-      const { error } = await supabase.from('participants').upsert(participants);
-      
-      if (error) {
-        console.error("Sync failed:", error);
-      } else {
-        console.log("Sync successful!");
-        localStorage.setItem('last_sync_participants', Date.now().toString());
-      }
-    }
-  } catch (error) {
-    console.error("Sync error:", error);
-  }
-  */
-}
-
 import { 
   Inquiry, 
   Order, 
@@ -206,30 +175,6 @@ export const withExponentialBackoff = async <T,>(operation: () => Promise<T>, ma
   }
   throw new Error('Maximum retries exceeded');
 };
-
-function strictCleanText(val: string): string {
-  if (!val) return "";
-  return val
-    .trim()
-    .replace(/\s+/g, "")
-    .replace(/[أإآا]/g, "ا")
-    .replace(/ة/g, "ه")
-    .replace(/ى/g, "ي");
-}
-
-function compareChurchNames(inputName: string, targetName: string): boolean {
-  const normalize = (str: string) => {
-    if (!str) return '';
-    return str
-      .trim()
-      .replace(/[أإآا]/g, 'ا') // توحيد كل أنواع الألف
-      .replace(/ة/g, 'ه')      // توحيد التاء المربوطة
-      .replace(/ى/g, 'ي')      // توحيد الألف المقصورة
-      .replace(/\s+/g, '');    // حذف أي مسافات
-  };
-
-  return normalize(inputName) === normalize(targetName);
-}
 
 function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carouselItems: CarouselItem[], appLogo: string | null }) {
   const [selectedSlide, setSelectedSlide] = useState<any>(null);
@@ -621,24 +566,6 @@ const withStylesCleaned = async <T,>(fn: () => Promise<T>): Promise<T> => {
   }
 };
 
-const LOCAL_STAGES = STAGE_ORDER;
-
-const LOCAL_COMPETITIONS = [
-  'دراسي',
-  'محفوظات',
-  'قبطي مستوى أول',
-  'قبطي مستوى ثاني',
-  'ألحان مستوى أول',
-  'ألحان مستوى ثاني'
-];
-
-const OFFICIAL_LOCAL_CHURCHES = Object.keys(CHURCH_CREDENTIALS).sort().map(name => ({
-  name,
-  email: '',
-  logoUrl: '',
-  isEnabled: true
-}));
-
 const normalizeArabic = (str: string) => {
   if (!str) return '';
   return str.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').trim();
@@ -647,20 +574,6 @@ const normalizeArabic = (str: string) => {
 function AppComponent() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [user, setUser] = useState<any>(null);
-
-  useEffect(() => {
-    const runSync = async () => {
-        const lastSync = localStorage.getItem('last_sync_participants');
-        const now = Date.now();
-        const twentyFourHours = 24 * 60 * 60 * 1000;
-        
-        if (!lastSync || now - parseInt(lastSync) > twentyFourHours) {
-            await syncParticipantsToSupabase();
-        }
-    };
-    
-    runSync();
-  }, []);
 
   const getInitialProfile = () => {
     try {
@@ -671,9 +584,7 @@ function AppComponent() {
   const initialProfile = getInitialProfile();
   
   const [userProfile, setUserProfile] = useState<any>(initialProfile);
-  const [dynamicLevels, setDynamicLevels] = useState<any[]>(
-    LOCAL_STAGES.map((s, idx) => ({ id: String(idx + 1), name: s, comps: LOCAL_COMPETITIONS }))
-  );
+  const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [hymnStages, setHymnStages] = useState<any[]>([]);
 
@@ -694,8 +605,16 @@ function AppComponent() {
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
   useEffect(() => {
-    // Permanently disable quota banner as we are using Supabase as primary
-    setIsQuotaExceeded(false);
+    const handleQuotaExceeded = () => {
+      setIsQuotaExceeded(true);
+    };
+    window.addEventListener('firestore-quota-exceeded', handleQuotaExceeded);
+    if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
+      setIsQuotaExceeded(true);
+    }
+    return () => {
+      window.removeEventListener('firestore-quota-exceeded', handleQuotaExceeded);
+    };
   }, []);
 
   useEffect(() => {
@@ -709,28 +628,6 @@ function AppComponent() {
       autoSyncSupabaseToFirebase();
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    async function checkSupabaseConnection() {
-      if (!supabase) {
-        console.warn("⚠️ Supabase client is not initialized (check URL or Key environmental variables).");
-        return;
-      }
-      try {
-        // Attempt a lightweight dummy query to the 'churches' table
-        const { error } = await supabase.from('churches').select('count', { count: 'exact', head: true });
-        
-        if (error) {
-          console.error("❌ Supabase Connection Failed:", error.message);
-        } else {
-          console.log("✅ Supabase Connection Status: 100% OPERATIONAL & CONNECTED!");
-        }
-      } catch (err) {
-        console.error("❌ Supabase Crash during test:", err);
-      }
-    }
-    checkSupabaseConnection();
   }, []);
   
   useEffect(() => {
@@ -795,127 +692,96 @@ function AppComponent() {
   }, [userProfile?.logoUrl, appLogo]);
 
   useEffect(() => {
-    /* 
-    let unsubAppConfig: (() => void) | null = null;
-    try {
-      unsubAppConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          setActiveYear(data.activeYear || CURRENT_YEAR);
-          if (data.appLogo) {
-            localStorage.setItem('appLogoCache', data.appLogo);
-            setAppLogo(data.appLogo);
-          } else {
-            localStorage.removeItem('appLogoCache');
-            setAppLogo(null);
-          }
+    const unsubAppConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setActiveYear(data.activeYear || CURRENT_YEAR);
+        if (data.appLogo) {
+          localStorage.setItem('appLogoCache', data.appLogo);
+          setAppLogo(data.appLogo);
+        } else {
+          localStorage.removeItem('appLogoCache');
+          setAppLogo(null);
         }
-      }, (error) => {
-        console.warn("Bypassing app_config Firestore subscription due to read quota limit.");
-        const cachedLogo = localStorage.getItem('appLogoCache');
-        if (cachedLogo) setAppLogo(cachedLogo);
-      });
-    } catch (e) {
-      console.warn("Could not establish app_config Firestore subscription:", e);
-    }
-    */
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
+
     const fetchCachedMetadata = async () => {
-      // 100% dynamic loading from Supabase, completely bypassing Firestore of Firebase due to quota limits
-      try {
-        if (supabase) {
-          // Check/seed tables if empty
-          await autoSeedSupabaseTables();
-        }
-
-        let churchesList = OFFICIAL_LOCAL_CHURCHES;
-        let stagesList = LOCAL_STAGES;
-        let competitionsList = LOCAL_COMPETITIONS;
-
-        if (supabase) {
+      const now = new Date().getTime();
+      const CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
+      
+      const loadCachedOrFetch = async (key: string, fetchFn: () => Promise<any>) => {
+        const cachedStr = localStorage.getItem(`cache_${key}`);
+        if (cachedStr) {
           try {
-            console.log("[Supabase Sync] Fetching dynamic metadata from Supabase database...");
-            
-            // Fetch churches
-            const { data: dbChurches, error: chError } = await supabase
-              .from('churches')
-              .select('name');
-              
-            if (dbChurches && dbChurches.length > 0 && !chError) {
-              const uniqueChurchesMap = new Map();
-              dbChurches.forEach((c: any) => {
-                if (!uniqueChurchesMap.has(c.name)) {
-                  uniqueChurchesMap.set(c.name, {
-                    name: c.name,
-                    email: '',
-                    logoUrl: '',
-                    isEnabled: true
-                  });
-                }
-              });
-              churchesList = Array.from(uniqueChurchesMap.values());
-              console.log("[Supabase Sync] Successfully loaded", churchesList.length, "unique churches from Supabase.");
-            } else {
-              console.warn("[Supabase Sync] Churches table was empty, utilizing pre-injected offline fallback.");
+            const cached = JSON.parse(cachedStr);
+            if (now - cached.timestamp < CACHE_EXPIRY) {
+              return cached.data;
             }
-
-            // Fetch stages
-            const { data: dbStages, error: stgError } = await supabase
-              .from('stages')
-              .select('name');
-              
-            if (dbStages && dbStages.length > 0 && !stgError) {
-              stagesList = dbStages.map((s: any) => s.name);
-              console.log("[Supabase Sync] Successfully loaded", dbStages.length, "stages from Supabase.");
-            } else {
-              console.warn("[Supabase Sync] Stages table was empty, utilizing pre-injected offline fallback.");
-            }
-
-            // Fetch competitions
-            const { data: dbComps, error: compError } = await supabase
-              .from('competitions')
-              .select('name');
-              
-            if (dbComps && dbComps.length > 0 && !compError) {
-              competitionsList = dbComps.map((c: any) => c.name);
-              console.log("[Supabase Sync] Successfully loaded", dbComps.length, "competitions from Supabase.");
-            } else {
-              console.warn("[Supabase Sync] Competitions table was empty, utilizing pre-injected offline fallback.");
-            }
-          } catch (supErr) {
-            console.error("[Supabase Sync] Error during dynamic Supabase fetch, using offline fallbacks:", supErr);
-          }
+          } catch (e) {}
         }
+        const data = await fetchFn();
+        localStorage.setItem(`cache_${key}`, JSON.stringify({ timestamp: now, data }));
+        return data;
+      };
 
-        setPublicChurches(churchesList);
-        setDynamicLevels(stagesList.map((s, idx) => ({ id: String(idx + 1), name: s, comps: competitionsList })));
-        setActivityStages([]);
-        setHymnStages([]);
+      try {
+        const churchesData = await loadCachedOrFetch('churches', async () => {
+          const snap = await getDocs(collection(db, 'churches'));
+          return snap.docs
+            .map(d => ({ 
+              name: d.data().name, 
+              email: '', 
+              isEnabled: d.data().isEnabled !== false,
+              logoUrl: d.data().logoUrl || ''
+            }))
+            .filter(c => c.isEnabled);
+        });
+        setPublicChurches(churchesData);
+
+        const levelsData = await loadCachedOrFetch('levels', async () => {
+          const snap = await getDocs(collection(db, 'levels'));
+          return snap.docs.map(d => ({ 
+            name: d.data().name, 
+            comps: d.data().allowedCompetitions || [] 
+          }));
+        });
+        setDynamicLevels(levelsData.sort((a: any, b: any) => sortStages(a.name, b.name)));
+
+        const activityStagesData = await loadCachedOrFetch('activityStages', async () => {
+          const snap = await getDocs(collection(db, 'activityStages'));
+          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        });
+        setActivityStages(activityStagesData);
+
+        const hymnStagesData = await loadCachedOrFetch('hymnStages', async () => {
+          const snap = await getDocs(collection(db, 'hymnStages'));
+          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        });
+        setHymnStages(hymnStagesData);
+
+        const validationData = await loadCachedOrFetch('validation', async () => {
+          const snap = await getDoc(doc(db, 'settings', 'validation'));
+          return snap.exists() ? snap.data() : { templates: [], ageMappings: [], rules: { nameLength: true, genderMatch: false, mandatoryRows: true } };
+        });
         setValidationSettings({
-          templates: [],
-          ageMappings: [],
-          rules: { nameLength: true, genderMatch: false, mandatoryRows: true }
+          templates: validationData.templates || [],
+          ageMappings: validationData.ageMappings || [],
+          rules: validationData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
         });
       } catch (e) {
-        console.warn("[Metadata Catch Bypass] Error setting metadata:", e);
+        console.error("Error fetching cached metadata:", e);
       }
     };
 
     fetchCachedMetadata();
 
-    const handleUpdateEvent = () => {
-      console.log("[Supabase Sync] Dynamic metadata update event received. Reloading...");
-      fetchCachedMetadata();
-    };
-    window.addEventListener('supabase-metadata-updated', handleUpdateEvent);
-
     return () => {
-      // unsubAppConfig && unsubAppConfig();
-      window.removeEventListener('supabase-metadata-updated', handleUpdateEvent);
+      unsubAppConfig();
     };
   }, []);
 
   useEffect(() => {
-    /*
     if (!isLoggedIn || userRole !== 'church') return;
 
     const newsCollection = collection(db, 'news');
@@ -931,7 +797,6 @@ function AppComponent() {
     }, (error) => handleFirestoreError(error, OperationType.GET, 'news'));
 
     return () => unsubscribe();
-    */
   }, [isLoggedIn, userRole]);
   const [loginChurch, setLoginChurch] = useState('');
   const [loginCode, setLoginCode] = useState('');
@@ -1017,7 +882,7 @@ function AppComponent() {
   const [examLinks, setExamLinks] = useState<Record<string, string>>({});
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
-  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>(OFFICIAL_LOCAL_CHURCHES);
+  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxImages, setLightboxImages] = useState<{src: string}[]>([]);
@@ -1098,13 +963,15 @@ function AppComponent() {
     const delayDebounceId = setTimeout(async () => {
       setIsCheckingParticipantDuplicate(true);
       try {
-        const matchedDocs = await silentDualFetch('participants', [
+        const q = query(
+          collection(db, 'participants'),
           where('churchName', '==', churchName),
           where('name', '==', trimmedName),
           limit(1)
-        ]);
-        if (matchedDocs.length > 0) {
-          const matchedDoc = matchedDocs[0];
+        );
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          const matchedDoc = querySnapshot.docs[0].data();
           const pStage = matchedDoc.stage || 'غير محددة';
           setParticipantDuplicateWarning(
             `تنبيه: يوجد مشترك مسجل بالفعل بنفس هذا الاسم في كنيستك للمرحلة: ${pStage}. يرجى توخي الحذر والتأكد من الاسم ثلاثياً لتجنب التكرار.`
@@ -1515,77 +1382,66 @@ function AppComponent() {
   }, [activeSection]);
 
   useEffect(() => {
+    let unsubscribeProfile: (() => void) | null = null;
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        console.log("Firebase Auth User active. Loading profile from cache or dynamic reconstruction to bypass Firestore read quota.");
-        
-        const cachedProfile = getInitialProfile();
-        if (cachedProfile && (cachedProfile.uid === firebaseUser.uid || cachedProfile.email === firebaseUser.email)) {
-          setUserProfile(cachedProfile);
-          setUserRole(cachedProfile.role);
-          setChurchName(cachedProfile.churchName || '');
-          setLocation(cachedProfile.country || '');
-          setDashboardBg(cachedProfile.dashboardBg || '');
-          setIsLoggedIn(true);
-          setIsAuthReady(true);
-        } else {
-          // Reconstruct profile dynamically from email
-          let role = 'church';
-          let churchNameFound = 'كنيسة محلية';
-          if (firebaseUser.email === 'admin@mafk.com' || firebaseUser.email === 'mahraganalkeraza7esoyam@gmail.com') {
-            role = 'admin';
-            churchNameFound = 'اللجنة المركزية منطقة18';
-          } else if (firebaseUser.email) {
-            for (const name of Object.keys(CHURCH_CREDENTIALS)) {
-              const slug = encodeURIComponent(name).replace(/%/g, '');
-              const email = `${slug}_2026@mafk.com`;
-              if (email === firebaseUser.email) {
-                churchNameFound = name;
-                break;
-              }
+        // Use real-time listener for current user profile to enforce blocking instantly
+        unsubscribeProfile = onSnapshot(doc(db, 'users', firebaseUser.uid), async (userDoc) => {
+          if (userDoc.exists()) {
+            const profile = userDoc.data();
+            if (profile.isEnabled === false) {
+              await signOut(auth);
+              setNotification("تم تعطيل حسابك بقرار من الإدارة. يرجى التواصل مع المسئول.");
+              setIsLoggedIn(false);
+              setUser(null);
+              setUserProfile(null);
+              localStorage.removeItem('userProfileCache');
+              setChurchName('');
+              return;
             }
+            setUserProfile(profile);
+            localStorage.setItem('userProfileCache', JSON.stringify(profile));
+            setUserRole(profile.role);
+            setChurchName(profile.churchName || '');
+            setLocation(profile.country || '');
+            setDashboardBg(profile.dashboardBg || '');
+            setIsLoggedIn(true);
+            setIsAuthReady(true);
+          } else if (firebaseUser.email === 'admin@mafk.com' || firebaseUser.email === 'mahraganalkeraza7esoyam@gmail.com') {
+            setUserRole('admin');
+            setChurchName(firebaseUser.displayName || 'اللجنة المركزية منطقة18');
+            setIsLoggedIn(true);
+            setIsAuthReady(true);
+          } else {
+            setIsLoggedIn(true);
+            if (firebaseUser.email?.endsWith('@mafk.com')) {
+              setUserRole('church');
+            }
+            setIsAuthReady(true);
           }
-          
-          const reconstructed = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            role: role,
-            churchName: churchNameFound,
-            dashboardBg: ''
-          };
-          setUserProfile(reconstructed);
-          localStorage.setItem('userProfileCache', JSON.stringify(reconstructed));
-          setUserRole(role as any);
-          setChurchName(churchNameFound);
-          setIsLoggedIn(true);
+        }, (error) => {
+          console.error("Error watching user profile:", error);
           setIsAuthReady(true);
-        }
+        });
       } else {
-        // Fallback check if cached profile exists (e.g. offline/Supabase authenticated)
-        const cachedProfile = getInitialProfile();
-        if (cachedProfile) {
-          setUser(null);
-          setUserProfile(cachedProfile);
-          setUserRole(cachedProfile.role);
-          setChurchName(cachedProfile.churchName || '');
-          setDashboardBg(cachedProfile.dashboardBg || '');
-          setIsLoggedIn(true);
-          setIsAuthReady(true);
-        } else {
-          setUser(null);
-          setUserProfile(null);
-          localStorage.removeItem('userProfileCache');
-          setIsLoggedIn(false);
-          setUserRole('guest');
-          setChurchName('');
-          setDashboardBg('');
-          setIsAuthReady(true);
+        setUser(null);
+        setUserProfile(null);
+        localStorage.removeItem('userProfileCache');
+        setIsLoggedIn(false);
+        setUserRole('guest');
+        setChurchName('');
+        setDashboardBg('');
+        setIsAuthReady(true);
+        if (unsubscribeProfile) {
+          unsubscribeProfile();
+          unsubscribeProfile = null;
         }
       }
     });
     return () => {
       unsubscribeAuth();
+      if (unsubscribeProfile) unsubscribeProfile();
     };
   }, []);
 
@@ -1593,12 +1449,13 @@ function AppComponent() {
   useEffect(() => {
     async function fetchData() {
         try {
-            const schedulesData = await silentDualFetch('schedules', [where('year', '==', activeYear)]);
-            setSchedules(schedulesData as Schedule[]);
+            const schedulesSnap = await getDocs(query(collection(db, 'schedules'), where('year', '==', activeYear)));
+            setSchedules(schedulesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Schedule)));
             
-            const examLinksData = await silentDualFetch('examLinks', [where('year', '==', activeYear)]);
+            const examLinksSnap = await getDocs(query(collection(db, 'examLinks'), where('year', '==', activeYear)));
             const links: Record<string, string> = {};
-            examLinksData.forEach((data: any) => {
+            examLinksSnap.docs.forEach(doc => {
+                const data = doc.data() as ExamLink;
                 links[data.stage] = data.url;
             });
             setExamLinks(links);
@@ -1617,27 +1474,27 @@ function AppComponent() {
 
     async function fetchStaticData() {
         try {
-            const newsData = await silentDualFetch('news', [where('year', '==', activeYear), orderBy('timestamp', 'desc'), limit(10)]);
-            setNews(newsData as News[]);
+            const newsSnap = await getDocs(query(collection(db, 'news'), where('year', '==', activeYear), orderBy('timestamp', 'desc'), limit(10)));
+            setNews(newsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as News)));
             
-            const carouselData = await silentDualFetch('carousel', [where('year', '==', activeYear)]);
-            const items = carouselData as CarouselItem[];
+            const carouselSnap = await getDocs(query(collection(db, 'carousel'), where('year', '==', activeYear)));
+            const items = carouselSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CarouselItem));
             setCarouselItems(items.sort((a, b) => (a.order || 0) - (b.order || 0)));
             
-            const calculatorSettingsData = await silentDualFetch('calculator_settings', [where('year', '==', activeYear)]);
-            setCalculatorSettings(calculatorSettingsData);
+            const calculatorSettingsSnap = await getDocs(query(collection(db, 'calculator_settings'), where('year', '==', activeYear)));
+            setCalculatorSettings(calculatorSettingsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
             setIsCalculatorLoading(false);
             
-            // Using silentDualFetch for settings instead of getDoc
-            const settingsData = await silentDualFetch('settings');
-            const footerDoc = settingsData.find((doc: any) => doc.id === 'footer');
-            if (footerDoc) setSiteSettings(footerDoc as SiteSettings);
+            const footerSnap = await getDoc(doc(db, 'settings', 'footer'));
+            if (footerSnap.exists()) setSiteSettings(footerSnap.data() as SiteSettings);
             
-            const aboutDoc = settingsData.find((doc: any) => doc.id === 'about');
-            if (aboutDoc) setAboutContent(aboutDoc as AboutContent);
+            const aboutSnap = await getDoc(doc(db, 'settings', 'about'));
+            if (aboutSnap.exists()) setAboutContent(aboutSnap.data() as AboutContent);
             
-            const examConfigDoc = settingsData.find((doc: any) => doc.id === 'exam_config');
-            // ... update exam config ...
+            const examConfigSnap = await getDoc(doc(db, 'settings', 'exam_config'));
+            if (examConfigSnap.exists()) {
+                // ... update exam config ...
+            }
         } catch (error) {
             handleFirestoreError(error, OperationType.LIST, 'static_data');
         }
@@ -1648,37 +1505,23 @@ function AppComponent() {
   const updateChurchSubscribers = async (cName: string) => {
     if (!cName) return;
     try {
-      let count = 0;
-      if (supabase) {
-        try {
-          const { count: rawCount, error } = await supabase
-            .from('participants')
-            .select('*', { count: 'exact', head: true })
-            .eq('churchName', cName)
-            .eq('year', activeYear);
-          if (!error && rawCount != null) {
-            count = rawCount;
-          }
-        } catch (e) {}
-      } else {
-        const pDocs = await silentDualFetch('participants', [
-          where('churchName', '==', cName),
-          where('year', '==', activeYear)
-        ]);
-        count = pDocs.length;
-      }
+      // 1. Query participants count for this church and year
+      const participantsQuery = query(
+        collection(db, 'participants'),
+        where('churchName', '==', cName),
+        where('year', '==', activeYear)
+      );
+      const snap = await getCountFromServer(participantsQuery);
+      const count = snap.data().count;
 
       // 2. Load the church document from 'churches' collection and update subscribers count
-      const churchDocs = await silentDualFetch('churches', [where('name', '==', cName)]);
-      if (churchDocs.length > 0) {
-        const churchDoc = churchDocs[0];
-        try {
-          await updateDoc(doc(db, 'churches', churchDoc.id), {
-            subscribers: count
-          });
-        } catch (updateErr) {
-          console.warn('Error updating church subscribers count in Firebase:', updateErr);
-        }
+      const churchQuery = query(collection(db, 'churches'), where('name', '==', cName));
+      const churchSnap = await getDocs(churchQuery);
+      if (!churchSnap.empty) {
+        const churchDoc = churchSnap.docs[0];
+        await updateDoc(doc(db, 'churches', churchDoc.id), {
+          subscribers: count
+        });
       }
     } catch (err) {
       console.error('Error updating church subscribers:', err);
@@ -1687,15 +1530,45 @@ function AppComponent() {
 
   useEffect(() => {
     if (userRole === 'admin') {
-      const loadAdminInitialData = async () => {
-        try {
-          const docs = await silentDualFetch('users');
-          setAllUsers(docs);
-        } catch (e) {
-          console.warn("Error fetching initial users for admin:", e);
+      // 1. solicitar permisos de notificación al admin (Admin Permission & Initialization)
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (window.Notification.permission === 'default') {
+          window.Notification.requestPermission();
         }
+      }
+
+      const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+        setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'users'));
+
+      // 2. Lightweight real-time listener regarding subscriber increments on churches collection
+      const unsubChurchesNotifier = onSnapshot(collection(db, 'churches'), (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          const data = change.doc.data();
+          const churchNameVal = data.name;
+          if (!churchNameVal) return;
+          const currentSubscribers = data.subscribers || 0;
+          
+          const previousSubscribers = previousSubscribersRef.current[churchNameVal] || 0;
+          
+          // The Trigger Rule: transition from exactly 0 to >= 1
+          if (previousSubscribers === 0 && currentSubscribers >= 1) {
+            if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
+              new window.Notification("🔔 كنيسة جديدة بدأت التسجيل!", {
+                body: `كنيسة (${churchNameVal}) بدأت الآن في تسجيل مخدوميها في المهرجان.`,
+                icon: "/logo.png"
+              });
+            }
+          }
+          
+          previousSubscribersRef.current[churchNameVal] = currentSubscribers;
+        });
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'churches'));
+
+      return () => {
+        unsubUsers();
+        unsubChurchesNotifier();
       };
-      loadAdminInitialData();
     }
   }, [userRole]);
 
@@ -1760,7 +1633,7 @@ function AppComponent() {
         });
         setEditingNews(null);
       } else {
-        await saveGlobalData('news', {
+        await addDoc(collection(db, 'news'), {
           title: newNews.title,
           content: newNews.content,
           imageUrl,
@@ -1787,7 +1660,7 @@ function AppComponent() {
         await updateDoc(doc(db, 'schedules', editingSchedule.id), { ...newSchedule, year: activeYear });
         setEditingSchedule(null);
       } else {
-        await saveGlobalData('schedules', { ...newSchedule, year: activeYear });
+        await addDoc(collection(db, 'schedules'), { ...newSchedule, year: activeYear });
       }
       setNewSchedule({ examName: 'دراسي ومحفوظات وقبطي', date: '', time: '', location: '' });
       alert('تم حفظ الجدول بنجاح!');
@@ -1822,7 +1695,7 @@ function AppComponent() {
         });
         setEditingCarousel(null);
       } else {
-        await saveGlobalData('carousel', {
+        await addDoc(collection(db, 'carousel'), {
           title: newCarousel.title,
           url,
           order: newCarousel.order,
@@ -2296,16 +2169,12 @@ function AppComponent() {
 
   const handleUpdateExamLink = async (stage: string, url: string) => {
     try {
-      const docs = await silentDualFetch('examLinks', [where('stage', '==', stage), where('year', '==', activeYear)]);
-      if (docs.length === 0) {
-        await saveGlobalData('examLinks', { stage, url, year: activeYear });
+      const q = query(collection(db, 'examLinks'), where('stage', '==', stage), where('year', '==', activeYear));
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) {
+        await addDoc(collection(db, 'examLinks'), { stage, url, year: activeYear });
       } else {
-        try {
-          await updateDoc(doc(db, 'examLinks', docs[0].id), { url, year: activeYear });
-        } catch (updateErr) {
-          console.warn("Firebase update failed, using saveGlobalData fallback write:", updateErr);
-          await saveGlobalData('examLinks', { id: docs[0].id, stage, url, year: activeYear });
-        }
+        await updateDoc(doc(db, 'examLinks', snapshot.docs[0].id), { url, year: activeYear });
       }
       alert('تم تحديث الرابط بنجاح');
     } catch (error) {
@@ -2501,9 +2370,13 @@ function AppComponent() {
     setDuplicateRecords([]);
     
     try {
-      const parts = await silentDualFetch('participants', [
+      const q = query(
+        collection(db, 'participants'),
         where('year', '==', activeYear)
-      ]) as Participant[];
+      );
+      
+      const snap = await getDocs(q);
+      const parts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
       
       const duplicatesMap: Record<string, Participant[]> = {};
       
@@ -2597,45 +2470,17 @@ function AppComponent() {
       
       constraints.push(orderBy('name'));
       
-      let fetchedCount: number | null = null;
       if (isFirst || (!isFirst && !isNext)) {
-        console.log("⚠️ Fetching stats ONLY from Supabase (participants) - Raw Count...");
-        try {
-          if (supabase) {
-            let queryBuilder = supabase.from('participants').select('*', { count: 'exact', head: true });
-            queryBuilder = queryBuilder.eq('year', activeYear);
-            if (userRole !== 'admin') {
-              queryBuilder = queryBuilder.eq('churchName', churchName);
-            } else if (partChurchFilter !== 'الكل') {
-              queryBuilder = queryBuilder.eq('churchName', partChurchFilter);
-            }
-            if (partStageFilter !== 'الكل') {
-              queryBuilder = queryBuilder.eq('stage', partStageFilter);
-            }
-            
-            const { count, error } = await queryBuilder;
-            if (error) {
-              console.error("Supabase Count Fetch Error:", error.message);
-            }
-            if (!error && count != null) {
-              fetchedCount = count;
-            }
-          }
-        } catch (e) {
-          console.error("Supabase count fallback failed for participants:", e);
-        }
+        getCountFromServer(query(baseQueryQ, ...constraints)).then(snap => {
+          setTotalParticipantsCount(snap.data().count);
+        }).catch(err => console.error("Firestore Core Error: ", err.message));
       }
       
-      const newList = await silentDualFetch('participants', constraints) as Participant[];
+      const q = query(baseQueryQ, ...constraints);
+      const snap = await getDocs(q);
+      
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
       setParticipants(newList);
-      
-      if (isFirst || (!isFirst && !isNext)) {
-        if (fetchedCount !== null && fetchedCount > 0) {
-          setTotalParticipantsCount(fetchedCount);
-        } else {
-          setTotalParticipantsCount(newList ? newList.length : 0);
-        }
-      }
       
       if (isFirst) setParticipantPageCount(1);
       
@@ -2685,25 +2530,8 @@ function AppComponent() {
         ? query(collection(db, 'orders'), where('year', '==', activeYear)) 
         : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
       
-      let fetchedCount: number | null = null;
       if (isFirst || (!isFirst && !isNext)) {
-        console.log("⚠️ Fetching stats ONLY from Supabase (orders) - Raw Count...");
-        try {
-          if (supabase) {
-            let queryBuilder = supabase.from('orders').select('*', { count: 'exact', head: true });
-            queryBuilder = queryBuilder.eq('year', activeYear);
-            if (userRole !== 'admin') {
-              queryBuilder = queryBuilder.eq('churchName', churchName);
-            }
-            const { count, error } = await queryBuilder;
-            if (error) console.error("Supabase Order Count Error:", error.message);
-            if (!error && count != null) {
-              fetchedCount = count;
-            }
-          }
-        } catch (e) {
-          console.error("Supabase count fallback failed for orders:", e);
-        }
+        getCountFromServer(baseQuery).then(snap => setTotalOrdersCount(snap.data().count)).catch(err => console.error("Firestore Core Error: ", err.message));
       }
 
       const constraints: any[] = [orderBy('timestamp', 'desc')];
@@ -2712,22 +2540,13 @@ function AppComponent() {
         constraints.push(startAfter(lastOrderDoc));
       }
       
-      const queryConstraints = [
-        where('year', '==', activeYear),
-        ...(userRole !== 'admin' ? [where('churchName', '==', churchName)] : []),
-        ...constraints
-      ];
-      const newList = await silentDualFetch('orders', queryConstraints) as Order[];
-      setOrders(newList);
+      const q = query(baseQuery, ...constraints);
+      const snap = await getDocs(q);
       
-      if (isFirst || (!isFirst && !isNext)) {
-        if (fetchedCount !== null && fetchedCount > 0) {
-          setTotalOrdersCount(fetchedCount);
-        } else {
-          setTotalOrdersCount(newList ? newList.length : 0);
-        }
-      }
-      setIsOrdersEnd(true);
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+      setOrders(newList);
+      setLastOrderDoc(snap.docs[snap.docs.length - 1]);
+      setIsOrdersEnd(snap.docs.length < 20);
       
       if (isFirst) setOrderPageCount(1);
       else if (isNext) setOrderPageCount(prev => prev + 1);
@@ -2743,6 +2562,7 @@ function AppComponent() {
     if (!isLoggedIn) return;
     setIsOnlineResultsLoading(true);
     try {
+      const baseQuery = collection(db, 'online_results');
       const constraints: any[] = [where('year', '==', activeYear), orderBy('timestamp', 'desc')];
       
       if (userRole === 'church') {
@@ -2753,9 +2573,13 @@ function AppComponent() {
         constraints.push(startAfter(lastOnlineResultDoc));
       }
       
-      const newList = await silentDualFetch('online_results', constraints);
+      const q = query(baseQuery, ...constraints);
+      const snap = await getDocs(q);
+      
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setOnlineResults(newList);
-      setIsOnlineResultsEnd(true);
+      setLastOnlineResultDoc(snap.docs[snap.docs.length - 1]);
+      setIsOnlineResultsEnd(snap.docs.length < 20);
       
       if (isFirst) setOnlineResultPageCount(1);
       else if (isNext) setOnlineResultPageCount(prev => prev + 1);
@@ -2798,47 +2622,23 @@ function AppComponent() {
         countConstraints.unshift(where('studentName', '>=', search), where('studentName', '<=', search + '\uf8ff'));
       }
       
-      let fetchedCount: number | null = null;
       if (isFirst || (!isFirst && !isNext)) {
-        console.log("⚠️ Fetching stats ONLY from Supabase (results) - Raw Count...");
-        try {
-          if (supabase) {
-            let queryBuilder = supabase.from('results').select('*', { count: 'exact', head: true });
-            queryBuilder = queryBuilder.eq('year', activeYear);
-            if (userRole !== 'admin') {
-              queryBuilder = queryBuilder.eq('churchName', churchName);
-            } else if (globalChurchFilter !== 'الكل') {
-              queryBuilder = queryBuilder.eq('churchName', globalChurchFilter);
-            }
-            if (globalStageFilter !== 'الكل') {
-              queryBuilder = queryBuilder.eq('stage', globalStageFilter);
-            }
-            const { count, error } = await queryBuilder;
-            if (error) console.error("Supabase Results Count Error:", error.message);
-            if (!error && count != null) {
-              fetchedCount = count;
-            }
-          }
-        } catch (e) {
-          console.error("Supabase count fallback failed for results:", e);
-        }
+        getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
+          setTotalResultsCount(snap.data().count);
+        }).catch(err => console.error("Firestore Core Error: ", err.message));
       }
 
       if (!isFirst && isNext && lastResultDoc) {
         constraints.push(startAfter(lastResultDoc));
       }
       
-      const newList = await silentDualFetch('results', constraints) as Result[];
-      setResults(newList);
+      const q = query(baseQueryQ, ...constraints);
+      const snap = await getDocs(q);
       
-      if (isFirst || (!isFirst && !isNext)) {
-        if (fetchedCount !== null && fetchedCount > 0) {
-          setTotalResultsCount(fetchedCount);
-        } else {
-          setTotalResultsCount(newList ? newList.length : 0);
-        }
-      }
-      setIsResultsEnd(true);
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Result));
+      setResults(newList);
+      setLastResultDoc(snap.docs[snap.docs.length - 1]);
+      setIsResultsEnd(snap.docs.length < 20);
       
       if (isFirst) setResultPageCount(1);
       else if (isNext) setResultPageCount(prev => prev + 1);
@@ -2873,44 +2673,23 @@ function AppComponent() {
         countConstraints.unshift(where('teamName', '>=', search), where('teamName', '<=', search + '\uf8ff'));
       }
       
-      let fetchedCount: number | null = null;
       if (isFirst || (!isFirst && !isNext)) {
-        console.log("⚠️ Fetching stats ONLY from Supabase (teams) - Raw Count...");
-        try {
-          if (supabase) {
-            let queryBuilder = supabase.from('activityTeams').select('*', { count: 'exact', head: true });
-            queryBuilder = queryBuilder.eq('year', activeYear);
-            if (userRole !== 'admin') {
-              queryBuilder = queryBuilder.eq('churchName', churchName);
-            } else if (globalChurchFilter !== 'الكل') {
-              queryBuilder = queryBuilder.eq('churchName', globalChurchFilter);
-            }
-            const { count, error } = await queryBuilder;
-            if (error) console.error("Supabase ActivityTeams Count Error:", error.message);
-            if (!error && count != null) {
-              fetchedCount = count;
-            }
-          }
-        } catch (e) {
-          console.error("Supabase count fallback failed for teams:", e);
-        }
+        getCountFromServer(query(baseQueryQ, ...countConstraints)).then(snap => {
+          setTotalTeamsCount(snap.data().count);
+        }).catch(err => console.error("Firestore Core Error: ", err.message));
       }
 
       if (!isFirst && isNext && lastTeamDoc) {
         constraints.push(startAfter(lastTeamDoc));
       }
       
-      const newList = await silentDualFetch('activityTeams', constraints) as ActivityTeam[];
-      setActivityTeams(newList);
+      const q = query(baseQueryQ, ...constraints);
+      const snap = await getDocs(q);
       
-      if (isFirst || (!isFirst && !isNext)) {
-        if (fetchedCount !== null && fetchedCount > 0) {
-          setTotalTeamsCount(fetchedCount);
-        } else {
-          setTotalTeamsCount(newList ? newList.length : 0);
-        }
-      }
-      setIsTeamsEnd(true);
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityTeam));
+      setActivityTeams(newList);
+      setLastTeamDoc(snap.docs[snap.docs.length - 1]);
+      setIsTeamsEnd(snap.docs.length < 20);
       
       if (isFirst) setTeamPageCount(1);
       else if (isNext) setTeamPageCount(prev => prev + 1);
@@ -2933,11 +2712,6 @@ function AppComponent() {
     }
   }, [adminActiveTab, activeSection, isLoggedIn, activeYear]);
 
-  function normalizeArabicText(text: string) {
-    if (!text) return '';
-    return text.trim().replace(/\s+/g, '').replace(/[أإآا]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي');
-  }
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -2949,133 +2723,124 @@ function AppComponent() {
       return;
     }
 
-    const cleanInputCode = loginCode.trim();
-    const cleanInputName = normalizeArabicText(loginChurch);
+    let email = '';
+    let password = '';
+    let role: 'admin' | 'church' = 'church';
+    let targetChurch = loginChurch;
+
+    const code = loginCode.trim();
 
     if (loginChurch === 'مسئول') {
-      if (cleanInputCode !== ADMIN_PASSWORD) {
+      if (code !== ADMIN_PASSWORD) {
         setLoginError('كود المسئول غير صحيح');
         setIsLoading(false);
         return;
       }
+      email = 'admin@mafk.com';
+      password = ADMIN_PASSWORD;
+      role = 'admin';
+      targetChurch = 'اللجنة المركزية منطقة18';
+    } else {
       try {
-        let profileData = {
-          uid: 'admin_local_id',
-          email: 'admin@mafk.com',
-          role: 'admin',
-          churchName: 'اللجنة المركزية منطقة18',
-          dashboardBg: ''
-        };
-        try {
-          const userCredential = await signInWithEmailAndPassword(auth, 'admin@mafk.com', ADMIN_PASSWORD);
-          profileData.uid = userCredential.user.uid;
-        } catch (e) {
-          console.warn("Firebase admin sign-in failed, continuing with offline session:", e);
+        const { data: church, error } = await supabase
+          .from('churches')
+          .select('*')
+          .eq('name', loginChurch.trim())
+          .single();
+
+        if (error || !church) {
+          setLoginError('الكنيسة غير مسجلة بالنظام');
+          setIsLoading(false);
+          return;
         }
-        setUserRole('admin');
-        setChurchName('اللجنة المركزية منطقة18');
-        setUserProfile(profileData);
-        setIsLoggedIn(true);
-      } catch (err: any) {
-        console.error("Login error:", err);
-        setLoginError("حدث خطأ أثناء تسجيل الدخول");
-      } finally {
+
+        const storedPassword = church.password.replace(/\s+/g, '');
+        const userPassword = code.replace(/\s+/g, '');
+
+        if (storedPassword !== userPassword) {
+          setLoginError('كلمة المرور غير صحيحة');
+          setIsLoading(false);
+          return;
+        }
+        
+        const slug = encodeURIComponent(loginChurch).replace(/%/g, '');
+        email = `${slug}_2026@mafk.com`;
+        password = code;
+        role = 'church';
+      } catch (err) {
+        console.error('Error verifying church code:', err);
+        setLoginError('تعذر التحقق من البيانات');
         setIsLoading(false);
+        return;
       }
-      return;
     }
 
     try {
-      console.log("Authenticating strictly against Supabase...");
-
-      let authenticatedChurchName = "";
-      let correctCode = "";
-
-      if (supabase) {
-        console.log("[Supabase Auth] Querying churches from Supabase...");
-        const { data: dbChurches, error: err } = await supabase.from('churches').select('*');
-        if (err) throw err;
-
-        let matchedChurch = null;
-        if (dbChurches && dbChurches.length > 0) {
-          matchedChurch = dbChurches.find(c => {
-            const nameValue = c.name || '';
-            return normalizeArabicText(nameValue) === cleanInputName;
-          });
-        }
-
-        const enteredPassword = cleanInputCode.trim().toLowerCase();
-
-        if (matchedChurch && (matchedChurch.password || '').trim().toLowerCase() === enteredPassword) {
-          authenticatedChurchName = matchedChurch.name;
-          correctCode = matchedChurch.password;
-          console.log("✅ [Auth Success] Found matched church in Supabase with correct password:", authenticatedChurchName);
-        } else {
-          console.error("❌ [Auth Failed] Code or name does not exist or matches incorrectly on Supabase.");
-          setLoginError("كود الكنيسة غير صحيح أو اسم الكنيسة لا يتطابق");
-          setIsLoading(false);
-          return;
-        }
-      } else {
-        console.log("[Local Auth] Supabase not active. Falling back to local offline credentials.");
-        let foundLocal = false;
-        const enteredPassword = cleanInputCode.trim().toLowerCase();
-        for (const [name, code] of Object.entries(CHURCH_CREDENTIALS)) {
-          if (normalizeArabicText(name) === cleanInputName) {
-            if (enteredPassword === code.trim().toLowerCase()) {
-              authenticatedChurchName = name;
-              correctCode = code;
-              foundLocal = true;
-              break;
-            }
-          }
-        }
-
-        if (!foundLocal) {
-          console.error("❌ [Auth Failed] Code or name does not exist or matches incorrectly on local config.");
-          setLoginError("كود الكنيسة غير صحيح أو اسم الكنيسة لا يتطابق");
-          setIsLoading(false);
-          return;
-        }
-      }
-      
-      const slug = encodeURIComponent(authenticatedChurchName).replace(/%/g, '');
-      const email = `${slug}_2026@mafk.com`;
-      
-      let userCredential = null;
+      let firebaseUser;
       try {
-        userCredential = await signInWithEmailAndPassword(auth, email, cleanInputCode);
-      } catch (authErr: any) {
-        if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential' || authErr.code === 'auth/user-disabled') {
-          console.log("Auto-creating missing Auth user offline for verified church...");
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        firebaseUser = result.user;
+      } catch (error: any) {
+        // If user doesn't exist, create them (first time login)
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-email') {
           try {
-            userCredential = await createUserWithEmailAndPassword(auth, email, cleanInputCode);
-          } catch (createErr: any) {
-            console.warn("Auto-create failed, falling back to local guest auth session:", createErr);
+            const result = await createUserWithEmailAndPassword(auth, email, password);
+            firebaseUser = result.user;
+          } catch (createError: any) {
+            if (createError.code === 'auth/email-already-in-use') {
+              setLoginError('الكود غير صحيح');
+              return;
+            }
+            throw createError;
           }
         } else {
-          console.warn("Sign-in failed, falling back to local guest auth session:", authErr);
+          throw error;
         }
       }
 
-      let profileData = {
-        uid: userCredential?.user?.uid || `local_${authenticatedChurchName}`,
-        email: email,
-        role: 'church',
-        churchName: authenticatedChurchName,
-        dashboardBg: ''
-      };
+      if (firebaseUser) {
+        let userDoc;
+        if (email.endsWith('_2026@mafk.com')) {
+           const { data: church } = await supabase
+             .from('churches')
+             .select('name')
+             .eq('password', password.replace(/\s+/g, ''))
+             .single();
+           userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: church?.name || 'كنيسة', uid: firebaseUser.uid }) };
+        } else {
+           userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        }
 
-      setChurchName(profileData.churchName);
-      setUserRole(profileData.role as 'admin'|'church'|'guest'|'super_admin');
-      setUserProfile(profileData);
-      localStorage.setItem('userProfileCache', JSON.stringify(profileData));
-      setIsLoggedIn(true);
-    } catch (error: any) {
-      console.error("🔥 [Local Auth/Fallback Crash]:", error.message);
-      setLoginError("حدث خطأ في الاتصال. الرجاء المحاولة لاحقاً.");
-    } finally {
+        if (!userDoc.exists()) {
+          const profile = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            role,
+            churchName: targetChurch,
+            dashboardBg: ''
+          };
+          await setDoc(doc(db, 'users', firebaseUser.uid), profile);
+          setChurchName(targetChurch);
+          setUserRole(role as 'admin' | 'church');
+          setUserProfile(profile);
+          setIsLoggedIn(true);
+        } else {
+          const profile = userDoc.data();
+          setChurchName(profile?.churchName || '');
+          setUserRole(profile?.role || 'church');
+          setUserProfile(profile || null);
+          setIsLoggedIn(true);
+        }
+      }
       setIsLoading(false);
+    } catch (error: any) {
+      setIsLoading(false);
+      if (error.code === 'auth/wrong-password') {
+        setLoginError('الكود غير صحيح');
+      } else {
+        setLoginError('فشل تسجيل الدخول. يرجى المحاولة مرة أخرى.');
+      }
+      console.error(error);
     }
   };
 
@@ -3140,7 +2905,7 @@ function AppComponent() {
         setEditingResult(null);
         alert('تم تحديث النتيجة بنجاح');
       } else {
-        await saveGlobalData('results', {
+        await addDoc(collection(db, 'results'), {
           ...newResult,
           timestamp: new Date().toISOString(),
           year: activeYear
@@ -3203,16 +2968,7 @@ function AppComponent() {
 
   const handleLogout = async () => {
     try {
-      localStorage.removeItem('userProfileCache');
-      setUser(null);
-      setUserProfile(null);
-      setIsLoggedIn(false);
-      setUserRole('guest');
-      setChurchName('');
-      setDashboardBg('');
-      try {
-        await signOut(auth);
-      } catch (e) {}
+      await signOut(auth);
       setActiveSection('home');
     } catch (error) {
       console.error(error);
@@ -3229,7 +2985,7 @@ function AppComponent() {
       reply: ''
     };
     try {
-      await saveGlobalData('inquiries', { ...newInquiry, year: activeYear });
+      await addDoc(collection(db, 'inquiries'), { ...newInquiry, year: activeYear });
       setInquiryMessage('');
       alert('تم إرسال استفسارك بنجاح، سيقوم المسئول بالرد عليك قريباً.');
     } catch (error) {
@@ -3317,7 +3073,7 @@ function AppComponent() {
         setEditingTeam(null);
         alert('تم تحديث النشاط بنجاح.');
       } else {
-        const docRef = await withExponentialBackoff(() => saveGlobalData('activityTeams', { ...team, year: activeYear }));
+        const docRef = await withExponentialBackoff(() => addDoc(collection(db, 'activityTeams'), { ...team, year: activeYear }));
         
         // Instant state sync for adding team
         const createdTeam: ActivityTeam = {
@@ -3344,7 +3100,7 @@ function AppComponent() {
                year: activeYear
              };
              const customId = generateShortId();
-             await submitNewRegistration({ id: customId, serial: customId, ...newParticipant }, 'participants');
+             await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...newParticipant, serial: customId }));
              
              // Instant state sync for newly added student from activity
              const newStudent: Participant = {
@@ -3470,7 +3226,7 @@ function AppComponent() {
       if (resDoc.exists()) {
         const data = resDoc.data();
         // 1. Archive Old Attempt
-        await saveGlobalData(['results', studentId, 'previous_attempts'], {
+        await addDoc(collection(db, 'results', studentId, 'previous_attempts'), {
           ...data,
           archivedAt: new Date().toISOString(),
           archivedBy: user?.email || 'admin'
@@ -3561,7 +3317,7 @@ function AppComponent() {
           country: 'مصر'
         };
         const customId = generateShortId();
-        await submitNewRegistration({ id: customId, serial: customId, ...participantData }, 'participants');
+        await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...participantData, serial: customId }));
         
         // Instant state sync for adding a new student
         const newStudent: Participant = {
@@ -3710,7 +3466,7 @@ function AppComponent() {
         }))
       };
 
-      const docRef = await saveGlobalData('orders', { ...newOrder, year: activeYear });
+      const docRef = await withExponentialBackoff(() => addDoc(collection(db, 'orders'), { ...newOrder, year: activeYear }));
       
       // Instant state sync
       const finalOrder: Order = {
@@ -4282,8 +4038,8 @@ function AppComponent() {
                 >
                   <option value="">اختر الكنيسة</option>
                   <option value="مسئول">دخول مسئول (Admin)</option>
-                  {[...new Set(publicChurches.map(c => c.name))].sort((a, b) => a.localeCompare(b)).map(church => (
-                    <option key={church} value={church}>{church}</option>
+                  {[...publicChurches].sort((a, b) => a.name.localeCompare(b.name)).map(church => (
+                    <option key={church.name} value={church.name}>{church.name}</option>
                   ))}
                 </select>
                 {loginChurch && loginChurch !== 'مسئول' && (
@@ -4880,16 +4636,17 @@ function AppComponent() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {LOCAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
                       </select>
                     </div>
 
                     <div className="space-y-2">
-                       <label className="text-[10px] font-black text-slate-400 uppercase">نوع المسابقات (بحد أقصى ٣)</label>
+                      <label className="text-[10px] font-black text-slate-400 uppercase">نوع المسابقات (بحد أقصى ٣)</label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[0, 1, 2].map((idx) => {
                           const selectedComps = newParticipant.competitions;
-                          const availableCompsForLevel = LOCAL_COMPETITIONS;
+                          const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
+                          const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
                           
                           const isOptionDisabled = (val: string) => {
                             if (!val) return false;
@@ -5054,7 +4811,7 @@ function AppComponent() {
                     >
                       <option value="الكل">عرض الكل</option>
                       {Array.from(new Set(publicChurches.map((c: any) => c.name))).sort().map(church => (
-                        <option key={`church-filter-${church}`} value={church}>{church}</option>
+                        <option key={church} value={church}>{church}</option>
                       ))}
                     </select>
                   </div>
@@ -6466,7 +6223,7 @@ function AppComponent() {
                       </h5>
                       <div className="max-h-[300px] overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-2 no-scrollbar">
                         {Object.keys(CHURCH_CREDENTIALS).sort().map(church => (
-                          <div key={`church-${church}`} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+                          <div key={church} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
                             <span className="font-bold text-sm text-slate-700">{church}</span>
                             <button 
                               onClick={() => {
@@ -8117,7 +7874,7 @@ function AppComponent() {
                           required
                         >
                           <option value="">اختر المرحلة</option>
-                          {LOCAL_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                          {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
                         </select>
                       </div>
 
@@ -8158,7 +7915,8 @@ function AppComponent() {
                       {[0, 1, 2].map((idx) => {
                         const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي'].includes(newParticipant.stage);
                         const selectedComps = newParticipant.competitions;
-                        const availableCompsForLevel = LOCAL_COMPETITIONS;
+                        const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
+                        const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
                         
                         const isOptionDisabled = (val: string) => {
                           if (!val) return false;
@@ -9011,7 +8769,39 @@ function AppComponent() {
           scrollToZoom: true,
         }}
       />
-      {/* AI Floating Button completely disabled */}
+      {/* EMERGENCY GLOBAL INJECTION - FORCING VISIBILITY FOR ADMIN */}
+      {(userRole === 'admin' || userRole === 'super_admin') && (
+        <>
+          <div 
+            style={{
+              position: 'fixed',
+              bottom: '32px',
+              right: '32px',
+              width: '64px',
+              height: '64px',
+              backgroundColor: '#1e3a8a', // The original premium Mahragan Dark Blue
+              borderRadius: '50%',
+              zIndex: 9999999, // Forces top-layer rendering above ALL tables and panels
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 0 25px rgba(30, 58, 138, 0.9)', // Dynamic premium glowing layout
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+              animation: 'admin-pulse-glow 2s infinite'
+            }} 
+            className="active:scale-95 transition-all duration-200"
+            onClick={() => {
+              console.log("Admin AI FAB Clicked");
+              setIsAiModalOpen(!isAiModalOpen);
+            }}
+          >
+            <span style={{ fontSize: '28px' }}>{isAiModalOpen ? '💬' : '✨'}</span>
+          </div>
+
+          {/* AI FAB Removed */}
+        </>
+      )}
     </div>
   );
 }
