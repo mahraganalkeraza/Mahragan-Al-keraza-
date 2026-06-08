@@ -623,6 +623,7 @@ function AppComponent() {
   const [notification, setNotification] = useState<string | null>(null);
   const [activeYear, setActiveYear] = useState(CURRENT_YEAR);
   const [appLogo, setAppLogo] = useState<string | null>(() => localStorage.getItem('appLogoCache'));
+  const [globalReadAccess, setGlobalReadAccess] = useState<boolean>(true);
   const [logoBase64, setLogoBase64] = useState<string>('');
   const [isUpdatingYear, setIsUpdatingYear] = useState(false);
   const [isSubmittingResult, setIsSubmittingResult] = useState(false);
@@ -682,6 +683,7 @@ function AppComponent() {
       if (snapshot.exists()) {
         const data = snapshot.data();
         setActiveYear(data.activeYear || CURRENT_YEAR);
+        setGlobalReadAccess(data.globalReadAccess !== false);
         if (data.appLogo) {
           localStorage.setItem('appLogoCache', data.appLogo);
           setAppLogo(data.appLogo);
@@ -2467,19 +2469,12 @@ function AppComponent() {
         }).catch(err => console.error("Firestore Core Error: ", err.message));
       }
       
-      constraints.push(limit(20));
-      
-      if (!isFirst && isNext && lastParticipantDoc) {
-        constraints.push(startAfter(lastParticipantDoc));
-      }
-      
       const q = query(baseQueryQ, ...constraints);
       const snap = await getDocs(q);
       
       const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
       setParticipants(newList);
-      setLastParticipantDoc(snap.docs[snap.docs.length - 1]);
-      setIsParticipantsEnd(snap.docs.length < 20);
+      setIsParticipantsEnd(true);
       
       if (isFirst) setParticipantPageCount(1);
       else if (isNext) setParticipantPageCount(prev => prev + 1);
@@ -2555,17 +2550,12 @@ function AppComponent() {
 
       const constraints: any[] = [orderBy('timestamp', 'desc')];
       
-      if (!isFirst && isNext && lastOrderDoc) {
-        constraints.push(startAfter(lastOrderDoc));
-      }
-      
       const q = query(baseQuery, ...constraints);
       const snap = await getDocs(q);
       
       const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
       setOrders(newList);
-      setLastOrderDoc(snap.docs[snap.docs.length - 1]);
-      setIsOrdersEnd(snap.docs.length < 20);
+      setIsOrdersEnd(true);
       
       if (isFirst) setOrderPageCount(1);
       else if (isNext) setOrderPageCount(prev => prev + 1);
@@ -2588,17 +2578,12 @@ function AppComponent() {
         constraints.unshift(where('churchName', '==', churchName));
       }
 
-      if (!isFirst && isNext && lastOnlineResultDoc) {
-        constraints.push(startAfter(lastOnlineResultDoc));
-      }
-      
       const q = query(baseQuery, ...constraints);
       const snap = await getDocs(q);
       
       const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setOnlineResults(newList);
-      setLastOnlineResultDoc(snap.docs[snap.docs.length - 1]);
-      setIsOnlineResultsEnd(snap.docs.length < 20);
+      setIsOnlineResultsEnd(true);
       
       if (isFirst) setOnlineResultPageCount(1);
       else if (isNext) setOnlineResultPageCount(prev => prev + 1);
@@ -2647,17 +2632,12 @@ function AppComponent() {
         }).catch(err => console.error("Firestore Core Error: ", err.message));
       }
 
-      if (!isFirst && isNext && lastResultDoc) {
-        constraints.push(startAfter(lastResultDoc));
-      }
-      
       const q = query(baseQueryQ, ...constraints);
       const snap = await getDocs(q);
       
       const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Result));
       setResults(newList);
-      setLastResultDoc(snap.docs[snap.docs.length - 1]);
-      setIsResultsEnd(snap.docs.length < 20);
+      setIsResultsEnd(true);
       
       if (isFirst) setResultPageCount(1);
       else if (isNext) setResultPageCount(prev => prev + 1);
@@ -2698,17 +2678,12 @@ function AppComponent() {
         }).catch(err => console.error("Firestore Core Error: ", err.message));
       }
 
-      if (!isFirst && isNext && lastTeamDoc) {
-        constraints.push(startAfter(lastTeamDoc));
-      }
-      
       const q = query(baseQueryQ, ...constraints);
       const snap = await getDocs(q);
       
       const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActivityTeam));
       setActivityTeams(newList);
-      setLastTeamDoc(snap.docs[snap.docs.length - 1]);
-      setIsTeamsEnd(snap.docs.length < 20);
+      setIsTeamsEnd(true);
       
       if (isFirst) setTeamPageCount(1);
       else if (isNext) setTeamPageCount(prev => prev + 1);
@@ -2972,6 +2947,16 @@ function AppComponent() {
         handleFirestoreError(error, OperationType.DELETE, 'results');
       }
     });
+  };
+
+  const toggleGlobalReadAccess = async (status: boolean) => {
+    try {
+      await setDoc(doc(db, 'settings', 'app_config'), { globalReadAccess: status }, { merge: true });
+      setNotification(`تم ${status ? 'تفعيل' : 'إيقاف'} القراءة للجميع بنجاح`);
+    } catch (err) {
+      console.error("Error toggling global access:", err);
+      setNotification("حدث خطأ أثناء تغيير صلاحية القراءة العامة");
+    }
   };
 
   const handleLogout = async () => {
@@ -4380,13 +4365,27 @@ function AppComponent() {
                  تحديث البيانات
               </button>
             </div>
-            
-            {/* Universal Filter Engine - Church View */}
-            <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 space-y-4">
-              <div className="flex items-center gap-2 mb-4">
-                <Search size={20} className="text-primary" />
-                <h4 className="font-black text-slate-800 text-lg">محرك البحث الشامل</h4>
+
+            {(globalReadAccess === false || userProfile?.isAllowedToRead === false) ? (
+              <div className="bg-white p-12 rounded-3xl shadow-xl border border-slate-100 text-center space-y-6">
+                <div className="w-24 h-24 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Lock size={48} />
+                </div>
+                <h3 className="text-3xl font-black text-slate-800">عذراً، تم غلق لوحة التحكم مؤقتاً</h3>
+                <p className="text-xl font-bold text-slate-500 max-w-2xl mx-auto leading-relaxed">
+                  بقرار من اللجنة المركزية، تم تعليق صلاحية الوصول والمراجعة للوحة تحكم كنيستكم مؤقتاً.
+                  <br />
+                  <span className="text-primary mt-4 block underline">يرجى التواصل مع المسئول عن المهرجان للمزيد من التفاصيل.</span>
+                </p>
               </div>
+            ) : (
+              <>
+                {/* Universal Filter Engine - Church View */}
+                <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Search size={20} className="text-primary" />
+                    <h4 className="font-black text-slate-800 text-lg">محرك البحث الشامل</h4>
+                  </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="relative">
                   <input 
@@ -4710,7 +4709,6 @@ function AppComponent() {
 
                       <div className="max-h-[400px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
                         {filteredParticipantsList
-                          .slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
                           .map(p => (
                           <div key={p.id} className="group relative p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-all">
                         <div className="flex justify-between items-start mb-2">
@@ -4724,10 +4722,10 @@ function AppComponent() {
                           <div>
                             <button 
                               onClick={() => {
-                                setActiveSection('registration');
                                 handleEditParticipant(p);
+                                setActiveSection('registration');
                               }}
-                              className="p-1.5 text-slate-300 hover:text-coptic-blue transition-colors opacity-0 group-hover:opacity-100"
+                              className="p-1.5 text-coptic-blue hover:text-primary transition-colors"
                               title="تعديل المشترك"
                             >
                               <Pencil size={16} />
@@ -4737,7 +4735,7 @@ function AppComponent() {
                                 setParticipantToDelete(p.id);
                                 setShowDeleteModal(true);
                               }} 
-                              className="p-1.5 text-slate-200 hover:text-coptic-red transition-colors opacity-0 group-hover:opacity-100"
+                              className="p-1.5 text-rose-500 hover:text-red-700 transition-colors"
                               title="حذف المشترك"
                             >
                               <Trash2 size={16} />
@@ -4810,7 +4808,9 @@ function AppComponent() {
                 </div>
               </div>
             </div>
-          </motion.div>
+          </>
+        )}
+      </motion.div>
         )}
 
         {activeSection === 'settings' && userRole === 'church' && (
@@ -4825,8 +4825,24 @@ function AppComponent() {
 
         {activeSection === 'admin_dashboard' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-            <div className="flex items-center justify-between">
-              <BackButton />
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <BackButton />
+                <div className="flex bg-slate-100 p-1 rounded-xl gap-1 border border-slate-200">
+                  <button 
+                    onClick={() => toggleGlobalReadAccess(true)}
+                    className={`px-4 py-2 rounded-lg font-black text-[10px] transition-all flex items-center gap-2 ${globalReadAccess ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-200'}`}
+                  >
+                    <Check size={14} /> تفعيل القراءة للجميع
+                  </button>
+                  <button 
+                    onClick={() => toggleGlobalReadAccess(false)}
+                    className={`px-4 py-2 rounded-lg font-black text-[10px] transition-all flex items-center gap-2 ${!globalReadAccess ? 'bg-red-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-200'}`}
+                  >
+                    <X size={14} /> إيقاف القراءة عن الجميع
+                  </button>
+                </div>
+              </div>
               <button 
                 onClick={() => fetchLargeData(true)}
                 className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 flex flex-row gap-2 transition"
@@ -7092,7 +7108,6 @@ function AppComponent() {
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {participants
-                          .slice((participantPageCount - 1) * 20, participantPageCount * 20)
                           .map(p => (
                           <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-bold text-coptic-blue">{p.churchName}</td>

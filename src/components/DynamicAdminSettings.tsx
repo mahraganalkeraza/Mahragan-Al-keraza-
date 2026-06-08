@@ -31,6 +31,7 @@ export default function DynamicAdminSettings() {
   });
 
   const [appLogo, setAppLogo] = useState<string | null>(null);
+  const [globalReadAccess, setGlobalReadAccess] = useState<boolean>(true);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
   const [activityStages, setActivityStages] = useState<any[]>([]);
@@ -336,7 +337,10 @@ export default function DynamicAdminSettings() {
     });
 
     const unsubConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snap) => {
-      if (snap.exists()) setAppLogo(snap.data().appLogo || null);
+      if (snap.exists()) {
+        setAppLogo(snap.data().appLogo || null);
+        setGlobalReadAccess(snap.data().globalReadAccess !== false);
+      }
     });
 
     const unsubValidation = onSnapshot(doc(db, 'settings', 'validation'), (snap) => {
@@ -658,15 +662,48 @@ export default function DynamicAdminSettings() {
     }
   };
 
+  const toggleGlobalReadAccess = async (status: boolean) => {
+    setIsSaving(true);
+    try {
+      await setDoc(doc(db, 'settings', 'app_config'), { globalReadAccess: status }, { merge: true });
+      setGlobalReadAccess(status);
+    } catch (err) {
+      console.error("Error toggling global read access:", err);
+      alert('حدث خطأ أثناء تغيير صلاحية القراءة العامة');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   if (isLoading) return <div className="p-8">جاري التحميل...</div>;
 
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden mt-8">
-      <div className="bg-slate-900 text-white p-6 md:p-8 flex items-center gap-4">
-        <ShieldCheck size={32} className="text-emerald-400" />
-        <div>
-          <h2 className="text-2xl font-black">نظام الإدارة الديناميكي</h2>
-          <p className="text-slate-300 font-bold opacity-80 mt-1">التحكم في الكنائس، المراحل، والأساسيات بدون برمجة ثابتة.</p>
+      <div className="bg-slate-900 text-white p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <ShieldCheck size={32} className="text-emerald-400" />
+          <div>
+            <h2 className="text-2xl font-black">نظام الإدارة الديناميكي</h2>
+            <p className="text-slate-300 font-bold opacity-80 mt-1">التحكم في الكنائس، المراحل، والأساسيات بدون برمجة ثابتة.</p>
+          </div>
+        </div>
+
+        {/* Global Access Master Switches */}
+        <div className="flex bg-slate-800 p-1.5 rounded-2xl gap-2 border border-slate-700 w-full md:w-auto">
+          <button 
+            onClick={() => toggleGlobalReadAccess(true)}
+            className={`flex-1 md:flex-none px-6 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${globalReadAccess ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+          >
+            {globalReadAccess ? <Database size={16} /> : <Check size={16} />}
+            تفعيل القراءة للجميع
+          </button>
+          <button 
+            onClick={() => toggleGlobalReadAccess(false)}
+            className={`flex-1 md:flex-none px-6 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${!globalReadAccess ? 'bg-red-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+          >
+            {!globalReadAccess ? <Database size={16} /> : <X size={16} />}
+            إيقاف القراءة عن الجميع
+          </button>
         </div>
       </div>
 

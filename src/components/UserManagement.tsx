@@ -49,6 +49,7 @@ interface User {
   role: string;
   churchName: string;
   isEnabled: boolean;
+  isAllowedToRead?: boolean;
   password?: string;
   logoUrl?: string;
   dashboardBg?: string;
@@ -200,6 +201,7 @@ export default function UserManagement() {
           role: "church",
           churchName: editForm.churchName,
           isEnabled: true,
+          isAllowedToRead: true,
           password: editForm.password,
           logoUrl: finalLogoUrl,
         };
@@ -214,6 +216,7 @@ export default function UserManagement() {
           name: editForm.churchName,
           loginCode: editForm.password,
           isEnabled: true,
+          isAllowedToRead: true,
           logoUrl: finalLogoUrl
         });
 
@@ -230,6 +233,7 @@ export default function UserManagement() {
           password: editForm.password,
           logoUrl: finalLogoUrl,
           isEnabled: editForm.isEnabled ?? oldUser.isEnabled,
+          isAllowedToRead: editForm.isAllowedToRead ?? (oldUser.isAllowedToRead !== false),
         };
 
         const batch = writeBatch(db);
@@ -243,6 +247,7 @@ export default function UserManagement() {
             name: editForm.churchName,
             loginCode: editForm.password,
             isEnabled: editForm.isEnabled ?? oldUser.isEnabled,
+            isAllowedToRead: editForm.isAllowedToRead ?? (oldUser.isAllowedToRead !== false),
             logoUrl: finalLogoUrl
           });
         });
@@ -312,6 +317,26 @@ export default function UserManagement() {
     } catch (err) {
       console.error("Error toggling status:", err);
       setError("حدث خطأ أثناء تغيير حالة الحساب");
+    }
+  };
+
+  const toggleReadingStatus = async (user: User) => {
+    try {
+      const currentStatus = user.isAllowedToRead === undefined ? true : user.isAllowedToRead;
+      const newStatus = !currentStatus;
+      await updateDoc(doc(db, "users", user.uid), { isAllowedToRead: newStatus });
+      
+      // Sync with churches bank
+      const bankQuery = query(collection(db, "churches"), where("name", "==", user.churchName));
+      const bankSnap = await getDocs(bankQuery);
+      if (!bankSnap.empty) {
+        await updateDoc(doc(db, "churches", bankSnap.docs[0].id), { isAllowedToRead: newStatus });
+      }
+      setSuccess(`تم ${newStatus ? 'سماح القراءة' : 'إيقاف القراءة'} بنجاح`);
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Error toggling reading status:", err);
+      setError("حدث خطأ أثناء تغيير صلاحية القراءة");
     }
   };
 
@@ -596,16 +621,28 @@ export default function UserManagement() {
                     <label className="block text-xs font-bold text-slate-500 mb-1">
                       حالة الحساب
                     </label>
-                    <button
-                      onClick={() => setEditForm({ ...editForm, isEnabled: !editForm.isEnabled })}
-                      className={`w-full px-3 py-2 rounded-lg text-xs font-black transition-all border ${
-                        editForm.isEnabled 
-                          ? "bg-emerald-50 text-emerald-600 border-emerald-200" 
-                          : "bg-red-50 text-red-600 border-red-200"
-                      }`}
-                    >
-                      {editForm.isEnabled ? "الحساب مفعل (اضغط للتعطيل)" : "الحساب معطل (اضغط للتفعيل)"}
-                    </button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setEditForm({ ...editForm, isEnabled: !editForm.isEnabled })}
+                        className={`px-3 py-2 rounded-lg text-[10px] font-black transition-all border ${
+                          editForm.isEnabled 
+                            ? "bg-emerald-50 text-emerald-600 border-emerald-200" 
+                            : "bg-red-50 text-red-600 border-red-200"
+                        }`}
+                      >
+                        {editForm.isEnabled ? "حساب مفعل" : "حساب معطل"}
+                      </button>
+                      <button
+                        onClick={() => setEditForm({ ...editForm, isAllowedToRead: !(editForm.isAllowedToRead !== false) })}
+                        className={`px-3 py-2 rounded-lg text-[10px] font-black transition-all border ${
+                          editForm.isAllowedToRead !== false 
+                            ? "bg-indigo-50 text-indigo-600 border-indigo-200" 
+                            : "bg-amber-50 text-amber-600 border-amber-200"
+                        }`}
+                      >
+                        {editForm.isAllowedToRead !== false ? "سماح بالقراءة" : "إيقاف القراءة"}
+                      </button>
+                    </div>
                   </div>
                   <div className="flex gap-2 pt-2">
                     <button
@@ -648,6 +685,13 @@ export default function UserManagement() {
                         }`}>
                           {user.isEnabled !== false ? "نشط" : "معطل"}
                         </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                          user.isAllowedToRead !== false 
+                            ? "bg-indigo-100 text-indigo-700" 
+                            : "bg-amber-100 text-amber-700"
+                        }`}>
+                          {user.isAllowedToRead !== false ? "سماح قراءة" : "إيقاف قراءة"}
+                        </span>
                       </div>
                       <p className="text-xs text-slate-500 truncate font-mono">
                         {user.email}
@@ -662,6 +706,18 @@ export default function UserManagement() {
                   </div>
                   <div className="mt-6 flex gap-2 border-t border-slate-100 pt-4">
                     <button
+                      onClick={() => toggleReadingStatus(user)}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg transition-colors font-bold text-sm ${
+                        user.isAllowedToRead !== false
+                          ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
+                          : "bg-amber-50 text-amber-600 hover:bg-amber-100"
+                      }`}
+                      title="سماح القراءة"
+                    >
+                      {user.isAllowedToRead !== false ? <Unlock size={16} /> : <Lock size={16} />} 
+                      {user.isAllowedToRead !== false ? "قراءة" : "منع"}
+                    </button>
+                    <button
                       onClick={() => toggleStatus(user)}
                       className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg transition-colors font-bold text-sm ${
                         user.isEnabled !== false
@@ -671,7 +727,7 @@ export default function UserManagement() {
                       title={user.isEnabled !== false ? "تعطيل الحساب" : "تفعيل الحساب"}
                     >
                       {user.isEnabled !== false ? <Lock size={16} /> : <Unlock size={16} />} 
-                      {user.isEnabled !== false ? "منع" : "سماح"}
+                      {user.isEnabled !== false ? "دخول" : "سماح"}
                     </button>
                     <button
                       onClick={() => handleEdit(user)}
