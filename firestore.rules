@@ -259,9 +259,16 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /registrations/{regId} {
+      allow read, write: if true;
+    }
+    match /registrations_backup/{regId} {
+      allow read, write: if true;
+    }
+
     match /participants/{participantId} {
-      allow get: if true;
-      allow list: if isAdmin() || (isSignedIn() && isChurch(resource.data.churchName));
+      allow read: if true;
+      allow list: if true; // TEMPORARILY ALLOW LIST FOR MIGRATION
       allow create: if isValidId(participantId) && 
                     isValidParticipant(incoming()) && 
                     (isAdmin() || (isEmailVerified() && isChurch(incoming().churchName)));
