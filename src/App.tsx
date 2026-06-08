@@ -1062,7 +1062,7 @@ function AppComponent() {
   const aggregatedChurchPrintingData = useMemo(() => {
     const groups: Record<string, any> = {};
 
-    participants.forEach(p => {
+    allChurchParticipants.forEach(p => {
       if (globalChurchFilter !== 'الكل' && p.churchName !== globalChurchFilter && userRole === 'admin') return;
       if (userRole === 'church' && p.churchName !== churchName) return;
 
@@ -1112,7 +1112,7 @@ function AppComponent() {
     });
 
     return Object.values(groups).sort((a: any, b: any) => a.church.localeCompare(b.church));
-  }, [participants, globalChurchFilter, userRole, churchName]);
+  }, [allChurchParticipants, globalChurchFilter, userRole, churchName]);
 
   const aggregatedChurchPrintingTotals = useMemo(() => {
     const totals: any = { subscribers: 0, stages: {} };
@@ -1464,6 +1464,7 @@ function AppComponent() {
 
     async function fetchStaticData() {
         try {
+            fetchAllChurchParticipants();
             const newsSnap = await getDocs(query(collection(db, 'news'), where('year', '==', activeYear), orderBy('timestamp', 'desc'), limit(10)));
             setNews(newsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as News)));
             
@@ -5368,7 +5369,7 @@ function AppComponent() {
                                   className="p-2 text-slate-400 hover:text-coptic-blue transition-colors"
                                   title="تعديل"
                                 >
-                                  <FileText size={18} />
+                                  <Pencil size={18} />
                                 </button>
                                 <button 
                                   onClick={() => {
@@ -8055,24 +8056,27 @@ function AppComponent() {
                               </div>
                             ))}
                           </div>
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 items-center">
                             <button 
-                              onClick={() => handleEditParticipant(p)}
-                              className="p-2 text-slate-300 hover:text-coptic-blue transition-colors"
-                              title="تعديل"
+                              onClick={() => {
+                                setActiveSection('registration');
+                                handleEditParticipant(p);
+                              }}
+                              className="p-2 text-slate-400 hover:text-coptic-blue transition-colors"
+                              title="تعديل (تحرير)"
                             >
-                              <FileText size={16} />
+                              <Pencil size={18} />
                             </button>
-                              <button 
-                                onClick={() => {
-                                  setParticipantToDelete(p.id);
-                                  setShowDeleteModal(true);
-                                }}
-                                className="p-2 text-slate-300 hover:text-red-500 transition-colors"
-                                title="حذف"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                            <button 
+                              onClick={() => {
+                                setParticipantToDelete(p.id);
+                                setShowDeleteModal(true);
+                              }}
+                              className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                              title="حذف"
+                            >
+                              <Trash2 size={16} />
+                            </button>
                           </div>
                         </div>
                       </div>
