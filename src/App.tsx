@@ -122,8 +122,7 @@ import {
   serverTimestamp,
   getCountFromServer
 } from './firebase';
-import { supabase } from './lib/supabaseClient';
-import { syncEmergencyDataToFirestore, autoSyncSupabaseToFirebase } from './services/emergencySync';
+import churchData from './data/churches.json';
 import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
 
@@ -274,7 +273,7 @@ function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carous
             return `<span class="${className}"></span>`;
           }
         }}
-        loop={false}
+        loop={true}
         className="h-full w-full"
       >
         {slides.map((item, index) => (
@@ -615,19 +614,6 @@ function AppComponent() {
     return () => {
       window.removeEventListener('firestore-quota-exceeded', handleQuotaExceeded);
     };
-  }, []);
-
-  useEffect(() => {
-    // Sync immediately on boot
-    syncEmergencyDataToFirestore();
-    autoSyncSupabaseToFirebase();
-
-    // Optionally retry every 5 minutes if the tab stays open
-    const interval = setInterval(() => {
-      syncEmergencyDataToFirestore();
-      autoSyncSupabaseToFirebase();
-    }, 5 * 60 * 1000);
-    return () => clearInterval(interval);
   }, []);
   
   useEffect(() => {
@@ -2742,23 +2728,16 @@ function AppComponent() {
       targetChurch = 'اللجنة المركزية منطقة18';
     } else {
       try {
-        const { data: church, error } = await supabase
-          .from('churches')
-          .select('*')
-          .eq('name', loginChurch.trim())
-          .single();
-
-        if (error || !church) {
-          setLoginError('الكنيسة غير مسجلة بالنظام');
+        const foundChurch = churchData.find((c: any) => c.name === loginChurch);
+        
+        if (!foundChurch) {
+          setLoginError('الكنيسة غير موجودة');
           setIsLoading(false);
           return;
         }
 
-        const storedPassword = church.password.replace(/\s+/g, '');
-        const userPassword = code.replace(/\s+/g, '');
-
-        if (storedPassword !== userPassword) {
-          setLoginError('كلمة المرور غير صحيحة');
+        if (code !== foundChurch.password) {
+          setLoginError('كود الكنيسة غير صحيح');
           setIsLoading(false);
           return;
         }
@@ -2801,11 +2780,7 @@ function AppComponent() {
       if (firebaseUser) {
         let userDoc;
         if (email.endsWith('_2026@mafk.com')) {
-           const { data: church } = await supabase
-             .from('churches')
-             .select('name')
-             .eq('password', password.replace(/\s+/g, ''))
-             .single();
+           const church = churchData.find((c: any) => c.code === password);
            userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: church?.name || 'كنيسة', uid: firebaseUser.uid }) };
         } else {
            userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
