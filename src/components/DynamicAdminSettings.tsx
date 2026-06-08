@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { initializeApp, getApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { db, storage, ref, uploadBytesResumable, getDownloadURL, handleFirestoreError, OperationType, firebaseConfig } from '../firebase';
@@ -279,45 +279,52 @@ export default function DynamicAdminSettings() {
     }
   };
 
-  const fetchData = async () => {
+  useEffect(() => {
     setIsLoading(true);
-    try {
-      const churchesSnap = await getDocs(collection(db, 'churches'));
-      setChurches(churchesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubChurches = onSnapshot(collection(db, 'churches'), (snap) => {
+      setChurches(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setIsLoading(false);
+    });
 
-      const levelsSnap = await getDocs(collection(db, 'levels'));
-      setLevels(levelsSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => sortStages(a.name, b.name)));
+    const unsubLevels = onSnapshot(collection(db, 'levels'), (snap) => {
+      setLevels(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => sortStages(a.name, b.name)));
+    });
 
-      const compSnap = await getDocs(collection(db, 'competitions'));
-      setCompetitions(compSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubComp = onSnapshot(collection(db, 'competitions'), (snap) => {
+      setCompetitions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
-      const activityStagesSnap = await getDocs(collection(db, 'activityStages'));
-      setActivityStages(activityStagesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubActivityStages = onSnapshot(collection(db, 'activityStages'), (snap) => {
+      setActivityStages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
-      const hymnStagesSnap = await getDocs(collection(db, 'hymnStages'));
-      setHymnStages(hymnStagesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubHymnStages = onSnapshot(collection(db, 'hymnStages'), (snap) => {
+      setHymnStages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
-      const configSnap = await getDoc(doc(db, 'settings', 'app_config'));
-      if (configSnap.exists()) {
-        setAppLogo(configSnap.data().appLogo || null);
-      }
+    const unsubConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snap) => {
+      if (snap.exists()) setAppLogo(snap.data().appLogo || null);
+    });
 
-      const valSnap = await getDoc(doc(db, 'settings', 'validation'));
-      if (valSnap.exists()) {
+    const unsubValidation = onSnapshot(doc(db, 'settings', 'validation'), (snap) => {
+      if (snap.exists()) {
         setValidationSettings({
-          templates: valSnap.data().templates || [],
-          ageMappings: valSnap.data().ageMappings || [],
-          rules: valSnap.data().rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
+          templates: snap.data().templates || [],
+          ageMappings: snap.data().ageMappings || [],
+          rules: snap.data().rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
         });
       }
-    } catch (e) {
-      console.error(e);
-    }
-    setIsLoading(false);
-  };
+    });
 
-  useEffect(() => {
-    fetchData();
+    return () => {
+      unsubChurches();
+      unsubLevels();
+      unsubComp();
+      unsubActivityStages();
+      unsubHymnStages();
+      unsubConfig();
+      unsubValidation();
+    };
   }, []);
 
   // PURGE LOGIC
@@ -340,7 +347,6 @@ export default function DynamicAdminSettings() {
       }
       setPurgeStatus('تم تنظيف قواعد البيانات بنجاح!');
       setDeleteConfirmation(null);
-      fetchData();
     } catch (e) {
       console.error(e);
       setPurgeStatus('حدث خطأ أثناء المسح.');
@@ -400,7 +406,6 @@ export default function DynamicAdminSettings() {
       await batch.commit();
 
       setNewChurchName(''); setNewChurchCode('');
-      fetchData();
       alert('تمت إضافة الكنيسة وتنشيط حساب الدخول بنجاح!');
     } catch (e) { 
       console.error("Add Church Bank error:", e);
@@ -413,7 +418,6 @@ export default function DynamicAdminSettings() {
     try {
       await deleteDoc(doc(db, 'churches', id));
       setDeleteConfirmation(null);
-      fetchData();
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `churches/${id}`);
     }
@@ -426,7 +430,6 @@ export default function DynamicAdminSettings() {
     try {
       await addDoc(collection(db, 'competitions'), { name: newCompName });
       setNewCompName('');
-      fetchData();
     } catch (e) { 
       console.error(e);
       handleFirestoreError(e, OperationType.CREATE, 'competitions');
@@ -436,7 +439,6 @@ export default function DynamicAdminSettings() {
     try {
       await deleteDoc(doc(db, 'competitions', id));
       setDeleteConfirmation(null);
-      fetchData();
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `competitions/${id}`);
     }
@@ -447,9 +449,8 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newLevelName) return;
     try {
-      await addDoc(collection(db, 'levels'), { name: newLevelName, allowedCompetitions: selectedCompetitions });
+      await addDoc(collection(db, 'levels'), { name: newLevelName.trim(), allowedCompetitions: selectedCompetitions });
       setNewLevelName(''); setSelectedCompetitions([]);
-      fetchData();
     } catch (e) { 
       console.error(e);
       handleFirestoreError(e, OperationType.CREATE, 'levels');
@@ -459,7 +460,6 @@ export default function DynamicAdminSettings() {
     try {
       await deleteDoc(doc(db, 'levels', id));
       setDeleteConfirmation(null);
-      fetchData();
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `levels/${id}`);
     }
@@ -470,9 +470,8 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newHymnStageName) return;
     try {
-      await addDoc(collection(db, 'hymnStages'), { name: newHymnStageName });
+      await addDoc(collection(db, 'hymnStages'), { name: newHymnStageName.trim() });
       setNewHymnStageName('');
-      fetchData();
     } catch (e) { 
       console.error(e);
       handleFirestoreError(e, OperationType.CREATE, 'hymnStages');
@@ -482,7 +481,6 @@ export default function DynamicAdminSettings() {
     try {
       await deleteDoc(doc(db, 'hymnStages', id));
       setDeleteConfirmation(null);
-      fetchData();
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `hymnStages/${id}`);
     }
@@ -493,9 +491,8 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newActivityStageName) return;
     try {
-      await addDoc(collection(db, 'activityStages'), { name: newActivityStageName });
+      await addDoc(collection(db, 'activityStages'), { name: newActivityStageName.trim() });
       setNewActivityStageName('');
-      fetchData();
     } catch (e) { 
       console.error(e);
       handleFirestoreError(e, OperationType.CREATE, 'activityStages');
@@ -505,7 +502,6 @@ export default function DynamicAdminSettings() {
     try {
       await deleteDoc(doc(db, 'activityStages', id));
       setDeleteConfirmation(null);
-      fetchData();
     } catch (e) {
       handleFirestoreError(e, OperationType.DELETE, `activityStages/${id}`);
     }

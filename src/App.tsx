@@ -691,88 +691,61 @@ function AppComponent() {
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
 
-    const fetchCachedMetadata = async () => {
-      const now = new Date().getTime();
-      const CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
+    const unsubChurches = onSnapshot(collection(db, 'churches'), (snapshot) => {
+      const churchesData = snapshot.docs
+        .map(d => ({ 
+          name: d.data().name, 
+          email: '', 
+          isEnabled: d.data().isEnabled !== false,
+          logoUrl: d.data().logoUrl || ''
+        }))
+        .filter(c => c.isEnabled);
+      setPublicChurches(churchesData);
+    });
+
+    const unsubLevels = onSnapshot(collection(db, 'levels'), (snapshot) => {
+      const levelsData = snapshot.docs.map(d => ({ 
+        id: d.id,
+        name: d.data().name, 
+        comps: d.data().allowedCompetitions || [] 
+      }));
       
-      const loadCachedOrFetch = async (key: string, fetchFn: () => Promise<any>) => {
-        const cachedStr = localStorage.getItem(`cache_${key}`);
-        if (cachedStr) {
-          try {
-            const cached = JSON.parse(cachedStr);
-            if (now - cached.timestamp < CACHE_EXPIRY) {
-              return cached.data;
-            }
-          } catch (e) {}
+      const uniqueLevelsMap = new Map();
+      levelsData.forEach((l: any) => {
+        if (l && l.name) {
+          uniqueLevelsMap.set(l.name.trim(), l);
         }
-        const data = await fetchFn();
-        localStorage.setItem(`cache_${key}`, JSON.stringify({ timestamp: now, data }));
-        return data;
+      });
+      const uniqueLevels = Array.from(uniqueLevelsMap.values());
+      setDynamicLevels(uniqueLevels.sort((a: any, b: any) => sortStages(a.name, b.name)));
+    });
+
+    const unsubActivityStages = onSnapshot(collection(db, 'activityStages'), (snapshot) => {
+      setActivityStages(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    const unsubHymnStages = onSnapshot(collection(db, 'hymnStages'), (snapshot) => {
+      setHymnStages(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    const unsubValidation = onSnapshot(doc(db, 'settings', 'validation'), (snapshot) => {
+      const validationData = snapshot.exists() ? snapshot.data() : { 
+        templates: [], ageMappings: [], rules: { nameLength: true, genderMatch: false, mandatoryRows: true } 
       };
-
-      try {
-        const churchesData = await loadCachedOrFetch('churches', async () => {
-          const snap = await getDocs(collection(db, 'churches'));
-          return snap.docs
-            .map(d => ({ 
-              name: d.data().name, 
-              email: '', 
-              isEnabled: d.data().isEnabled !== false,
-              logoUrl: d.data().logoUrl || ''
-            }))
-            .filter(c => c.isEnabled);
-        });
-        setPublicChurches(churchesData);
-
-        const levelsData = await loadCachedOrFetch('levels', async () => {
-          const snap = await getDocs(collection(db, 'levels'));
-          return snap.docs.map(d => ({ 
-            id: d.id,
-            name: d.data().name, 
-            comps: d.data().allowedCompetitions || [] 
-          }));
-        });
-        
-        // Defensive Deduplication of levels by name
-        const uniqueLevelsMap = new Map();
-        levelsData.forEach((l: any) => {
-          if (l && l.name) {
-            uniqueLevelsMap.set(l.name.trim(), l);
-          }
-        });
-        const uniqueLevels = Array.from(uniqueLevelsMap.values());
-        setDynamicLevels(uniqueLevels.sort((a: any, b: any) => sortStages(a.name, b.name)));
-
-        const activityStagesData = await loadCachedOrFetch('activityStages', async () => {
-          const snap = await getDocs(collection(db, 'activityStages'));
-          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        });
-        setActivityStages(activityStagesData);
-
-        const hymnStagesData = await loadCachedOrFetch('hymnStages', async () => {
-          const snap = await getDocs(collection(db, 'hymnStages'));
-          return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        });
-        setHymnStages(hymnStagesData);
-
-        const validationData = await loadCachedOrFetch('validation', async () => {
-          const snap = await getDoc(doc(db, 'settings', 'validation'));
-          return snap.exists() ? snap.data() : { templates: [], ageMappings: [], rules: { nameLength: true, genderMatch: false, mandatoryRows: true } };
-        });
-        setValidationSettings({
-          templates: validationData.templates || [],
-          ageMappings: validationData.ageMappings || [],
-          rules: validationData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
-        });
-      } catch (e) {
-        console.error("Error fetching cached metadata:", e);
-      }
-    };
-
-    fetchCachedMetadata();
+      setValidationSettings({
+        templates: validationData.templates || [],
+        ageMappings: validationData.ageMappings || [],
+        rules: validationData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
+      });
+    });
 
     return () => {
       unsubAppConfig();
+      unsubChurches();
+      unsubLevels();
+      unsubActivityStages();
+      unsubHymnStages();
+      unsubValidation();
     };
   }, []);
 
@@ -818,6 +791,10 @@ function AppComponent() {
   const [partChurchFilter, setPartChurchFilter] = useState('الكل');
   const [partStageFilter, setPartStageFilter] = useState('الكل');
   const [partCompFilter, setPartCompFilter] = useState('الكل');
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [participantSearch, partChurchFilter, partStageFilter, partCompFilter]);
   
   const [isDuplicateScanModalOpen, setIsDuplicateScanModalOpen] = useState(false);
   const [duplicateRecords, setDuplicateRecords] = useState<Participant[][]>([]);
@@ -873,6 +850,8 @@ function AppComponent() {
   const [isParticipantsLoading, setIsParticipantsLoading] = useState(false);
   const [isParticipantsEnd, setIsParticipantsEnd] = useState(false);
   const [participantPageCount, setParticipantPageCount] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 20;
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [examLinks, setExamLinks] = useState<Record<string, string>>({});
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -1442,23 +1421,23 @@ function AppComponent() {
 
   // Firestore Listeners
   useEffect(() => {
-    async function fetchData() {
-        try {
-            const schedulesSnap = await getDocs(query(collection(db, 'schedules'), where('year', '==', activeYear)));
-            setSchedules(schedulesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Schedule)));
-            
-            const examLinksSnap = await getDocs(query(collection(db, 'examLinks'), where('year', '==', activeYear)));
-            const links: Record<string, string> = {};
-            examLinksSnap.docs.forEach(doc => {
-                const data = doc.data() as ExamLink;
-                links[data.stage] = data.url;
-            });
-            setExamLinks(links);
-        } catch (error) {
-            handleFirestoreError(error, OperationType.LIST, 'schedules/examLinks');
-        }
-    }
-    fetchData();
+    const unsubSchedules = onSnapshot(query(collection(db, 'schedules'), where('year', '==', activeYear)), (snapshot) => {
+      setSchedules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Schedule)));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'schedules'));
+
+    const unsubExamLinks = onSnapshot(query(collection(db, 'examLinks'), where('year', '==', activeYear)), (snapshot) => {
+      const links: Record<string, string> = {};
+      snapshot.docs.forEach(doc => {
+        const data = doc.data() as ExamLink;
+        links[data.stage] = data.url;
+      });
+      setExamLinks(links);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'examLinks'));
+
+    return () => {
+      unsubSchedules();
+      unsubExamLinks();
+    };
   }, [activeYear]);
 
   useEffect(() => {
@@ -4686,6 +4665,7 @@ function AppComponent() {
 
                       <div className="max-h-[400px] overflow-y-auto space-y-3 pr-2 custom-scrollbar">
                         {filteredParticipantsList
+                          .slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
                           .map(p => (
                           <div key={p.id} className="group relative p-4 bg-white border border-slate-100 rounded-2xl shadow-sm hover:shadow-md transition-all">
                         <div className="flex justify-between items-start mb-2">
@@ -4723,6 +4703,31 @@ function AppComponent() {
                       </div>
                     )}
                   </div>
+
+                  {/* Pagination Controls for Church Dashboard */}
+                  {filteredParticipantsList.length > ITEMS_PER_PAGE && (
+                    <div className="flex items-center justify-between bg-white p-3 rounded-2xl border border-slate-100 italic text-slate-400">
+                      <div className="flex items-center gap-4">
+                        <button 
+                           disabled={currentPage === 1}
+                           onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                           className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all cursor-pointer"
+                           type="button"
+                        >
+                           <ChevronRight size={18} className="text-slate-600" />
+                        </button>
+                        <span className="font-black text-slate-800 not-italic text-sm">صفحة {currentPage} من {Math.ceil(filteredParticipantsList.length / ITEMS_PER_PAGE)}</span>
+                        <button 
+                           disabled={currentPage * ITEMS_PER_PAGE >= filteredParticipantsList.length}
+                           onClick={() => setCurrentPage(prev => prev + 1)}
+                           className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all cursor-pointer"
+                           type="button"
+                        >
+                           <ChevronLeft size={18} className="text-slate-600" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -7393,26 +7398,19 @@ function AppComponent() {
                     <Link2 className="text-coptic-blue" /> إدارة لينكات الامتحانات (Google Forms)
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {[
-                      { id: 'nursery', label: 'حضانة' },
-                      { id: 'stage12', label: 'أولى وثانية' },
-                      { id: 'stage34', label: 'ثالثة ورابعة' },
-                      { id: 'stage56', label: 'خامسة وسادسة' },
-                      { id: 'adults', label: 'تعليم كبار' },
-                      { id: 'seniors', label: 'سمعان الشيخ' }
-                    ].map((stage) => (
-                      <div key={stage.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
-                        <label className="text-xs font-black text-slate-500 uppercase">{stage.label}</label>
+                    {([...dynamicLevels].sort((a: any, b: any) => sortStages(a.name, b.name))).map((stage) => (
+                      <div key={stage.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm hover:shadow transition-all space-y-3">
+                        <label className="text-[11px] font-black text-slate-500 uppercase">{stage.name}</label>
                         <div className="flex gap-2">
                           <input 
                             type="url" 
                             placeholder="https://docs.google.com/forms/..."
-                            value={examLinks[stage.id] || ''}
-                            onChange={(e) => setExamLinks({ ...examLinks, [stage.id]: e.target.value })}
+                            value={examLinks[stage.name] || ''}
+                            onChange={(e) => setExamLinks({ ...examLinks, [stage.name]: e.target.value })}
                             className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue"
                           />
                           <button 
-                            onClick={() => handleUpdateExamLink(stage.id, examLinks[stage.id] || '')}
+                            onClick={() => handleUpdateExamLink(stage.name, examLinks[stage.name] || '')}
                             className="px-3 py-2 bg-coptic-blue text-white rounded-xl text-xs hover:bg-coptic-blue/90 transition-colors"
                           >
                             حفظ
