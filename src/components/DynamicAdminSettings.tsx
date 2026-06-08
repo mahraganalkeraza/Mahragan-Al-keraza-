@@ -22,7 +22,7 @@ export default function DynamicAdminSettings() {
   const [churches, setChurches] = useState<any[]>([]);
   const [levels, setLevels] = useState<any[]>([]);
   const [competitions, setCompetitions] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'churches' | 'levels' | 'competitions' | 'activityStages' | 'hymnStages' | 'logo' | 'validation' | 'purge'>('churches');
+  const [activeTab, setActiveTab] = useState<'churches' | 'levels' | 'competitions' | 'activityStages' | 'hymnStages' | 'logo' | 'validation' | 'purge' | 'migration'>('churches');
 
   const [validationSettings, setValidationSettings] = useState<any>({
     templates: [],
@@ -52,6 +52,232 @@ export default function DynamicAdminSettings() {
   const [isSaving, setIsSaving] = useState(false);
   const [purgeStatus, setPurgeStatus] = useState('');
   const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string, type: 'church' | 'level' | 'comp' | 'activityStage' | 'hymnStage' | 'purge' } | null>(null);
+
+  // REVERSE MIGRATION FROM SUPABASE / LOCAL BACKUP CODES
+  const [supabaseUrl, setSupabaseUrl] = useState('');
+  const [supabaseKey, setSupabaseKey] = useState('');
+  const [supabaseTableParticipants, setSupabaseTableParticipants] = useState('registrations');
+  const [supabaseTableOrders, setSupabaseTableOrders] = useState('book_requests');
+  const [migrationStatus, setMigrationStatus] = useState('');
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [rawJsonData, setRawJsonData] = useState('');
+  const [jsonDataType, setJsonDataType] = useState<'participants' | 'orders'>('participants');
+
+  const handleSupabaseDirectSync = async () => {
+    if (!supabaseUrl || !supabaseKey) {
+      alert('يرجى إدخال رابط مشروع Supabase ومفتاح API.');
+      return;
+    }
+    
+    setIsMigrating(true);
+    setMigrationStatus('جاري بدء بروتوكول الترحيل والربط بـ Supabase...');
+    const cleanedUrl = supabaseUrl.trim().replace(/\/$/, '');
+    
+    try {
+      // 1. Fetch Registrations from Supabase
+      setMigrationStatus('جاري جلب بيانات المشتركين (Registrations) من Supabase...');
+      const regRes = await fetch(`${cleanedUrl}/rest/v1/${supabaseTableParticipants}`, {
+        headers: {
+          'apikey': supabaseKey.trim(),
+          'Authorization': `Bearer ${supabaseKey.trim()}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      let registrations: any[] = [];
+      if (regRes.ok) {
+        registrations = await regRes.json();
+      } else {
+        console.warn('Did not fetch registrations from custom table, continuing...');
+      }
+      
+      setMigrationStatus(`تم جلب ${registrations.length} مشترك من Supabase. جاري دمجهم في Firebase Firestore...`);
+      
+      // Let's load Firestore participants
+      const currentParticipantsSnap = await getDocs(collection(db, 'participants'));
+      const currentParticipants = currentParticipantsSnap.docs.map(doc => doc.data());
+      
+      let pMerged = 0;
+      let pSkipped = 0;
+      
+      for (let i = 0; i < registrations.length; i++) {
+        const student = registrations[i];
+        
+        // Match by student name and church to avoid duplicates (Arabic trim lookup)
+        const nameKey = (student.name || student.studentName || '').trim();
+        const churchKey = (student.churchName || student.church || '').trim();
+        
+        const existsInFirebase = currentParticipants.some(p => 
+          (p.name || '').trim() === nameKey && (p.churchName || '').trim() === churchKey
+        );
+        
+        if (existsInFirebase) {
+          pSkipped++;
+          continue;
+        }
+        
+        // Generate valid document ID
+        const studentId = student.id || student.national_id || `mig_${Math.random().toString(36).substr(2, 9)}`;
+        const firebaseDocRef = doc(db, 'participants', String(studentId));
+        
+        await setDoc(firebaseDocRef, {
+          name: nameKey,
+          stage: student.stage || student.levelName || 'عام',
+          gender: student.gender || 'ذكر',
+          churchName: churchKey,
+          competitions: student.competitions || student.selectedCompetitions || [],
+          synced_back_at: new Date().toISOString(),
+          isMigrated: true
+        }, { merge: true });
+        
+        pMerged++;
+        if (i % 20 === 0) {
+          setMigrationStatus(`جاري دمج المشتركين: ${i}/${registrations.length}...`);
+        }
+      }
+      
+      // 2. Fetch Orders from Supabase
+      setMigrationStatus('جاري جلب طلبات الكتب (Book Orders) من Supabase...');
+      const orderRes = await fetch(`${cleanedUrl}/rest/v1/${supabaseTableOrders}`, {
+        headers: {
+          'apikey': supabaseKey.trim(),
+          'Authorization': `Bearer ${supabaseKey.trim()}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      let oMerged = 0;
+      let oSkipped = 0;
+      if (orderRes.ok) {
+        const ordersData = await orderRes.json();
+        setMigrationStatus(`تم جلب ${ordersData.length} طلب كتاب من Supabase. جاري دمجهم وتصفية المكررات...`);
+        
+        const currentOrdersSnap = await getDocs(collection(db, 'orders'));
+        const currentOrders = currentOrdersSnap.docs.map(doc => doc.data());
+        
+        for (let j = 0; j < ordersData.length; j++) {
+          const ord = ordersData[j];
+          const churchKey = (ord.churchName || ord.church || '').trim();
+          const grandTotalKey = ord.grandTotal || ord.total || 0;
+          
+          const existsInFirebase = currentOrders.some(o => 
+            (o.churchName || '').trim() === churchKey && o.grandTotal === grandTotalKey
+          );
+          
+          if (existsInFirebase) {
+            oSkipped++;
+            continue;
+          }
+          
+          const orderId = ord.id || `order_mig_${Math.random().toString(36).substr(2, 9)}`;
+          await setDoc(doc(db, 'orders', String(orderId)), {
+            churchName: churchKey,
+            details: ord.details || [],
+            grandTotal: grandTotalKey,
+            timestamp: ord.timestamp || ord.createdAt || new Date().toISOString(),
+            synced_back_at: new Date().toISOString(),
+            isMigrated: true
+          }, { merge: true });
+          
+          oMerged++;
+        }
+      }
+      
+      setMigrationStatus(`تمت عملية الترحيل بنجاح! 🎉\n` + 
+        `المشتركون: تم دمج ${pMerged} وتخطي ${pSkipped} (موجودون مسبقاً).\n` +
+        `طلبات الكتب: تم دمج ${oMerged} وتخطي ${oSkipped} (موجودون مسبقاً).`);
+    } catch (err: any) {
+      console.error(err);
+      setMigrationStatus(`فشلت عملية المزامنة التلقائية: ${err.message || err}`);
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
+  const handleJsonImport = async () => {
+    if (!rawJsonData.trim()) {
+      alert('يرجى لصق بيانات الـ JSON أولاً.');
+      return;
+    }
+    setIsMigrating(true);
+    setMigrationStatus('جاري تحليل ملف الـ JSON المنسوخ...');
+    try {
+      const parsed = JSON.parse(rawJsonData.trim());
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      setMigrationStatus(`تم تمييز مصفوفة تحتوي على ${items.length} عنصر. جاري دمجهم مع Firestore...`);
+      
+      let merged = 0;
+      let skipped = 0;
+      
+      if (jsonDataType === 'participants') {
+        const currentParticipantsSnap = await getDocs(collection(db, 'participants'));
+        const currentParticipants = currentParticipantsSnap.docs.map(doc => doc.data());
+        
+        for (let i = 0; i < items.length; i++) {
+          const student = items[i];
+          const nameKey = (student.name || student.studentName || '').trim();
+          const churchKey = (student.churchName || student.church || '').trim();
+          
+          const existsInFirebase = currentParticipants.some(p => 
+            (p.name || '').trim() === nameKey && (p.churchName || '').trim() === churchKey
+          );
+          
+          if (existsInFirebase) {
+            skipped++;
+            continue;
+          }
+          
+          const studentId = student.id || student.national_id || `json_mig_${Math.random().toString(36).substr(2, 9)}`;
+          await setDoc(doc(db, 'participants', String(studentId)), {
+            name: nameKey,
+            stage: student.stage || student.levelName || 'عام',
+            gender: student.gender || 'ذكر',
+            churchName: churchKey,
+            competitions: student.competitions || student.selectedCompetitions || [],
+            synced_back_at: new Date().toISOString(),
+            isMigrated: true
+          }, { merge: true });
+          merged++;
+        }
+      } else {
+        const currentOrdersSnap = await getDocs(collection(db, 'orders'));
+        const currentOrders = currentOrdersSnap.docs.map(doc => doc.data());
+        
+        for (let j = 0; j < items.length; j++) {
+          const ord = items[j];
+          const churchKey = (ord.churchName || ord.church || '').trim();
+          const grandTotalKey = ord.grandTotal || ord.total || 0;
+          
+          const existsInFirebase = currentOrders.some(o => 
+            (o.churchName || '').trim() === churchKey && o.grandTotal === grandTotalKey
+          );
+          
+          if (existsInFirebase) {
+            skipped++;
+            continue;
+          }
+          
+          const orderId = ord.id || `order_json_mig_${Math.random().toString(36).substr(2, 9)}`;
+          await setDoc(doc(db, 'orders', String(orderId)), {
+            churchName: churchKey,
+            details: ord.details || [],
+            grandTotal: grandTotalKey,
+            timestamp: ord.timestamp || ord.createdAt || new Date().toISOString(),
+            synced_back_at: new Date().toISOString(),
+            isMigrated: true
+          }, { merge: true });
+          merged++;
+        }
+      }
+      
+      setMigrationStatus(`تم بنجاح ترحيل ${merged} عنصر يدوياً وتخطي ${skipped} لتفادي التكرار! 🎉`);
+    } catch (err: any) {
+      console.error(err);
+      setMigrationStatus(`خطأ في تحليل قالب الـ JSON المنسوخ: ${err.message || err}`);
+    } finally {
+      setIsMigrating(false);
+    }
+  };
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -424,6 +650,7 @@ export default function DynamicAdminSettings() {
           { id: 'hymnStages', label: 'مراحل الألحان' },
           { id: 'validation', label: 'محرك التحقق وإدارة الملفات' },
           { id: 'logo', label: 'شعار المهرجان السنوي' },
+          { id: 'migration', label: 'الدمج والترحيل العكسي (Backup/Supabase)' },
           { id: 'purge', label: 'تنظيف البيانات القديمة (Wipe)' }
         ].map(tab => (
           <button
@@ -745,6 +972,146 @@ export default function DynamicAdminSettings() {
                 </div>
               </label>
             </div>
+          </div>
+        )}
+
+        {/* TAB: MIGRATION */}
+        {activeTab === 'migration' && (
+          <div className="space-y-8" dir="rtl">
+            <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100 flex items-start gap-4">
+              <Database size={24} className="text-emerald-600 shrink-0 mt-1" />
+              <div>
+                <h3 className="text-lg font-black text-emerald-800">أداة الترحيل العكسي واستعادة البيانات من مخرجات الطوارئ (Supabase/JSON)</h3>
+                <p className="text-sm font-bold text-emerald-700 mt-2">
+                  استخدم هذا المعالج المعياري لمزامنة كافة بيانات تسجيل المشتركين وطلبات الكتب التي جرت مؤخراً على السيرفر الخارجي أو المحفوظة كملف احتياطي، ودمجها مباشرة في Firebase Firestore.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Option 1: Direct Supabase REST Connection */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div className="flex items-center gap-2">
+                  <Database size={20} className="text-blue-600" />
+                  <h4 className="font-black text-slate-800 text-lg">الخيار الأول: المزامنة المباشرة مع Supabase API</h4>
+                </div>
+                <p className="text-xs font-bold text-slate-500">
+                  قم بإدخال بيانات الاتصال بمشروع Supabase الخاص بك للاتصال التلقائي وجلب البيانات ودمجها بذكاء دون المساس بالسجلات الموجودة.
+                </p>
+
+                <div className="space-y-3 pt-2">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Supabase Project URL (رابط المشروع)</label>
+                    <input 
+                      type="text" 
+                      placeholder="https://your-project.supabase.co" 
+                      value={supabaseUrl} 
+                      onChange={(e) => setSupabaseUrl(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Supabase Anon Key or Service Role Key</label>
+                    <input 
+                      type="password" 
+                      placeholder="eyJhbGciOi..." 
+                      value={supabaseKey} 
+                      onChange={(e) => setSupabaseKey(e.target.value)}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">جدول المشتركين (Registrations)</label>
+                      <input 
+                        type="text" 
+                        value={supabaseTableParticipants} 
+                        onChange={(e) => setSupabaseTableParticipants(e.target.value)}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">جدول الكتب (Book-Requests)</label>
+                      <input 
+                        type="text" 
+                        value={supabaseTableOrders} 
+                        onChange={(e) => setSupabaseTableOrders(e.target.value)}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSupabaseDirectSync}
+                  disabled={isMigrating}
+                  className="w-full bg-blue-600 text-white p-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition cursor-pointer"
+                >
+                  {isMigrating ? <Loader2 className="animate-spin animate-infinite" size={18} /> : null}
+                  مزامنة وجلب البيانات من Supabase
+                </button>
+              </div>
+
+              {/* Option 2: Clipboard Paste JSON */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Upload size={20} className="text-emerald-600" />
+                    <h4 className="font-black text-slate-800 text-lg">الخيار الثاني: ترحيل يدوي لنسخ الاحتياط JSON Backup</h4>
+                  </div>
+                  <p className="text-xs font-bold text-slate-500 mb-4 font-black">
+                    إذا قمت بتنزيل البيانات كملف CSV/JSON من Supabase أو لديك نسخة احتياطية محلية، الصق مصفوفة الـ JSON مباشرة هنا للدمج السريع والدقيق في Firebase.
+                  </p>
+
+                  <div className="flex gap-4 mb-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="jsonType" 
+                        checked={jsonDataType === 'participants'} 
+                        onChange={() => setJsonDataType('participants')} 
+                      />
+                      <span className="text-xs font-bold text-slate-700">بيانات المشتركين (Participants)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="jsonType" 
+                        checked={jsonDataType === 'orders'} 
+                        onChange={() => setJsonDataType('orders')} 
+                      />
+                      <span className="text-xs font-bold text-slate-700">بيانات طلبات الكتب (Orders)</span>
+                    </label>
+                  </div>
+
+                  <textarea
+                    rows={6}
+                    placeholder='[{"studentName": "جون دو", "stage": "إعدادي", "churchName": "مارمرقس"}, ...]'
+                    value={rawJsonData}
+                    onChange={(e) => setRawJsonData(e.target.value)}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono resize-none focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleJsonImport}
+                  disabled={isMigrating}
+                  className="w-full bg-emerald-600 text-white p-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition mt-4 cursor-pointer"
+                >
+                  {isMigrating ? <Loader2 className="animate-spin animate-infinite" size={18} /> : null}
+                  تحليل وبدء الدمج اليدوي
+                </button>
+              </div>
+            </div>
+
+            {/* Status Reports */}
+            {migrationStatus && (
+              <div className="p-4 bg-slate-100 rounded-2xl border border-slate-200 shadow-sm leading-relaxed whitespace-pre-wrap text-sm font-bold text-slate-800">
+                {migrationStatus}
+              </div>
+            )}
           </div>
         )}
 

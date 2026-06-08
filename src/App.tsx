@@ -727,11 +727,21 @@ function AppComponent() {
         const levelsData = await loadCachedOrFetch('levels', async () => {
           const snap = await getDocs(collection(db, 'levels'));
           return snap.docs.map(d => ({ 
+            id: d.id,
             name: d.data().name, 
             comps: d.data().allowedCompetitions || [] 
           }));
         });
-        setDynamicLevels(levelsData.sort((a: any, b: any) => sortStages(a.name, b.name)));
+        
+        // Defensive Deduplication of levels by name
+        const uniqueLevelsMap = new Map();
+        levelsData.forEach((l: any) => {
+          if (l && l.name) {
+            uniqueLevelsMap.set(l.name.trim(), l);
+          }
+        });
+        const uniqueLevels = Array.from(uniqueLevelsMap.values());
+        setDynamicLevels(uniqueLevels.sort((a: any, b: any) => sortStages(a.name, b.name)));
 
         const activityStagesData = await loadCachedOrFetch('activityStages', async () => {
           const snap = await getDocs(collection(db, 'activityStages'));
@@ -2689,13 +2699,13 @@ function AppComponent() {
   useEffect(() => {
     if (!isLoggedIn) return;
     if (activeSection === 'admin_dashboard') {
-      if (adminActiveTab === 'participants' && participants.length === 0) fetchParticipantsPage(true, true, participantSearch);
+      if (adminActiveTab === 'participants') fetchParticipantsPage(true, true, participantSearch);
       if (adminActiveTab === 'results' && results.length === 0) fetchResultsPage(true, true);
       if (adminActiveTab === 'online_results' && onlineResults.length === 0) fetchOnlineResultsPage(true, true);
       if (adminActiveTab === 'orders' && orders.length === 0) fetchOrdersPage(true, true);
       if (adminActiveTab === 'activity_teams' && activityTeams.length === 0) fetchTeamsPage(true, true, teamSearch);
     }
-  }, [adminActiveTab, activeSection, isLoggedIn, activeYear]);
+  }, [adminActiveTab, activeSection, isLoggedIn, activeYear, partChurchFilter, partStageFilter, partCompFilter]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -4315,7 +4325,7 @@ function AppComponent() {
                     className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
                   >
                     <option value="الكل">كل المراحل</option>
-                    {dynamicLevels.sort((a,b)=>sortStages(a.name, b.name)).map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                    {dynamicLevels.sort((a,b)=>sortStages(a.name, b.name)).map(l => <option key={l.id || l.name} value={l.name}>{l.name}</option>)}
                   </select>
                   <select 
                     value={resultsFilterGrade}
