@@ -1159,7 +1159,7 @@ function AppComponent() {
   const analyticsData = useMemo(() => {
     const demographicsData = STAGE_ORDER.map(stg => ({
       name: stg,
-      "المشتركين": participants.filter(p => p.stage === stg).length
+      "المشتركين": allChurchParticipants.filter(p => p.stage === stg).length
     })).filter(d => d["المشتركين"] > 0);
 
     const booksPerStage: Record<string, number> = {};
@@ -1177,7 +1177,7 @@ function AppComponent() {
         let orderedBooks = 0;
         
         // Sum competitions enrollments for this church
-        const churchParticipants = participants.filter(p => p.churchName === cName);
+        const churchParticipants = allChurchParticipants.filter(p => p.churchName === cName);
         churchParticipants.forEach(p => {
              competitionsDemand += (p.competitions?.filter(c => c).length || 0);
         });
@@ -1201,7 +1201,7 @@ function AppComponent() {
     let compsCount: any = { "مادة واحدة": 0, "مادتين": 0, "٣ مواد أو أكثر": 0 };
     const compTypesMap: Record<string, number> = {};
     
-    participants.forEach(p => {
+    allChurchParticipants.forEach(p => {
        if (globalChurchFilter !== 'الكل' && p.churchName !== globalChurchFilter && userRole === 'admin') return;
        if (userRole === 'church' && p.churchName !== churchName) return;
        
@@ -1226,7 +1226,7 @@ function AppComponent() {
     })).filter(d => d.value > 0);
 
     return { demographicsData, retentionData, engagementData, competitionTypesData };
-  }, [participants, orders, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
+  }, [allChurchParticipants, orders, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
 
   const COLORS = ['#0f172a', '#d97706', '#e11d48', '#059669', '#2563eb', '#8b5cf6'];
 
@@ -4721,6 +4721,17 @@ function AppComponent() {
                               <span className="text-[9px] text-slate-400 font-black px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{p.gender || 'غير محدد'}</span>
                             </div>
                           </div>
+                          <div>
+                            <button 
+                              onClick={() => {
+                                setActiveSection('registration');
+                                handleEditParticipant(p);
+                              }}
+                              className="p-1.5 text-slate-300 hover:text-coptic-blue transition-colors opacity-0 group-hover:opacity-100"
+                              title="تعديل المشترك"
+                            >
+                              <Pencil size={16} />
+                            </button>
                             <button 
                               onClick={() => {
                                 setParticipantToDelete(p.id);
@@ -4731,6 +4742,7 @@ function AppComponent() {
                             >
                               <Trash2 size={16} />
                             </button>
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {(p.competitions || []).map((comp, i) => (
