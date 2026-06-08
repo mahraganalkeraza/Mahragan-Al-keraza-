@@ -50,6 +50,7 @@ import {
   Settings,
   Loader2,
   Save,
+  Pencil,
   ShoppingCart,
   Activity,
   Wallet,
@@ -7010,7 +7011,7 @@ function AppComponent() {
                     <div className="flex items-center gap-2">
                       <input 
                         type="text" 
-                        placeholder="البحث بالاسم..." 
+                        placeholder="البحث بالاسم أو الرقم القومي..." 
                         value={participantSearch}
                         onChange={(e) => setParticipantSearch(e.target.value)}
                         className="p-2 border border-slate-200 rounded-xl text-xs font-bold w-48"
