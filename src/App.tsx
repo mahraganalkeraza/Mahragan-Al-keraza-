@@ -846,6 +846,20 @@ function AppComponent() {
   const [totalOrdersCount, setTotalOrdersCount] = useState<number>(0);
   const [totalTeamsCount, setTotalTeamsCount] = useState<number>(0);
   const [totalResultsCount, setTotalResultsCount] = useState<number>(0);
+  const [debouncedParticipantSearch, setDebouncedParticipantSearch] = useState('');
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedParticipantSearch(participantSearch);
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [participantSearch]);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+       fetchParticipantsPage(true, true, debouncedParticipantSearch);
+    }
+  }, [debouncedParticipantSearch, isLoggedIn]);
+
   const [lastParticipantDoc, setLastParticipantDoc] = useState<any>(null);
   const [isParticipantsLoading, setIsParticipantsLoading] = useState(false);
   const [isParticipantsEnd, setIsParticipantsEnd] = useState(false);
@@ -2450,13 +2464,22 @@ function AppComponent() {
         }).catch(err => console.error("Firestore Core Error: ", err.message));
       }
       
+      constraints.push(limit(20));
+      
+      if (!isFirst && isNext && lastParticipantDoc) {
+        constraints.push(startAfter(lastParticipantDoc));
+      }
+      
       const q = query(baseQueryQ, ...constraints);
       const snap = await getDocs(q);
       
       const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
       setParticipants(newList);
+      setLastParticipantDoc(snap.docs[snap.docs.length - 1]);
+      setIsParticipantsEnd(snap.docs.length < 20);
       
       if (isFirst) setParticipantPageCount(1);
+      else if (isNext) setParticipantPageCount(prev => prev + 1);
       
     } catch (err: any) {
       console.error("Firestore Core Error: ", err.message);
@@ -6985,6 +7008,13 @@ function AppComponent() {
                       <UserPlus className="text-coptic-blue" /> المشتركين المسجلين
                     </h4>
                     <div className="flex items-center gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="البحث بالاسم..." 
+                        value={participantSearch}
+                        onChange={(e) => setParticipantSearch(e.target.value)}
+                        className="p-2 border border-slate-200 rounded-xl text-xs font-bold w-48"
+                      />
                       <button 
                         onClick={() => fetchParticipantsPage(true, true, participantSearch)}
                         disabled={isParticipantsLoading}

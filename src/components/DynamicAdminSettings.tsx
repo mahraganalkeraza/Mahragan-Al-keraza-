@@ -63,6 +63,39 @@ export default function DynamicAdminSettings() {
   const [rawJsonData, setRawJsonData] = useState('');
   const [jsonDataType, setJsonDataType] = useState<'participants' | 'orders'>('participants');
 
+  useEffect(() => {
+    const loadSupabaseSettings = async () => {
+      const docRef = doc(db, 'system_settings', 'supabase_config');
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setSupabaseUrl(data.supabaseUrl || '');
+        setSupabaseKey(data.supabaseKey || '');
+        setSupabaseTableParticipants(data.supabaseTableParticipants || 'registrations');
+        setSupabaseTableOrders(data.supabaseTableOrders || 'book_requests');
+      }
+    };
+    loadSupabaseSettings();
+  }, []);
+
+  const saveSupabaseSettings = async () => {
+    setIsSaving(true);
+    try {
+      await setDoc(doc(db, 'system_settings', 'supabase_config'), {
+        supabaseUrl,
+        supabaseKey,
+        supabaseTableParticipants,
+        supabaseTableOrders
+      }, { merge: true });
+      alert('تم حفظ إعدادات Supabase بنجاح!');
+    } catch (err: any) {
+      console.error(err);
+      alert('حدث خطأ أثناء حفظ الإعدادات.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSupabaseDirectSync = async () => {
     if (!supabaseUrl || !supabaseKey) {
       alert('يرجى إدخال رابط مشروع Supabase ومفتاح API.');
@@ -1038,15 +1071,24 @@ export default function DynamicAdminSettings() {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleSupabaseDirectSync}
-                  disabled={isMigrating}
-                  className="w-full bg-blue-600 text-white p-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition cursor-pointer"
-                >
-                  {isMigrating ? <Loader2 className="animate-spin animate-infinite" size={18} /> : null}
-                  مزامنة وجلب البيانات من Supabase
-                </button>
+                <div className="flex gap-4">
+                  <button
+                    type="button"
+                    onClick={saveSupabaseSettings}
+                    disabled={isSaving}
+                    className="w-1/2 bg-emerald-600 text-white p-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition cursor-pointer"
+                  >
+                    {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'حفظ الإعدادات'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSupabaseDirectSync}
+                    disabled={isMigrating}
+                    className="w-1/2 bg-blue-600 text-white p-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition cursor-pointer"
+                  >
+                    {isMigrating ? <Loader2 className="animate-spin animate-infinite" size={18} /> : 'المزامنة الآن'}
+                  </button>
+                </div>
               </div>
 
               {/* Option 2: Clipboard Paste JSON */}
