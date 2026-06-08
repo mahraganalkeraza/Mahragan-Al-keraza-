@@ -760,9 +760,20 @@ export default function DynamicAdminSettings() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {churches.map(church => (
                 <div key={church.id} className="p-4 border border-slate-100 rounded-xl flex items-center justify-between shadow-sm">
-                  <div>
-                    <h4 className="font-black text-slate-800">{church.name}</h4>
-                    <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded mt-1 inline-block">Code: {church.loginCode}</span>
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <h4 className="font-black text-slate-800">{church.name}</h4>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">Code: {church.loginCode}</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${
+                          (globalReadAccess !== false && church.isAllowedToRead !== false)
+                            ? "bg-indigo-100 text-indigo-700" 
+                            : "bg-amber-100 text-amber-700"
+                        }`}>
+                          {(globalReadAccess !== false && church.isAllowedToRead !== false) ? "قراءة" : "منع"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                   <button onClick={() => setDeleteConfirmation({ id: church.id, type: 'church' })} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
                 </div>

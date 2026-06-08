@@ -55,7 +55,11 @@ interface User {
   dashboardBg?: string;
 }
 
-export default function UserManagement() {
+interface UserManagementProps {
+  globalReadAccess?: boolean;
+}
+
+export default function UserManagement({ globalReadAccess = true }: UserManagementProps) {
   const [users, setUsers] = useState<User[]>([]);
   const [churchesBank, setChurchesBank] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -373,7 +377,16 @@ export default function UserManagement() {
                 <div className={`h-2 w-2 rounded-full ${church.isEnabled !== false ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
                 <div>
                   <div className={`text-xs font-black ${church.isEnabled !== false ? 'text-slate-800' : 'text-red-800'}`}>{church.name}</div>
-                  <div className="text-[10px] font-bold text-slate-400 mt-0.5">كود الدخول: {church.loginCode}</div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <div className="text-[10px] font-bold text-slate-400">كود الدخول: {church.loginCode}</div>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-black ${
+                      (globalReadAccess !== false && church.isAllowedToRead !== false)
+                        ? "bg-indigo-50 text-indigo-600" 
+                        : "bg-amber-50 text-amber-600"
+                    }`}>
+                      {(globalReadAccess !== false && church.isAllowedToRead !== false) ? "قراءة" : "منع"}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))
@@ -686,11 +699,11 @@ export default function UserManagement() {
                           {user.isEnabled !== false ? "نشط" : "معطل"}
                         </span>
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                          user.isAllowedToRead !== false 
+                          (globalReadAccess !== false && user.isAllowedToRead !== false)
                             ? "bg-indigo-100 text-indigo-700" 
-                            : "bg-amber-100 text-amber-700"
+                            : "bg-amber-100 text-amber-700 shadow-sm border border-amber-200"
                         }`}>
-                          {user.isAllowedToRead !== false ? "سماح قراءة" : "إيقاف قراءة"}
+                          {(globalReadAccess !== false && user.isAllowedToRead !== false) ? "سماح قراءة" : globalReadAccess === false ? "منع عام" : "إيقاف قراءة"}
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 truncate font-mono">
@@ -708,14 +721,15 @@ export default function UserManagement() {
                     <button
                       onClick={() => toggleReadingStatus(user)}
                       className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg transition-colors font-bold text-sm ${
-                        user.isAllowedToRead !== false
+                        (globalReadAccess !== false && user.isAllowedToRead !== false)
                           ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
                           : "bg-amber-50 text-amber-600 hover:bg-amber-100"
                       }`}
                       title="سماح القراءة"
+                      disabled={globalReadAccess === false}
                     >
-                      {user.isAllowedToRead !== false ? <Unlock size={16} /> : <Lock size={16} />} 
-                      {user.isAllowedToRead !== false ? "قراءة" : "منع"}
+                      {(globalReadAccess !== false && user.isAllowedToRead !== false) ? <Unlock size={16} /> : <Lock size={16} />} 
+                      {(globalReadAccess !== false && user.isAllowedToRead !== false) ? "قراءة" : globalReadAccess === false ? "منع عام" : "منع"}
                     </button>
                     <button
                       onClick={() => toggleStatus(user)}

@@ -6141,7 +6141,7 @@ function AppComponent() {
 
             {adminActiveTab === 'users_management' && (
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
-                <UserManagement />
+                <UserManagement globalReadAccess={globalReadAccess} />
               </section>
             )}
 
