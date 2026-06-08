@@ -70,13 +70,26 @@ export default function DynamicAdminSettings() {
   useEffect(() => {
     const loadSupabaseSettings = async () => {
       const docRef = doc(db, 'system_settings', 'supabase_config');
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setSupabaseUrl(data.supabaseUrl || '');
-        setSupabaseKey(data.supabaseKey || '');
-        setSupabaseTableParticipants(data.supabaseTableParticipants || 'registrations');
-        setSupabaseTableOrders(data.supabaseTableOrders || 'book_requests');
+      try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setSupabaseUrl(data.supabaseUrl || import.meta.env.VITE_SUPABASE_URL || 'https://nrigdgdiqjdzieryjjod.supabase.co');
+          setSupabaseKey(data.supabaseKey || import.meta.env.VITE_SUPABASE_ANON_KEY || '');
+          setSupabaseTableParticipants(data.supabaseTableParticipants || 'registrations');
+          setSupabaseTableOrders(data.supabaseTableOrders || 'book_requests');
+        } else {
+          setSupabaseUrl(import.meta.env.VITE_SUPABASE_URL || 'https://nrigdgdiqjdzieryjjod.supabase.co');
+          setSupabaseKey(import.meta.env.VITE_SUPABASE_ANON_KEY || '');
+          setSupabaseTableParticipants('registrations');
+          setSupabaseTableOrders('book_requests');
+        }
+      } catch (e) {
+        console.warn("Could not load Supabase settings from Firestore, using environment fallbacks:", e);
+        setSupabaseUrl(import.meta.env.VITE_SUPABASE_URL || 'https://nrigdgdiqjdzieryjjod.supabase.co');
+        setSupabaseKey(import.meta.env.VITE_SUPABASE_ANON_KEY || '');
+        setSupabaseTableParticipants('registrations');
+        setSupabaseTableOrders('book_requests');
       }
     };
     loadSupabaseSettings();
