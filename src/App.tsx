@@ -104,8 +104,10 @@ import {
   storage,
   OperationType,
   CURRENT_YEAR,
-  getDocSafe,
+   getDocSafe,
   getDocsSafe,
+  updateDocSafe,
+  addDocSafe,
   collection,
   doc,
   setDoc,
@@ -610,6 +612,7 @@ function AppComponent() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!initialProfile);
   const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest' | 'super_admin'>(initialProfile?.role || 'guest');
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
 
   useEffect(() => {
     const handleQuotaExceeded = () => {
@@ -621,6 +624,21 @@ function AppComponent() {
     }
     return () => {
       window.removeEventListener('firestore-quota-exceeded', handleQuotaExceeded);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      }
     };
   }, []);
   
@@ -779,6 +797,43 @@ function AppComponent() {
                 localStorage.setItem('appLogoCache', configData.appLogo);
                 setAppLogo(configData.appLogo);
             }
+        }
+        
+        // Settings/system_controls
+        try {
+            const { data: controlsData } = await supabase.from('settings').select('*').eq('id', 'system_controls').single();
+            if (controlsData) {
+                setSystemControls({
+                    isRegistrationOpen: controlsData.isRegistrationOpen !== false,
+                    isBookCalculatorOpen: controlsData.isBookCalculatorOpen !== false
+                });
+            } else {
+                setSystemControls({
+                    isRegistrationOpen: true,
+                    isBookCalculatorOpen: true
+                });
+            }
+        } catch (e) {
+            console.warn("Error fetching system controls, default to active:", e);
+            setSystemControls({
+                isRegistrationOpen: true,
+                isBookCalculatorOpen: true
+            });
+        }
+
+        // Settings/footer
+        try {
+            const { data: footerData } = await supabase.from('settings').select('*').eq('id', 'footer').single();
+            if (footerData) {
+                setSiteSettings({
+                    phone: footerData.phone || '',
+                    facebook: footerData.facebook || '',
+                    telegram: footerData.telegram || '',
+                    copyright: footerData.copyright || 'جميع الحقوق محفوظة © مهرجان الكرازة المرقسية'
+                });
+            }
+        } catch (e) {
+            console.warn("Error fetching footer settings:", e);
         }
         
         // Churches
@@ -1522,8 +1577,28 @@ function AppComponent() {
   // Firestore Listeners
   useEffect(() => {
     const fetchSchedules = async () => {
-      const { data } = await supabase.from('schedules').select('*').eq('year', activeYear);
-      if (data) setSchedules(data);
+      try {
+        const { data } = await supabase.from('schedules').select('*').eq('year', activeYear);
+        if (data && data.length > 0) {
+          setSchedules(data);
+          try {
+            localStorage.setItem(`cached_schedules_${activeYear}`, JSON.stringify(data));
+          } catch (e) {
+            console.warn("localStorage quota or write error:", e);
+          }
+        } else {
+          const cached = localStorage.getItem(`cached_schedules_${activeYear}`);
+          if (cached) {
+            setSchedules(JSON.parse(cached));
+          }
+        }
+      } catch (err) {
+        console.warn("Supabase fetch failed, loading offline cached schedules:", err);
+        const cached = localStorage.getItem(`cached_schedules_${activeYear}`);
+        if (cached) {
+          setSchedules(JSON.parse(cached));
+        }
+      }
     };
     fetchSchedules();
 
@@ -1795,7 +1870,7 @@ function AppComponent() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await setDoc(doc(db, 'settings', 'footer'), siteSettings);
+      await updateDocSafe(doc(db, 'settings', 'footer'), siteSettings);
       alert('تم حفظ إعدادات الموقع بنجاح!');
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -1808,7 +1883,8 @@ function AppComponent() {
   const handleUpdateSystemControls = async (newControls: any) => {
     setIsLoading(true);
     try {
-      await setDoc(doc(db, 'settings', 'system_controls'), newControls);
+      await updateDocSafe(doc(db, 'settings', 'system_controls'), newControls);
+      setSystemControls(newControls);
       setNotification('تم تحديث إعدادات النظام المركذية');
     } catch (e) {
       console.error(e);
@@ -1821,7 +1897,8 @@ function AppComponent() {
   const handleUpdateExamConfig = async (newConfig: any) => {
     setIsLoading(true);
     try {
-      await setDoc(doc(db, 'settings', 'exam_config'), newConfig);
+      await updateDocSafe(doc(db, 'settings', 'exam_config'), newConfig);
+      setExamConfig(newConfig);
       setNotification('تم تحديث إعدادات الامتحانات');
     } catch (e) {
       console.error(e);
@@ -1835,7 +1912,7 @@ function AppComponent() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await setDoc(doc(db, 'settings', 'about'), aboutContent);
+      await updateDocSafe(doc(db, 'settings', 'about'), aboutContent);
       alert('تم حفظ محتوى "عن المهرجان" بنجاح!');
     } catch (error) {
       console.error("Error saving about content:", error);
@@ -3401,19 +3478,11 @@ function AppComponent() {
           timestamp: new Date().toLocaleString('ar-EG')
         };
         
-        // Supabase Migration: Update record
+        // Supabase Migration: Update record via updateDocSafe wrapper
         let updateDone = false;
         try {
-          const { error } = await supabase
-              .from('registrations')
-              .update(updatedFields)
-              .eq('serial', editingParticipant.serial || editingParticipant.id);
-              
-          if (!error) {
-            updateDone = true;
-          } else {
-            console.warn("Supabase update returned error, update status bypassed:", error);
-          }
+          await updateDocSafe(doc(db, 'participants', editingParticipant.id), updatedFields);
+          updateDone = true;
         } catch (e) {
           console.warn("Supabase update connection failed, bypassed for offline state:", e);
         }
@@ -3444,14 +3513,9 @@ function AppComponent() {
 
         let insertDone = false;
         try {
-          const { error } = await supabase
-            .from('registrations')
-            .insert([studentData]);
-              
-          if (!error) {
+          const docRef = await addDocSafe(collection(db, 'participants'), studentData);
+          if (docRef && docRef.id) {
             insertDone = true;
-          } else {
-            console.warn("Supabase insert returned error, saved to local cache:", error);
           }
         } catch (e) {
           console.warn("Supabase insert connection failed, saved to local cache:", e);
@@ -3628,7 +3692,7 @@ function AppComponent() {
         }))
       };
 
-      const docRef = await withExponentialBackoff(() => addDoc(collection(db, 'orders'), { ...newOrder, year: activeYear }));
+      const docRef = await withExponentialBackoff(() => addDocSafe(collection(db, 'orders'), { ...newOrder, year: activeYear }));
       
       // Instant state sync
       const finalOrder: Order = {
@@ -4023,6 +4087,12 @@ function AppComponent() {
 
   return (
     <div className="min-h-screen bg-bg-soft font-sans selection:bg-accent/30 relative" dir="rtl">
+      {isOffline && (
+        <div className="bg-amber-600 text-white py-2 px-4 text-center text-xs md:text-sm font-medium flex items-center justify-center gap-2 z-50 relative shadow" dir="rtl">
+          <span className="animate-pulse">●</span>
+          <span>وضع عدم الاتصال بالإنترنت نشط. يُمكنك تصفح جداول الامتحانات والبيانات المحملة مسبقاً بنجاح.</span>
+        </div>
+      )}
       {/* Global Watermark */}
       <div 
         className="fixed inset-0 pointer-events-none z-0 opacity-[0.03]"

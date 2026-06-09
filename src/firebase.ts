@@ -168,11 +168,26 @@ export const updateDoc = async (docRef: any, data: any) => {
   if (id) {
     const { error } = await supabase.from(targetTable).update(data).eq('id', id);
     if (error) {
-      console.error("Supabase Update Error:", error);
-      throw error;
+       console.error("Supabase Update Error:", error);
+       throw error;
     }
   }
 };
+
+// Intercept state updates for app settings and toggles
+export async function updateDocSafe(docRef: any, updateData: any) {
+  const segments = docRef.path?.split('/') || [];
+  const collectionName = segments[0] || 'settings';
+  const id = segments[1] || 'global';
+  const targetTable = collectionName === 'participants' ? 'registrations' : collectionName;
+
+  const { data, error } = await supabase.from(targetTable).update(updateData).eq('id', id).select();
+  if (error) {
+    console.error("Supabase Update Error:", error);
+    throw error;
+  }
+  return data;
+}
 
 export const deleteDoc = async (docRef: any) => {
   const { segments } = getPathAndSegments(docRef);
