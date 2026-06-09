@@ -136,7 +136,7 @@ export async function getDocsSafe(q: any) {
     if (isQuotaError(error)) {
       (window as any).firestoreQuotaExceeded = true;
       window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
-      return { docs: [] };
+      return { docs: [], empty: true };
     }
     throw error;
   }

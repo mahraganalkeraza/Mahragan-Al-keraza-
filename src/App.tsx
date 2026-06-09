@@ -2829,15 +2829,15 @@ function AppComponent() {
       targetChurch = 'اللجنة المركزية منطقة18';
     } else {
       try {
-        const foundChurch = churchData.find((c: any) => c.name === loginChurch);
+        const expectedPassword = CHURCH_CREDENTIALS[loginChurch];
         
-        if (!foundChurch) {
+        if (!expectedPassword) {
           setLoginError('الكنيسة غير موجودة');
           setIsLoading(false);
           return;
         }
 
-        if (code !== foundChurch.password) {
+        if (code !== expectedPassword) {
           setLoginError('كود الكنيسة غير صحيح');
           setIsLoading(false);
           return;
@@ -4202,8 +4202,8 @@ function AppComponent() {
                 >
                   <option value="">اختر الكنيسة</option>
                   <option value="مسئول">دخول مسئول (Admin)</option>
-                  {[...publicChurches].sort((a, b) => a.name.localeCompare(b.name)).map(church => (
-                    <option key={church.name} value={church.name}>{church.name}</option>
+                  {[...Object.keys(CHURCH_CREDENTIALS)].sort().map(church => (
+                    <option key={church} value={church}>{church}</option>
                   ))}
                 </select>
                 {loginChurch && loginChurch !== 'مسئول' && (
