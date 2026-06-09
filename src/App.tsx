@@ -704,17 +704,25 @@ function AppComponent() {
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
 
-    const unsubChurches = onSnapshot(collection(db, 'churches'), (snapshot) => {
-      const churchesData = snapshot.docs
-        .map(d => ({ 
-          name: d.data().name, 
-          email: '', 
-          isEnabled: d.data().isEnabled !== false,
-          logoUrl: d.data().logoUrl || ''
-        }))
-        .filter(c => c.isEnabled);
-      setPublicChurches(churchesData);
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'churches'));
+    // const unsubChurches = onSnapshot(collection(db, 'churches'), (snapshot) => {
+    //   const churchesData = snapshot.docs
+    //     .map(d => ({ 
+    //       name: d.data().name, 
+    //       email: '', 
+    //       isEnabled: d.data().isEnabled !== false,
+    //       logoUrl: d.data().logoUrl || ''
+    //     }))
+    //     .filter(c => c.isEnabled);
+    //   setPublicChurches(churchesData);
+    // }, (error) => handleFirestoreError(error, OperationType.GET, 'churches'));
+
+    const localChurches = churchData.map(c => ({ 
+      name: c.name, 
+      email: '', 
+      isEnabled: true,
+      logoUrl: ''
+    }));
+    setPublicChurches(localChurches);
 
     const unsubLevels = onSnapshot(collection(db, 'levels'), (snapshot) => {
       const levelsData = snapshot.docs.map(d => ({ 
@@ -954,7 +962,7 @@ function AppComponent() {
     isRegistrationOpen: boolean;
     isBookCalculatorOpen: boolean;
   }>({
-    isRegistrationOpen: false,
+    isRegistrationOpen: true,
     isBookCalculatorOpen: true
   });
 
