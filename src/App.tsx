@@ -126,11 +126,10 @@ import {
   getDocSafe,
   getDocsSafe
 } from './firebase';
-// import churchData from './data/churches.json'; // Removed redundant import
+import churchData from './data/churches.json';
 import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
 import { supabase } from './lib/supabaseClient';
-import { registerParticipantDualWrite, mapArabicCompetitions, normalizeRegistrationList } from './services/registrationHandler';
 
 import UserManagement from './components/UserManagement';
 import { 
@@ -154,9 +153,7 @@ import {
   ADMIN_PASSWORD,
   CHURCH_CREDENTIALS,
   STAGE_ORDER,
-  sortStages,
-  OFFICIAL_STAGES,
-  OFFICIAL_COMPETITIONS
+  sortStages
   } from './constants';
 
 import { generateMasterExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/newExcelExport';
@@ -781,18 +778,9 @@ function AppComponent() {
         }
         
         // Churches
-        try {
-            let { data: churchesData, error } = await supabase.from('churches').select('*').eq('isEnabled', true);
-            if (error || !churchesData || churchesData.length === 0) {
-                console.warn("Attempting to fetch from public_churches fallback");
-                const { data: fallbackData } = await supabase.from('public_churches').select('*').eq('isEnabled', true);
-                if (fallbackData) churchesData = fallbackData;
-            }
-            if (churchesData) {
-                setPublicChurches(churchesData.map(d => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
-            }
-        } catch (e) {
-            console.error("Exception when fetching churches:", e);
+        const { data: churchesData } = await supabase.from('churches').select('*').eq('isEnabled', true);
+        if (churchesData) {
+            setPublicChurches(churchesData.map(d => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
         }
         
         // Add other loads here similar to above
@@ -966,7 +954,7 @@ function AppComponent() {
     isRegistrationOpen: boolean;
     isBookCalculatorOpen: boolean;
   }>({
-    isRegistrationOpen: true,
+    isRegistrationOpen: false,
     isBookCalculatorOpen: true
   });
 
@@ -1173,7 +1161,7 @@ function AppComponent() {
         if (normalizedComps.some((c: string) => c.includes(normalizeArabic('دراسي')))) { stg.darasi++; hasCountedSub = true; }
         if (normalizedComps.some((c: string) => c.includes(normalizeArabic('محفوظات')))) { stg.mahfouthat++; hasCountedSub = true; }
         if (normalizedComps.some((c: string) => c.includes(normalizeArabic('قبطي مستوى أول')) || c.includes(normalizeArabic('مستوى اول')))) { stg.coptic1++; hasCountedSub = true; }
-        if (normalizedComps.some((c: string) => c.includes(normalizeArabic('قبطي مستوى ثاني')) || c.includes(normalizeArabic('مستوى ثاني')) || c.includes(normalizeArabic('قبطي مستوى ثان')) || c.includes(normalizeArabic('مستوى ثان')))) { stg.coptic2++; hasCountedSub = true; }
+        if (normalizedComps.some((c: string) => c.includes(normalizeArabic('قبطي مستوى ثاني')) || c.includes(normalizeArabic('مستوى ثاني')))) { stg.coptic2++; hasCountedSub = true; }
         
         if (hasCountedSub) {
            stg.subscribers++;
@@ -2214,41 +2202,6 @@ function AppComponent() {
           await batch.commit();
         }
 
-        // Parallel non-blocking Supabase bulk synchronization
-        try {
-          const supabaseBackupData = parsedParticipants.map(item => {
-            const compStatuses = mapArabicCompetitions(item.competitions || [], false);
-            return {
-              id: item.id,
-              serial: item.serial || item.id,
-              name: item.name,
-              churchName: item.churchName,
-              stage: item.stage,
-              gender: item.gender,
-              competition: (item.competitions || []).join(', ') || 'عام',
-              darasi: compStatuses.darasi,
-              qebti: compStatuses.qebti,
-              mahfouzat: compStatuses.mahfouzat,
-              country: item.country || 'مصر',
-              year: item.year || activeYear,
-              timestamp: item.timestamp || new Date().toISOString()
-            };
-          });
-
-          supabase
-            .from('registrations')
-            .insert(supabaseBackupData)
-            .then(
-              ({ error: sbErr }) => {
-                if (sbErr) console.error('[Supabase Bulk Import Sync] Quietly failed to insert backup records (Isolated):', sbErr);
-                else console.log('[Supabase Bulk Import Sync] Backup records inserted successfully.');
-              },
-              (err) => console.error('[Supabase Bulk Import Sync] Exception caught during backup insertion:', err)
-            );
-        } catch (sbEx) {
-          console.error('[Supabase Bulk Import Sync] Exception formatting backup list:', sbEx);
-        }
-
         // Instant state sync
         setParticipants(prev => [...prev, ...parsedParticipants]);
         setTotalParticipantsCount(prev => prev + parsedParticipants.length);
@@ -2601,9 +2554,7 @@ function AppComponent() {
       }
       
       if (partStageFilter !== 'الكل') sbQuery = sbQuery.eq('stage', partStageFilter);
-      if (partCompFilter !== 'الكل') {
-        sbQuery = sbQuery.ilike('competition', `%${partCompFilter}%`);
-      }
+      if (partCompFilter !== 'الكل') sbQuery = sbQuery.contains('competitions', [partCompFilter]);
       
       const { data, error: sbError } = await sbQuery;
       
@@ -2611,8 +2562,7 @@ function AppComponent() {
         console.error("Supabase also failed:", sbError);
         setNotification('خطأ في جلب بيانات المشتركين.');
       } else {
-        const cleanList = normalizeRegistrationList(data || []);
-        setParticipants(cleanList);
+        setParticipants(data as Participant[]);
         setIsParticipantsEnd(true);
       }
     } finally {
@@ -2643,8 +2593,7 @@ function AppComponent() {
         if (sbError) {
             console.error("Supabase also failed:", sbError);
         } else {
-            const cleanList = normalizeRegistrationList(data || []);
-            setAllChurchParticipants(cleanList);
+            setAllChurchParticipants(data as Participant[]);
         }
       }
   };
@@ -2880,7 +2829,7 @@ function AppComponent() {
       targetChurch = 'اللجنة المركزية منطقة18';
     } else {
       try {
-        const foundChurch = CHURCH_CREDENTIALS.find((c: any) => c.churchName === loginChurch);
+        const foundChurch = churchData.find((c: any) => c.name === loginChurch);
         
         if (!foundChurch) {
           setLoginError('الكنيسة غير موجودة');
@@ -2888,7 +2837,7 @@ function AppComponent() {
           return;
         }
 
-        if (code !== foundChurch.accessCode) {
+        if (code !== foundChurch.password) {
           setLoginError('كود الكنيسة غير صحيح');
           setIsLoading(false);
           return;
@@ -2932,8 +2881,8 @@ function AppComponent() {
       if (firebaseUser) {
         let userDoc;
         if (email.endsWith('_2026@mafk.com')) {
-           const church = CHURCH_CREDENTIALS.find((c: any) => c.accessCode === password);
-           userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: church?.churchName || 'كنيسة', uid: firebaseUser.uid }) };
+           const church = churchData.find((c: any) => c.code === password);
+           userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: church?.name || 'كنيسة', uid: firebaseUser.uid }) };
         } else {
            userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         }
@@ -3261,38 +3210,6 @@ function AppComponent() {
              const customId = generateShortId();
              await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...newParticipant, serial: customId }));
              
-             // Decoupled Supabase dynamic backup sync
-             try {
-               const supabaseBackupPayload = {
-                 id: customId,
-                 serial: customId,
-                 name: memberName,
-                 churchName,
-                 stage: newTeam.members[0].stage,
-                 gender: newTeam.members[0].gender,
-                 competition: 'عام',
-                 darasi: false,
-                 qebti: false,
-                 mahfouzat: false,
-                 country: 'Egypt',
-                 year: activeYear,
-                 timestamp: new Date().toISOString()
-               };
-
-               supabase
-                 .from('registrations')
-                 .insert([supabaseBackupPayload])
-                 .then(
-                   ({ error: sbErr }) => {
-                     if (sbErr) console.error('[Supabase Auto-Reg Sync] Quietly failed to insert backup record (Isolated):', sbErr);
-                     else console.log('[Supabase Auto-Reg Sync] Backup record inserted successfully.');
-                   },
-                   (err) => console.error('[Supabase Auto-Reg Sync] Exception caught during backup insertion:', err)
-                 );
-             } catch (sbEx) {
-               console.error('[Supabase Auto-Reg Sync] Exception preparing backup payload:', sbEx);
-             }
-
              // Instant state sync for newly added student from activity
              const newStudent: Participant = {
                id: customId,
@@ -3386,19 +3303,6 @@ function AppComponent() {
       batch.delete(doc(db, 'online_results', id));
       await batch.commit();
 
-      // Parallel non-blocking Supabase delete
-      supabase
-        .from('registrations')
-        .delete()
-        .eq('id', id)
-        .then(
-          ({ error: sbErr }) => {
-            if (sbErr) console.error('[Supabase Delete Sync] Quietly failed to delete backup record (Isolated):', sbErr);
-            else console.log('[Supabase Delete Sync] Backup record deleted successfully.');
-          },
-          (err) => console.error('[Supabase Delete Sync] Exception caught during delete backup:', err)
-        );
-
       // Get the church name before deleting
       const deletedParticipant = participants.find(p => p.id === id);
       const targetChurch = deletedParticipant?.churchName || churchName;
@@ -3480,20 +3384,13 @@ function AppComponent() {
     try {
       const recordsToInsert = participantsList.map((name) => {
           const customId = generateShortId();
-          const compStatuses = mapArabicCompetitions(["دراسي"], false);
           return {
               serial: customId,
               id: customId,
-              name: name.trim(),
+              name: name,
               churchName: "دير الجرنوس",
               stage: "جامعة",
-              gender: "ذكر",
-              competition: "دراسي",
-              darasi: compStatuses.darasi,
-              qebti: compStatuses.qebti,
-              mahfouzat: compStatuses.mahfouzat,
-              country: "مصر",
-              year: activeYear,
+              competitions: ["دراسي"],
               timestamp: new Date().toISOString()
           };
       });
@@ -3531,73 +3428,53 @@ function AppComponent() {
 
     try {
       if (editingParticipant) {
-        const firebaseUpdateFields = {
+        const updatedFields = {
           name: newParticipant.name,
           stage: newParticipant.stage,
           gender: newParticipant.gender,
           competitions: newParticipant.competitions.filter(c => c !== ''),
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toLocaleString('ar-EG')
         };
         
-        // 1. Authoritative Firebase update
-        await withExponentialBackoff(() => updateDoc(doc(db, 'participants', editingParticipant.id), firebaseUpdateFields));
+        // Supabase Migration: Update record
+        const { error } = await supabase
+            .from('registrations')
+            .update(updatedFields)
+            .eq('serial', editingParticipant.serial || editingParticipant.id);
+            
+        if (error) throw error;
         
-        // 2. Parallel, non-blocking Supabase update with unified fields
-        const compStatuses = mapArabicCompetitions(newParticipant.competitions.filter(c => c !== ''), false);
-        const supabaseUpdateFields = {
-          name: newParticipant.name.trim(),
-          stage: newParticipant.stage.trim(),
-          gender: newParticipant.gender,
-          competition: newParticipant.competitions.filter(c => c !== '').join(', ') || 'عام',
-          darasi: compStatuses.darasi,
-          qebti: compStatuses.qebti,
-          mahfouzat: compStatuses.mahfouzat,
-          timestamp: new Date().toISOString()
-        };
-
-        supabase
-          .from('registrations')
-          .update(supabaseUpdateFields)
-          .eq('id', editingParticipant.id)
-          .then(
-            ({ error: sbErr }) => {
-              if (sbErr) {
-                console.error('[Supabase Edit Sync] Quietly failed to edit backup record (Isolated):', sbErr);
-              } else {
-                console.log('[Supabase Edit Sync] Backup record updated successfully.');
-              }
-            },
-            (err) => {
-              console.error('[Supabase Edit Sync] Exception caught during edit backup:', err);
-            }
-          );
+        // Also keep updating Firebase (just in case it works for some, or to keep both in sync, but we might hit quota. Or we can comment it out)
+        // await withExponentialBackoff(() => updateDoc(doc(db, 'participants', editingParticipant.id), updatedFields));
         
         // Instant state sync for edit
         const updatedParticipant: Participant = {
           ...editingParticipant,
-          ...firebaseUpdateFields
+          ...updatedFields
         };
         setParticipants(prev => prev.map(p => p.id === editingParticipant.id ? updatedParticipant : p));
 
         setEditingParticipant(null);
         alert('تم تحديث بيانات المشترك بنجاح.');
       } else {
-        // Core Dual-Write Implementation (Writes to Firebase primary first, then Supabase backup in decoupled background task)
-        const dualWriteRes = await registerParticipantDualWrite({
-          name: newParticipant.name,
-          churchName: churchName,
-          stage: newParticipant.stage,
-          gender: newParticipant.gender,
-          competitions: newParticipant.competitions.filter(c => c !== ''),
-          year: activeYear,
-          country: 'مصر'
-        }, false);
-
-        if (!dualWriteRes.success) {
-          throw new Error('Dual-write registration failed in primary database.');
-        }
-
-        const customId = dualWriteRes.id;
+        const customId = generateShortId();
+        
+        const { data, error } = await supabase
+          .from('registrations')
+          .insert([{
+            id: customId,
+            serial: customId,
+            name: newParticipant.name,
+            churchName: churchName,
+            stage: newParticipant.stage,
+            gender: newParticipant.gender,
+            competitions: newParticipant.competitions.filter(c => c !== ''),
+            country: 'مصر',
+            year: activeYear,
+            timestamp: new Date().toISOString()
+          }]);
+            
+        if (error) throw error;
         
         // Instant state sync for adding a new student
         const newStudent: Participant = {
@@ -4325,8 +4202,8 @@ function AppComponent() {
                 >
                   <option value="">اختر الكنيسة</option>
                   <option value="مسئول">دخول مسئول (Admin)</option>
-                  {CHURCH_CREDENTIALS.map(church => (
-                    <option key={church.churchName} value={church.churchName}>{church.churchName}</option>
+                  {[...publicChurches].sort((a, b) => a.name.localeCompare(b.name)).map(church => (
+                    <option key={church.name} value={church.name}>{church.name}</option>
                   ))}
                 </select>
                 {loginChurch && loginChurch !== 'مسئول' && (
@@ -4636,7 +4513,7 @@ function AppComponent() {
                         className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
                       >
                         <option value="الكل">كل المراحل</option>
-                        {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                        {dynamicLevels.sort((a,b)=>sortStages(a.name, b.name)).map(l => <option key={l.id || l.name} value={l.name}>{l.name}</option>)}
                       </select>
                       <select 
                         value={resultsFilterGrade}
@@ -4692,7 +4569,7 @@ function AppComponent() {
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
                 >
                   <option value="الكل">كل المراحل</option>
-                  {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {dynamicLevels.map(l => <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>{typeof l === 'string' ? l : l.name}</option>)}
                 </select>
                 <select 
                   value={globalCompetitionFilter}
@@ -4700,7 +4577,7 @@ function AppComponent() {
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
                 >
                   <option value="الكل">كل المسابقات / الأنشطة</option>
-                  {OFFICIAL_COMPETITIONS.map(c => (
+                  {['دراسي', 'محفوظات', 'قبطي مستوى ١', 'قبطي مستوى ٢', 'كورال', 'ألحان', 'عزف'].map(c => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
@@ -4721,10 +4598,7 @@ function AppComponent() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button 
-                    onClick={() => {
-                        console.log("Exam button clicked");
-                        setShowExamGateway(true);
-                    }}
+                    onClick={() => setShowExamGateway(true)}
                     className="px-6 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-xl hover:scale-105 active:scale-95"
                   >
                     <BookOpen size={18} /> بدء دخول الامتحان (QR Scan)
@@ -4952,7 +4826,7 @@ function AppComponent() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
                       </select>
                     </div>
 
@@ -4961,6 +4835,8 @@ function AppComponent() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[0, 1, 2].map((idx) => {
                           const selectedComps = newParticipant.competitions;
+                          const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
+                          const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
                           
                           const isOptionDisabled = (val: string) => {
                             if (!val) return false;
@@ -4968,11 +4844,6 @@ function AppComponent() {
                             if (selectedComps.some((c, i) => i !== idx && c === val)) return true;
                             // Mutual exclusivity for Coptic Levels
                             if (val.includes('قبطي مستوى') && selectedComps.some((c, i) => i !== idx && c.includes('قبطي مستوى'))) return true;
-                            // Level enforcement
-                            const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي', 'جامعة', 'خريجون', 'خدام وإعداد الخدام', 'قانا الجليل', 'تعليم كبار', 'سمعان الشيخ', 'حرفيون', 'صم وبكم', 'قدرات خاصة', 'ديديموس', 'بولس وسيلا'].includes(newParticipant.stage);
-                            if (val === 'قبطي مستوى ثان' && !isCopticLevel2Allowed) return true;
-                            if (val === 'قبطي مستوى أول' && isCopticLevel2Allowed && !['حضانة', 'أولى وثانية', 'ثالثة ورابعة'].includes(newParticipant.stage)) return true;
-                            
                             return false;
                           };
 
@@ -4988,7 +4859,7 @@ function AppComponent() {
                               className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue"
                             >
                               <option value="">-- اختر المسابقة --</option>
-                              {OFFICIAL_COMPETITIONS.map((comp: string) => (
+                              {availableCompsForLevel.map((comp: string) => (
                                 <option key={comp} value={comp} disabled={isOptionDisabled(comp)}>{comp}</option>
                               ))}
                             </select>
@@ -5639,22 +5510,22 @@ function AppComponent() {
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                     >
                       <option value="الكل">كل المراحل</option>
-                      {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                      {dynamicLevels.map(l => <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>{typeof l === 'string' ? l : l.name}</option>)}
                     </select>
                   </div>
 
                   <div className="flex-1 w-full flex flex-col gap-1.5">
                     <label className="text-[10px] font-black text-slate-400">المسابقة</label>
-                      <select 
-                        value={partCompFilter}
-                        onChange={(e) => setPartCompFilter(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
-                      >
-                        <option value="الكل">مسابقة (الكل)</option>
-                        {OFFICIAL_COMPETITIONS.map(c => (
-                          <option key={c} value={c}>{c}</option>
-                        ))}
-                      </select>
+                    <select 
+                      value={partCompFilter}
+                      onChange={(e) => setPartCompFilter(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
+                    >
+                      <option value="الكل">مسابقة (الكل)</option>
+                      {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني', 'ألحان مستوى أول', 'ألحان مستوى ثاني', 'كشافة', 'رياضية', 'إبتكارات هندسية', 'فنون تشكيلية', 'مسرح'].map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="flex-2 w-full flex flex-col gap-1.5 relative">
@@ -6162,7 +6033,7 @@ function AppComponent() {
                     >
                       <option value="">-- اختر المسابقة --</option>
                       <option value="دراسي ومحفوظات وقبطي">دراسي ومحفوظات وقبطي</option>
-                      {OFFICIAL_COMPETITIONS.map(comp => (
+                      {Array.from(new Set(dynamicLevels.flatMap(l => l.comps || []))).sort().map(comp => (
                         <option key={comp} value={comp}>{comp}</option>
                       ))}
                     </select>
@@ -6268,7 +6139,7 @@ function AppComponent() {
                 <h4 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-2">
                   <BookOpen className="text-primary" /> بناء وتحكم الامتحانات الإلكترونية
                 </h4>
-                <ExamBuilder stages={OFFICIAL_STAGES} />
+                <ExamBuilder stages={dynamicLevels} />
               </section>
             )}
 
@@ -6301,7 +6172,7 @@ function AppComponent() {
                       className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
                     >
                       <option value="">-- اختر المرحلة --</option>
-                      {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                      {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
                     </select>
                   </div>
                   <div>
@@ -6551,7 +6422,7 @@ function AppComponent() {
                         <Church size={18} className="text-primary"/> تحكم حسب الكنيسة
                       </h5>
                       <div className="max-h-[300px] overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-2 no-scrollbar">
-                        {CHURCH_CREDENTIALS.map(c => c.churchName).sort().map(church => (
+                        {Object.keys(CHURCH_CREDENTIALS).sort().map(church => (
                           <div key={church} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
                             <span className="font-bold text-sm text-slate-700">{church}</span>
                             <button 
@@ -7653,7 +7524,7 @@ function AppComponent() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
                       </select>
                     </div>
                     <div>
@@ -7760,19 +7631,19 @@ function AppComponent() {
                     <Link2 className="text-coptic-blue" /> إدارة لينكات الامتحانات (Google Forms)
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {([...OFFICIAL_STAGES].sort((a: any, b: any) => sortStages(a, b))).map((stage) => (
-                      <div key={stage} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm hover:shadow transition-all space-y-3">
-                        <label className="text-[11px] font-black text-slate-500 uppercase">{stage}</label>
+                    {([...dynamicLevels].sort((a: any, b: any) => sortStages(a.name, b.name))).map((stage) => (
+                      <div key={stage.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm hover:shadow transition-all space-y-3">
+                        <label className="text-[11px] font-black text-slate-500 uppercase">{stage.name}</label>
                         <div className="flex gap-2">
                           <input 
                             type="url" 
                             placeholder="https://docs.google.com/forms/..."
-                            value={examLinks[stage] || ''}
-                            onChange={(e) => setExamLinks({ ...examLinks, [stage]: e.target.value })}
+                            value={examLinks[stage.name] || ''}
+                            onChange={(e) => setExamLinks({ ...examLinks, [stage.name]: e.target.value })}
                             className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue"
                           />
                           <button 
-                            onClick={() => handleUpdateExamLink(stage, examLinks[stage] || '')}
+                            onClick={() => handleUpdateExamLink(stage.name, examLinks[stage.name] || '')}
                             className="px-3 py-2 bg-coptic-blue text-white rounded-xl text-xs hover:bg-coptic-blue/90 transition-colors"
                           >
                             حفظ
@@ -8223,7 +8094,7 @@ function AppComponent() {
                           required
                         >
                           <option value="">اختر المرحلة</option>
-                          {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                          {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
                         </select>
                       </div>
 
@@ -8262,18 +8133,15 @@ function AppComponent() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       {[0, 1, 2].map((idx) => {
-                        const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي', 'جامعة', 'خريجون', 'خدام وإعداد الخدام', 'قانا الجليل', 'تعليم كبار', 'سمعان الشيخ', 'حرفيون', 'صم وبكم', 'قدرات خاصة', 'ديديموس', 'بولس وسيلا'].includes(newParticipant.stage);
+                        const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي'].includes(newParticipant.stage);
                         const selectedComps = newParticipant.competitions;
+                        const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
+                        const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
                         
                         const isOptionDisabled = (val: string) => {
                           if (!val) return false;
                           if (selectedComps.some((c, i) => i !== idx && c === val)) return true;
                           if (val.includes('قبطي مستوى') && selectedComps.some((c, i) => i !== idx && c.includes('قبطي مستوى'))) return true;
-                          
-                          // Level logic for Coptic Level 2 vs Level 1
-                          if (val === 'قبطي مستوى ثان' && !isCopticLevel2Allowed) return true;
-                          if (val === 'قبطي مستوى أول' && isCopticLevel2Allowed && !['حضانة', 'أولى وثانية', 'ثالثة ورابعة'].includes(newParticipant.stage)) return true;
-                          
                           return false;
                         };
 
@@ -8292,7 +8160,7 @@ function AppComponent() {
                               className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
                             >
                               <option value="">-- اختر المسابقة --</option>
-                              {OFFICIAL_COMPETITIONS.map((comp: string) => (
+                              {availableCompsForLevel.map((comp: string) => (
                                 <option 
                                   key={comp} 
                                   value={comp} 

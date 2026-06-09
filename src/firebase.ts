@@ -99,33 +99,12 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 // Supabase Import (assuming it exists based on previous turns)
 import { supabase } from './lib/supabaseClient';
 
-const tableMappings: Record<string, string> = {
-  'participants': 'registrations',
-  'registrations': 'registrations',
-  'orders': 'book_requests',
-  'book_requests': 'book_requests',
-  'results': 'results',
-  'news': 'news',
-  'dynamic_levels': 'dynamic_levels',
-  'public_churches': 'public_churches',
-  'churches': 'churches',
-  'system_settings': 'system_settings'
-};
-
 export async function getDocSafe(docRef: any) {
   if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
     console.warn("Firestore quota exceeded, bypassing to Supabase (getDocSafe)");
     // Fallback logic - this assumes the docRef has a path like "collection/id"
-    const pathParts = docRef.path.split('/');
-    const collectionName = pathParts[0];
-    const id = pathParts[pathParts.length - 1];
-    
-    if (!tableMappings[collectionName]) {
-      console.warn(`[Supabase Sync] Missing table_name mapping for collection: "${collectionName}". Defaulting to literal name.`);
-    }
-    
-    const tableName = tableMappings[collectionName] || collectionName;
-    const { data, error } = await supabase.from(tableName).select('*').eq('id', id).single();
+    const [collectionName, id] = docRef.path.split('/');
+    const { data, error } = await supabase.from(collectionName).select('*').eq('id', id).single();
     if (error) throw error;
     return { exists: () => !!data, data: () => data };
   }
@@ -137,8 +116,7 @@ export async function getDocSafe(docRef: any) {
       (window as any).firestoreQuotaExceeded = true;
       window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
       const [collectionName, id] = docRef.path.split('/');
-      const tableName = tableMappings[collectionName] || collectionName;
-      const { data, error: sbError } = await supabase.from(tableName).select('*').eq('id', id).single();
+      const { data, error: sbError } = await supabase.from(collectionName).select('*').eq('id', id).single();
       if (sbError) throw sbError;
       return { exists: () => !!data, data: () => data };
     }
@@ -149,7 +127,7 @@ export async function getDocSafe(docRef: any) {
 export async function getDocsSafe(q: any) {
   if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
     console.warn("Firestore quota exceeded, bypassing to Supabase (getDocsSafe)");
-    return { docs: [], empty: true, size: 0, forEach: () => {} } as any;
+    return { docs: [] };
   }
 
   try {
@@ -158,7 +136,7 @@ export async function getDocsSafe(q: any) {
     if (isQuotaError(error)) {
       (window as any).firestoreQuotaExceeded = true;
       window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
-      return { docs: [], empty: true, size: 0, forEach: () => {} } as any;
+      return { docs: [] };
     }
     throw error;
   }

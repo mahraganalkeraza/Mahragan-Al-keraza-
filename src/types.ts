@@ -37,17 +37,12 @@ export interface Order {
 export interface Participant {
   id: string;
   serial?: string;
-  docId?: string;           // Legacy compatibility mapping
-  ID?: string;              // Alternative mapping ID
   churchName: string;
   country: string;
   name: string;
   stage: string;
   gender?: string;
   competitions: string[];
-  darasi?: string | boolean | number;   // Legacy competitive flags
-  qebti?: string | boolean | number;    // Legacy competitive flags
-  mahfouzat?: string | boolean | number; // Legacy competitive flags
   timestamp: string;
   year?: string;
   tshirtSize?: string;

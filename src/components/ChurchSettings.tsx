@@ -34,13 +34,12 @@ export default function ChurchSettings({ userId, churchName, country, logoUrl, e
       }
       await updateDoc(doc(db, 'users', userId), { churchName: name, country: countryName, logoUrl: finalLogoUrl });
       
-      // Update churches collection
+      // Update public_churches
       if (email) {
-        await setDoc(doc(db, 'churches', name), {
+        await setDoc(doc(db, 'public_churches', userId), {
           name: name,
-          email: email,
-          isEnabled: true
-        }, { merge: true });
+          email: email
+        });
       }
 
       // Update related collections if church name changed

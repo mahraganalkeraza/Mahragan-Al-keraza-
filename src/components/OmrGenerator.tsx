@@ -29,7 +29,7 @@ const preloadImage = (src: string): Promise<string> => {
 
 const fetchPublicChurches = async () => {
   try {
-      const snap = await getDocs(collection(db, 'churches'));
+      const snap = await getDocs(collection(db, 'public_churches'));
       const logos: Record<string, string> = {};
       snap.forEach(doc => {
           const data = doc.data();

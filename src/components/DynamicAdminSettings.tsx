@@ -3,11 +3,10 @@ import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc,
 import { initializeApp, getApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { db, storage, ref, uploadBytesResumable, getDownloadURL, handleFirestoreError, OperationType, firebaseConfig } from '../firebase';
-import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as ImageIcon, Upload, Loader2, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as ImageIcon, Upload, Loader2, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { sortStages, CHURCH_CREDENTIALS } from '../constants';
+import { sortStages } from '../constants';
 import PaginationComponent from './Pagination';
-import { supabase } from '../lib/supabaseClient';
 
 // Initialize secondary app for creating user accounts from the bank
 const getSecondaryAuth = () => {
@@ -65,32 +64,8 @@ export default function DynamicAdminSettings() {
   const [supabaseTableOrders, setSupabaseTableOrders] = useState('book_requests');
   const [migrationStatus, setMigrationStatus] = useState('');
   const [isMigrating, setIsMigrating] = useState(false);
-  const [isSyncingAuth, setIsSyncingAuth] = useState(false);
   const [rawJsonData, setRawJsonData] = useState('');
   const [jsonDataType, setJsonDataType] = useState<'participants' | 'orders'>('participants');
-
-  const [registrationCounts, setRegistrationCounts] = useState<Record<string, number>>({});
-
-  useEffect(() => {
-    const fetchRegCounts = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('registrations')
-          .select('churchName');
-        
-        if (data) {
-          const counts: Record<string, number> = {};
-          data.forEach((reg: any) => {
-            counts[reg.churchName] = (counts[reg.churchName] || 0) + 1;
-          });
-          setRegistrationCounts(counts);
-        }
-      } catch (err) {
-        console.error("Error fetching registration counts:", err);
-      }
-    };
-    fetchRegCounts();
-  }, []);
 
   useEffect(() => {
     const loadSupabaseSettings = async () => {
@@ -355,54 +330,6 @@ export default function DynamicAdminSettings() {
       setMigrationStatus(`خطأ في تحليل قالب الـ JSON المنسوخ: ${err.message || err}`);
     } finally {
       setIsMigrating(false);
-    }
-  };
-
-  const handleChurchAuthSync = async () => {
-    if (!window.confirm('سيتم تحديث أكواد الدخول لجميع الكنائس في قواعد البيانات (Supabase & Firestore). هل أنت متأكد؟')) return;
-    
-    setIsSyncingAuth(true);
-    try {
-      // 1. Sync to Supabase (churches table)
-      const { error: sbError } = await supabase
-        .from('churches')
-        .upsert(CHURCH_CREDENTIALS.map(c => ({
-          name: c.churchName,
-          password: c.accessCode,
-          isEnabled: true,
-          updated_at: new Date().toISOString()
-        })), { onConflict: 'name' });
-
-      if (sbError) throw sbError;
-
-      // 2. Sync to Firestore (churches collection)
-      const batch = writeBatch(db);
-      for (const cred of CHURCH_CREDENTIALS) {
-        // Use the church name as doc ID for easier lookup/overwrite
-        const docRef = doc(db, 'churches', cred.churchName);
-        batch.set(docRef, {
-          name: cred.churchName,
-          loginCode: cred.accessCode,
-          isEnabled: true,
-          lastSynced: new Date().toISOString()
-        }, { merge: true });
-        
-        // Also update the users collection for auth profiles
-        // We'll search for the user by church name
-        const q = query(collection(db, 'users'), where('churchName', '==', cred.churchName));
-        const userSnap = await getDocs(q);
-        userSnap.docs.forEach(uDoc => {
-          batch.update(uDoc.ref, { password: cred.accessCode });
-        });
-      }
-      await batch.commit();
-
-      alert('تمت مزامنة بيانات الكنائس بنجاح مع Supabase و Firestore!');
-    } catch (err: any) {
-      console.error('Church Sync Error:', err);
-      alert(`فشلت المزامنة: ${err.message || 'خطأ غير معروف'}`);
-    } finally {
-      setIsSyncingAuth(false);
     }
   };
 
@@ -805,14 +732,6 @@ export default function DynamicAdminSettings() {
         {/* Global Access Master Switches */}
         <div className="flex bg-slate-800 p-1.5 rounded-2xl gap-2 border border-slate-700 w-full md:w-auto">
           <button 
-            onClick={handleChurchAuthSync}
-            disabled={isSyncingAuth}
-            className={`flex-1 md:flex-none px-6 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 disabled:opacity-50`}
-          >
-            {isSyncingAuth ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            مزامنة أكواد الكنائس
-          </button>
-          <button 
             onClick={() => toggleGlobalReadAccess(true)}
             className={`flex-1 md:flex-none px-6 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${globalReadAccess ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
           >
@@ -896,11 +815,6 @@ export default function DynamicAdminSettings() {
                         }`}>
                           {church.isAllowedToRead !== false ? "قراءة" : "منع"}
                         </span>
-                        {registrationCounts[church.name] !== undefined && (
-                          <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-1 rounded border border-emerald-100">
-                            {registrationCounts[church.name]} مشترك
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>

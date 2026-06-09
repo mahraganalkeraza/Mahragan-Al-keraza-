@@ -1,10 +1,6 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
@@ -16,7 +12,7 @@ async function startServer() {
   });
 
   // Strict enforcement of port 3000 under any condition to prevent port conflicts
-  console.log(`Server starting... NODE_ENV: ${process.env.NODE_ENV}`);
+  // The infrastructure dynamically routes externally to 3000.
   const PORT = 3000;
 
   if (process.env.NODE_ENV !== "production") {
