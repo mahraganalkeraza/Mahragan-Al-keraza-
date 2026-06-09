@@ -593,10 +593,48 @@ function AppComponent() {
   };
   const initialProfile = getInitialProfile();
   
+  const LOCAL_ALLOWED_COMPETITIONS = [
+    'دراسي',
+    'محفوظات',
+    'قبطي مستوى أول',
+    'قبطي مستوى ثاني',
+    'ألحان مستوى أول',
+    'ألحان مستوى ثاني',
+    'كشافة',
+    'رياضية',
+    'إبتكارات هندسية',
+    'فنون تشكيلية',
+    'مسرح',
+    'كورال',
+    'عزف'
+  ];
+
+  const fallbackLevels = STAGE_ORDER.map((stageName, idx) => ({
+    id: `stage-${idx}`,
+    name: stageName,
+    comps: LOCAL_ALLOWED_COMPETITIONS
+  }));
+
+  const fallbackActivityStages = STAGE_ORDER.map((stageName, idx) => ({
+    id: `act-${idx}`,
+    name: stageName
+  }));
+
+  const fallbackHymnStages = STAGE_ORDER.map((stageName, idx) => ({
+    id: `hymn-${idx}`,
+    name: stageName
+  }));
+
+  const fallbackChurches = churchData.map((c: any) => ({
+    name: c.name,
+    email: '',
+    logoUrl: ''
+  }));
+
   const [userProfile, setUserProfile] = useState<any>(initialProfile);
-  const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
-  const [activityStages, setActivityStages] = useState<any[]>([]);
-  const [hymnStages, setHymnStages] = useState<any[]>([]);
+  const [dynamicLevels, setDynamicLevels] = useState<any[]>(fallbackLevels);
+  const [activityStages, setActivityStages] = useState<any[]>(fallbackActivityStages);
+  const [hymnStages, setHymnStages] = useState<any[]>(fallbackHymnStages);
 
   // Customization State
   const [isCustomizeTabsModalOpen, setIsCustomizeTabsModalOpen] = useState(false);
@@ -837,9 +875,13 @@ function AppComponent() {
         }
         
         // Churches
-        const { data: churchesData } = await supabase.from('churches').select('*').eq('isEnabled', true);
-        if (churchesData) {
-            setPublicChurches(churchesData.map(d => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
+        try {
+            const { data: churchesData } = await supabase.from('churches').select('*').eq('isEnabled', true);
+            if (churchesData && churchesData.length > 0) {
+                setPublicChurches(churchesData.map(d => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
+            }
+        } catch (e) {
+            console.warn("Error fetching churches from Supabase, retained local fallback:", e);
         }
         
         // Add other loads here similar to above
@@ -994,7 +1036,7 @@ function AppComponent() {
   const [examLinks, setExamLinks] = useState<Record<string, string>>({});
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
-  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>([]);
+  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>(fallbackChurches);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxImages, setLightboxImages] = useState<{src: string}[]>([]);
