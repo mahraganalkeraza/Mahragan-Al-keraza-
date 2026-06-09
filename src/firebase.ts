@@ -151,24 +151,21 @@ export const addDoc = async (colRef: any, data: any) => {
 // Explicit safe addDoc bridge requested by user
 export async function addDocSafe(collectionRef: any, dataObject: any) {
   const collectionName = collectionRef.id || collectionRef.path || 'registrations';
-  let targetTable = collectionName;
-  if (collectionName === 'participants') targetTable = 'registrations';
+  let targetTable = collectionName === 'participants' ? 'registrations' : collectionName;
 
-  console.log(`[Hybrid Sync] 1. Updating local UI and simultaneously pushing to Supabase table: ${targetTable}`);
+  console.log("[Supabase Sync] Sending payload:", dataObject);
 
-  // FIRE REMOTE INSERT TO SUPABASE PRODUCTION SERVER
   const { data, error } = await supabase
     .from(targetTable)
     .insert([dataObject])
     .select();
 
   if (error) {
-    console.error("❌ SERVER ERROR: Failed to sync with Supabase remote backend!", error);
-    throw error; // Throw so the component knows the network failed
+    console.error("❌ SUPABASE WRITE ERROR:", error.message, error.details);
+    throw new Error(`Database insert failed: ${error.message}`);
   }
 
-  console.log("✅ SERVER SUCCESS: Data permanently stored in Supabase!", data);
-  return { id: data[0]?.id || data[0]?.serial || "remote_success_id", ...data[0] };
+  return { id: data?.[0]?.id || "success" };
 }
 
 export const updateDoc = async (docRef: any, data: any) => {

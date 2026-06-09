@@ -825,6 +825,33 @@ function AppComponent() {
     // Supabase Load
     async function fetchSupabaseData() {
         console.log("Loading initial data from Supabase...");
+
+        // Clear cached auth token to reset hijacked/leaked sessions
+        try {
+            await supabase.auth.signOut();
+            console.log("[Supabase Sync] Session cache cleared on mount successfully.");
+        } catch (e) {
+            console.warn("Could not clear Supabase session cache anonymously:", e);
+        }
+
+        // Resolve inconsistent or mocked Admin roles if firebase is not logged in
+        if (!auth.currentUser) {
+            const cached = localStorage.getItem('userProfileCache');
+            if (cached) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    if (parsed.role === 'admin' || parsed.role === 'super_admin') {
+                        console.warn("Detected cached admin role without active session, purging cache to reset to normal view.");
+                        localStorage.removeItem('userProfileCache');
+                        setUserRole('guest');
+                        setIsLoggedIn(false);
+                        setChurchName('');
+                    }
+                } catch (err) {
+                    localStorage.removeItem('userProfileCache');
+                }
+            }
+        }
         
         // Settings/app_config
         const { data: configData } = await supabase.from('settings').select('*').eq('id', 'app_config').single();
@@ -3553,34 +3580,36 @@ function AppComponent() {
           timestamp: new Date().toISOString()
         };
 
-        // Step A: Instantly state sync for adding a new student (Guarantees zero-hang UI!)
-        const newStudent: Participant = {
-          id: customId,
-          serial: customId,
-          churchName,
-          name: newParticipant.name,
-          stage: newParticipant.stage,
-          gender: newParticipant.gender,
-          competitions: newParticipant.competitions.filter(c => c !== ''),
-          timestamp: new Date().toISOString(),
-          year: activeYear,
-          country: 'مصر'
-        } as any as Participant;
-        setParticipants(prev => [...prev, newStudent]);
-        setTotalParticipantsCount(prev => prev + 1);
-
-        let insertDone = false;
         try {
+          // Await remote insert first to ensure real data synchronization before updating state
           const docRef = await addDocSafe(collection(db, 'participants'), studentData);
-          if (docRef && docRef.id) {
-            insertDone = true;
-          }
-        } catch (e) {
-          console.warn("Supabase insert connection failed, fallback used:", e);
-        }
+          const serverId = docRef.id || customId;
 
-        // Emergency local storage backup if insert went offline
-        if (!insertDone) {
+          // Step A: Update the local state ONLY after successful remote replication
+          const newStudent: Participant = {
+            id: serverId,
+            serial: serverId,
+            churchName,
+            name: newParticipant.name,
+            stage: newParticipant.stage,
+            gender: newParticipant.gender,
+            competitions: newParticipant.competitions.filter(c => c !== ''),
+            timestamp: new Date().toISOString(),
+            year: activeYear,
+            country: 'مصر'
+          } as any as Participant;
+
+          setParticipants(prev => {
+            if (prev.some(p => p.id === serverId)) return prev;
+            return [...prev, newStudent];
+          });
+          setTotalParticipantsCount(prev => prev + 1);
+          alert('تم تسجيل المشترك بنجاح.');
+        } catch (err: any) {
+          console.error("Supabase insert connection error:", err);
+          alert("خطأ في الاتصال بالقاعدة: " + err.message);
+          
+          // Emergency local storage backup if insert failed
           try {
             const existingEmergency = JSON.parse(localStorage.getItem('emergency_registrations') || '[]');
             existingEmergency.push({ ...studentData, type: 'participant_emergency' });
@@ -3588,9 +3617,10 @@ function AppComponent() {
           } catch (e) {
             console.warn("localStorage write failed", e);
           }
-        }
 
-        alert('تم تسجيل المشترك بنجاح.');
+          setIsSubmittingParticipant(false);
+          return;
+        }
       }
       
       setNewParticipant({ 

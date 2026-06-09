@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Clean the environment variable and ensure it's not empty, fallback to a valid URL string
-const envUrl = String(import.meta.env.VITE_SUPABASE_URL || "");
-const supabaseUrl = envUrl.startsWith("http") ? envUrl : "https://dummy.supabase.co";
+const rawUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseUrl = rawUrl.startsWith('http') ? rawUrl : 'https://nrigdgdiqjdzieryjjod.supabase.co';
 
-const envKey = String(import.meta.env.VITE_SUPABASE_ANON_KEY || "");
-const supabaseAnonKey = envKey.length > 10 ? envKey : "dummy-anon-key-that-is-long-enough";
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_pky-HtvFEvoQ5WbpfKa0RQ_EPupXDnx';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// ONLY use the safe, public anon key on the client side
+export const supabase = createClient(supabaseUrl, supabaseKey);
+
