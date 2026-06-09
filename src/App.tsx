@@ -4325,8 +4325,8 @@ function AppComponent() {
                 >
                   <option value="">اختر الكنيسة</option>
                   <option value="مسئول">دخول مسئول (Admin)</option>
-                  {[...publicChurches].sort((a, b) => a.name.localeCompare(b.name)).map(church => (
-                    <option key={church.name} value={church.name}>{church.name}</option>
+                  {CHURCH_CREDENTIALS.map(church => (
+                    <option key={church.churchName} value={church.churchName}>{church.churchName}</option>
                   ))}
                 </select>
                 {loginChurch && loginChurch !== 'مسئول' && (
