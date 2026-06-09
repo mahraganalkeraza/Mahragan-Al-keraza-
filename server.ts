@@ -12,7 +12,7 @@ async function startServer() {
   });
 
   // Strict enforcement of port 3000 under any condition to prevent port conflicts
-  // The infrastructure dynamically routes externally to 3000.
+  console.log(`Server starting... NODE_ENV: ${process.env.NODE_ENV}`);
   const PORT = 3000;
 
   if (process.env.NODE_ENV !== "production") {
