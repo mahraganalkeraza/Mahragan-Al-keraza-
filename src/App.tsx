@@ -3553,28 +3553,7 @@ function AppComponent() {
           timestamp: new Date().toISOString()
         };
 
-        let insertDone = false;
-        try {
-          const docRef = await addDocSafe(collection(db, 'participants'), studentData);
-          if (docRef && docRef.id) {
-            insertDone = true;
-          }
-        } catch (e) {
-          console.warn("Supabase insert connection failed, saved to local cache:", e);
-        }
-
-        // Emergency local storage backup if insert went offline
-        if (!insertDone) {
-          try {
-            const existingEmergency = JSON.parse(localStorage.getItem('emergency_registrations') || '[]');
-            existingEmergency.push({ ...studentData, type: 'participant_emergency' });
-            localStorage.setItem('emergency_registrations', JSON.stringify(existingEmergency));
-          } catch (e) {
-            console.warn("localStorage write failed", e);
-          }
-        }
-        
-        // Instant state sync for adding a new student (Guarantees zero-hang UI!)
+        // Step A: Instantly state sync for adding a new student (Guarantees zero-hang UI!)
         const newStudent: Participant = {
           id: customId,
           serial: customId,
@@ -3589,6 +3568,27 @@ function AppComponent() {
         } as any as Participant;
         setParticipants(prev => [...prev, newStudent]);
         setTotalParticipantsCount(prev => prev + 1);
+
+        let insertDone = false;
+        try {
+          const docRef = await addDocSafe(collection(db, 'participants'), studentData);
+          if (docRef && docRef.id) {
+            insertDone = true;
+          }
+        } catch (e) {
+          console.warn("Supabase insert connection failed, fallback used:", e);
+        }
+
+        // Emergency local storage backup if insert went offline
+        if (!insertDone) {
+          try {
+            const existingEmergency = JSON.parse(localStorage.getItem('emergency_registrations') || '[]');
+            existingEmergency.push({ ...studentData, type: 'participant_emergency' });
+            localStorage.setItem('emergency_registrations', JSON.stringify(existingEmergency));
+          } catch (e) {
+            console.warn("localStorage write failed", e);
+          }
+        }
 
         alert('تم تسجيل المشترك بنجاح.');
       }
