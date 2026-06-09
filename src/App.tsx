@@ -781,9 +781,17 @@ function AppComponent() {
         }
         
         // Churches
-        const { data: churchesData } = await supabase.from('churches').select('*').eq('isEnabled', true);
-        if (churchesData) {
-            setPublicChurches(churchesData.map(d => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
+        try {
+            const { data: churchesData, error } = await supabase.from('churches').select('*').eq('isEnabled', true);
+            if (error) {
+                console.error("Error fetching churches from Supabase:", error);
+            } else if (churchesData) {
+                setPublicChurches(churchesData.map(d => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
+            } else {
+                console.log("No churches data returned from Supabase, or data is null");
+            }
+        } catch (e) {
+            console.error("Exception when fetching churches:", e);
         }
         
         // Add other loads here similar to above
