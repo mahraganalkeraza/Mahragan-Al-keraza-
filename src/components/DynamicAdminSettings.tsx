@@ -69,6 +69,29 @@ export default function DynamicAdminSettings() {
   const [rawJsonData, setRawJsonData] = useState('');
   const [jsonDataType, setJsonDataType] = useState<'participants' | 'orders'>('participants');
 
+  const [registrationCounts, setRegistrationCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const fetchRegCounts = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('registrations')
+          .select('churchName');
+        
+        if (data) {
+          const counts: Record<string, number> = {};
+          data.forEach((reg: any) => {
+            counts[reg.churchName] = (counts[reg.churchName] || 0) + 1;
+          });
+          setRegistrationCounts(counts);
+        }
+      } catch (err) {
+        console.error("Error fetching registration counts:", err);
+      }
+    };
+    fetchRegCounts();
+  }, []);
+
   useEffect(() => {
     const loadSupabaseSettings = async () => {
       const docRef = doc(db, 'system_settings', 'supabase_config');
@@ -340,26 +363,37 @@ export default function DynamicAdminSettings() {
     
     setIsSyncingAuth(true);
     try {
-      // 1. Sync to Supabase (public_churches table)
+      // 1. Sync to Supabase (churches table)
       const { error: sbError } = await supabase
-        .from('public_churches')
+        .from('churches')
         .upsert(CHURCH_CREDENTIALS.map(c => ({
           name: c.churchName,
           password: c.accessCode,
+          isEnabled: true,
           updated_at: new Date().toISOString()
         })), { onConflict: 'name' });
 
       if (sbError) throw sbError;
 
-      // 2. Sync to Firestore (public_churches collection)
+      // 2. Sync to Firestore (churches collection)
       const batch = writeBatch(db);
       for (const cred of CHURCH_CREDENTIALS) {
-        const docRef = doc(db, 'public_churches', cred.churchName);
+        // Use the church name as doc ID for easier lookup/overwrite
+        const docRef = doc(db, 'churches', cred.churchName);
         batch.set(docRef, {
           name: cred.churchName,
-          password: cred.accessCode,
+          loginCode: cred.accessCode,
+          isEnabled: true,
           lastSynced: new Date().toISOString()
         }, { merge: true });
+        
+        // Also update the users collection for auth profiles
+        // We'll search for the user by church name
+        const q = query(collection(db, 'users'), where('churchName', '==', cred.churchName));
+        const userSnap = await getDocs(q);
+        userSnap.docs.forEach(uDoc => {
+          batch.update(uDoc.ref, { password: cred.accessCode });
+        });
       }
       await batch.commit();
 
@@ -862,6 +896,11 @@ export default function DynamicAdminSettings() {
                         }`}>
                           {church.isAllowedToRead !== false ? "قراءة" : "منع"}
                         </span>
+                        {registrationCounts[church.name] !== undefined && (
+                          <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-1 rounded border border-emerald-100">
+                            {registrationCounts[church.name]} مشترك
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
