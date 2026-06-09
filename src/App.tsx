@@ -782,13 +782,14 @@ function AppComponent() {
         
         // Churches
         try {
-            const { data: churchesData, error } = await supabase.from('churches').select('*').eq('isEnabled', true);
-            if (error) {
-                console.error("Error fetching churches from Supabase:", error);
-            } else if (churchesData) {
+            let { data: churchesData, error } = await supabase.from('churches').select('*').eq('isEnabled', true);
+            if (error || !churchesData || churchesData.length === 0) {
+                console.warn("Attempting to fetch from public_churches fallback");
+                const { data: fallbackData } = await supabase.from('public_churches').select('*').eq('isEnabled', true);
+                if (fallbackData) churchesData = fallbackData;
+            }
+            if (churchesData) {
                 setPublicChurches(churchesData.map(d => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
-            } else {
-                console.log("No churches data returned from Supabase, or data is null");
             }
         } catch (e) {
             console.error("Exception when fetching churches:", e);
