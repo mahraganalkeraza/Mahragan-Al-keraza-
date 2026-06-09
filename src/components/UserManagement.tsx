@@ -10,7 +10,7 @@ import {
   where,
   writeBatch,
   onSnapshot,
-} from "firebase/firestore";
+} from "../firebase";
 import { db, storage } from "../firebase";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { initializeApp } from "firebase/app";

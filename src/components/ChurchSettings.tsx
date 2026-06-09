@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { updateDoc, doc, setDoc, getDocs, query, where, writeBatch, collection } from 'firebase/firestore';
+import { updateDoc, doc, setDoc, getDocs, query, where, writeBatch, collection } from '../firebase';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage, handleFirestoreError, OperationType } from '../firebase';
 import { Upload, Save, Loader2 } from 'lucide-react';

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, writeBatch, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, writeBatch, onSnapshot, query, where } from '../firebase';
 import { initializeApp, getApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { db, storage, ref, uploadBytesResumable, getDownloadURL, handleFirestoreError, OperationType, firebaseConfig } from '../firebase';
@@ -84,7 +84,11 @@ export default function DynamicAdminSettings() {
           setSupabaseTableParticipants('registrations');
           setSupabaseTableOrders('book_requests');
         }
-      } catch (e) {
+      } catch (e: any) {
+        if (e.code === 'resource-exhausted' || e.message.includes('quota')) {
+          (window as any).firestoreQuotaExceeded = true;
+          window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+        }
         console.warn("Could not load Supabase settings from Firestore, using environment fallbacks:", e);
         setSupabaseUrl(import.meta.env.VITE_SUPABASE_URL || 'https://nrigdgdiqjdzieryjjod.supabase.co');
         setSupabaseKey(import.meta.env.VITE_SUPABASE_ANON_KEY || '');

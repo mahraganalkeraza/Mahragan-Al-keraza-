@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db, CURRENT_YEAR } from '../firebase';
-import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc, writeBatch, getCountFromServer } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc, writeBatch, getCountFromServer } from '../firebase';
 import { rdb, rdbRef, rdbSet, onDisconnect, rdbServerTimestamp } from '../firebase';
 import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet, ShieldX, Loader2 } from 'lucide-react';
 import { QRScanner } from './QRScanner';
