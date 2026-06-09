@@ -2709,6 +2709,37 @@ function AppComponent() {
       }
   };
 
+  const fetchDashboardCounts = async () => {
+    if (!isLoggedIn) return;
+    try {
+      let partQuery = supabase.from('registrations').select('*', { count: 'exact', head: true }).eq('year', activeYear);
+      let ordQuery = supabase.from('orders').select('*', { count: 'exact', head: true }).eq('year', activeYear);
+      let teamQuery = supabase.from('activityTeams').select('*', { count: 'exact', head: true }).eq('year', activeYear);
+
+      if (userRole !== 'admin') {
+        partQuery = partQuery.eq('churchName', churchName);
+        ordQuery = ordQuery.eq('churchName', churchName);
+        teamQuery = teamQuery.eq('churchName', churchName);
+      } else if (globalChurchFilter !== 'الكل') {
+        partQuery = partQuery.eq('churchName', globalChurchFilter);
+        ordQuery = ordQuery.eq('churchName', globalChurchFilter);
+        teamQuery = teamQuery.eq('churchName', globalChurchFilter);
+      }
+
+      const [partRes, ordRes, teamRes] = await Promise.all([
+        partQuery,
+        ordQuery,
+        teamQuery
+      ]);
+
+      setTotalParticipantsCount(partRes.count || 0);
+      setTotalOrdersCount(ordRes.count || 0);
+      setTotalTeamsCount(teamRes.count || 0);
+    } catch (err) {
+      console.error("Error fetching dashboard counts from Supabase:", err);
+    }
+  };
+
   const fetchLargeData = async (toast = true) => {
     if (!isLoggedIn) return;
     if (userRole === 'church' && !churchName) return;
@@ -2721,7 +2752,8 @@ function AppComponent() {
         fetchOrdersPage(true, true),
         fetchTeamsPage(true, true),
         fetchResultsPage(true, true),
-        fetchAllChurchParticipants()
+        fetchAllChurchParticipants(),
+        fetchDashboardCounts()
       ];
       
       if (userRole === 'admin') {
@@ -2897,7 +2929,7 @@ function AppComponent() {
 
   useEffect(() => {
     fetchLargeData(false);
-  }, [userRole, churchName, activeYear, isLoggedIn]);
+  }, [userRole, churchName, activeYear, isLoggedIn, globalChurchFilter]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -2992,8 +3024,7 @@ function AppComponent() {
       if (firebaseUser) {
         let userDoc;
         if (email.endsWith('_2026@mafk.com')) {
-           const church = churchData.find((c: any) => c.code === password);
-           userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: church?.name || 'كنيسة', uid: firebaseUser.uid }) };
+           userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: targetChurch, uid: firebaseUser.uid }) };
         } else {
            userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         }
