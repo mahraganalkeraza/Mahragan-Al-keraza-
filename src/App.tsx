@@ -785,13 +785,37 @@ function AppComponent() {
             }
         }
         
+        // System Controls
+        const { data: controlsData } = await supabase.from('settings').select('*').eq('id', 'system_controls').single();
+        if (controlsData) {
+            setSystemControls({
+                isRegistrationOpen: true, // Mandatory open as requested
+                isBookCalculatorOpen: controlsData.isBookCalculatorOpen !== false
+            });
+        } else {
+            // Default to open if not found
+            setSystemControls({
+                isRegistrationOpen: true,
+                isBookCalculatorOpen: true
+            });
+        }
+
+        // Exam Config
+        const { data: examData } = await supabase.from('settings').select('*').eq('id', 'exam_config').single();
+        if (examData) {
+            setExamConfig({
+                isExamLive: examData.isExamLive !== false,
+                churchOverrides: examData.churchOverrides || {},
+                stageOverrides: examData.stageOverrides || {},
+                autoCloseTime: examData.autoCloseTime
+            });
+        }
+        
         // Churches
         const { data: churchesData } = await supabase.from('churches').select('*').eq('isEnabled', true);
         if (churchesData) {
-            setPublicChurches(churchesData.map(d => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
+            setPublicChurches(churchesData.map((d: any) => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
         }
-        
-        // Add other loads here similar to above
     }
     fetchSupabaseData();
   }, []);
@@ -965,6 +989,9 @@ function AppComponent() {
     isRegistrationOpen: true,
     isBookCalculatorOpen: true
   });
+
+  const FORCE_OPEN_REGISTRATION = true; // Mandatory Override for Emergency
+
 
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({
     phone: '',
@@ -1792,11 +1819,19 @@ function AppComponent() {
   const handleUpdateSystemControls = async (newControls: any) => {
     setIsLoading(true);
     try {
-      await setDoc(doc(db, 'settings', 'system_controls'), newControls);
-      setNotification('تم تحديث إعدادات النظام المركذية');
+      const { error } = await supabase.from('settings').upsert({ 
+        id: 'system_controls', 
+        ...newControls,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+      
+      if (error) throw error;
+      
+      setSystemControls(newControls);
+      setNotification('تم تحديث إعدادات النظام المركذية بنجاح (Supabase)');
     } catch (e) {
       console.error(e);
-      setNotification('خطأ في التحديث');
+      setNotification('خطأ في التحديث عبر Supabase');
     } finally {
       setIsLoading(false);
     }
@@ -1805,11 +1840,19 @@ function AppComponent() {
   const handleUpdateExamConfig = async (newConfig: any) => {
     setIsLoading(true);
     try {
-      await setDoc(doc(db, 'settings', 'exam_config'), newConfig);
-      setNotification('تم تحديث إعدادات الامتحانات');
+      const { error } = await supabase.from('settings').upsert({ 
+        id: 'exam_config', 
+        ...newConfig,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+      
+      if (error) throw error;
+      
+      setExamConfig(newConfig);
+      setNotification('تم تحديث إعدادات الامتحانات بنجاح (Supabase)');
     } catch (e) {
       console.error(e);
-      setNotification('خطأ في التحديث');
+      setNotification('خطأ في التحديث عبر Supabase');
     } finally {
       setIsLoading(false);
     }
@@ -4772,14 +4815,14 @@ function AppComponent() {
                   <h4 className="font-black text-slate-800 flex items-center gap-2">
                     <UserPlus size={20} className="text-coptic-blue" /> تسجيل المشتركين
                   </h4>
-                  {!systemControls.isRegistrationOpen && (
+                  {!(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) && (
                     <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center rounded-3xl" style={{ marginTop: '2.5rem' }}>
                       <span className="bg-rose-100 text-rose-700 px-6 py-2 rounded-full font-black text-sm border border-rose-200 shadow-sm animate-pulse">
                         التسجيل مغلق مؤقتاً وسيعود للعمل صباحاً
                       </span>
                     </div>
                   )}
-                  <form onSubmit={handleAddParticipant} className={`bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4 ${!systemControls.isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <form onSubmit={handleAddParticipant} className={`bg-slate-50 p-6 rounded-3xl border border-slate-100 space-y-4 ${!(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? 'opacity-50 pointer-events-none' : ''}`}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase">اسم المخدوم ثلاثياً</label>
@@ -6358,10 +6401,10 @@ function AppComponent() {
                       </div>
                       <button 
                         onClick={() => handleUpdateSystemControls({...systemControls, isRegistrationOpen: !systemControls.isRegistrationOpen})}
-                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${systemControls.isRegistrationOpen ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}
+                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}
                       >
-                        {systemControls.isRegistrationOpen ? <CheckCircle2 size={18}/> : <X size={18}/>}
-                        {systemControls.isRegistrationOpen ? 'تسجيل المشتركين مفتوح' : 'مغلق الآن'}
+                        {(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? <CheckCircle2 size={18}/> : <X size={18}/>}
+                        {(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? 'تسجيل المشتركين مفتوح (إجباري)' : 'مغلق الآن'}
                       </button>
                     </div>
 
@@ -8050,7 +8093,7 @@ function AppComponent() {
                     <p className="text-slate-500 text-sm font-bold">يرجى ملء البيانات التالية بدقة</p>
                   </div>
 
-                {!systemControls.isRegistrationOpen ? (
+                {!(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? (
                   <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
                     <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mb-2">
                       <UserPlus size={32} className="text-rose-600" />
@@ -8303,14 +8346,14 @@ function AppComponent() {
                       </div>
                       
                       <div className="relative">
-                        {!systemControls.isRegistrationOpen && (
+                        {!(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) && (
                           <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center rounded-xl">
                             <span className="bg-rose-100 text-rose-700 px-6 py-2 rounded-full font-black text-sm border border-rose-200 shadow-sm animate-pulse">
                               التسجيل مغلق مؤقتاً وسيعود للعمل صباحاً
                             </span>
                           </div>
                         )}
-                        <form id="team-registration-form" onSubmit={handleAddTeam} className={`bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8 ${!systemControls.isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <form id="team-registration-form" onSubmit={handleAddTeam} className={`bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8 ${!(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? 'opacity-50 pointer-events-none' : ''}`}>
                           {editingTeam && (
                           <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between">
                             <p className="text-sm font-bold text-blue-700">أنت الآن تقوم بتعديل بيانات فريق مسجل</p>

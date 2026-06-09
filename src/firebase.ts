@@ -10,6 +10,10 @@ import firebaseConfigJson from '../firebase-applet-config.json';
 // Initialize Firebase SDK
 export const firebaseApp = initializeApp(firebaseConfigJson);
 
+if (typeof window !== 'undefined') {
+  (window as any).firestoreQuotaExceeded = true;
+}
+
 // Initialize Firestore with persistent cache
 export const db = initializeFirestore(firebaseApp, {
   localCache: persistentLocalCache({
