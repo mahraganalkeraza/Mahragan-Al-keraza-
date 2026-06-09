@@ -965,7 +965,7 @@ function AppComponent() {
     isRegistrationOpen: boolean;
     isBookCalculatorOpen: boolean;
   }>({
-    isRegistrationOpen: false,
+    isRegistrationOpen: true,
     isBookCalculatorOpen: true
   });
 
@@ -4720,7 +4720,10 @@ function AppComponent() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button 
-                    onClick={() => setShowExamGateway(true)}
+                    onClick={() => {
+                        console.log("Exam button clicked");
+                        setShowExamGateway(true);
+                    }}
                     className="px-6 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-xl hover:scale-105 active:scale-95"
                   >
                     <BookOpen size={18} /> بدء دخول الامتحان (QR Scan)

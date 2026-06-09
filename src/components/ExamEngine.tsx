@@ -622,7 +622,8 @@ export const LiveExamGateway: React.FC = () => {
       const stage = activeStudent.data?.['المرحلة'] || activeStudent.stage;
 
       if (examConfig) {
-        if (!examConfig.isExamLive) {
+        // Force exams to be live as requested by user
+        if (false && !examConfig.isExamLive) {
           setIsLoading(false);
           return alert('عذراً، الامتحانات مغلقة الآن بقرار من اللجنة المركزية');
         }
