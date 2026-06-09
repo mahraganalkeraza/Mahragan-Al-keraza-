@@ -461,7 +461,7 @@ export default function DynamicAdminSettings() {
   const handlePurge = async () => {
     setPurgeStatus('جاري مسح البيانات القديمة...');
     try {
-      const collectionsToPurge = ['public_churches', 'churches', 'levels', 'competitions', 'users'];
+      const collectionsToPurge = ['churches', 'levels', 'competitions', 'users'];
       for (const col of collectionsToPurge) {
         try {
           const snap = await getDocs(collection(db, col));

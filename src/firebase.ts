@@ -107,7 +107,7 @@ const tableMappings: Record<string, string> = {
   'results': 'results',
   'news': 'news',
   'dynamic_levels': 'dynamic_levels',
-  'public_churches': 'public_churches',
+  'public_churches': 'churches',
   'system_settings': 'system_settings'
 };
 
