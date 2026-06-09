@@ -1,10 +1,41 @@
 import { createClient } from '@supabase/supabase-js';
 
-const rawUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseUrl = rawUrl.startsWith('http') ? rawUrl : 'https://nrigdgdiqjdzieryjjod.supabase.co';
+const fallbackUrl = 'https://nrigdgdiqjdzieryjjod.supabase.co';
+const fallbackKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5yaWdkZ2RpcWpkemllcnlqam9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3Njg3MTIsImV4cCI6MjA5NjM0NDtxMn0.9YMt8Vxy4lJ_7RBpjvBd9Gv9TB-AFv88U6pDoH9A3Fo';
 
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_pky-HtvFEvoQ5WbpfKa0RQ_EPupXDnx';
+const getValidSupabaseConfig = () => {
+  const envUrl = import.meta.env.VITE_SUPABASE_URL;
+  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  
+  let finalUrl = fallbackUrl;
+  let finalKey = fallbackKey;
 
-// ONLY use the safe, public anon key on the client side
+  if (
+    envUrl && 
+    typeof envUrl === 'string' && 
+    envUrl.trim() !== '' && 
+    envUrl.trim() !== 'undefined' && 
+    envUrl.trim() !== 'null' && 
+    /^https?:\/\//i.test(envUrl.trim())
+  ) {
+    finalUrl = envUrl.trim();
+  }
+
+  if (
+    envKey && 
+    typeof envKey === 'string' && 
+    envKey.trim() !== '' && 
+    envKey.trim() !== 'undefined' && 
+    envKey.trim() !== 'null' && 
+    envKey.trim().length > 15
+  ) {
+    finalKey = envKey.trim();
+  }
+
+  return { supabaseUrl: finalUrl, supabaseKey: finalKey };
+};
+
+const { supabaseUrl, supabaseKey } = getValidSupabaseConfig();
+
 export const supabase = createClient(supabaseUrl, supabaseKey);
 

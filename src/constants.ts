@@ -1,8 +1,37 @@
 import { BookItem } from './types';
 
+export const OFFICIAL_STAGES = [
+  "حضانة",
+  "أولى وثانية",
+  "ثالثة ورابعة",
+  "خامسة وسادسة",
+  "إعدادي",
+  "ثانوي",
+  "جامعة",
+  "خريجون",
+  "خدام وإعداد الخدام",
+  "قانا الجليل",
+  "تعليم كبار",
+  "سمعان الشيخ",
+  "حرفيون",
+  "صم وبكم",
+  "قدرات خاصة",
+  "ديديموس",
+  "بولس وسيلا"
+];
+
+export const OFFICIAL_COMPETITIONS = [
+  "دراسي",
+  "محفوظات",
+  "قبطي مستوى أول",
+  "قبطي مستوى ثان"
+];
+
+export const STAGE_ORDER = OFFICIAL_STAGES;
+
 export const PRICING_DATA: BookItem[] = [
   { stage: "حضانة", studyPrice: 11, memoPrice: 5, copticPrice: 5, activityPrice: 10 },
-  { stage: "تعليم الكبار", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "تعليم كبار", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
   { stage: "أولى وثانية", studyPrice: 15, memoPrice: 5, copticPrice: 5, activityPrice: 10 },
   { stage: "ثالثة ورابعة", studyPrice: 18, memoPrice: 10, copticPrice: 0, activityPrice: 11 },
   { stage: "خامسة وسادسة", studyPrice: 18, memoPrice: 11, copticPrice: 0, activityPrice: 10 },
@@ -13,89 +42,74 @@ export const PRICING_DATA: BookItem[] = [
   { stage: "حرفيون", studyPrice: 20, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
   { stage: "خدام وإعداد الخدام", studyPrice: 20, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
   { stage: "قانا الجليل", studyPrice: 20, memoPrice: 0, activityPrice: 0, copticPrice: 0 },
-  { stage: " صم وبكم", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "صم وبكم", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
   { stage: "سمعان الشيخ", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
-  { stage: "ذوي القدرات", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
+  { stage: "قدرات خاصة", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
   { stage: "ديديموس", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
   { stage: "بولس وسيلا", studyPrice: 15, memoPrice: 0, copticPrice: 0, activityPrice: 0 },
 ];
+
 
 export const CAROUSEL_IMAGES = [
   { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR8bzr21AT2qsavhSTiRBeo31HS1xbYyleEBg&s", title: "نيافة الحبر الجليل الأنبا أغاثون" },
   { url: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSkkt7y0FjD9toZ5ROTyINBTiB5qnB686HnOQ&s", title: "الألحان والتسبحة" },
 ];
 
-export const CHURCH_CREDENTIALS: Record<string, string> = {
-  "عزبة مهدي": "MAFK01_2026",
-  "آبا البلد": "MAFK02_2026",
-  "صعايدة الكوم الأخضر": "MAFK03_2026",
-  "صفانية": "MAFK04_2026",
-  "الساوي": "MAFK05_2026",
-  "عزبة سمعان": "MAFK06_2026",
-  "الجزيرة": "MAFK07_2026",
-  "عزبة رزق": "MAFK08_2026",
-  "عزبة إسحق": "MAFK09_2026",
-  "برطباط": "MAFK10_2026",
-  "الشيخ مسعود": "MAFK11_2026",
-  "الزورة": "MAFK12_2026",
-  "العباسية": "MAFK13_2026",
-  "القديسة دميانة": "MAFK14_2026",
-  "قفادة": "MAFK15_2026",
-  "بلهاسة": "MAFK16_2026",
-  "كوم الحاصل": "MAFK17_2026",
-  "بني واللمس": "MAFK18_2026",
-  "شارونة": "MAFK19_2026",
-  "المطرانية": "MAFK20_2026",
-  "عزبة بطرس": "MAFK21_2026",
-  "العذراء مغاغة": "MAFK22_2026",
-  "عباد شارونة": "MAFK23_2026",
-  "قرية خامسة": "MAFK24_2026",
-  "الكوم الأخضر": "MAFK25_2026",
-  "القايات": "MAFK26_2026",
-  "كفر عبد الخالق": "MAFK27_2026",
-  "أبو غطاس": "MAFK28_2026",
-  "الشيخ زياد": "MAFK29_2026",
-  "دهروط": "MAFK30_2026",
-  "الملاك ميخائيل - مغاغة": "MAFK31_2026",
-  "مارمينا مغاغة": "MAFK32_2026",
-  "دير الجرنوس": "MAFK33_2026",
-  "محمد بيه": "MAFK34_2026",
-  "برمشا": "MAFK35_2026",
-  "البسقلون": "MAFK36_2026",
-  "ميانة": "MAFK37_2026",
-  "علي باشا": "MAFK38_2026",
-  "نزلة رمضان": "MAFK39_2026",
-  "بني عامر": "MAFK40_2026",
-  "إبراهيم عبد السيد": "MAFK41_2026",
-  "شم القبلية": "MAFK42_2026",
-  "صعايدة الساوي": "MAFK43_2026",
-  "عطف حيدر": "MAFK44_2026",
-  "المداور": "MAFK45_2026",
-  "طنبدي": "MAFK46_2026",
-  "شمس الدين": "MAFK47_2026",
-  "إشنين": "MAFK48_2026",
-  "العدوة": "MAFK49_2026",
-  "نزلة عصر": "MAFK50_2026",
-  "بني خالد": "MAFK51_2026"
-};
+export const CHURCH_CREDENTIALS = [
+  { churchName: "العباسية", accessCode: "Lk2*951" },
+  { churchName: "المطرانية", accessCode: "Vp7@385" },
+  { churchName: "نزلة عصر", accessCode: "Zw2#398" },
+  { churchName: "المداور", accessCode: "Kf1@638" },
+  { churchName: "نزلة رمضان", accessCode: "Nb7_264" },
+  { churchName: "البسقلون", accessCode: "Rt5#930" },
+  { churchName: "عباد شارونة", accessCode: "Mx2@901" },
+  { churchName: "علي باشا", accessCode: "Js3@452" },
+  { churchName: "عزبة رزق", accessCode: "Kz5#259" },
+  { churchName: "صفانية", accessCode: "Dx1#924" },
+  { churchName: "الملاك ميخائيل - مغاغة", accessCode: "Km1@245" },
+  { churchName: "عزبة بطرس", accessCode: "Tr4#739" },
+  { churchName: "قصر لملوم", accessCode: "Lk5_441" },
+  { churchName: "بني عامر", accessCode: "Vz1#827" },
+  { churchName: "قفادة", accessCode: "Jh4_333" },
+  { churchName: "عزبة سمعان", accessCode: "Ty3@682" },
+  { churchName: "بلهاسة", accessCode: "Bn6#218" },
+  { churchName: "بني خالد", accessCode: "Xj7*195" },
+  { churchName: "شارونة", accessCode: "Bm1*627" },
+  { churchName: "الشيخ زياد", accessCode: "Dp2#118" },
+  { churchName: "أبو غطاس", accessCode: "Xj9_803" },
+  { churchName: "طنبدي", accessCode: "Jn5#572" },
+  { churchName: "ميانة", accessCode: "Lk9*118" },
+  { churchName: "صعايدة الكوم الأخضر", accessCode: "Qw9_106" },
+  { churchName: "الشيخ مسعود", accessCode: "Sm7_134" },
+  { churchName: "كفر عبد الخالق", accessCode: "Vn4@538" },
+  { churchName: "عطف حيدر", accessCode: "Gx6_193" },
+  { churchName: "عزبة مهدي", accessCode: "Kf4#819" },
+  { churchName: "الكوم الأخضر", accessCode: "Bf3#614" },
+  { churchName: "الجزيرة", accessCode: "Np8_423" },
+  { churchName: "شم القبلية", accessCode: "Mr8*508" },
+  { churchName: "مارمينا مغاغة", accessCode: "Gh8_682" },
+  { churchName: "برطباط", accessCode: "Bt4@717" },
+  { churchName: "عزبة إسحق", accessCode: "Rf1*860" },
+  { churchName: "صعايدة الساوي", accessCode: "Tp2#742" },
+  { churchName: "العذراء مغاغة", accessCode: "Gh9*515" },
+  { churchName: "شمس الدين", accessCode: "Rt8*485" },
+  { churchName: "آبا البلد", accessCode: "Jn2@551" },
+  { churchName: "دهروط", accessCode: "Ts6*304" },
+  { churchName: "الساوي", accessCode: "Lv6*373" },
+  { churchName: "بني واللمس", accessCode: "Xz8_402" },
+  { churchName: "كوم الحاصل", accessCode: "Tr8*704" },
+  { churchName: "دير الجرنوس", accessCode: "Rf5#472" },
+  { churchName: "الزورة", accessCode: "Wq3#490" },
+  { churchName: "إشنين", accessCode: "Mb4@952" },
+  { churchName: "إبراهيم عبد السيد", accessCode: "Qw4@316" },
+  { churchName: "القديسة دميانة", accessCode: "Vz9@624" },
+  { churchName: "برمشا", accessCode: "Wq2@714" },
+  { churchName: "القايات", accessCode: "Zw7*291" },
+  { churchName: "محمد بيه", accessCode: "Bt3*815" },
+  { churchName: "العدوة", accessCode: "Vp3_726" }
+];
 
 export const ADMIN_PASSWORD = "ADMIN_MAFK_2026";
-
-export const STAGE_ORDER = [
-  'حضانة',
-  'أولى وثانية',
-  'ثالثة ورابعة',
-  'خامسة وسادسة',
-  'إعدادي',
-  'ثانوي',
-  'جامعة',
-  'خريجون',
-  'خدام وإعداد الخدام',
-  'قانا الجليل',
-  'سمعان الشيخ',
-  'تعليم كبار',
-  'حرفيون'
-];
 
 export const sortStages = (a: string, b: string) => {
   const indexA = STAGE_ORDER.indexOf(a);
@@ -113,5 +127,5 @@ export const STAGE_LABELS: Record<string, string> = {
   stage56: 'خامسة وسادسة',
   adults: 'تعليم كبار',
   seniors: 'سمعان الشيخ',
-  special_needs: 'ذوي القدرات'
+  special_needs: 'قدرات خاصة'
 };

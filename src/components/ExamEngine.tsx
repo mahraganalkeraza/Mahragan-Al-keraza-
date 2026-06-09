@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { auth, db, CURRENT_YEAR } from '../firebase';
-import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc, writeBatch, getCountFromServer } from '../firebase';
+import { OFFICIAL_COMPETITIONS } from '../constants';
+import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc, writeBatch, getCountFromServer } from 'firebase/firestore';
 import { rdb, rdbRef, rdbSet, onDisconnect, rdbServerTimestamp } from '../firebase';
 import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet, ShieldX, Loader2 } from 'lucide-react';
 import { QRScanner } from './QRScanner';
@@ -38,18 +39,13 @@ interface Exam {
   updatedAt: string;
 }
 
-const COMPETITION_TYPES = [
-  'دراسي',
-  'محفوظات',
-  'قبطي مستوى أول',
-  'قبطي مستوى ثاني'
-];
+const COMPETITION_TYPES = OFFICIAL_COMPETITIONS;
 
 const SCORE_FIELD_MAP: Record<string, string> = {
   'دراسي': 'academicScore',
   'محفوظات': 'memorizationScore',
   'قبطي مستوى أول': 'copticL1Score',
-  'قبطي مستوى ثاني': 'copticL2Score'
+  'قبطي مستوى ثان': 'copticL2Score'
 };
 
 interface ExamEngineProps {

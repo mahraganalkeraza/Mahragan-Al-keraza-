@@ -74,8 +74,8 @@ import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
 import { motion, AnimatePresence } from 'motion/react';
-// @ts-ignore
-const getHtml2Pdf = async () => (await import('html2pdf.js')).default;
+// @ts-ignore - html2pdf.js doesn't have great types but works
+import html2pdf from 'html2pdf.js';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
@@ -95,47 +95,42 @@ import "yet-another-react-lightbox/styles.css";
 import Zoom from "yet-another-react-lightbox/plugins/zoom";
 
 import { 
+  auth, 
   db, 
   onAuthStateChanged, 
   signOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  auth,
-  storage,
-  OperationType,
-  CURRENT_YEAR,
-   getDocSafe,
-  getDocsSafe,
-  updateDocSafe,
-  addDocSafe,
-  collection,
-  doc,
-  setDoc,
-  getDoc,
-  getDocs,
-  onSnapshot,
-  query,
-  where,
-  addDoc,
-  updateDoc,
-  deleteDoc,
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs, 
+  onSnapshot, 
+  query, 
+  where, 
+  addDoc, 
+  updateDoc, 
   deleteField,
+  deleteDoc,
   writeBatch,
   handleFirestoreError,
+  OperationType,
   orderBy,
   limit,
   startAfter,
+  CURRENT_YEAR,
   runTransaction,
   serverTimestamp,
   getCountFromServer,
-  getDocFromServer
+  getDocSafe,
+  getDocsSafe
 } from './firebase';
-import churchData from './data/churches.json';
+// import churchData from './data/churches.json'; // Removed redundant import
 import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
-import ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
 import { supabase } from './lib/supabaseClient';
+import { registerParticipantDualWrite, mapArabicCompetitions, normalizeRegistrationList } from './services/registrationHandler';
 
 import UserManagement from './components/UserManagement';
 import { 
@@ -159,7 +154,9 @@ import {
   ADMIN_PASSWORD,
   CHURCH_CREDENTIALS,
   STAGE_ORDER,
-  sortStages
+  sortStages,
+  OFFICIAL_STAGES,
+  OFFICIAL_COMPETITIONS
   } from './constants';
 
 import { generateMasterExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/newExcelExport';
@@ -593,48 +590,10 @@ function AppComponent() {
   };
   const initialProfile = getInitialProfile();
   
-  const LOCAL_ALLOWED_COMPETITIONS = [
-    'دراسي',
-    'محفوظات',
-    'قبطي مستوى أول',
-    'قبطي مستوى ثاني',
-    'ألحان مستوى أول',
-    'ألحان مستوى ثاني',
-    'كشافة',
-    'رياضية',
-    'إبتكارات هندسية',
-    'فنون تشكيلية',
-    'مسرح',
-    'كورال',
-    'عزف'
-  ];
-
-  const fallbackLevels = STAGE_ORDER.map((stageName, idx) => ({
-    id: `stage-${idx}`,
-    name: stageName,
-    comps: LOCAL_ALLOWED_COMPETITIONS
-  }));
-
-  const fallbackActivityStages = STAGE_ORDER.map((stageName, idx) => ({
-    id: `act-${idx}`,
-    name: stageName
-  }));
-
-  const fallbackHymnStages = STAGE_ORDER.map((stageName, idx) => ({
-    id: `hymn-${idx}`,
-    name: stageName
-  }));
-
-  const fallbackChurches = churchData.map((c: any) => ({
-    name: c.name,
-    email: '',
-    logoUrl: ''
-  }));
-
   const [userProfile, setUserProfile] = useState<any>(initialProfile);
-  const [dynamicLevels, setDynamicLevels] = useState<any[]>(fallbackLevels);
-  const [activityStages, setActivityStages] = useState<any[]>(fallbackActivityStages);
-  const [hymnStages, setHymnStages] = useState<any[]>(fallbackHymnStages);
+  const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
+  const [activityStages, setActivityStages] = useState<any[]>([]);
+  const [hymnStages, setHymnStages] = useState<any[]>([]);
 
   // Customization State
   const [isCustomizeTabsModalOpen, setIsCustomizeTabsModalOpen] = useState(false);
@@ -650,7 +609,6 @@ function AppComponent() {
   const [isLoggedIn, setIsLoggedIn] = useState(!!initialProfile);
   const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest' | 'super_admin'>(initialProfile?.role || 'guest');
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
-  const [isOffline, setIsOffline] = useState(() => typeof navigator !== 'undefined' ? !navigator.onLine : false);
 
   useEffect(() => {
     const handleQuotaExceeded = () => {
@@ -662,21 +620,6 @@ function AppComponent() {
     }
     return () => {
       window.removeEventListener('firestore-quota-exceeded', handleQuotaExceeded);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
-    }
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('online', handleOnline);
-        window.removeEventListener('offline', handleOffline);
-      }
     };
   }, []);
   
@@ -825,33 +768,6 @@ function AppComponent() {
     // Supabase Load
     async function fetchSupabaseData() {
         console.log("Loading initial data from Supabase...");
-
-        // Clear cached auth token to reset hijacked/leaked sessions
-        try {
-            await supabase.auth.signOut();
-            console.log("[Supabase Sync] Session cache cleared on mount successfully.");
-        } catch (e) {
-            console.warn("Could not clear Supabase session cache anonymously:", e);
-        }
-
-        // Resolve inconsistent or mocked Admin roles if firebase is not logged in
-        if (!auth.currentUser) {
-            const cached = localStorage.getItem('userProfileCache');
-            if (cached) {
-                try {
-                    const parsed = JSON.parse(cached);
-                    if (parsed.role === 'admin' || parsed.role === 'super_admin') {
-                        console.warn("Detected cached admin role without active session, purging cache to reset to normal view.");
-                        localStorage.removeItem('userProfileCache');
-                        setUserRole('guest');
-                        setIsLoggedIn(false);
-                        setChurchName('');
-                    }
-                } catch (err) {
-                    localStorage.removeItem('userProfileCache');
-                }
-            }
-        }
         
         // Settings/app_config
         const { data: configData } = await supabase.from('settings').select('*').eq('id', 'app_config').single();
@@ -864,51 +780,10 @@ function AppComponent() {
             }
         }
         
-        // Settings/system_controls
-        try {
-            const { data: controlsData } = await supabase.from('settings').select('*').eq('id', 'system_controls').single();
-            if (controlsData) {
-                setSystemControls({
-                    isRegistrationOpen: controlsData.isRegistrationOpen !== false,
-                    isBookCalculatorOpen: controlsData.isBookCalculatorOpen !== false
-                });
-            } else {
-                setSystemControls({
-                    isRegistrationOpen: true,
-                    isBookCalculatorOpen: true
-                });
-            }
-        } catch (e) {
-            console.warn("Error fetching system controls, default to active:", e);
-            setSystemControls({
-                isRegistrationOpen: true,
-                isBookCalculatorOpen: true
-            });
-        }
-
-        // Settings/footer
-        try {
-            const { data: footerData } = await supabase.from('settings').select('*').eq('id', 'footer').single();
-            if (footerData) {
-                setSiteSettings({
-                    phone: footerData.phone || '',
-                    facebook: footerData.facebook || '',
-                    telegram: footerData.telegram || '',
-                    copyright: footerData.copyright || 'جميع الحقوق محفوظة © مهرجان الكرازة المرقسية'
-                });
-            }
-        } catch (e) {
-            console.warn("Error fetching footer settings:", e);
-        }
-        
         // Churches
-        try {
-            const { data: churchesData } = await supabase.from('churches').select('*').eq('isEnabled', true);
-            if (churchesData && churchesData.length > 0) {
-                setPublicChurches(churchesData.map(d => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
-            }
-        } catch (e) {
-            console.warn("Error fetching churches from Supabase, retained local fallback:", e);
+        const { data: churchesData } = await supabase.from('churches').select('*').eq('isEnabled', true);
+        if (churchesData) {
+            setPublicChurches(churchesData.map(d => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
         }
         
         // Add other loads here similar to above
@@ -1063,7 +938,7 @@ function AppComponent() {
   const [examLinks, setExamLinks] = useState<Record<string, string>>({});
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
-  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>(fallbackChurches);
+  const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>([]);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxImages, setLightboxImages] = useState<{src: string}[]>([]);
@@ -1114,35 +989,13 @@ function AppComponent() {
   });
   const [isSubmittingParticipant, setIsSubmittingParticipant] = useState(false);
   const [isSubmittingTeam, setIsSubmittingTeam] = useState(false);
-  const [newParticipant, setNewParticipant] = useState(() => {
-    try {
-      const saved = localStorage.getItem('newParticipant_draft');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.warn("Failed to load registration draft from localStorage", e);
-    }
-    return { 
-      name: '', 
-      stage: '', 
-      gender: '',
-      country: '',
-      competitions: ['', '', ''] 
-    };
+  const [newParticipant, setNewParticipant] = useState({ 
+    name: '', 
+    stage: '', 
+    gender: '',
+    country: '',
+    competitions: ['', '', ''] 
   });
-
-  // Local storage auto-save registration form draft
-  useEffect(() => {
-    if (newParticipant) {
-      const isDraftEmpty = !newParticipant.name && !newParticipant.stage && !newParticipant.gender && newParticipant.competitions.every(c => c === '');
-      if (isDraftEmpty) {
-        localStorage.removeItem('newParticipant_draft');
-      } else {
-        localStorage.setItem('newParticipant_draft', JSON.stringify(newParticipant));
-      }
-    }
-  }, [newParticipant]);
 
   // Background check on Firestore to warn with real-time duplicate checks in church context
   const [participantDuplicateWarning, setParticipantDuplicateWarning] = useState<string | null>(null);
@@ -1311,7 +1164,7 @@ function AppComponent() {
         if (normalizedComps.some((c: string) => c.includes(normalizeArabic('دراسي')))) { stg.darasi++; hasCountedSub = true; }
         if (normalizedComps.some((c: string) => c.includes(normalizeArabic('محفوظات')))) { stg.mahfouthat++; hasCountedSub = true; }
         if (normalizedComps.some((c: string) => c.includes(normalizeArabic('قبطي مستوى أول')) || c.includes(normalizeArabic('مستوى اول')))) { stg.coptic1++; hasCountedSub = true; }
-        if (normalizedComps.some((c: string) => c.includes(normalizeArabic('قبطي مستوى ثاني')) || c.includes(normalizeArabic('مستوى ثاني')))) { stg.coptic2++; hasCountedSub = true; }
+        if (normalizedComps.some((c: string) => c.includes(normalizeArabic('قبطي مستوى ثاني')) || c.includes(normalizeArabic('مستوى ثاني')) || c.includes(normalizeArabic('قبطي مستوى ثان')) || c.includes(normalizeArabic('مستوى ثان')))) { stg.coptic2++; hasCountedSub = true; }
         
         if (hasCountedSub) {
            stg.subscribers++;
@@ -1589,39 +1442,44 @@ function AppComponent() {
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        const { data: profile } = await supabase.from('users').select('*').eq('uid', firebaseUser.uid).single();
-
-        if (profile) {
-          if (profile.isEnabled === false) {
-            await signOut(auth);
-            setNotification("تم تعطيل حسابك بقرار من الإدارة. يرجى التواصل مع المسئول.");
-            setIsLoggedIn(false);
-            setUser(null);
-            setUserProfile(null);
-            localStorage.removeItem('userProfileCache');
-            setChurchName('');
-            return;
+        // Use real-time listener for current user profile to enforce blocking instantly
+        unsubscribeProfile = onSnapshot(doc(db, 'users', firebaseUser.uid), async (userDoc) => {
+          if (userDoc.exists()) {
+            const profile = userDoc.data();
+            if (profile.isEnabled === false) {
+              await signOut(auth);
+              setNotification("تم تعطيل حسابك بقرار من الإدارة. يرجى التواصل مع المسئول.");
+              setIsLoggedIn(false);
+              setUser(null);
+              setUserProfile(null);
+              localStorage.removeItem('userProfileCache');
+              setChurchName('');
+              return;
+            }
+            setUserProfile(profile);
+            localStorage.setItem('userProfileCache', JSON.stringify(profile));
+            setUserRole(profile.role);
+            setChurchName(profile.churchName || '');
+            setLocation(profile.country || '');
+            setDashboardBg(profile.dashboardBg || '');
+            setIsLoggedIn(true);
+            setIsAuthReady(true);
+          } else if (firebaseUser.email === 'admin@mafk.com' || firebaseUser.email === 'mahraganalkeraza7esoyam@gmail.com') {
+            setUserRole('admin');
+            setChurchName(firebaseUser.displayName || 'اللجنة المركزية منطقة18');
+            setIsLoggedIn(true);
+            setIsAuthReady(true);
+          } else {
+            setIsLoggedIn(true);
+            if (firebaseUser.email?.endsWith('@mafk.com')) {
+              setUserRole('church');
+            }
+            setIsAuthReady(true);
           }
-          setUserProfile(profile);
-          localStorage.setItem('userProfileCache', JSON.stringify(profile));
-          setUserRole(profile.role);
-          setChurchName(profile.churchName || '');
-          setLocation(profile.country || '');
-          setDashboardBg(profile.dashboardBg || '');
-          setIsLoggedIn(true);
+        }, (error) => {
+          console.error("Error watching user profile:", error);
           setIsAuthReady(true);
-        } else if (firebaseUser.email === 'admin@mafk.com' || firebaseUser.email === 'mahraganalkeraza7esoyam@gmail.com') {
-          setUserRole('admin');
-          setChurchName(firebaseUser.displayName || 'اللجنة المركزية منطقة18');
-          setIsLoggedIn(true);
-          setIsAuthReady(true);
-        } else {
-          setIsLoggedIn(true);
-          if (firebaseUser.email?.endsWith('@mafk.com')) {
-            setUserRole('church');
-          }
-          setIsAuthReady(true);
-        }
+        });
       } else {
         setUser(null);
         setUserProfile(null);
@@ -1645,46 +1503,23 @@ function AppComponent() {
 
   // Firestore Listeners
   useEffect(() => {
-    const fetchSchedules = async () => {
-      try {
-        const { data } = await supabase.from('schedules').select('*').eq('year', activeYear);
-        if (data && data.length > 0) {
-          setSchedules(data);
-          try {
-            localStorage.setItem(`cached_schedules_${activeYear}`, JSON.stringify(data));
-          } catch (e) {
-            console.warn("localStorage quota or write error:", e);
-          }
-        } else {
-          const cached = localStorage.getItem(`cached_schedules_${activeYear}`);
-          if (cached) {
-            setSchedules(JSON.parse(cached));
-          }
-        }
-      } catch (err) {
-        console.warn("Supabase fetch failed, loading offline cached schedules:", err);
-        const cached = localStorage.getItem(`cached_schedules_${activeYear}`);
-        if (cached) {
-          setSchedules(JSON.parse(cached));
-        }
-      }
-    };
-    fetchSchedules();
+    const unsubSchedules = onSnapshot(query(collection(db, 'schedules'), where('year', '==', activeYear)), (snapshot) => {
+      setSchedules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Schedule)));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'schedules'));
 
-    // Mock exam links fetch to supabase directly
-    const fetchExamLinks = async () => {
-      const { data } = await supabase.from('examLinks').select('*').eq('year', activeYear);
-      if (data) {
-        const links: Record<string, string> = {};
-        data.forEach(item => {
-          links[item.stage] = item.url;
-        });
-        setExamLinks(links);
-      }
-    };
-    fetchExamLinks();
+    const unsubExamLinks = onSnapshot(query(collection(db, 'examLinks'), where('year', '==', activeYear)), (snapshot) => {
+      const links: Record<string, string> = {};
+      snapshot.docs.forEach(doc => {
+        const data = doc.data() as ExamLink;
+        links[data.stage] = data.url;
+      });
+      setExamLinks(links);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'examLinks'));
 
-    return () => {};
+    return () => {
+      unsubSchedules();
+      unsubExamLinks();
+    };
   }, [activeYear]);
 
   useEffect(() => {
@@ -1939,7 +1774,7 @@ function AppComponent() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await updateDocSafe(doc(db, 'settings', 'footer'), siteSettings);
+      await setDoc(doc(db, 'settings', 'footer'), siteSettings);
       alert('تم حفظ إعدادات الموقع بنجاح!');
     } catch (error) {
       console.error("Error saving settings:", error);
@@ -1952,8 +1787,7 @@ function AppComponent() {
   const handleUpdateSystemControls = async (newControls: any) => {
     setIsLoading(true);
     try {
-      await updateDocSafe(doc(db, 'settings', 'system_controls'), newControls);
-      setSystemControls(newControls);
+      await setDoc(doc(db, 'settings', 'system_controls'), newControls);
       setNotification('تم تحديث إعدادات النظام المركذية');
     } catch (e) {
       console.error(e);
@@ -1966,8 +1800,7 @@ function AppComponent() {
   const handleUpdateExamConfig = async (newConfig: any) => {
     setIsLoading(true);
     try {
-      await updateDocSafe(doc(db, 'settings', 'exam_config'), newConfig);
-      setExamConfig(newConfig);
+      await setDoc(doc(db, 'settings', 'exam_config'), newConfig);
       setNotification('تم تحديث إعدادات الامتحانات');
     } catch (e) {
       console.error(e);
@@ -1981,7 +1814,7 @@ function AppComponent() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await updateDocSafe(doc(db, 'settings', 'about'), aboutContent);
+      await setDoc(doc(db, 'settings', 'about'), aboutContent);
       alert('تم حفظ محتوى "عن المهرجان" بنجاح!');
     } catch (error) {
       console.error("Error saving about content:", error);
@@ -2085,6 +1918,8 @@ function AppComponent() {
 
   const exportToExcel = async (data: any[], fileName: string) => {
     if (fileName === 'participants') {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = await import('file-saver');
       const workbook = new ExcelJS.Workbook();
       
       const churches = Array.from(new Set(data.map(p => p.churchName || 'Unknown')));
@@ -2370,6 +2205,41 @@ function AppComponent() {
           await batch.commit();
         }
 
+        // Parallel non-blocking Supabase bulk synchronization
+        try {
+          const supabaseBackupData = parsedParticipants.map(item => {
+            const compStatuses = mapArabicCompetitions(item.competitions || [], false);
+            return {
+              id: item.id,
+              serial: item.serial || item.id,
+              name: item.name,
+              churchName: item.churchName,
+              stage: item.stage,
+              gender: item.gender,
+              competition: (item.competitions || []).join(', ') || 'عام',
+              darasi: compStatuses.darasi,
+              qebti: compStatuses.qebti,
+              mahfouzat: compStatuses.mahfouzat,
+              country: item.country || 'مصر',
+              year: item.year || activeYear,
+              timestamp: item.timestamp || new Date().toISOString()
+            };
+          });
+
+          supabase
+            .from('registrations')
+            .insert(supabaseBackupData)
+            .then(
+              ({ error: sbErr }) => {
+                if (sbErr) console.error('[Supabase Bulk Import Sync] Quietly failed to insert backup records (Isolated):', sbErr);
+                else console.log('[Supabase Bulk Import Sync] Backup records inserted successfully.');
+              },
+              (err) => console.error('[Supabase Bulk Import Sync] Exception caught during backup insertion:', err)
+            );
+        } catch (sbEx) {
+          console.error('[Supabase Bulk Import Sync] Exception formatting backup list:', sbEx);
+        }
+
         // Instant state sync
         setParticipants(prev => [...prev, ...parsedParticipants]);
         setTotalParticipantsCount(prev => prev + parsedParticipants.length);
@@ -2415,8 +2285,7 @@ function AppComponent() {
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
     };
     await withStylesCleaned(async () => {
-      const h2p = await getHtml2Pdf();
-      await h2p().set(opt).from(element).save();
+      await html2pdf().set(opt).from(element).save();
     });
   };
 
@@ -2431,8 +2300,7 @@ function AppComponent() {
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
     };
     await withStylesCleaned(async () => {
-      const h2p = await getHtml2Pdf();
-      await h2p().set(opt).from(element).save();
+      await html2pdf().set(opt).from(element).save();
     });
   };
 
@@ -2447,8 +2315,7 @@ function AppComponent() {
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
     };
     await withStylesCleaned(async () => {
-      const h2p = await getHtml2Pdf();
-      await h2p().set(opt).from(element).save();
+      await html2pdf().set(opt).from(element).save();
     });
   };
 
@@ -2463,8 +2330,7 @@ function AppComponent() {
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
     };
     await withStylesCleaned(async () => {
-      const h2p = await getHtml2Pdf();
-      await h2p().set(opt).from(element).save();
+      await html2pdf().set(opt).from(element).save();
     });
   };
 
@@ -2479,13 +2345,14 @@ function AppComponent() {
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
     };
     await withStylesCleaned(async () => {
-      const h2p = await getHtml2Pdf();
-      await h2p().set(opt).from(element).save();
+      await html2pdf().set(opt).from(element).save();
     });
   };
 
   const exportPrintingStatementExcel = async () => {
     try {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = await import('file-saver');
       const workbook = new ExcelJS.Workbook();
       
       STAGE_ORDER.forEach(stg => {
@@ -2666,26 +2533,79 @@ function AppComponent() {
     if (!isLoggedIn) return;
     setIsParticipantsLoading(true);
     try {
-      // Force directly to Supabase to bypass index requirements and Quota errors completely
-      let sbQuery = supabase.from('registrations').select('*').eq('year', activeYear);
-      if (userRole !== 'admin') {
-        sbQuery = sbQuery.eq('churchName', churchName);
-      } else if (partChurchFilter !== 'الكل') {
-        sbQuery = sbQuery.eq('churchName', partChurchFilter);
-      }
-      if (partStageFilter !== 'الكل') sbQuery = sbQuery.eq('stage', partStageFilter);
-      if (partCompFilter !== 'الكل') sbQuery = sbQuery.contains('competitions', [partCompFilter]);
-      if (search) sbQuery = sbQuery.ilike('name', `%${search}%`);
-
-      const { data, error } = await sbQuery.order('name');
-      if (!error && data) {
-        setParticipants(data);
-        setIsParticipantsEnd(true);
+      let baseQueryQ = collection(db, 'participants');
+      const constraints: any[] = [where('year', '==', activeYear)];
+      
+      // Admin Church Filter
+      if (userRole === 'admin') {
+        if (partChurchFilter !== 'الكل') {
+          constraints.push(where('churchName', '==', partChurchFilter));
+        }
       } else {
-        setNotification('خطأ في جلب بيانات المشتركين.');
+        constraints.push(where('churchName', '==', churchName));
       }
+
+      // Stage Filter
+      if (partStageFilter !== 'الكل') {
+        constraints.push(where('stage', '==', partStageFilter));
+      }
+
+      // Competition Filter
+      if (partCompFilter !== 'الكل') {
+        constraints.push(where('competitions', 'array-contains', partCompFilter));
+      }
+      
+      // Name Search Filter
+      if (search) {
+        constraints.push(where('name', '>=', search), where('name', '<=', search + '\uf8ff'));
+      }
+      
+      constraints.push(orderBy('name'));
+      
+      if (isFirst || (!isFirst && !isNext)) {
+        getCountFromServer(query(baseQueryQ, ...constraints)).then(snap => {
+          setTotalParticipantsCount(snap.data().count);
+        }).catch(err => console.error("Firestore Core Error: ", err.message));
+      }
+      
+      const q = query(baseQueryQ, ...constraints);
+      const snap = await getDocsSafe(q);
+      
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
+      setParticipants(newList);
+      setIsParticipantsEnd(true);
+      
+      if (isFirst) setParticipantPageCount(1);
+      else if (isNext) setParticipantPageCount(prev => prev + 1);
+      
     } catch (err: any) {
-      console.error("Global Catch Error:", err.message);
+      console.error("Firestore Core Error: ", err.message);
+      
+      // Fallback to Supabase
+      console.warn("Firebase fetch failed or requires indexes. Pulling from Supabase...");
+      let sbQuery = supabase.from('registrations').select('*').eq('year', activeYear);
+      
+      if (userRole === 'admin') {
+        if (partChurchFilter !== 'الكل') sbQuery = sbQuery.eq('churchName', partChurchFilter);
+      } else {
+        sbQuery = sbQuery.eq('churchName', churchName);
+      }
+      
+      if (partStageFilter !== 'الكل') sbQuery = sbQuery.eq('stage', partStageFilter);
+      if (partCompFilter !== 'الكل') {
+        sbQuery = sbQuery.ilike('competition', `%${partCompFilter}%`);
+      }
+      
+      const { data, error: sbError } = await sbQuery;
+      
+      if (sbError) {
+        console.error("Supabase also failed:", sbError);
+        setNotification('خطأ في جلب بيانات المشتركين.');
+      } else {
+        const cleanList = normalizeRegistrationList(data || []);
+        setParticipants(cleanList);
+        setIsParticipantsEnd(true);
+      }
     } finally {
       setIsParticipantsLoading(false);
     }
@@ -2694,50 +2614,30 @@ function AppComponent() {
   const fetchAllChurchParticipants = async () => {
       if (!isLoggedIn) return;
       try {
+        let baseQueryQ = collection(db, 'participants');
+        const constraints: any[] = [where('year', '==', activeYear)];
+        if (userRole !== 'admin') {
+          constraints.push(where('churchName', '==', churchName));
+        }
+        
+        const q = query(baseQueryQ, ...constraints);
+        const snap = await getDocs(q);
+        const allList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
+        setAllChurchParticipants(allList);
+      } catch(err: any) {
+        console.warn("Firebase fetch failed, switching to Supabase for all participants...");
         let sbQuery = supabase.from('registrations').select('*').eq('year', activeYear);
         if (userRole !== 'admin') {
             sbQuery = sbQuery.eq('churchName', churchName);
         }
         const { data, error: sbError } = await sbQuery;
         if (sbError) {
-            console.error("Supabase failed:", sbError);
+            console.error("Supabase also failed:", sbError);
         } else {
-            setAllChurchParticipants(data as Participant[]);
+            const cleanList = normalizeRegistrationList(data || []);
+            setAllChurchParticipants(cleanList);
         }
-      } catch(err: any) {
-        console.error("Fetch all participants failed:", err);
       }
-  };
-
-  const fetchDashboardCounts = async () => {
-    if (!isLoggedIn) return;
-    try {
-      let partQuery = supabase.from('registrations').select('*', { count: 'exact', head: true }).eq('year', activeYear);
-      let ordQuery = supabase.from('orders').select('*', { count: 'exact', head: true }).eq('year', activeYear);
-      let teamQuery = supabase.from('activityTeams').select('*', { count: 'exact', head: true }).eq('year', activeYear);
-
-      if (userRole !== 'admin') {
-        partQuery = partQuery.eq('churchName', churchName);
-        ordQuery = ordQuery.eq('churchName', churchName);
-        teamQuery = teamQuery.eq('churchName', churchName);
-      } else if (globalChurchFilter !== 'الكل') {
-        partQuery = partQuery.eq('churchName', globalChurchFilter);
-        ordQuery = ordQuery.eq('churchName', globalChurchFilter);
-        teamQuery = teamQuery.eq('churchName', globalChurchFilter);
-      }
-
-      const [partRes, ordRes, teamRes] = await Promise.all([
-        partQuery,
-        ordQuery,
-        teamQuery
-      ]);
-
-      setTotalParticipantsCount(partRes.count || 0);
-      setTotalOrdersCount(ordRes.count || 0);
-      setTotalTeamsCount(teamRes.count || 0);
-    } catch (err) {
-      console.error("Error fetching dashboard counts from Supabase:", err);
-    }
   };
 
   const fetchLargeData = async (toast = true) => {
@@ -2752,8 +2652,7 @@ function AppComponent() {
         fetchOrdersPage(true, true),
         fetchTeamsPage(true, true),
         fetchResultsPage(true, true),
-        fetchAllChurchParticipants(),
-        fetchDashboardCounts()
+        fetchAllChurchParticipants()
       ];
       
       if (userRole === 'admin') {
@@ -2929,7 +2828,7 @@ function AppComponent() {
 
   useEffect(() => {
     fetchLargeData(false);
-  }, [userRole, churchName, activeYear, isLoggedIn, globalChurchFilter]);
+  }, [userRole, churchName, activeYear, isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -2972,7 +2871,7 @@ function AppComponent() {
       targetChurch = 'اللجنة المركزية منطقة18';
     } else {
       try {
-        const foundChurch = churchData.find((c: any) => c.name === loginChurch);
+        const foundChurch = CHURCH_CREDENTIALS.find((c: any) => c.churchName === loginChurch);
         
         if (!foundChurch) {
           setLoginError('الكنيسة غير موجودة');
@@ -2980,7 +2879,7 @@ function AppComponent() {
           return;
         }
 
-        if (code !== foundChurch.password) {
+        if (code !== foundChurch.accessCode) {
           setLoginError('كود الكنيسة غير صحيح');
           setIsLoading(false);
           return;
@@ -3024,7 +2923,8 @@ function AppComponent() {
       if (firebaseUser) {
         let userDoc;
         if (email.endsWith('_2026@mafk.com')) {
-           userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: targetChurch, uid: firebaseUser.uid }) };
+           const church = CHURCH_CREDENTIALS.find((c: any) => c.accessCode === password);
+           userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: church?.churchName || 'كنيسة', uid: firebaseUser.uid }) };
         } else {
            userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         }
@@ -3352,6 +3252,38 @@ function AppComponent() {
              const customId = generateShortId();
              await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...newParticipant, serial: customId }));
              
+             // Decoupled Supabase dynamic backup sync
+             try {
+               const supabaseBackupPayload = {
+                 id: customId,
+                 serial: customId,
+                 name: memberName,
+                 churchName,
+                 stage: newTeam.members[0].stage,
+                 gender: newTeam.members[0].gender,
+                 competition: 'عام',
+                 darasi: false,
+                 qebti: false,
+                 mahfouzat: false,
+                 country: 'Egypt',
+                 year: activeYear,
+                 timestamp: new Date().toISOString()
+               };
+
+               supabase
+                 .from('registrations')
+                 .insert([supabaseBackupPayload])
+                 .then(
+                   ({ error: sbErr }) => {
+                     if (sbErr) console.error('[Supabase Auto-Reg Sync] Quietly failed to insert backup record (Isolated):', sbErr);
+                     else console.log('[Supabase Auto-Reg Sync] Backup record inserted successfully.');
+                   },
+                   (err) => console.error('[Supabase Auto-Reg Sync] Exception caught during backup insertion:', err)
+                 );
+             } catch (sbEx) {
+               console.error('[Supabase Auto-Reg Sync] Exception preparing backup payload:', sbEx);
+             }
+
              // Instant state sync for newly added student from activity
              const newStudent: Participant = {
                id: customId,
@@ -3445,6 +3377,19 @@ function AppComponent() {
       batch.delete(doc(db, 'online_results', id));
       await batch.commit();
 
+      // Parallel non-blocking Supabase delete
+      supabase
+        .from('registrations')
+        .delete()
+        .eq('id', id)
+        .then(
+          ({ error: sbErr }) => {
+            if (sbErr) console.error('[Supabase Delete Sync] Quietly failed to delete backup record (Isolated):', sbErr);
+            else console.log('[Supabase Delete Sync] Backup record deleted successfully.');
+          },
+          (err) => console.error('[Supabase Delete Sync] Exception caught during delete backup:', err)
+        );
+
       // Get the church name before deleting
       const deletedParticipant = participants.find(p => p.id === id);
       const targetChurch = deletedParticipant?.churchName || churchName;
@@ -3526,13 +3471,20 @@ function AppComponent() {
     try {
       const recordsToInsert = participantsList.map((name) => {
           const customId = generateShortId();
+          const compStatuses = mapArabicCompetitions(["دراسي"], false);
           return {
               serial: customId,
               id: customId,
-              name: name,
+              name: name.trim(),
               churchName: "دير الجرنوس",
               stage: "جامعة",
-              competitions: ["دراسي"],
+              gender: "ذكر",
+              competition: "دراسي",
+              darasi: compStatuses.darasi,
+              qebti: compStatuses.qebti,
+              mahfouzat: compStatuses.mahfouzat,
+              country: "مصر",
+              year: activeYear,
               timestamp: new Date().toISOString()
           };
       });
@@ -3570,88 +3522,91 @@ function AppComponent() {
 
     try {
       if (editingParticipant) {
-        const updatedFields = {
+        const firebaseUpdateFields = {
           name: newParticipant.name,
           stage: newParticipant.stage,
           gender: newParticipant.gender,
           competitions: newParticipant.competitions.filter(c => c !== ''),
-          timestamp: new Date().toLocaleString('ar-EG')
+          timestamp: new Date().toISOString()
         };
         
-        // Supabase Migration: Update record via updateDocSafe wrapper
-        let updateDone = false;
-        try {
-          await updateDocSafe(doc(db, 'participants', editingParticipant.id), updatedFields);
-          updateDone = true;
-        } catch (e) {
-          console.warn("Supabase update connection failed, bypassed for offline state:", e);
-        }
+        // 1. Authoritative Firebase update
+        await withExponentialBackoff(() => updateDoc(doc(db, 'participants', editingParticipant.id), firebaseUpdateFields));
         
-        // Instant state sync for edit (Ensures list updates immediately on screen!)
+        // 2. Parallel, non-blocking Supabase update with unified fields
+        const compStatuses = mapArabicCompetitions(newParticipant.competitions.filter(c => c !== ''), false);
+        const supabaseUpdateFields = {
+          name: newParticipant.name.trim(),
+          stage: newParticipant.stage.trim(),
+          gender: newParticipant.gender,
+          competition: newParticipant.competitions.filter(c => c !== '').join(', ') || 'عام',
+          darasi: compStatuses.darasi,
+          qebti: compStatuses.qebti,
+          mahfouzat: compStatuses.mahfouzat,
+          timestamp: new Date().toISOString()
+        };
+
+        supabase
+          .from('registrations')
+          .update(supabaseUpdateFields)
+          .eq('id', editingParticipant.id)
+          .then(
+            ({ error: sbErr }) => {
+              if (sbErr) {
+                console.error('[Supabase Edit Sync] Quietly failed to edit backup record (Isolated):', sbErr);
+              } else {
+                console.log('[Supabase Edit Sync] Backup record updated successfully.');
+              }
+            },
+            (err) => {
+              console.error('[Supabase Edit Sync] Exception caught during edit backup:', err);
+            }
+          );
+        
+        // Instant state sync for edit
         const updatedParticipant: Participant = {
           ...editingParticipant,
-          ...updatedFields
+          ...firebaseUpdateFields
         };
         setParticipants(prev => prev.map(p => p.id === editingParticipant.id ? updatedParticipant : p));
 
         setEditingParticipant(null);
         alert('تم تحديث بيانات المشترك بنجاح.');
       } else {
-        const customId = generateShortId();
-        const studentData = {
-          id: customId,
-          serial: customId,
+        // Core Dual-Write Implementation (Writes to Firebase primary first, then Supabase backup in decoupled background task)
+        const dualWriteRes = await registerParticipantDualWrite({
           name: newParticipant.name,
           churchName: churchName,
           stage: newParticipant.stage,
           gender: newParticipant.gender,
           competitions: newParticipant.competitions.filter(c => c !== ''),
-          country: 'مصر',
           year: activeYear,
-          timestamp: new Date().toISOString()
-        };
+          country: 'مصر'
+        }, false);
 
-        try {
-          // Await remote insert first to ensure real data synchronization before updating state
-          const docRef = await addDocSafe(collection(db, 'participants'), studentData);
-          const serverId = docRef.id || customId;
-
-          // Step A: Update the local state ONLY after successful remote replication
-          const newStudent: Participant = {
-            id: serverId,
-            serial: serverId,
-            churchName,
-            name: newParticipant.name,
-            stage: newParticipant.stage,
-            gender: newParticipant.gender,
-            competitions: newParticipant.competitions.filter(c => c !== ''),
-            timestamp: new Date().toISOString(),
-            year: activeYear,
-            country: 'مصر'
-          } as any as Participant;
-
-          setParticipants(prev => {
-            if (prev.some(p => p.id === serverId)) return prev;
-            return [...prev, newStudent];
-          });
-          setTotalParticipantsCount(prev => prev + 1);
-          alert('تم تسجيل المشترك بنجاح.');
-        } catch (err: any) {
-          console.error("Supabase insert connection error:", err);
-          alert("خطأ في الاتصال بالقاعدة: " + err.message);
-          
-          // Emergency local storage backup if insert failed
-          try {
-            const existingEmergency = JSON.parse(localStorage.getItem('emergency_registrations') || '[]');
-            existingEmergency.push({ ...studentData, type: 'participant_emergency' });
-            localStorage.setItem('emergency_registrations', JSON.stringify(existingEmergency));
-          } catch (e) {
-            console.warn("localStorage write failed", e);
-          }
-
-          setIsSubmittingParticipant(false);
-          return;
+        if (!dualWriteRes.success) {
+          throw new Error('Dual-write registration failed in primary database.');
         }
+
+        const customId = dualWriteRes.id;
+        
+        // Instant state sync for adding a new student
+        const newStudent: Participant = {
+          id: customId,
+          serial: customId,
+          churchName,
+          name: newParticipant.name,
+          stage: newParticipant.stage,
+          gender: newParticipant.gender,
+          competitions: newParticipant.competitions.filter(c => c !== ''),
+          timestamp: new Date().toISOString(),
+          year: activeYear,
+          country: 'مصر'
+        } as any as Participant;
+        setParticipants(prev => [...prev, newStudent]);
+        setTotalParticipantsCount(prev => prev + 1);
+
+        alert('تم تسجيل المشترك بنجاح.');
       }
       
       setNewParticipant({ 
@@ -3660,15 +3615,9 @@ function AppComponent() {
         gender: '',
         competitions: ['دراسي', '', ''] 
       });
-      try {
-        localStorage.removeItem('newParticipant_draft');
-      } catch (e) {
-        console.warn("Failed to clear registration draft from localStorage", e);
-      }
       await updateChurchSubscribers(churchName);
     } catch (error: any) {
       handleFirestoreError(error, OperationType.WRITE, 'participants');
-      alert('تم التسجيل بنجاح بالتخزين الاحتياطي.');
     } finally {
       setIsSubmittingParticipant(false);
     }
@@ -3795,7 +3744,7 @@ function AppComponent() {
         }))
       };
 
-      const docRef = await withExponentialBackoff(() => addDocSafe(collection(db, 'orders'), { ...newOrder, year: activeYear }));
+      const docRef = await withExponentialBackoff(() => addDoc(collection(db, 'orders'), { ...newOrder, year: activeYear }));
       
       // Instant state sync
       const finalOrder: Order = {
@@ -3839,8 +3788,7 @@ function AppComponent() {
     } as any;
 
     await withStylesCleaned(async () => {
-      const h2p = await getHtml2Pdf();
-      await h2p().set(opt).from(element).save();
+      await html2pdf().set(opt).from(element).save();
     });
   };
 
@@ -4190,10 +4138,10 @@ function AppComponent() {
 
   return (
     <div className="min-h-screen bg-bg-soft font-sans selection:bg-accent/30 relative" dir="rtl">
-      {isOffline && (
-        <div className="bg-amber-600 text-white py-2 px-4 text-center text-xs md:text-sm font-medium flex items-center justify-center gap-2 z-50 relative shadow" dir="rtl">
-          <span className="animate-pulse">●</span>
-          <span>وضع عدم الاتصال بالإنترنت نشط. يُمكنك تصفح جداول الامتحانات والبيانات المحملة مسبقاً بنجاح.</span>
+      {isQuotaExceeded && (
+        <div className="bg-amber-600 text-white py-3 px-4 text-center text-xs md:text-sm font-bold flex items-center justify-center gap-2 z-[999999] relative shadow-md" dir="rtl">
+          <span>⚠️</span>
+          <span>تنبيه: تم تجاوز الحد الأقصى لقراءة البيانات اليومية المجانية لقاعدة البيانات (Firestore Quota Limit Exceeded). يرجى المحاولة غداً أو لاحقاً.</span>
         </div>
       )}
       {/* Global Watermark */}
@@ -4679,7 +4627,7 @@ function AppComponent() {
                         className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
                       >
                         <option value="الكل">كل المراحل</option>
-                        {dynamicLevels.sort((a,b)=>sortStages(a.name, b.name)).map(l => <option key={l.id || l.name} value={l.name}>{l.name}</option>)}
+                        {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                       <select 
                         value={resultsFilterGrade}
@@ -4735,7 +4683,7 @@ function AppComponent() {
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
                 >
                   <option value="الكل">كل المراحل</option>
-                  {dynamicLevels.map(l => <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>{typeof l === 'string' ? l : l.name}</option>)}
+                  {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
                 <select 
                   value={globalCompetitionFilter}
@@ -4743,7 +4691,7 @@ function AppComponent() {
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
                 >
                   <option value="الكل">كل المسابقات / الأنشطة</option>
-                  {['دراسي', 'محفوظات', 'قبطي مستوى ١', 'قبطي مستوى ٢', 'كورال', 'ألحان', 'عزف'].map(c => (
+                  {OFFICIAL_COMPETITIONS.map(c => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
@@ -4992,7 +4940,7 @@ function AppComponent() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
+                        {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
 
@@ -5001,8 +4949,6 @@ function AppComponent() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[0, 1, 2].map((idx) => {
                           const selectedComps = newParticipant.competitions;
-                          const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
-                          const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
                           
                           const isOptionDisabled = (val: string) => {
                             if (!val) return false;
@@ -5010,6 +4956,11 @@ function AppComponent() {
                             if (selectedComps.some((c, i) => i !== idx && c === val)) return true;
                             // Mutual exclusivity for Coptic Levels
                             if (val.includes('قبطي مستوى') && selectedComps.some((c, i) => i !== idx && c.includes('قبطي مستوى'))) return true;
+                            // Level enforcement
+                            const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي', 'جامعة', 'خريجون', 'خدام وإعداد الخدام', 'قانا الجليل', 'تعليم كبار', 'سمعان الشيخ', 'حرفيون', 'صم وبكم', 'قدرات خاصة', 'ديديموس', 'بولس وسيلا'].includes(newParticipant.stage);
+                            if (val === 'قبطي مستوى ثان' && !isCopticLevel2Allowed) return true;
+                            if (val === 'قبطي مستوى أول' && isCopticLevel2Allowed && !['حضانة', 'أولى وثانية', 'ثالثة ورابعة'].includes(newParticipant.stage)) return true;
+                            
                             return false;
                           };
 
@@ -5025,7 +4976,7 @@ function AppComponent() {
                               className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue"
                             >
                               <option value="">-- اختر المسابقة --</option>
-                              {availableCompsForLevel.map((comp: string) => (
+                              {OFFICIAL_COMPETITIONS.map((comp: string) => (
                                 <option key={comp} value={comp} disabled={isOptionDisabled(comp)}>{comp}</option>
                               ))}
                             </select>
@@ -5676,22 +5627,22 @@ function AppComponent() {
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                     >
                       <option value="الكل">كل المراحل</option>
-                      {dynamicLevels.map(l => <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>{typeof l === 'string' ? l : l.name}</option>)}
+                      {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
 
                   <div className="flex-1 w-full flex flex-col gap-1.5">
                     <label className="text-[10px] font-black text-slate-400">المسابقة</label>
-                    <select 
-                      value={partCompFilter}
-                      onChange={(e) => setPartCompFilter(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
-                    >
-                      <option value="الكل">مسابقة (الكل)</option>
-                      {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني', 'ألحان مستوى أول', 'ألحان مستوى ثاني', 'كشافة', 'رياضية', 'إبتكارات هندسية', 'فنون تشكيلية', 'مسرح'].map(c => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
+                      <select 
+                        value={partCompFilter}
+                        onChange={(e) => setPartCompFilter(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
+                      >
+                        <option value="الكل">مسابقة (الكل)</option>
+                        {OFFICIAL_COMPETITIONS.map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
                   </div>
 
                   <div className="flex-2 w-full flex flex-col gap-1.5 relative">
@@ -6199,7 +6150,7 @@ function AppComponent() {
                     >
                       <option value="">-- اختر المسابقة --</option>
                       <option value="دراسي ومحفوظات وقبطي">دراسي ومحفوظات وقبطي</option>
-                      {Array.from(new Set(dynamicLevels.flatMap(l => l.comps || []))).sort().map(comp => (
+                      {OFFICIAL_COMPETITIONS.map(comp => (
                         <option key={comp} value={comp}>{comp}</option>
                       ))}
                     </select>
@@ -6305,7 +6256,7 @@ function AppComponent() {
                 <h4 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-2">
                   <BookOpen className="text-primary" /> بناء وتحكم الامتحانات الإلكترونية
                 </h4>
-                <ExamBuilder stages={dynamicLevels} />
+                <ExamBuilder stages={OFFICIAL_STAGES} />
               </section>
             )}
 
@@ -6338,7 +6289,7 @@ function AppComponent() {
                       className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
                     >
                       <option value="">-- اختر المرحلة --</option>
-                      {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
+                      {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                   </div>
                   <div>
@@ -6588,7 +6539,7 @@ function AppComponent() {
                         <Church size={18} className="text-primary"/> تحكم حسب الكنيسة
                       </h5>
                       <div className="max-h-[300px] overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-2 no-scrollbar">
-                        {Object.keys(CHURCH_CREDENTIALS).sort().map(church => (
+                        {CHURCH_CREDENTIALS.map(c => c.churchName).sort().map(church => (
                           <div key={church} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
                             <span className="font-bold text-sm text-slate-700">{church}</span>
                             <button 
@@ -7690,7 +7641,7 @@ function AppComponent() {
                         required
                       >
                         <option value="">اختر المرحلة</option>
-                        {dynamicLevels.map((p: any) => <option key={p.id || p.name} value={p.name}>{p.name}</option>)}
+                        {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                     <div>
@@ -7797,19 +7748,19 @@ function AppComponent() {
                     <Link2 className="text-coptic-blue" /> إدارة لينكات الامتحانات (Google Forms)
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {([...dynamicLevels].sort((a: any, b: any) => sortStages(a.name, b.name))).map((stage) => (
-                      <div key={stage.id} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm hover:shadow transition-all space-y-3">
-                        <label className="text-[11px] font-black text-slate-500 uppercase">{stage.name}</label>
+                    {([...OFFICIAL_STAGES].sort((a: any, b: any) => sortStages(a, b))).map((stage) => (
+                      <div key={stage} className="p-5 bg-slate-50 rounded-2xl border border-slate-200 shadow-sm hover:shadow transition-all space-y-3">
+                        <label className="text-[11px] font-black text-slate-500 uppercase">{stage}</label>
                         <div className="flex gap-2">
                           <input 
                             type="url" 
                             placeholder="https://docs.google.com/forms/..."
-                            value={examLinks[stage.name] || ''}
-                            onChange={(e) => setExamLinks({ ...examLinks, [stage.name]: e.target.value })}
+                            value={examLinks[stage] || ''}
+                            onChange={(e) => setExamLinks({ ...examLinks, [stage]: e.target.value })}
                             className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue"
                           />
                           <button 
-                            onClick={() => handleUpdateExamLink(stage.name, examLinks[stage.name] || '')}
+                            onClick={() => handleUpdateExamLink(stage, examLinks[stage] || '')}
                             className="px-3 py-2 bg-coptic-blue text-white rounded-xl text-xs hover:bg-coptic-blue/90 transition-colors"
                           >
                             حفظ
@@ -8260,7 +8211,7 @@ function AppComponent() {
                           required
                         >
                           <option value="">اختر المرحلة</option>
-                          {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
+                          {OFFICIAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </div>
 
@@ -8299,15 +8250,18 @@ function AppComponent() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                       {[0, 1, 2].map((idx) => {
-                        const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي'].includes(newParticipant.stage);
+                        const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي', 'جامعة', 'خريجون', 'خدام وإعداد الخدام', 'قانا الجليل', 'تعليم كبار', 'سمعان الشيخ', 'حرفيون', 'صم وبكم', 'قدرات خاصة', 'ديديموس', 'بولس وسيلا'].includes(newParticipant.stage);
                         const selectedComps = newParticipant.competitions;
-                        const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
-                        const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
                         
                         const isOptionDisabled = (val: string) => {
                           if (!val) return false;
                           if (selectedComps.some((c, i) => i !== idx && c === val)) return true;
                           if (val.includes('قبطي مستوى') && selectedComps.some((c, i) => i !== idx && c.includes('قبطي مستوى'))) return true;
+                          
+                          // Level logic for Coptic Level 2 vs Level 1
+                          if (val === 'قبطي مستوى ثان' && !isCopticLevel2Allowed) return true;
+                          if (val === 'قبطي مستوى أول' && isCopticLevel2Allowed && !['حضانة', 'أولى وثانية', 'ثالثة ورابعة'].includes(newParticipant.stage)) return true;
+                          
                           return false;
                         };
 
@@ -8326,7 +8280,7 @@ function AppComponent() {
                               className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
                             >
                               <option value="">-- اختر المسابقة --</option>
-                              {availableCompsForLevel.map((comp: string) => (
+                              {OFFICIAL_COMPETITIONS.map((comp: string) => (
                                 <option 
                                   key={comp} 
                                   value={comp} 
