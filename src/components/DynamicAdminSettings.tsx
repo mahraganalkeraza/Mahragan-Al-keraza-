@@ -1,8 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc, getDoc, writeBatch, onSnapshot, query, where } from '../firebase';
+import { 
+  db, 
+  storage, 
+  ref, 
+  uploadBytesResumable, 
+  getDownloadURL, 
+  handleFirestoreError, 
+  OperationType, 
+  firebaseConfig,
+  collection, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  writeBatch, 
+  onSnapshot, 
+  query, 
+  where 
+} from '../firebase';
 import { initializeApp, getApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { db, storage, ref, uploadBytesResumable, getDownloadURL, handleFirestoreError, OperationType, firebaseConfig } from '../firebase';
 import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as ImageIcon, Upload, Loader2, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { sortStages } from '../constants';

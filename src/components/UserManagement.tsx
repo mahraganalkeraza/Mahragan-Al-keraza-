@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
   collection,
-  getDocs,
   doc,
   setDoc,
   updateDoc,
@@ -10,9 +9,9 @@ import {
   where,
   writeBatch,
   onSnapshot,
+  getDocs,
 } from "../firebase";
-import { db, storage } from "../firebase";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { db, storage, ref, uploadBytesResumable, getDownloadURL } from "../firebase";
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
@@ -21,6 +20,7 @@ import {
   updatePassword,
   signOut,
 } from "firebase/auth";
+import { OperationType, handleFirestoreError } from "../firebase";
 import PaginationComponent from "./Pagination";
 import firebaseConfig from "../../firebase-applet-config.json";
 import {
@@ -102,7 +102,7 @@ export default function UserManagement() {
       setUsers(usersData);
       setIsLoading(false);
     }, (err) => {
-      console.error("Error fetching users:", err);
+      handleFirestoreError(err, OperationType.GET, "users");
       setError("حدث خطأ أثناء جلب المستخدمين");
       setIsLoading(false);
     });
@@ -111,7 +111,7 @@ export default function UserManagement() {
     const unsubscribeChurches = onSnapshot(collection(db, "churches"), (snapshot) => {
       const bankData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
       setChurchesBank(bankData);
-    });
+    }, (err) => handleFirestoreError(err, OperationType.GET, "churches"));
 
     return () => {
       unsubscribeUsers();

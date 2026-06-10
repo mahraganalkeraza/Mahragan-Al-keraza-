@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, auth, rdb, rdbRef, rdbSet, onValue, getCountFromServer, writeBatch } from '../firebase';
-import { collection, query, orderBy, limit, doc, updateDoc, setDoc, deleteDoc, getDocs, where } from '../firebase';
+import { db, auth, rdb, rdbRef, onValue, getCountFromServer, writeBatch } from '../firebase';
+import { collection, query, orderBy, limit, doc, updateDoc, setDoc, deleteDoc, getDocs, where } from 'firebase/firestore';
 import { Activity, Users, Monitor, Clock, TrendingUp, ShieldAlert, Smartphone, ShieldX, UserMinus, RotateCcw, RotateCw, Trash2, AlertCircle } from 'lucide-react';
 
 enum OperationType {
@@ -104,6 +104,7 @@ export const LiveExamMonitoring: React.FC<{
       }
 
       // 3. Clear RDB presence immediately
+      const { rdbSet } = await import('../firebase');
       await rdbSet(rdbRef(rdb, `presence/${studentId}`), null);
 
       alert('تم إنهاء الجلسة بنجاح');
@@ -128,6 +129,7 @@ export const LiveExamMonitoring: React.FC<{
       await batch.commit();
       
       // Clear RDB presence
+      const { rdbSet } = await import('../firebase');
       await rdbSet(rdbRef(rdb, 'presence'), null);
       
       setLogs([]);

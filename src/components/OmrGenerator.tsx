@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, limit } from '../firebase';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';

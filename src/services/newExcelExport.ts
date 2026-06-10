@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { db } from '../firebase';
-import { collection, getDocs, query, where } from '../firebase';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { saveAs } from 'file-saver';
 
 export const generateMasterExcel = async (churchName: string | null = null) => {

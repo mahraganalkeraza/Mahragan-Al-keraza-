@@ -1,20 +1,38 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getStorage } from 'firebase/storage';
+import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot, query, where, addDoc, updateDoc, deleteDoc, deleteField, getDocFromServer, writeBatch, orderBy, limit, runTransaction, serverTimestamp, startAfter, getCountFromServer, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getDatabase, ref as rdbRef, set as rdbSet, onValue, onDisconnect, off, push, serverTimestamp as rdbServerTimestamp, get as rdbGet } from 'firebase/database';
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+
+// Import the Firebase configuration
 import firebaseConfigJson from '../firebase-applet-config.json';
-import { supabase } from './lib/supabaseClient';
 
+// Initialize Firebase SDK
 export const firebaseApp = initializeApp(firebaseConfigJson);
-export const firebaseConfig = firebaseConfigJson;
-export const auth = getAuth(firebaseApp);
-export const storage = getStorage(firebaseApp);
-export const CURRENT_YEAR = '2026';
 
-// Quota exceeded should be false for Supabase operation
 if (typeof window !== 'undefined') {
+  // Set to false by default so Firestore is tried first. 
+  // It will switch to true automatically if a quota error is encountered.
   (window as any).firestoreQuotaExceeded = false;
 }
 
+// Initialize Firestore with persistent cache
+export const db = initializeFirestore(firebaseApp, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+}, firebaseConfigJson.firestoreDatabaseId);
+
+export const firebaseConfig = firebaseConfigJson;
+
+
+export const auth = getAuth(firebaseApp);
+export const storage = getStorage(firebaseApp);
+export const rdb = getDatabase(firebaseApp);
+
+export const CURRENT_YEAR = '2026';
+
+// Error handling spec for Firestore permissions
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -24,284 +42,256 @@ export enum OperationType {
   WRITE = 'write',
 }
 
-// Helper to safely extract collection path string and parts from any reference/query object
-export function getPathAndSegments(refObj: any) {
-  let pathStr = '';
-  if (refObj) {
-    if (typeof refObj.path === 'string') {
-      pathStr = refObj.path;
-    } else if (refObj._query) {
-      return getPathAndSegments(refObj._query);
-    } else if (refObj.path?.segments) {
-      pathStr = Array.from(refObj.path.segments).join('/');
-    } else if (refObj._query?.path?.segments) {
-      pathStr = Array.from(refObj._query.path.segments).join('/');
-    }
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
   }
-  const segments = pathStr ? pathStr.split('/') : [];
-  return { path: pathStr, segments };
 }
 
-export function getCollectionName(refObj: any): string {
-  if (typeof refObj === 'string') return refObj;
-  const { segments } = getPathAndSegments(refObj);
-  return segments[0] || 'registrations';
+export function isQuotaError(error: any): boolean {
+  if (!error) return false;
+  const errMsg = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  return errMsg.includes('quota') || 
+         errMsg.includes('resource_exhausted') || 
+         errMsg.includes('over_quota') || 
+         errMsg.includes('billing') || 
+         errMsg.includes('limit exceeded') ||
+         errMsg.includes('exhausted');
 }
 
-// Intercept old Firestore doc calls and route directly to Supabase
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const isQuota = isQuotaError(error);
+  
+  if (isQuota && typeof window !== 'undefined') {
+    (window as any).firestoreQuotaExceeded = true;
+    window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+  }
+
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  };
+  
+  const serialized = JSON.stringify(errInfo);
+  
+  if (isQuota) {
+    // Log as warning rather than error to keep the console cleaner if it's already expected/handled
+    console.warn('Firestore Quota Exceeded for path:', path, '. Bypassing UI might be triggered.');
+    // Stop propagation of this specific error to avoid crashing the whole app logic if we want to fallback
+    return; 
+  }
+
+  console.error('Firestore Error caught: ', serialized);
+  throw new Error(serialized);
+}
+
+// Supabase Import (assuming it exists based on previous turns)
+import { supabase } from './lib/supabaseClient';
+
+/**
+ * Maps Firestore collection names to Supabase table names.
+ */
+function getSupabaseTable(firestoreCollection: string): string {
+  const map: Record<string, string> = {
+    'participants': 'registrations',
+    'registrations': 'registrations',
+    'news': 'news',
+    'settings': 'settings',
+    'churches': 'churches',
+    'levels': 'levels',
+    'activityStages': 'activityStages',
+    'hymnStages': 'hymnStages'
+  };
+  return map[firestoreCollection] || firestoreCollection;
+}
+
 export async function getDocSafe(docRef: any) {
-  const { segments } = getPathAndSegments(docRef);
-  const collectionName = segments[0] || 'registrations';
-  const id = segments[1] || 'default_id';
-  const targetTable = collectionName === 'participants' ? 'registrations' : collectionName;
-  
-  const { data, error } = await supabase.from(targetTable).select('*').eq('id', id).single();
-  // Firestore getDoc resolves with exists: false when not found, so handle gracefully
-  if (error) {
-    return { exists: () => false, data: () => null, id: id };
-  }
-  return { exists: () => !!data, data: () => data, id: id };
-}
-
-export async function getDocsSafe(queryObject: any) {
-  const collectionName = getCollectionName(queryObject);
-  const targetTable = collectionName === 'participants' ? 'registrations' : collectionName;
-  
-  const { data, error } = await supabase.from(targetTable).select('*');
-  if (error) {
-    return {
-      empty: true,
-      docs: [],
-      forEach: (cb: any) => {}
+  if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
+    console.warn("Firestore quota exceeded, bypassing to Supabase (getDocSafe)");
+    const parts = docRef.path.split('/');
+    const collectionName = parts[0];
+    const id = parts[1];
+    const table = getSupabaseTable(collectionName);
+    
+    const { data, error } = await supabase.from(table).select('*').eq('id', id).single();
+    if (error) throw error;
+    return { 
+      exists: () => !!data, 
+      data: () => data,
+      id: data?.id || id
     };
   }
-  return {
-    empty: data.length === 0,
-    docs: data.map((item: any) => ({
-      id: item.id || item.serial,
-      data: () => item,
-      ref: { path: `${targetTable}/${item.id || item.serial}`, type: 'doc' },
-      exists: () => true
-    })),
-    forEach: (cb: any) => data.forEach((item: any) => cb({
-      id: item.id || item.serial,
-      data: () => item,
-      ref: { path: `${targetTable}/${item.id || item.serial}`, type: 'doc' },
-      exists: () => true
-    }))
-  };
-}
 
-export const db: any = {
-  collection: (name: string) => ({ id: name, path: name, type: 'collection' }),
-  doc: (path: string) => ({ path, type: 'doc' })
-};
-
-export const rdb: any = {};
-export const rdbRef = (...args: any[]) => ({});
-export const rdbSet = async (...args: any[]) => {};
-export const onValue = (...args: any[]) => { return () => {}; };
-export const onDisconnect = (...args: any[]) => ({ set: () => {}, remove: () => {}, update: () => {} });
-export const rdbServerTimestamp = () => Date.now();
-export const push = (...args: any[]) => ({ key: 'temp-key' });
-export const rdbGet = async (...args: any[]) => ({ val: () => null, exists: () => false });
-export const off = (...args: any[]) => {};
-
-export const collection = (db: any, path: string, ...paths: string[]) => ({ path, type: 'collection' });
-export const doc = (...args: any[]) => {
-  const dbOrCol = args[0];
-  const pathParts = args.slice(1);
-  if (pathParts.length === 0) {
-    if (dbOrCol && dbOrCol.type === 'collection') {
-      return { path: `${dbOrCol.path}/${Math.random().toString(36).substring(7)}`, type: 'doc' };
+  try {
+    return await getDoc(docRef);
+  } catch (error) {
+    if (isQuotaError(error)) {
+      (window as any).firestoreQuotaExceeded = true;
+      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+      const parts = docRef.path.split('/');
+      const table = getSupabaseTable(parts[0]);
+      const id = parts[1];
+      const { data, error: sbError } = await supabase.from(table).select('*').eq('id', id).single();
+      if (sbError) throw sbError;
+      return { 
+        exists: () => !!data, 
+        data: () => data,
+        id: data?.id || id
+      };
     }
-    return { path: `${Math.random().toString(36).substring(7)}`, type: 'doc' };
-  }
-  if (dbOrCol && dbOrCol.type === 'collection') {
-    return { path: `${dbOrCol.path}/${pathParts.join('/')}`, type: 'doc' };
-  }
-  return { path: pathParts.join('/'), type: 'doc' };
-};
-
-export const setDoc = async (docRef: any, data: any, options?: any) => {
-  const { segments } = getPathAndSegments(docRef);
-  const targetTable = segments[0] === 'participants' ? 'registrations' : (segments[0] || 'registrations');
-  const id = segments[1] || 'default_id';
-  
-  const { error } = await supabase.from(targetTable).upsert({ id, ...data });
-  if (error) {
-    console.error("Supabase Upsert Error:", error);
     throw error;
   }
-};
-
-export const addDoc = async (colRef: any, data: any) => {
-  const { path: colPath } = getPathAndSegments(colRef);
-  const targetTable = colPath === 'participants' ? 'registrations' : (colPath || 'registrations');
-  const id = 'sb_' + Date.now() + Math.random().toString(36).substring(7);
-  
-  const { error } = await supabase.from(targetTable).insert({ id, ...data });
-  if (error) {
-    console.error("Supabase Insert Error:", error);
-    throw error;
-  }
-  return { id, path: `${colPath || 'registrations'}/${id}` };
-};
-
-// Explicit safe addDoc bridge requested by user
-export async function addDocSafe(collectionRef: any, dataObject: any) {
-  const collectionName = collectionRef.id || collectionRef.path || 'registrations';
-  let targetTable = collectionName === 'participants' ? 'registrations' : collectionName;
-
-  console.log("[Supabase Sync] Sending payload:", dataObject);
-
-  const { data, error } = await supabase
-    .from(targetTable)
-    .insert([dataObject])
-    .select();
-
-  if (error) {
-    console.error("❌ SUPABASE WRITE ERROR:", error.message, error.details);
-    throw new Error(`Database insert failed: ${error.message}`);
-  }
-
-  return { id: data?.[0]?.id || "success" };
 }
 
-export const updateDoc = async (docRef: any, data: any) => {
-  const { segments } = getPathAndSegments(docRef);
-  const targetTable = segments[0] === 'participants' ? 'registrations' : (segments[0] || 'registrations');
-  const id = segments[1];
-  if (id) {
-    const { error } = await supabase.from(targetTable).update(data).eq('id', id);
-    if (error) {
-       console.error("Supabase Update Error:", error);
-       throw error;
-    }
-  }
-};
-
-// Intercept state updates for app settings and toggles
-export async function updateDocSafe(docRef: any, updateData: any) {
-  const segments = docRef.path?.split('/') || [];
-  const collectionName = segments[0] || 'settings';
-  const id = segments[1] || 'global';
-  const targetTable = collectionName === 'participants' ? 'registrations' : collectionName;
-
-  const { data, error } = await supabase.from(targetTable).update(updateData).eq('id', id).select();
-  if (error) {
-    console.error("Supabase Update Error:", error);
+export async function getDocsSafe(q: any) {
+  if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
+    console.warn("Firestore quota exceeded, bypassing (getDocsSafe)");
+    // We throw here to trigger the catch block in the caller which usually has custom Supabase logic
+    const error = new Error('Firestore Quota Exceeded');
+    (error as any).code = 'resource-exhausted';
     throw error;
   }
-  return data;
+
+  try {
+    return await getDocs(q);
+  } catch (error) {
+    if (isQuotaError(error)) {
+      (window as any).firestoreQuotaExceeded = true;
+      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+      throw error; // Throw so caller handles fallback
+    }
+    throw error;
+  }
 }
 
-export const deleteDoc = async (docRef: any) => {
-  const { segments } = getPathAndSegments(docRef);
-  const targetTable = segments[0] === 'participants' ? 'registrations' : (segments[0] || 'registrations');
-  const id = segments[1];
-  if (id) {
-    const { error } = await supabase.from(targetTable).delete().eq('id', id);
-    if (error) {
-      console.error("Supabase Delete Error:", error);
-      throw error;
+export async function getCountFromServerSafe(q: any) {
+    if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
+        return { data: () => ({ count: 0 }) };
     }
-  }
-};
-
-export const getDoc = async (docRef: any) => {
-  return await getDocSafe(docRef);
-};
-
-export const getDocs = async (queryReq: any) => {
-  return await getDocsSafe(queryReq);
-};
-
-export const onSnapshot = (...args: any[]) => {
-  const queryObj = args[0];
-  const cb = args.find(a => typeof a === 'function');
-  if (cb) {
-    if (queryObj && queryObj.type === 'doc') {
-      getDocSafe(queryObj).then(res => cb(res)).catch(() => cb({ exists: () => false, data: () => ({}) }));
-    } else {
-      getDocsSafe(queryObj).then(res => {
-        (res as any).docChanges = () => res.docs.map((d:any) => ({ type: 'added', doc: d }));
-        cb(res);
-      }).catch(() => cb({ empty: true, docs: [], docChanges: () => [] }));
-    }
-  }
-  return () => {};
-};
-
-export const query = (...args: any[]) => {
-  let colRef = args[0];
-  while (colRef && colRef._query) {
-    colRef = colRef._query;
-  }
-  return { _query: colRef };
-};
-
-export const where = (...args: any[]) => {};
-export const orderBy = (...args: any[]) => {};
-export const limit = (...args: any[]) => {};
-export const startAfter = (...args: any[]) => {};
-export const getCountFromServer = async (...args: any[]) => ({ data: () => ({ count: 0 }) });
-export const deleteField = () => "DELETE_FIELD";
-
-// Fully implement writeBatch to route operations to Supabase
-export const writeBatch = (db: any) => {
-  const operations: Array<() => Promise<any>> = [];
-  return {
-    set: (docRef: any, data: any, options?: any) => {
-      operations.push(async () => {
-        const { segments } = getPathAndSegments(docRef);
-        const targetTable = segments[0] === 'participants' ? 'registrations' : (segments[0] || 'registrations');
-        const id = segments[1] || 'default_id';
-        await supabase.from(targetTable).upsert({ id, ...data });
-      });
-    },
-    update: (docRef: any, data: any) => {
-      operations.push(async () => {
-        const { segments } = getPathAndSegments(docRef);
-        const targetTable = segments[0] === 'participants' ? 'registrations' : (segments[0] || 'registrations');
-        const id = segments[1];
-        if (id) {
-          await supabase.from(targetTable).update(data).eq('id', id);
+    try {
+        return await getCountFromServer(q);
+    } catch (error) {
+        if (isQuotaError(error)) {
+            (window as any).firestoreQuotaExceeded = true;
+            window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+            return { data: () => ({ count: 0 }) };
         }
-      });
-    },
-    delete: (docRef: any) => {
-      operations.push(async () => {
-        const { segments } = getPathAndSegments(docRef);
-        const targetTable = segments[0] === 'participants' ? 'registrations' : (segments[0] || 'registrations');
-        const id = segments[1];
-        if (id) {
-          await supabase.from(targetTable).delete().eq('id', id);
-        }
-      });
-    },
-    commit: async () => {
-      await Promise.all(operations.map(op => op()));
+        throw error;
     }
-  };
+}
+
+
+
+// Global interceptors for unhandled database/quota errors
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason;
+    if (reason) {
+      const msg = reason.message || reason.error || String(reason);
+      const errorStr = String(msg).toLowerCase();
+      if (errorStr.includes('quota') || errorStr.includes('resource_exhausted') || errorStr.includes('over_quota') || errorStr.includes('quota limit exceeded')) {
+        (window as any).firestoreQuotaExceeded = true;
+        window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+        event.preventDefault(); // Stop from logging as uncaught rejection
+      }
+    }
+  });
+
+  window.addEventListener('error', (event) => {
+    const msg = event.message || String(event.error);
+    const errorStr = String(msg).toLowerCase();
+    if (errorStr.includes('quota') || errorStr.includes('resource_exhausted') || errorStr.includes('over_quota') || errorStr.includes('quota limit exceeded')) {
+      (window as any).firestoreQuotaExceeded = true;
+      window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+      event.preventDefault(); // Stop from logging as uncaught exception
+    }
+  });
+}
+
+// Test connection
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if(error instanceof Error && error.message.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration.");
+    }
+  }
+}
+testConnection();
+
+// Wrapped onSnapshot to prevent quota exhaustion
+const originalOnSnapshot = onSnapshot;
+export const onSnapshotWrapped: typeof onSnapshot = (query, ...args) => {
+  if (typeof window !== 'undefined' && (window as any).firestoreQuotaExceeded) {
+    console.warn("Skipping onSnapshot due to detected quota exhaustion.");
+    // Return a dummy unsubscribe function
+    return () => {};
+  }
+  return originalOnSnapshot(query, ...(args as [any]));
 };
 
-export const handleFirestoreError = (...args: any[]) => {
-  console.warn("handleFirestoreError bypassed", args);
-};
-export const getDocFromServer = getDoc;
-export const runTransaction = async (...args: any[]) => {};
-export const serverTimestamp = () => Date.now();
-export const uploadBytesResumable = (...args: any[]) => ({
-  on: (event: any, next: any, error: any, complete: any) => complete?.()
-});
-export const getDownloadURL = async (...args: any[]) => "https://dummy-url.com/image.jpg";
-export const ref = (...args: any[]) => ({});
-
-export {
-  onAuthStateChanged,
+export { 
+  onAuthStateChanged, 
   signOut,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-} from 'firebase/auth';
-
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs, 
+  onSnapshotWrapped as onSnapshot,
+  query, 
+  where, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc,
+  deleteField,
+  writeBatch,
+  orderBy,
+  limit,
+  runTransaction,
+  serverTimestamp,
+  startAfter,
+  getCountFromServerSafe as getCountFromServer,
+  ref,
+  uploadBytesResumable,
+  getDownloadURL,
+  getDatabase,
+  rdbRef,
+  rdbSet,
+  onValue,
+  onDisconnect,
+  off,
+  push,
+  rdbServerTimestamp,
+  rdbGet
+};
