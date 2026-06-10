@@ -129,7 +129,7 @@ import {
 import churchData from './data/churches.json';
 import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
-import { supabase } from './lib/supabaseClient';
+
 
 import UserManagement from './components/UserManagement';
 import { 
@@ -683,7 +683,6 @@ function AppComponent() {
   }, [userProfile?.logoUrl, appLogo]);
 
   useEffect(() => {
-    /* 
     if ((window as any).firestoreQuotaExceeded) {
       console.warn("Firestore quota already exceeded, skipping listeners.");
       return () => {};
@@ -704,25 +703,37 @@ function AppComponent() {
       }
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
 
-    // const unsubChurches = onSnapshot(collection(db, 'churches'), (snapshot) => {
-    //   const churchesData = snapshot.docs
-    //     .map(d => ({ 
-    //       name: d.data().name, 
-    //       email: '', 
-    //       isEnabled: d.data().isEnabled !== false,
-    //       logoUrl: d.data().logoUrl || ''
-    //     }))
-    //     .filter(c => c.isEnabled);
-    //   setPublicChurches(churchesData);
-    // }, (error) => handleFirestoreError(error, OperationType.GET, 'churches'));
-
-    const localChurches = churchData.map(c => ({ 
-      name: c.name, 
-      email: '', 
-      isEnabled: true,
-      logoUrl: ''
-    }));
-    setPublicChurches(localChurches);
+    const unsubChurches = onSnapshot(collection(db, 'churches'), (snapshot) => {
+      const churchesData = snapshot.docs
+        .map(d => ({ 
+          name: d.data().name, 
+          email: '', 
+          isEnabled: d.data().isEnabled !== false,
+          logoUrl: d.data().logoUrl || ''
+        }))
+        .filter(c => c.isEnabled);
+      
+      if (churchesData.length > 0) {
+        setPublicChurches(churchesData);
+      } else {
+        const localChurches = churchData.map(c => ({ 
+          name: c.name, 
+          email: '', 
+          isEnabled: true,
+          logoUrl: ''
+        }));
+        setPublicChurches(localChurches);
+      }
+    }, (error) => {
+      console.warn("Churches collection listen failed, falling back to local list:", error);
+      const localChurches = churchData.map(c => ({ 
+        name: c.name, 
+        email: '', 
+        isEnabled: true,
+        logoUrl: ''
+      }));
+      setPublicChurches(localChurches);
+    });
 
     const unsubLevels = onSnapshot(collection(db, 'levels'), (snapshot) => {
       const levelsData = snapshot.docs.map(d => ({ 
@@ -778,6 +789,33 @@ function AppComponent() {
       });
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/validation'));
 
+    const unsubSystemControls = onSnapshot(doc(db, 'settings', 'system_controls'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setSystemControls({
+          isRegistrationOpen: true, // Always force open as requested
+          isBookCalculatorOpen: data.isBookCalculatorOpen !== false
+        });
+      } else {
+        setSystemControls({
+          isRegistrationOpen: true,
+          isBookCalculatorOpen: true
+        });
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/system_controls'));
+
+    const unsubExamConfig = onSnapshot(doc(db, 'settings', 'exam_config'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setExamConfig({
+          isExamLive: data.isExamLive !== false,
+          churchOverrides: data.churchOverrides || {},
+          stageOverrides: data.stageOverrides || {},
+          autoCloseTime: data.autoCloseTime
+        });
+      }
+    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/exam_config'));
+
     return () => {
       unsubAppConfig();
       unsubChurches();
@@ -785,60 +823,11 @@ function AppComponent() {
       unsubActivityStages();
       unsubHymnStages();
       unsubValidation();
+      unsubSystemControls();
+      unsubExamConfig();
     };
-    */
-    
-    // Supabase Load
-    async function fetchSupabaseData() {
-        console.log("Loading initial data from Supabase...");
-        
-        // Settings/app_config
-        const { data: configData } = await supabase.from('settings').select('*').eq('id', 'app_config').single();
-        if (configData) {
-            setActiveYear(configData.activeYear || CURRENT_YEAR);
-            setGlobalReadAccess(configData.globalReadAccess !== false);
-            if (configData.appLogo) {
-                localStorage.setItem('appLogoCache', configData.appLogo);
-                setAppLogo(configData.appLogo);
-            }
-        }
-        
-        // System Controls
-        const { data: controlsData } = await supabase.from('settings').select('*').eq('id', 'system_controls').single();
-        if (controlsData) {
-            setSystemControls({
-                isRegistrationOpen: true, // Mandatory open as requested
-                isBookCalculatorOpen: controlsData.isBookCalculatorOpen !== false
-            });
-        } else {
-            // Default to open if not found
-            setSystemControls({
-                isRegistrationOpen: true,
-                isBookCalculatorOpen: true
-            });
-        }
-
-        // Exam Config
-        const { data: examData } = await supabase.from('settings').select('*').eq('id', 'exam_config').single();
-        if (examData) {
-            setExamConfig({
-                isExamLive: examData.isExamLive !== false,
-                churchOverrides: examData.churchOverrides || {},
-                stageOverrides: examData.stageOverrides || {},
-                autoCloseTime: examData.autoCloseTime
-            });
-        }
-        
-        // Churches
-        const { data: churchesData } = await supabase.from('churches').select('*').eq('isEnabled', true);
-        if (churchesData) {
-            setPublicChurches(churchesData.map((d: any) => ({ name: d.name, email: '', isEnabled: true, logoUrl: d.logoUrl || ''})));
-        }
-    }
-    fetchSupabaseData();
   }, []);
 
-  /*
   useEffect(() => {
     if (!isLoggedIn || userRole !== 'church') return;
 
@@ -855,24 +844,6 @@ function AppComponent() {
     }, (error) => handleFirestoreError(error, OperationType.GET, 'news'));
 
     return () => unsubscribe();
-  }, [isLoggedIn, userRole]);
-  */
-  useEffect(() => {
-    if (!isLoggedIn || userRole !== 'church') return;
-    
-    // Supabase Poll or similar mechanism for new news
-    const fetchLatestNews = async () => {
-        const { data, error } = await supabase.from('news')
-            .select('*')
-            .eq('year', activeYear)
-            .order('timestamp', { ascending: false })
-            .limit(1);
-        if (data && data.length > 0) {
-            // Simplified news check logic
-            setNotification(`خبر جديد: ${data[0].title}`);
-        }
-    };
-    fetchLatestNews();
   }, [isLoggedIn, userRole]);
   const [loginChurch, setLoginChurch] = useState('');
   const [loginCode, setLoginCode] = useState('');
@@ -1855,19 +1826,16 @@ function AppComponent() {
   const handleUpdateSystemControls = async (newControls: any) => {
     setIsLoading(true);
     try {
-      const { error } = await supabase.from('settings').upsert({ 
-        id: 'system_controls', 
+      await setDoc(doc(db, 'settings', 'system_controls'), {
         ...newControls,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
-      
-      if (error) throw error;
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
       
       setSystemControls(newControls);
-      setNotification('تم تحديث إعدادات النظام المركذية بنجاح (Supabase)');
-    } catch (e) {
+      setNotification('تم تحديث إعدادات النظام المركذية بنجاح (Firestore)');
+    } catch (e: any) {
       console.error(e);
-      setNotification('خطأ في التحديث عبر Supabase');
+      setNotification('خطأ في التحديث عبر Firestore');
     } finally {
       setIsLoading(false);
     }
@@ -1876,19 +1844,16 @@ function AppComponent() {
   const handleUpdateExamConfig = async (newConfig: any) => {
     setIsLoading(true);
     try {
-      const { error } = await supabase.from('settings').upsert({ 
-        id: 'exam_config', 
+      await setDoc(doc(db, 'settings', 'exam_config'), {
         ...newConfig,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
-      
-      if (error) throw error;
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
       
       setExamConfig(newConfig);
-      setNotification('تم تحديث إعدادات الامتحانات بنجاح (Supabase)');
-    } catch (e) {
+      setNotification('تم تحديث إعدادات الامتحانات بنجاح (Firestore)');
+    } catch (e: any) {
       console.error(e);
-      setNotification('خطأ في التحديث عبر Supabase');
+      setNotification('خطأ في التحديث عبر Firestore');
     } finally {
       setIsLoading(false);
     }
@@ -2629,29 +2594,7 @@ function AppComponent() {
       
     } catch (err: any) {
       console.error("Firestore Core Error: ", err.message);
-      
-      // Fallback to Supabase
-      console.warn("Firebase fetch failed or requires indexes. Pulling from Supabase...");
-      let sbQuery = supabase.from('registrations').select('*').eq('year', activeYear);
-      
-      if (userRole === 'admin') {
-        if (partChurchFilter !== 'الكل') sbQuery = sbQuery.eq('churchName', partChurchFilter);
-      } else {
-        sbQuery = sbQuery.eq('churchName', churchName);
-      }
-      
-      if (partStageFilter !== 'الكل') sbQuery = sbQuery.eq('stage', partStageFilter);
-      if (partCompFilter !== 'الكل') sbQuery = sbQuery.contains('competitions', [partCompFilter]);
-      
-      const { data, error: sbError } = await sbQuery;
-      
-      if (sbError) {
-        console.error("Supabase also failed:", sbError);
-        setNotification('خطأ في جلب بيانات المشتركين.');
-      } else {
-        setParticipants(data as Participant[]);
-        setIsParticipantsEnd(true);
-      }
+      setNotification('حدث خطأ أثناء تحميل بيانات المشتركين.');
     } finally {
       setIsParticipantsLoading(false);
     }
@@ -2671,17 +2614,7 @@ function AppComponent() {
         const allList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
         setAllChurchParticipants(allList);
       } catch(err: any) {
-        console.warn("Firebase fetch failed, switching to Supabase for all participants...");
-        let sbQuery = supabase.from('registrations').select('*').eq('year', activeYear);
-        if (userRole !== 'admin') {
-            sbQuery = sbQuery.eq('churchName', churchName);
-        }
-        const { data, error: sbError } = await sbQuery;
-        if (sbError) {
-            console.error("Supabase also failed:", sbError);
-        } else {
-            setAllChurchParticipants(data as Participant[]);
-        }
+        console.error("Firebase fetch failed for all participants:", err);
       }
   };
 
@@ -3466,23 +3399,22 @@ function AppComponent() {
     ];
 
     try {
-      const recordsToInsert = participantsList.map((name) => {
-          const customId = generateShortId();
-          return {
-              serial: customId,
-              id: customId,
-              name: name,
-              churchName: "دير الجرنوس",
-              stage: "جامعة",
-              competitions: ["دراسي"],
-              timestamp: new Date().toISOString()
-          };
+      const batch = writeBatch(db);
+      participantsList.forEach((name) => {
+        const customId = generateShortId();
+        const docRef = doc(db, 'participants', customId);
+        batch.set(docRef, {
+          serial: customId,
+          id: customId,
+          name: name,
+          churchName: "دير الجرنوس",
+          stage: "جامعة",
+          competitions: ["دراسي"],
+          timestamp: new Date().toISOString()
+        });
       });
-      
-      const { error } = await supabase.from('registrations').insert(recordsToInsert);
-      if (error) throw error;
-      
-      alert("تم إضافة 20 مشترك بنجاح إلى Supabase!");
+      await batch.commit();
+      alert("تم إضافة 20 مشترك بنجاح إلى Firebase!");
     } catch (e: any) {
       console.error("Bulk insert failed:", e);
       alert("فشل في الإضافة: " + e.message);
@@ -3520,16 +3452,8 @@ function AppComponent() {
           timestamp: new Date().toLocaleString('ar-EG')
         };
         
-        // Supabase Migration: Update record
-        const { error } = await supabase
-            .from('registrations')
-            .update(updatedFields)
-            .eq('serial', editingParticipant.serial || editingParticipant.id);
-            
-        if (error) throw error;
-        
-        // Also keep updating Firebase (just in case it works for some, or to keep both in sync, but we might hit quota. Or we can comment it out)
-        // await withExponentialBackoff(() => updateDoc(doc(db, 'participants', editingParticipant.id), updatedFields));
+        // Update in Firebase Firestore
+        await setDoc(doc(db, 'participants', editingParticipant.id), updatedFields, { merge: true });
         
         // Instant state sync for edit
         const updatedParticipant: Participant = {
@@ -3543,36 +3467,23 @@ function AppComponent() {
       } else {
         const customId = generateShortId();
         
-        const { data, error } = await supabase
-          .from('registrations')
-          .insert([{
-            id: customId,
-            serial: customId,
-            name: newParticipant.name,
-            churchName: churchName,
-            stage: newParticipant.stage,
-            gender: newParticipant.gender,
-            competitions: newParticipant.competitions.filter(c => c !== ''),
-            country: 'مصر',
-            year: activeYear,
-            timestamp: new Date().toISOString()
-          }]);
-            
-        if (error) throw error;
-        
-        // Instant state sync for adding a new student
-        const newStudent: Participant = {
+        const newRecord = {
           id: customId,
           serial: customId,
-          churchName,
           name: newParticipant.name,
+          churchName: churchName,
           stage: newParticipant.stage,
           gender: newParticipant.gender,
           competitions: newParticipant.competitions.filter(c => c !== ''),
-          timestamp: new Date().toISOString(),
+          country: 'مصر',
           year: activeYear,
-          country: 'مصر'
-        } as any as Participant;
+          timestamp: new Date().toISOString()
+        };
+
+        await setDoc(doc(db, 'participants', customId), newRecord);
+        
+        // Instant state sync for adding a new student
+        const newStudent: Participant = newRecord as any as Participant;
         setParticipants(prev => [...prev, newStudent]);
         setTotalParticipantsCount(prev => prev + 1);
 
