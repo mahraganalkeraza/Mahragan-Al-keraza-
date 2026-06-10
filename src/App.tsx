@@ -737,8 +737,24 @@ function AppComponent() {
           uniqueLevelsMap.set(l.name.trim(), l);
         }
       });
-      const uniqueLevels = Array.from(uniqueLevelsMap.values());
-      setDynamicLevels(uniqueLevels.sort((a: any, b: any) => sortStages(a.name, b.name)));
+      
+      const REQUIRED_STAGES = [
+        'حضانة', 'أولى وثانية', 'ثالثة ورابعة', 'خامسة وسادسة', 'إعدادي', 'ثانوي',
+        'جامعة', 'خريجون', 'خدام وإعداد الخدام', 'تعليم كبار', 'قانا الجليل',
+        'سمعان الشيخ', 'قدرات خاصة', 'صم وبكم', 'ديديموس', 'بولس وسيلا'
+      ];
+      const REQUIRED_COMPS = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
+      
+      const combinedLevels = REQUIRED_STAGES.map(name => {
+          if (uniqueLevelsMap.has(name)) {
+             const existing = uniqueLevelsMap.get(name);
+             const uniqueComps = Array.from(new Set([...(existing.comps || []), ...REQUIRED_COMPS]));
+             return { ...existing, comps: uniqueComps };
+          }
+          return { id: name, name, comps: REQUIRED_COMPS };
+      });
+      
+      setDynamicLevels(combinedLevels.sort((a: any, b: any) => sortStages(a.name, b.name)));
     }, (error) => handleFirestoreError(error, OperationType.GET, 'levels'));
 
     const unsubActivityStages = onSnapshot(collection(db, 'activityStages'), (snapshot) => {
@@ -1502,11 +1518,29 @@ function AppComponent() {
             setIsLoggedIn(true);
             setIsAuthReady(true);
           } else {
-            setIsLoggedIn(true);
-            if (firebaseUser.email?.endsWith('@mafk.com')) {
-              setUserRole('church');
+            if (firebaseUser.email?.endsWith('_2026@mafk.com')) {
+              const slug = firebaseUser.email.replace('_2026@mafk.com', '');
+              const matchedChurchName = [...Object.keys(CHURCH_CREDENTIALS)].find(c => encodeURIComponent(c).replace(/%/g, '') === slug) || 'كنيسة';
+              const profile = {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                role: 'church',
+                churchName: matchedChurchName,
+                dashboardBg: ''
+              };
+              try {
+                await setDoc(doc(db, 'users', firebaseUser.uid), profile);
+              } catch (e) {
+                console.error("Failed to re-create missing user profile", e);
+                setUserRole('church');
+                setChurchName(matchedChurchName);
+                setIsLoggedIn(true);
+                setIsAuthReady(true);
+              }
+            } else {
+              setIsLoggedIn(true);
+              setIsAuthReady(true);
             }
-            setIsAuthReady(true);
           }
         }, (error) => {
           console.error("Error watching user profile:", error);
@@ -2882,16 +2916,12 @@ function AppComponent() {
       try {
         const expectedPassword = CHURCH_CREDENTIALS[loginChurch];
         
-        if (!expectedPassword) {
-          setLoginError('الكنيسة غير موجودة');
-          setIsLoading(false);
-          return;
-        }
-
-        if (code !== expectedPassword) {
-          setLoginError('كود الكنيسة غير صحيح');
-          setIsLoading(false);
-          return;
+        if (expectedPassword) {
+            if (code !== expectedPassword) {
+              setLoginError('كود الكنيسة غير صحيح');
+              setIsLoading(false);
+              return;
+            }
         }
         
         const slug = encodeURIComponent(loginChurch).replace(/%/g, '');
@@ -2930,24 +2960,25 @@ function AppComponent() {
       }
 
       if (firebaseUser) {
-        let userDoc;
-        if (email.endsWith('_2026@mafk.com')) {
-           const church = churchData.find((c: any) => c.code === password);
-           userDoc = { exists: () => true, data: () => ({ role: 'church', churchName: church?.name || 'كنيسة', uid: firebaseUser.uid }) };
-        } else {
-           userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        }
+        let userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
 
         if (!userDoc.exists()) {
+          let cName = targetChurch;
+          if (email.endsWith('_2026@mafk.com') && targetChurch !== 'مسئول') {
+            cName = targetChurch;
+          }
           const profile = {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
             role,
-            churchName: targetChurch,
+            churchName: cName,
             dashboardBg: ''
           };
-          await setDoc(doc(db, 'users', firebaseUser.uid), profile);
-          setChurchName(targetChurch);
+          try {
+            await setDoc(doc(db, 'users', firebaseUser.uid), profile);
+          } catch(e) { console.error('auto-creating user profile failed in handleLogin', e); }
+          
+          setChurchName(cName);
           setUserRole(role as 'admin' | 'church');
           setUserProfile(profile);
           setIsLoggedIn(true);
@@ -4253,7 +4284,7 @@ function AppComponent() {
                 >
                   <option value="">اختر الكنيسة</option>
                   <option value="مسئول">دخول مسئول (Admin)</option>
-                  {[...Object.keys(CHURCH_CREDENTIALS)].sort().map(church => (
+                  {Array.from(new Set([...Object.keys(CHURCH_CREDENTIALS), ...publicChurches.map(c => c.name)])).sort().map(church => (
                     <option key={church} value={church}>{church}</option>
                   ))}
                 </select>
