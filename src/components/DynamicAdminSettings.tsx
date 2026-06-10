@@ -87,6 +87,116 @@ export default function DynamicAdminSettings() {
   const [rawJsonData, setRawJsonData] = useState('');
   const [jsonDataType, setJsonDataType] = useState<'participants' | 'orders'>('participants');
 
+  // Excel Restructuring States
+  const [restructuredRows, setRestructuredRows] = useState<any[]>([]);
+  const [restructuredFileName, setRestructuredFileName] = useState<string>('');
+  const [isRestructuring, setIsRestructuring] = useState<boolean>(false);
+  const [restructureError, setRestructureError] = useState<string>('');
+
+  const handleRestructureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRestructuredFileName(file.name);
+    setIsRestructuring(true);
+    setRestructureError('');
+    
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const workbook = XLSX.read(bstr, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        
+        // Convert page to json
+        const rawData = XLSX.utils.sheet_to_json<any>(worksheet, { defval: null });
+        const restructuredList: any[] = [];
+
+        rawData.forEach((row) => {
+          // جلب البيانات الأساسية مع تلافي اختلاف المسميات تبعا للصورة والكشوفات المختلفة
+          const id = row.id || row.ID || row['المعرف'] || '';
+          const name = row['اسم الطالب'] || row.name || row['الاسم'] || '';
+          const churchName = row['الكنيسة'] || row.churchName || row['اسم الكنيسة'] || 'دهروط';
+          const stage = row['المرحلة'] || row.stage || row['المرحلة الدراسية'] || '';
+
+          let comp1 = '';
+          let comp2 = '';
+          let comp3 = '';
+
+          // الفحص البرمي الجذري من خلال مفاتيح السطر (Keys) وقيمتها
+          Object.keys(row).forEach((key) => {
+            const value = row[key];
+            const cleanKey = key.trim();
+
+            // إذا كانت القيمة غير فارغة، فهذا يعني أن الطالب مسجل في هذه المسابقة التي يحمل العمود اسمها
+            if (value !== null && value !== undefined && String(value).trim() !== '') {
+              // 1. شرط المسابقة الدراسية (المسابقة ١)
+              if (cleanKey.includes('دراسي') || cleanKey.includes('الدراسي')) {
+                comp1 = 'دراسي';
+              }
+              
+              // 2. شرط المحفوظات (المسابقة ٢)
+              if (cleanKey.includes('محفوظات') || cleanKey.includes('المحفوظات')) {
+                comp2 = 'محفوظات';
+              }
+              
+              // 3. شرط القبطي (المسابقة ٣)
+              if (cleanKey.includes('قبطي') || cleanKey.includes('قبطى') || cleanKey.includes('القبطي') || cleanKey.includes('القبطى')) {
+                const stageStr = String(stage);
+                if (stageStr.includes('ثالثة') || stageStr.includes('رابعة') || stageStr.includes('أولى') || stageStr.includes('اولى') || stageStr.includes('حضانة')) {
+                  comp3 = 'قبطي أول';
+                } else {
+                  comp3 = 'قبطي ثان';
+                }
+              }
+            }
+          });
+
+          restructuredList.push({
+            id: String(id),
+            'اسم الطالب': String(name).trim(),
+            'اسم الكنيسة': String(churchName).trim(),
+            المرحلة: String(stage).trim(),
+            'المسابقة ١': comp1,
+            'المسابقة ٢': comp2,
+            'المسابقة ٣': comp3
+          });
+        });
+
+        if (restructuredList.length === 0) {
+          throw new Error('الملف فارغ أو لا يحتوي على صفوف صالحة.');
+        }
+
+        setRestructuredRows(restructuredList);
+      } catch (err: any) {
+        console.error('Error processing excel file:', err);
+        setRestructureError('حدثت مشكلة أثناء معالجة الملف. يرجى التأكد من أنه ملف إكسيل صالح وسليم.');
+      } finally {
+        setIsRestructuring(false);
+      }
+    };
+
+    reader.onerror = () => {
+      setRestructureError('حدث خطأ أثناء قراءة الملف من الجهاز.');
+      setIsRestructuring(false);
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
+  const downloadRestructuredExcel = () => {
+    if (restructuredRows.length === 0) return;
+    try {
+      const newWorksheet = XLSX.utils.json_to_sheet(restructuredRows);
+      const newWorkbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(newWorkbook, newWorksheet, 'المشتركين المحدثين');
+      XLSX.writeFile(newWorkbook, 'restructured_participants.xlsx');
+    } catch (err) {
+      console.error(err);
+      alert('خطأ أثناء كتابة وتحميل ملف الإكسل.');
+    }
+  };
+
   useEffect(() => {
     const loadSupabaseSettings = async () => {
       const docRef = doc(db, 'system_settings', 'supabase_config');
@@ -1258,6 +1368,121 @@ export default function DynamicAdminSettings() {
                   {isMigrating ? <Loader2 className="animate-spin animate-infinite" size={18} /> : null}
                   تحليل وبدء الدمج اليدوي
                 </button>
+              </div>
+            </div>
+
+            {/* أداة إعادة هيكلة وتحديث ملفات الأكسل */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 mt-8" dir="rtl">
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                <FileSpreadsheet size={24} className="text-emerald-600" />
+                <div>
+                  <h4 className="font-black text-slate-800 text-lg">أداة إعادة هيكلة وتحديث ملفات الكشوف القديمة (Excel Restructuring Core)</h4>
+                  <p className="text-xs font-bold text-slate-500 mt-1">
+                    أداة تلقائية لقراءة كشوف المشتركين من ملفات إكسل القديمة وتصحيح توزيع المسابقات بذكاء تبعا للقواعد المطلوبة ثم تصدير شيت محدث جاهز للرفع على الموقع الجديد.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col justify-between">
+                  <div className="space-y-3 text-sm text-slate-700">
+                    <h5 className="font-black text-slate-800">📌 قواعد إعادة الهيكلة التلقائية:</h5>
+                    <ul className="list-disc list-inside space-y-2 font-bold text-xs">
+                      <li>تحديد البيانات الأساسية: <span className="text-emerald-600">ID / الاسم / الكنيسة / المرحلة</span>.</li>
+                      <li>توزيع المسابقات بدقة في خاناتها الجديدة:</li>
+                      <ul className="list-circle list-inside pl-4 mt-1 space-y-1 text-slate-500">
+                        <li>أي مسمى <span className="text-blue-600">دراسي</span> يوضع تلقائياً في <span className="text-emerald-700">المسابقة ١</span>.</li>
+                        <li>أي مسمى <span className="text-blue-600">محفوظات</span> يوضع تلقائياً في <span className="text-emerald-700">المسابقة ٢</span>.</li>
+                        <li>أي مسمى <span className="text-blue-600">قبطي</span> (مستوى أول/ثان) يوضع تلقائياً في <span className="text-emerald-700">المسابقة ٣</span>.</li>
+                      </ul>
+                    </ul>
+                  </div>
+
+                  <div className="mt-6">
+                    <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-300 rounded-xl hover:border-emerald-500 transition cursor-pointer bg-white">
+                      <Upload size={32} className="text-slate-400 mb-2" />
+                      <span className="text-xs font-black text-slate-600 text-center">
+                        {restructuredFileName ? `تم اختيار: ${restructuredFileName}` : 'اضغط لاختيار ملف إكسل القديم (.xlsx, .xls)'}
+                      </span>
+                      <input 
+                        type="file" 
+                        accept=".xlsx,.xls" 
+                        className="hidden" 
+                        onChange={handleRestructureUpload}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <h5 className="font-black text-slate-800 text-sm">💡 وضع معالجة البيانات الحالية</h5>
+                    {isRestructuring && (
+                      <div className="flex items-center gap-2 text-blue-600 text-xs font-bold">
+                        <Loader2 className="animate-spin animate-infinite" size={16} />
+                        جاري قراءة ومعالجة وترتيب صفوف الإكسل وفقاً للقواعد...
+                      </div>
+                    )}
+
+                    {restructureError && (
+                      <div className="p-3 bg-red-100 border border-red-200 text-red-700 rounded-lg text-xs font-bold">
+                        {restructureError}
+                      </div>
+                    )}
+
+                    {restructuredRows.length > 0 ? (
+                      <div className="space-y-3">
+                        <div className="p-3 bg-emerald-100 border border-emerald-200 text-emerald-800 rounded-lg text-xs font-bold font-sans">
+                          🎉 تم معالجة وإعادة هيكلة <span className="text-emerald-600 font-extrabold text-sm">{restructuredRows.length}</span> مشترك بنجاح تام!
+                        </div>
+
+                        <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-lg bg-white no-scrollbar">
+                          <table className="w-full text-xs text-right text-slate-600">
+                            <thead className="bg-slate-100 text-slate-800 font-black sticky top-0">
+                              <tr>
+                                <th className="p-2 border">الاسم</th>
+                                <th className="p-2 border">الكنيسة</th>
+                                <th className="p-2 border">م١</th>
+                                <th className="p-2 border">م٢</th>
+                                <th className="p-2 border">م٣</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {restructuredRows.slice(0, 10).map((row, idx) => (
+                                <tr key={idx} className="border-b hover:bg-slate-50">
+                                  <td className="p-2 border font-bold truncate max-w-[120px]">{row['اسم الطالب']}</td>
+                                  <td className="p-2 border truncate max-w-[100px]">{row['اسم الكنيسة']}</td>
+                                  <td className="p-2 border font-bold text-emerald-700">{row['المسابقة ١'] || '-'}</td>
+                                  <td className="p-2 border font-bold text-indigo-700">{row['المسابقة ٢'] || '-'}</td>
+                                  <td className="p-2 border font-bold text-amber-700">{row['المسابقة ٣'] || '-'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {restructuredRows.length > 10 && (
+                            <div className="p-2 text-center text-[10px] text-slate-400 font-bold bg-slate-50 border-t">
+                              يتم عرض أول 10 أسطر للتأكيد فقط من إجمالي {restructuredRows.length}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs font-bold text-slate-500 leading-relaxed font-sans">
+                        قم برفع أو إسقاط ملف الكشوفات القديم في المربع المخصص على اليمين للبدء. سيقوم المحرك بفحص الأسماء وتصفية البيانات وإعادة تصنيفها كأعمدة مستقلة للمسابقات تماماً كما طُلِب.
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={downloadRestructuredExcel}
+                    disabled={restructuredRows.length === 0}
+                    className="w-full mt-4 bg-emerald-600 text-white p-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    <FileSpreadsheet size={18} />
+                    تحميل الكشف المحدث المهيكل (.xlsx)
+                  </button>
+                </div>
               </div>
             </div>
 
