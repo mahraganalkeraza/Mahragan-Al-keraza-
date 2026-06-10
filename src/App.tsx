@@ -727,34 +727,36 @@ function AppComponent() {
     const unsubLevels = onSnapshot(collection(db, 'levels'), (snapshot) => {
       const levelsData = snapshot.docs.map(d => ({ 
         id: d.id,
-        name: d.data().name, 
-        comps: d.data().allowedCompetitions || [] 
-      }));
+        name: d.data().name?.trim() || '', 
+        comps: d.data().allowedCompetitions || d.data().comps || [] 
+      })).filter(l => l.name);
       
-      const uniqueLevelsMap = new Map();
-      levelsData.forEach((l: any) => {
-        if (l && l.name) {
-          uniqueLevelsMap.set(l.name.trim(), l);
-        }
-      });
-      
-      const REQUIRED_STAGES = [
-        'حضانة', 'أولى وثانية', 'ثالثة ورابعة', 'خامسة وسادسة', 'إعدادي', 'ثانوي',
-        'جامعة', 'خريجون', 'خدام وإعداد الخدام', 'تعليم كبار', 'قانا الجليل',
-        'سمعان الشيخ', 'قدرات خاصة', 'صم وبكم', 'ديديموس', 'بولس وسيلا'
-      ];
       const REQUIRED_COMPS = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
       
-      const combinedLevels = REQUIRED_STAGES.map(name => {
-          if (uniqueLevelsMap.has(name)) {
-             const existing = uniqueLevelsMap.get(name);
-             const uniqueComps = Array.from(new Set([...(existing.comps || []), ...REQUIRED_COMPS]));
-             return { ...existing, comps: uniqueComps };
-          }
-          return { id: name, name, comps: REQUIRED_COMPS };
-      });
+      let finalLevels = [];
+      if (levelsData.length > 0) {
+        // Source of truth: Purely from Firebase!
+        finalLevels = levelsData.map((l: any) => {
+          // Unify standard competitions: Ensure they include the required ones
+          const rawComps = l.comps && l.comps.length > 0 ? l.comps : REQUIRED_COMPS;
+          const uniqueComps = Array.from(new Set([...rawComps, ...REQUIRED_COMPS]));
+          return { ...l, comps: uniqueComps };
+        });
+      } else {
+        // Fallback default list if Firebase collection is completely empty
+        const REQUIRED_STAGES = [
+          'حضانة', 'أولى وثانية', 'ثالثة ورابعة', 'خامسة وسادسة', 'إعدادي', 'ثانوي',
+          'جامعة', 'خريجون', 'خدام وإعداد الخدام', 'تعليم كبار', 'قانا الجليل',
+          'سمعان الشيخ', 'قدرات خاصة', 'صم وبكم', 'ديديموس', 'بولس وسيلا'
+        ];
+        finalLevels = REQUIRED_STAGES.map(name => ({
+          id: name,
+          name,
+          comps: REQUIRED_COMPS
+        }));
+      }
       
-      setDynamicLevels(combinedLevels.sort((a: any, b: any) => sortStages(a.name, b.name)));
+      setDynamicLevels(finalLevels.sort((a: any, b: any) => sortStages(a.name, b.name)));
     }, (error) => handleFirestoreError(error, OperationType.GET, 'levels'));
 
     const unsubActivityStages = onSnapshot(collection(db, 'activityStages'), (snapshot) => {
@@ -1520,7 +1522,7 @@ function AppComponent() {
           } else {
             if (firebaseUser.email?.endsWith('_2026@mafk.com')) {
               const slug = firebaseUser.email.replace('_2026@mafk.com', '');
-              const matchedChurchName = [...Object.keys(CHURCH_CREDENTIALS)].find(c => encodeURIComponent(c).replace(/%/g, '') === slug) || 'كنيسة';
+              const matchedChurchName = [...Object.keys(CHURCH_CREDENTIALS)].find(c => encodeURIComponent(c).replace(/%/g, '').toLowerCase() === slug.toLowerCase()) || 'كنيسة';
               const profile = {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
@@ -2197,8 +2199,8 @@ function AppComponent() {
         let comps: string[] = [];
         if (row['دراسي']) comps.push('دراسي');
         if (row['محفوظات']) comps.push('محفوظات');
-        if (row['قبطي ١']) comps.push('قبطي مستوى ١');
-        if (row['قبطي ٢']) comps.push('قبطي مستوى ٢');
+        if (row['قبطي ١'] || row['قبطي مستوى أول'] || row['قبطي مستوى 1']) comps.push('قبطي مستوى أول');
+        if (row['قبطي ٢'] || row['قبطي مستوى ثاني'] || row['قبطي مستوى 2']) comps.push('قبطي مستوى ثاني');
 
         // Rule: Mandatory Rows
         if (rules.mandatoryRows) {
@@ -2924,7 +2926,7 @@ function AppComponent() {
             }
         }
         
-        const slug = encodeURIComponent(loginChurch).replace(/%/g, '');
+        const slug = encodeURIComponent(loginChurch).replace(/%/g, '').toLowerCase();
         email = `${slug}_2026@mafk.com`;
         password = code;
         role = 'church';
@@ -4659,7 +4661,7 @@ function AppComponent() {
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
                 >
                   <option value="الكل">كل المسابقات / الأنشطة</option>
-                  {['دراسي', 'محفوظات', 'قبطي مستوى ١', 'قبطي مستوى ٢', 'كورال', 'ألحان', 'عزف'].map(c => (
+                  {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني', 'ألحان مستوى أول', 'ألحان مستوى ثاني', 'كشافة', 'رياضية', 'إبتكارات هندسية', 'فنون تشكيلية', 'مسرح'].map(c => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
