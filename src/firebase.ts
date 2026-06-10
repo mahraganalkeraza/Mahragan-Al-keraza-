@@ -235,17 +235,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// Test connection
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
-    }
-  }
-}
-testConnection();
+
 
 // Wrapped onSnapshot to prevent quota exhaustion
 const originalOnSnapshot = onSnapshot;

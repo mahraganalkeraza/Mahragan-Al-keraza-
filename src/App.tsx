@@ -1059,7 +1059,7 @@ function AppComponent() {
         );
         const querySnapshot = await getDocsSafe(q);
         if (!querySnapshot.empty) {
-          const matchedDoc = querySnapshot.docs[0].data();
+          const matchedDoc = querySnapshot.docs[0].data() as any;
           const pStage = matchedDoc.stage || 'غير محددة';
           setParticipantDuplicateWarning(
             `تنبيه: يوجد مشترك مسجل بالفعل بنفس هذا الاسم في كنيستك للمرحلة: ${pStage}. يرجى توخي الحذر والتأكد من الاسم ثلاثياً لتجنب التكرار.`
@@ -1564,14 +1564,14 @@ function AppComponent() {
         try {
             fetchAllChurchParticipants();
             const newsSnap = await getDocsSafe(query(collection(db, 'news'), where('year', '==', activeYear), orderBy('timestamp', 'desc'), limit(10)));
-            setNews(newsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as News)));
+            setNews(newsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as News)));
             
             const carouselSnap = await getDocsSafe(query(collection(db, 'carousel'), where('year', '==', activeYear)));
-            const items = carouselSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as CarouselItem));
+            const items = carouselSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as CarouselItem));
             setCarouselItems(items.sort((a, b) => (a.order || 0) - (b.order || 0)));
             
             const calculatorSettingsSnap = await getDocsSafe(query(collection(db, 'calculator_settings'), where('year', '==', activeYear)));
-            setCalculatorSettings(calculatorSettingsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setCalculatorSettings(calculatorSettingsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
             setIsCalculatorLoading(false);
             
             const footerSnap = await getDocSafe(doc(db, 'settings', 'footer'));
@@ -2584,7 +2584,7 @@ function AppComponent() {
       const q = query(baseQueryQ, ...constraints);
       const snap = await getDocsSafe(q);
       
-      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
+      const newList = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Participant));
       setParticipants(newList);
       setIsParticipantsEnd(true);
       
