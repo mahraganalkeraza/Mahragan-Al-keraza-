@@ -28,7 +28,7 @@ export const firebaseConfig = firebaseConfigJson;
 
 export const auth = getAuth(firebaseApp);
 export const storage = getStorage(firebaseApp);
-export const rdb = getDatabase(firebaseApp);
+export const rdb = getDatabase(firebaseApp, 'https://ai-studio-applet-webapp-d12fa-default-rtdb.firebaseio.com/');
 
 export const CURRENT_YEAR = '2026';
 

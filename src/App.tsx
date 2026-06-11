@@ -124,7 +124,11 @@ import {
   serverTimestamp,
   getCountFromServer,
   getDocSafe,
-  getDocsSafe
+  getDocsSafe,
+  rdb,
+  rdbRef,
+  onValue,
+  rdbGet
 } from './firebase';
 import churchData from './data/churches.json';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -928,6 +932,8 @@ function AppComponent() {
 
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [allChurchParticipants, setAllChurchParticipants] = useState<Participant[]>([]);
+  const [firestoreParticipants, setFirestoreParticipants] = useState<Participant[]>([]);
+  const [rdbParticipants, setRdbParticipants] = useState<Participant[]>([]);
   const [totalParticipantsCount, setTotalParticipantsCount] = useState<number>(0);
   const [totalOrdersCount, setTotalOrdersCount] = useState<number>(0);
   const [totalTeamsCount, setTotalTeamsCount] = useState<number>(0);
@@ -1117,14 +1123,14 @@ function AppComponent() {
   const [globalCompetitionFilter, setGlobalCompetitionFilter] = useState('الكل');
 
   const filteredParticipantsList = useMemo(() => {
-    return (participants || []).filter(p => {
+    return (allChurchParticipants || []).filter(p => {
       const matchChurch = (userRole === 'admin' || (userRole === 'church' && churchName)) ? (globalChurchFilter === 'الكل' || p.churchName === (userRole === 'admin' ? globalChurchFilter : churchName)) : true;
       const matchName = p.name?.toLowerCase().includes(globalNameFilter.toLowerCase());
       const matchStage = globalStageFilter === 'الكل' || p.stage === globalStageFilter;
       const matchComp = globalCompetitionFilter === 'الكل' || (p.competitions && p.competitions.some(c => c === globalCompetitionFilter));
       return (userRole === 'admin' ? true : p.churchName === churchName) && matchChurch && matchName && matchStage && matchComp;
     });
-  }, [participants, globalNameFilter, globalStageFilter, globalChurchFilter, globalCompetitionFilter, churchName, userRole]);
+  }, [allChurchParticipants, globalNameFilter, globalStageFilter, globalChurchFilter, globalCompetitionFilter, churchName, userRole]);
 
   const filteredTeamsList = useMemo(() => {
     return (activityTeams || []).filter(t => {
@@ -1453,6 +1459,71 @@ function AppComponent() {
     }
   };
 
+  // subscribeToParticipants: Merged real-time listener for Firestore and RTDB
+  useEffect(() => {
+    if (!isLoggedIn || !isAuthReady) return;
+
+    // 1. Firestore Participant Listener
+    const fsParticipantsRef = collection(db, 'participants');
+    const fsConstraints = [where('year', '==', activeYear)];
+    if (userRole !== 'admin') {
+      fsConstraints.push(where('churchName', '==', churchName));
+    }
+    const fsQuery = query(fsParticipantsRef, ...fsConstraints);
+
+    const unsubscribeFirestore = onSnapshot(fsQuery, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
+      setFirestoreParticipants(list);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'participants'));
+
+    // 2. Realtime Database Participant Listener
+    const rdbRefPath = rdbRef(rdb, 'participants');
+    const unsubscribeRdb = onValue(rdbRefPath, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        let list: Participant[] = [];
+        if (Array.isArray(data)) {
+          list = data.filter(p => p).map((p, index) => ({ id: p.id || `rdb-${index}`, ...p }));
+        } else {
+          list = Object.entries(data).map(([id, val]: [string, any]) => ({ id, ...val } as Participant));
+        }
+        
+        // Filter by year and church on client for RTDB entries
+        const filteredList = list.filter(p => {
+          const matchYear = !p.year || String(p.year) === String(activeYear);
+          const matchChurch = userRole === 'admin' || p.churchName === churchName;
+          return matchYear && matchChurch;
+        });
+        setRdbParticipants(filteredList);
+      } else {
+        setRdbParticipants([]);
+      }
+    }, (err) => console.error("RTDB Sync Error:", err));
+
+    return () => {
+      unsubscribeFirestore();
+      unsubscribeRdb();
+    };
+  }, [isLoggedIn, isAuthReady, userRole, churchName, activeYear]);
+
+  // Cleanly merge both sources in UI State
+  useEffect(() => {
+    const merged = [...firestoreParticipants, ...rdbParticipants];
+    // De-duplicate if needed (by ID), though they should be distinct
+    const uniqueMap = new Map();
+    merged.forEach(p => uniqueMap.set(p.id, p));
+    const finalData = Array.from(uniqueMap.values()).sort((a, b) => {
+      const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+      const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+      return tB - tA;
+    });
+    
+    setAllChurchParticipants(finalData);
+    setTotalParticipantsCount(finalData.length);
+    // Also update current participants list for the list view to avoid breaking existing logic
+    setParticipants(finalData);
+  }, [firestoreParticipants, rdbParticipants]);
+
   // Firebase Auth Listener
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1569,7 +1640,7 @@ function AppComponent() {
 
     async function fetchStaticData() {
         try {
-            fetchAllChurchParticipants();
+            // fetchAllChurchParticipants is now handled by real-time listeners above
             const newsSnap = await getDocsSafe(query(collection(db, 'news'), where('year', '==', activeYear), orderBy('timestamp', 'desc'), limit(10)));
             setNews(newsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as News)));
             
@@ -2610,9 +2681,44 @@ function AppComponent() {
         }
         
         const q = query(baseQueryQ, ...constraints);
-        const snap = await getDocs(q);
-        const allList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
-        setAllChurchParticipants(allList);
+        const snap = await getDocsSafe(q);
+        const fsParticipants = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Participant));
+
+        let rdbList: Participant[] = [];
+        try {
+          const rdbRefPath = rdbRef(rdb, 'participants');
+          const rSnapshot = await rdbGet(rdbRefPath);
+          const rData = rSnapshot.val();
+          if (rData) {
+            let temp: Participant[] = [];
+            if (Array.isArray(rData)) {
+              temp = rData.filter(p => p).map((p, index) => ({ id: p.id || `rdb-${index}`, ...p } as Participant));
+            } else {
+              temp = Object.entries(rData).map(([id, val]: [string, any]) => ({ id, ...val } as Participant));
+            }
+            
+            rdbList = temp.filter(p => {
+              const matchYear = !p.year || String(p.year) === String(activeYear);
+              const matchChurch = userRole === 'admin' || p.churchName === churchName;
+              return matchYear && matchChurch;
+            });
+          }
+        } catch (rdbErr) {
+          console.error("RDB fetch failed during fetchAllChurchParticipants:", rdbErr);
+        }
+
+        const merged = [...fsParticipants, ...rdbList];
+        const uniqueMap = new Map();
+        merged.forEach(p => uniqueMap.set(p.id, p));
+        const finalData = Array.from(uniqueMap.values()).sort((a, b) => {
+          const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+          const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+          return tB - tA;
+        });
+
+        setAllChurchParticipants(finalData);
+        setTotalParticipantsCount(finalData.length);
+        setParticipants(finalData);
       } catch(err: any) {
         console.error("Firebase fetch failed for all participants:", err);
       }
@@ -5559,7 +5665,7 @@ function AppComponent() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {participants
+                      {filteredParticipantsList
                         .slice((participantPageCount - 1) * 20, participantPageCount * 20)
                         .map(p => (
                           <tr key={p.id} className="bg-white hover:bg-slate-50 transition-colors">
@@ -5616,7 +5722,7 @@ function AppComponent() {
                 <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
                   <PaginationComponent 
                     currentPage={participantPageCount}
-                    totalItems={participants.length}
+                    totalItems={filteredParticipantsList.length}
                     itemsPerPage={20}
                     onPageChange={setParticipantPageCount}
                   />

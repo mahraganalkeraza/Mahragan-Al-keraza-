@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { db } from '../firebase';
+import { db, rdb, rdbRef, rdbGet } from '../firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { saveAs } from 'file-saver';
 
@@ -14,7 +14,32 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
       : query(collection(db, 'participants'), where('churchName', '==', churchName));
       
     const pSnap = await getDocs(pQuery);
-    const participants = pSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+    const fsParticipants = pSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+
+    let rdbList: any[] = [];
+    try {
+      const rSnapshot = await rdbGet(rdbRef(rdb, 'participants'));
+      const rData = rSnapshot.val();
+      if (rData) {
+        let temp: any[] = [];
+        if (Array.isArray(rData)) {
+          temp = rData.filter(p => p).map((p, index) => ({ id: p.id || `rdb-${index}`, ...p }));
+        } else {
+          temp = Object.entries(rData).map(([id, val]: [string, any]) => ({ id, ...val }));
+        }
+        
+        rdbList = temp.filter(p => {
+          return isAdmin || p.churchName === churchName;
+        });
+      }
+    } catch (rdbError) {
+      console.error('Error fetching participants from Realtime Database for Excel export:', rdbError);
+    }
+
+    const uniqueParticipantsMap = new Map();
+    fsParticipants.forEach(p => uniqueParticipantsMap.set(p.id, p));
+    rdbList.forEach(p => uniqueParticipantsMap.set(p.id, p));
+    const participants = Array.from(uniqueParticipantsMap.values());
 
     if (!participants || participants.length === 0) {
       alert('لا توجد بيانات متاحة للتصدير لهذه الكنيسة.');
