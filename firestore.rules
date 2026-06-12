@@ -193,6 +193,18 @@ service cloud.firestore {
              (!('deviceType' in data) || data.deviceType is string);
     }
 
+    function isValidExamAttendance(data) {
+      return data.keys().hasAll(['studentId', 'name', 'stage', 'church', 'timestamp']) &&
+             data.keys().size() <= 8 &&
+             data.studentId is string && data.studentId.size() <= 128 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.stage is string && data.stage.size() <= 100 &&
+             data.church is string && data.church.size() <= 200 &&
+             data.timestamp is timestamp &&
+             (!('method' in data) || (data.method is string && data.method.size() <= 100)) &&
+             (!('year' in data) || (data.year is string && data.year.size() <= 10));
+    }
+
     function isValidCarouselItem(data) {
       return data.keys().hasAll(['url', 'title']) &&
              data.keys().size() <= 4 &&
@@ -236,6 +248,11 @@ service cloud.firestore {
     // ===============================================================
     // Rules Matching
     // ===============================================================
+
+    match /exam_attendance/{attendanceId} {
+      allow create: if isValidId(attendanceId) && isValidExamAttendance(incoming());
+      allow read: if isAdmin();
+    }
 
     match /settings/{settingId} {
       allow read: if true;

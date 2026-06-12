@@ -40,6 +40,7 @@ import {
   Plus,
   Trash2,
   Link2,
+  QrCode,
   ExternalLink,
   Image as ImageIcon,
   Upload,
@@ -73,6 +74,7 @@ import { ResultsViewer } from './components/ResultsViewer';
 import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
+import { ExamLoginPortal } from './components/ExamLoginPortal';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore - html2pdf.js doesn't have great types but works
 import html2pdf from 'html2pdf.js';
@@ -605,7 +607,12 @@ function AppComponent() {
   const [churchName, setChurchName] = useState(initialProfile?.churchName || '');
   const [location, setLocation] = useState(initialProfile?.country || '');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState('home');
+  const [activeSection, setActiveSection] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.pathname === '/exam-login') {
+      return 'exam-login';
+    }
+    return 'home';
+  });
   const [loginError, setLoginError] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(!!initialProfile);
   const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest' | 'super_admin'>(initialProfile?.role || 'guest');
@@ -4123,6 +4130,12 @@ function AppComponent() {
     </AnimatePresence>
   );
 
+  if (activeSection === 'exam-login') {
+    return (
+      <ExamLoginPortal />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-bg-soft font-sans selection:bg-accent/30 relative" dir="rtl">
       {isQuotaExceeded && (
@@ -4183,6 +4196,7 @@ function AppComponent() {
                 <NavItem id="calculator" icon={Calculator} label="حاسبة الكتب" />
                 <NavItem id="inquiries" icon={MessageSquare} label="الاستفسارات والشكاوي" />
                 <NavItem id="exams_portal" icon={BookOpen} label="امتحانات الأونلاين" />
+                <NavItem id="exam-login" icon={QrCode} label="بوابة دخول الامتحانات" />
                 <NavItem id="info" icon={Info} label="عن المهرجان" />
                 {isLoggedIn && (
                   <button

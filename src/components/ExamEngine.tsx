@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { auth, db, CURRENT_YEAR, rdb, rdbRef, rdbSet, onDisconnect, rdbServerTimestamp } from '../firebase';
-import { collection, doc, setDoc, getDocs, onSnapshot, getDoc, updateDoc, query, where, deleteDoc, writeBatch, getCountFromServer } from '../firebase';
-import { Plus, Trash2, Save, FileText, CheckCircle, Video, Key, BookOpen, Clock, Activity, Users, Wallet, ShieldX, Loader2 } from 'lucide-react';
+import { supabase } from '../utils/supabaseClient';
+import { Plus, Trash2, Save, Loader2, Play, CheckCircle2, ShieldX, HelpCircle, ArrowRight } from 'lucide-react';
 import { QRScanner } from './QRScanner';
 import { getDeviceFingerprint, DeviceFingerprint } from '../lib/deviceTracking';
+
+const CURRENT_YEAR = '2026';
 
 const normalizeArabic = (text: any): string => {
   if (!text || typeof text !== 'string') return '';
@@ -64,11 +65,26 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
   const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'exams'), (snap) => {
-      const loaded = snap.docs.map(d => ({ id: d.id, ...d.data() } as Exam));
-      setExams(loaded);
-    });
-    return () => unsub();
+    const loadExams = async () => {
+      try {
+        const { data, error } = await supabase.from('exams_pool').select('*');
+        if (data) {
+          const loaded: Exam[] = data.map((row: any) => ({
+            id: row.id,
+            stage: row.stage,
+            competitionType: row.subject || row.competition_type || '',
+            model: row.model || row.model_type || 'A',
+            questions: row.questions_data || [],
+            isActive: row.is_active ?? true,
+            updatedAt: row.updated_at
+          }));
+          setExams(loaded);
+        }
+      } catch (e) {
+        console.error('Error loading exams from Supabase:', e);
+      }
+    };
+    loadExams();
   }, []);
 
   useEffect(() => {
@@ -115,44 +131,65 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
     try {
       if (!selectedStage || !selectedCompetition || !selectedModel) return;
       const examId = `${selectedStage}_${selectedCompetition}_${selectedModel}`;
-      await setDoc(doc(db, 'exams', examId), {
+      
+      const cleanPayload = {
+        id: examId,
+        exam_title: `${selectedStage} - ${selectedCompetition} - نموذج ${selectedModel}`,
         stage: selectedStage,
-        competitionType: selectedCompetition,
-        model: selectedModel,
-        questions: currentQuestions,
-        isActive: true,
-        updatedAt: new Date().toISOString()
-      });
+        subject: selectedCompetition,
+        model_type: selectedModel,
+        questions_data: currentQuestions
+      };
+
+      const { error } = await supabase.from('exams_pool').upsert(cleanPayload);
+
+      if (error) throw error;
+
       setIsDirty(false);
-      if (!isAuto) alert('تم الحفظ بنجاح');
-    } catch (error) {
-      console.error('Error saving exam:', error);
-      if (!isAuto) alert('حدث خطأ أثناء الحفظ');
+      
+      // Update local set of exams as well
+      setExams(prev => {
+        const otherExams = prev.filter(e => e.id !== examId);
+        return [...otherExams, {
+          id: examId,
+          stage: selectedStage,
+          competitionType: selectedCompetition,
+          model: selectedModel,
+          questions: currentQuestions,
+          isActive: true,
+          updatedAt: new Date().toISOString()
+        }];
+      });
+
+      if (!isAuto) alert('تم الحفظ في Supabase بنجاح');
+    } catch (error: any) {
+      console.error('Error saving exam in Supabase:', error);
+      if (!isAuto) alert('حدث خطأ أثناء الحفظ في Supabase: ' + error.message);
     }
   };
 
   return (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
       <div className="flex flex-wrap items-center gap-4 mb-6 sticky top-0 bg-white py-2 z-10 border-b">
-        <select className="px-4 py-2 border rounded-xl font-bold" value={selectedStage} onChange={e => setSelectedStage(e.target.value)}>
+        <select className="px-4 py-2 border rounded-xl font-bold text-sm" value={selectedStage} onChange={e => setSelectedStage(e.target.value)}>
           <option value="">اختر المرحلة</option>
           {stages.map(s => <option key={typeof s === 'string' ? s : s.name} value={typeof s === 'string' ? s : s.name}>{typeof s === 'string' ? s : s.name}</option>)}
         </select>
-        <select className="px-4 py-2 border rounded-xl font-bold" value={selectedCompetition} onChange={e => setSelectedCompetition(e.target.value)}>
+        <select className="px-4 py-2 border rounded-xl font-bold text-sm" value={selectedCompetition} onChange={e => setSelectedCompetition(e.target.value)}>
           {COMPETITION_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
         </select>
-        <select className="px-4 py-2 border rounded-xl font-bold" value={selectedModel} onChange={e => setSelectedModel(e.target.value)}>
+        <select className="px-4 py-2 border rounded-xl font-bold text-sm" value={selectedModel} onChange={e => setSelectedModel(e.target.value)}>
           <option value="A">نموذج A</option>
           <option value="B">نموذج B</option>
           <option value="C">نموذج C</option>
         </select>
-        <button onClick={handleAddQuestion} className="px-4 py-2 bg-indigo-600 text-white rounded-xl flex items-center gap-2">
+        <button onClick={handleAddQuestion} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-2 text-sm font-bold transition-all">
           <Plus size={16} /> إضافة سؤال
         </button>
-        <button onClick={() => handleSaveExam()} className={`px-4 py-2 text-white rounded-xl flex items-center gap-2 ${isDirty ? 'bg-emerald-600' : 'bg-slate-400'}`}>
+        <button onClick={() => handleSaveExam()} className={`px-4 py-2 text-white rounded-xl flex items-center gap-2 text-sm font-bold transition-all ${isDirty ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-400'}`}>
           <Save size={16} /> {isDirty ? 'حفظ التغييرات' : 'تم الحفظ'}
         </button>
-        {isDirty && <span className="text-xs text-amber-600 font-bold animate-pulse">يوجد تغييرات غير محفوظة...</span>}
+        {isDirty && <span className="text-xs text-amber-605 font-bold animate-pulse">يوجد تغييرات غير محفوظة...</span>}
       </div>
 
       <div className="space-y-6">
@@ -181,7 +218,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
                     setCurrentQuestions(newQ);
                     setIsDirty(true);
                   }}
-                  className="w-full px-4 py-2 border rounded-xl"
+                  className="w-full px-4 py-2 border rounded-xl bg-white"
                 />
               </div>
               <div className="flex gap-4">
@@ -206,7 +243,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
                       setCurrentQuestions(newQ);
                       setIsDirty(true);
                     }}
-                    className="w-full px-3 py-2 border rounded-lg"
+                    className="w-full px-3 py-2 border rounded-lg bg-white"
                   >
                     <option value="mcq">اختيار من متعدد</option>
                     <option value="boolean">صح وخطأ</option>
@@ -225,7 +262,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
                       setCurrentQuestions(newQ);
                       setIsDirty(true);
                     }}
-                    className="w-full px-3 py-2 border rounded-lg text-center"
+                    className="w-full px-3 py-2 border rounded-lg text-center bg-white"
                   />
                 </div>
               </div>
@@ -313,7 +350,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
                       }}
                       className="flex-1 px-4 py-2 border rounded-xl bg-white"
                     />
-                    <div className="text-slate-300">↔</div>
+                    <div className="text-slate-300 font-bold">↔</div>
                     <input 
                       type="text"
                       placeholder="العنصر (ب)"
@@ -333,7 +370,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
                         setCurrentQuestions(newQ);
                         setIsDirty(true);
                       }}
-                      className="p-2 text-red-400"
+                      className="p-2 text-red-400 hover:text-red-600"
                     >
                       <Trash2 size={18} />
                     </button>
@@ -386,30 +423,43 @@ export const LiveExamGateway: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [activeStudent, setActiveStudent] = useState<any>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<string | null>(null);
-  const [activeExam, setActiveExam] = useState<Exam|null>(null);
+  const [activeExam, setActiveExam] = useState<Exam | null>(null);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [isExamCompleted, setIsExamCompleted] = useState(false);
   const [isAlreadyExamined, setIsAlreadyExamined] = useState(false);
   const [score, setScore] = useState(0);
   const [deviceInfo, setDeviceInfo] = useState({ ip: 'جاري التحميل...', type: 'غير معروف', count: 0 });
   const [fingerprint, setFingerprint] = useState<DeviceFingerprint | null>(null);
-  const [lastScanDebug, setLastScanDebug] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isTerminated, setIsTerminated] = useState(false);
-  const [examConfig, setExamConfig] = useState<any>(null);
+  const [examConfig, setExamConfig] = useState<any>({
+    isExamLive: true,
+    autoCloseTime: null,
+    churchOverrides: {},
+    stageOverrides: {}
+  });
 
+  // Load configuration from Supabase once on mount
   useEffect(() => {
     const fetchConfig = async () => {
-      // Instead of onSnapshot, just get the cached config from localStorage if we must, 
-      // or rely on a one-time getDoc. We will use a one-time getDoc for exam_config.
       try {
-        const snap = await getDoc(doc(db, 'settings', 'exam_config'));
-        if (snap.exists()) setExamConfig(snap.data());
-      } catch(e) {}
+        const { data, error } = await supabase.from('exam_config').select('*').maybeSingle();
+        if (data && !error) {
+          setExamConfig({
+            isExamLive: data.is_exam_live ?? data.isExamLive ?? true,
+            autoCloseTime: data.auto_close_time ?? data.autoCloseTime ?? null,
+            churchOverrides: data.church_overrides ?? data.churchOverrides ?? {},
+            stageOverrides: data.stage_overrides ?? data.stageOverrides ?? {}
+          });
+        }
+      } catch (e) {
+        console.error("Failed to fetch exam_config from Supabase:", e);
+      }
     };
     fetchConfig();
   }, []);
 
+  // Sync state with active student on localstorage
   useEffect(() => {
     const activeStudentId = localStorage.getItem('active_student_id');
     if (activeStudentId) {
@@ -424,47 +474,45 @@ export const LiveExamGateway: React.FC = () => {
     }
   }, []);
 
+  // Monitor student session via Supabase realtime Isolated channel
   useEffect(() => {
     if (!activeStudent?.id) return;
     
-    // 1. Kill Switch Listener: Watch for termination or reset
-    const unsubSession = onSnapshot(doc(db, 'active_sessions', activeStudent.id), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.status === 'terminated') {
-          setIsTerminated(true);
-          // Clear local storage on kick
-          localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
+    // Isolate Supabase subscription to avoid any global conflict
+    const channelName = `session_channel_${activeStudent.id}_${Date.now()}`;
+    const sessionChannel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'live_monitoring',
+          filter: `student_id=eq.${activeStudent.id}`
+        },
+        (payload: any) => {
+          const data = payload.new;
+          if (data) {
+            if (data.status === 'terminated') {
+              setIsTerminated(true);
+              localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
+            }
+            if (data.status === 'active' && data.attempts_count === 0) {
+              setIsAlreadyExamined(false);
+              setIsExamCompleted(false);
+              setIsTerminated(false);
+            }
+          }
         }
-        if (data.allowReentry) {
-          // Admin reset the exam, we can re-enter
-          setIsAlreadyExamined(false);
-          setIsExamCompleted(false);
-          setIsTerminated(false);
-        }
-      }
-    });
-
-    // 2. RDB Presence: Track active connection
-    const presenceRef = rdbRef(rdb, `presence/${activeStudent.id}`);
-    rdbSet(presenceRef, {
-      studentName: activeStudent.studentName,
-      churchName: activeStudent.churchName,
-      lastSeen: rdbServerTimestamp(),
-      deviceId: fingerprint?.uuid,
-      competition: selectedCompetition || 'waiting'
-    });
-
-    // Remove presence on disconnect
-    onDisconnect(presenceRef).remove();
+      )
+      .subscribe();
 
     return () => {
-      unsubSession();
-      rdbSet(presenceRef, null); // Clean up on unmount
+      supabase.removeChannel(sessionChannel);
     };
-    
-  }, [activeStudent?.id, selectedCompetition, fingerprint?.uuid]);
+  }, [activeStudent?.id, selectedCompetition]);
 
+  // Load device info on mount
   useEffect(() => {
     const fp = getDeviceFingerprint();
     setFingerprint(fp);
@@ -485,11 +533,10 @@ export const LiveExamGateway: React.FC = () => {
 
   const fetchStudentAndExam = async (input: string) => {
     if (!input || !input.trim()) return;
-    setLastScanDebug(input);
     try {
       setIsScanning(false);
       setIsLoading(true);
-      let studentId = input.trim().toLowerCase();
+      let studentId = input.trim();
       let studentNameFromPayload = '';
       
       try {
@@ -502,34 +549,30 @@ export const LiveExamGateway: React.FC = () => {
 
       const normalizedId = studentId.toLowerCase();
 
+      // Query standard Supabase registrations table first
+      const { data: studentObj, error: fetchErr } = await supabase
+        .from('registrations')
+        .select('*')
+        .eq('id', normalizedId)
+        .maybeSingle();
+
+      if (fetchErr) throw fetchErr;
+
       let studentData: any = null;
-      const cacheKey = `student_profile_${studentId}`;
 
-      try {
-        const cached = localStorage.getItem(cacheKey);
-        if (cached) {
-          studentData = JSON.parse(cached);
-        }
-      } catch (e) {
-        console.error("Error reading cached student profile:", e);
-      }
-
-      if (!studentData) {
-        try {
-          const docRef = doc(db, 'students', studentId);
-          const snap = await getDoc(docRef);
-          if (snap.exists()) {
-            studentData = { id: snap.id, ...(snap.data() as object) };
-            localStorage.setItem(cacheKey, JSON.stringify(studentData));
-          }
-        } catch (e) {
-          console.error("Error fetching student profile:", e);
-        }
-      }
-
-      const isAdminUser = auth.currentUser?.email === 'admin@mafk.com' || auth.currentUser?.email === 'kareemsame77esoyam@gmail.com';
-      if (!studentData && isAdminUser) {
-        if (confirm(`لم يتم العثور على طالب بالكود "${studentId}". هل تريد إنشاء جلسة امتحان يدوية بهذا الكود؟ (لمسؤولي النظام فقط)`)) {
+      if (studentObj) {
+        studentData = {
+          id: studentObj.id,
+          studentName: studentObj.student_name || studentObj.name || studentNameFromPayload || 'طالب',
+          churchName: studentObj.church_name || studentObj.church || 'غير محدد',
+          stage: studentObj.stage || 'عام',
+          gender: studentObj.gender || '',
+          coptic_level: studentObj.coptic_level ?? null,
+          enrolled_subjects: studentObj.enrolled_subjects ?? null
+        };
+      } else {
+        // Fallback for demo/manual admin bypass
+        if (confirm(`لم يتم العثور على مشترك بالكود "${studentId}". هل تريد إنشاء جلسة يدية؟`)) {
           studentData = {
             id: studentId,
             studentName: 'طالب يدوي - ' + studentId,
@@ -542,44 +585,58 @@ export const LiveExamGateway: React.FC = () => {
 
       if (!studentData) {
         setIsLoading(false);
-        return alert(`عذراً، هذا الكود غير مسجل: ${studentId}\nيرجى التأكد من الكود المطبوع أو مراجعة المشرف.`);
+        return alert(`عذراً، هذا الكود غير مسجل: ${studentId}\nيرجى التأكد من الكود أو مراجعة المشرف.`);
       }
 
-      // No logging read per scan, immediately write action if needed, or simply log action.
+      // Check existing submission scores on Supabase
+      const { data: existingSub } = await supabase
+        .from('exam_submissions')
+        .select('*')
+        .eq('id', studentData.id)
+        .maybeSingle();
+
+      if (existingSub) {
+        studentData.academicScore = existingSub.derasy_score;
+        studentData.memorizationScore = existingSub.mahfozat_score;
+        studentData.copticL1Score = existingSub.qebty_lvl1_score;
+        studentData.copticL2Score = existingSub.qebty_lvl2_score;
+      }
+
+      // Log action to exam_logs in database gracefully
       try {
-        await setDoc(doc(db, 'exam_logs', Date.now().toString()), {
-          ip: deviceInfo.ip,
-          userAgent: navigator.userAgent,
-          fingerprint: fingerprint,
-          timestamp: new Date().toISOString(),
-          studentId: studentData.id,
-          studentName: studentData.name || studentData.studentName || studentNameFromPayload,
-          churchName: studentData.churchName,
-          deviceId: fingerprint?.uuid,
-          deviceType: deviceInfo.type,
-          action: 'IDENTIFIED'
+        await supabase.from('exam_logs').insert({
+          student_id: studentData.id,
+          student_name: studentData.studentName,
+          church_name: studentData.churchName,
+          device_id: fingerprint?.uuid,
+          device_type: deviceInfo.type,
+          ip_address: deviceInfo.ip,
+          action: 'IDENTIFIED',
+          created_at: new Date().toISOString()
         });
       } catch (e) {
-        console.error("Failed to log exam login", e);
+        console.error("Failed to insert log row", e);
       }
 
-      if (!studentData.studentName) studentData.studentName = studentData.name;
+      // Upsert student state as active in live_monitoring table
+      const { error: liveErr } = await supabase
+        .from('live_monitoring')
+        .upsert({
+          student_id: studentData.id,
+          student_name: studentData.studentName,
+          church_name: studentData.churchName,
+          stage: studentData.stage,
+          status: 'active',
+          device_type: deviceInfo.type,
+          ip_address: deviceInfo.ip,
+          fingerprint: fingerprint,
+          updated_at: new Date().toISOString(),
+          attempts_count: 1
+        });
 
-      const sessionData: any = {
-        studentId: studentData.id,
-        studentName: studentData.studentName,
-        churchName: studentData.churchName,
-        deviceId: fingerprint?.uuid,
-        fingerprint: fingerprint,
-        status: 'active',
-        timestamp: new Date().toISOString(),
-        lastUpdate: new Date().toISOString()
-      };
+      if (liveErr) console.error("Live Monitoring Upsert Error:", liveErr);
 
-      if (studentData.isManual) sessionData.isManual = true;
-
-      await setDoc(doc(db, 'active_sessions', studentData.id), sessionData);
-
+      // Lock-in student profile
       setSelectedCompetition(null);
       setActiveExam(null);
       setIsExamCompleted(false);
@@ -587,10 +644,14 @@ export const LiveExamGateway: React.FC = () => {
       setIsTerminated(false);
       setAnswers({});
       setActiveStudent(studentData);
-      localStorage.setItem('active_student_id', studentId);
+      
+      localStorage.setItem('active_student_id', studentData.id);
+      localStorage.setItem(`student_profile_${studentData.id}`, JSON.stringify(studentData));
+
       setIsScanning(false);
       setIsLoading(false);
-      
+
+      // Try playing sensory beep and trigger vibration logic
       try {
         const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
         if (AudioContext) {
@@ -608,9 +669,8 @@ export const LiveExamGateway: React.FC = () => {
         if (navigator.vibrate) {
           navigator.vibrate([100, 50, 100]);
         }
-      } catch (err) {
-        console.error("Feedback error", err);
-      }
+      } catch (err) {}
+
     } catch (e: any) {
       setIsLoading(false);
       alert('حدث خطأ غير متوقع: ' + (e.message || 'Error occurred'));
@@ -622,7 +682,7 @@ export const LiveExamGateway: React.FC = () => {
       if (!activeStudent) return;
       setIsLoading(true);
       
-      const stage = activeStudent.data?.['المرحلة'] || activeStudent.stage;
+      const stage = activeStudent.stage || 'عام';
 
       if (examConfig) {
         if (!examConfig.isExamLive) {
@@ -667,39 +727,48 @@ export const LiveExamGateway: React.FC = () => {
         return alert("غير مسموح لك بدخول مستوى قبطي مخالف لمستواك المسجل.");
       }
       
-      const field = SCORE_FIELD_MAP[competitionType];
-      if (activeStudent[field] !== undefined && activeStudent[field] !== null) {
+      const scoreField = SCORE_FIELD_MAP[competitionType];
+      const fieldMap: Record<string, string> = {
+        'academicScore': 'academicScore',
+        'memorizationScore': 'memorizationScore',
+        'copticL1Score': 'copticL1Score',
+        'copticL2Score': 'copticL2Score'
+      };
+      const studentField = fieldMap[scoreField];
+      
+      if (activeStudent[studentField] !== undefined && activeStudent[studentField] !== null) {
         setIsLoading(false);
-        setScore(activeStudent[field]);
+        setScore(activeStudent[studentField]);
         setIsAlreadyExamined(true);
         setIsExamCompleted(true);
         setSelectedCompetition(competitionType);
         return;
       }
 
-      // Explicitly clear any previous cached states for this subject
+      // Explicitly clear temporary cash states
       localStorage.removeItem(`exam_${activeStudent.id}_${competitionType}`);
       setAnswers({});
       setIsExamCompleted(false);
       setIsTerminated(false);
 
-      let availableExams: Exam[] = [];
-      const cacheKey = `exams_${stage}_${competitionType}`;
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) {
-        availableExams = JSON.parse(cached);
-      } else {
-        const examsSnap = await getDocs(
-          query(
-            collection(db, 'exams'), 
-            where('stage', '==', stage), 
-            where('competitionType', '==', competitionType), 
-            where('isActive', '==', true)
-          )
-        );
-        availableExams = examsSnap.docs.map(d => d.data() as Exam);
-        sessionStorage.setItem(cacheKey, JSON.stringify(availableExams));
-      }
+      // Fetch active exams from Supabase exams_pool table
+      const { data: examsData, error: examsError } = await supabase
+        .from('exams_pool')
+        .select('*')
+        .eq('stage', stage)
+        .eq('subject', competitionType);
+
+      if (examsError) throw examsError;
+
+      const availableExams: Exam[] = (examsData || []).map((row: any) => ({
+        id: row.id,
+        stage: row.stage,
+        competitionType: row.subject || row.competition_type || '',
+        model: row.model || row.model_type || 'A',
+        questions: row.questions_data || [],
+        isActive: true,
+        updatedAt: row.updated_at || ''
+      }));
       
       if (availableExams.length === 0) {
         setIsLoading(false);
@@ -721,16 +790,20 @@ export const LiveExamGateway: React.FC = () => {
       setSelectedCompetition(competitionType);
       setActiveExam(randomModel);
       
-      await setDoc(doc(db, 'active_sessions', activeStudent.id), {
-         competition: competitionType,
-         lastUpdate: new Date().toISOString()
-      }, { merge: true });
+      // Update monitoring with chosen exam
+      await supabase
+        .from('live_monitoring')
+        .update({
+          device_type: `يجري امتحان: ${competitionType}`,
+          updated_at: new Date().toISOString()
+        })
+        .eq('student_id', activeStudent.id);
 
       setIsLoading(false);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       setIsLoading(false);
-      alert('خطأ في بدء الامتحان');
+      alert('حدث خطأ في بدء الامتحان: ' + e.message);
     }
   };
 
@@ -746,108 +819,125 @@ export const LiveExamGateway: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!activeExam || !activeStudent || !selectedCompetition) return;
-    if (!confirm('هل أنت متأكد من إنهاء الامتحان؟')) return;
+    if (!confirm('هل أنت متأكد من إنهاء الامتحان وتأكيد تسليمه؟')) return;
     setIsLoading(true);
 
     let totalScore = 0;
 
     activeExam.questions.forEach((q) => {
-      const stdAns = answers[q.id];
-      const correctAns = q.correctAnswers?.[0];
-      
-      if (!stdAns) return;
+       const stdAns = answers[q.id];
+       const correctAns = q.correctAnswers?.[0];
+       
+       if (!stdAns) return;
 
-      if (q.type === 'mcq' || q.type === 'boolean' || q.type === 'fill') {
-        if (normalizeArabic(String(stdAns)) === normalizeArabic(String(correctAns))) {
-          totalScore += q.points;
-        }
-      } else if (q.type === 'matching') {
-        let correctMatches = 0;
-        const matchingPairs = q.matchingPairs || [];
-        matchingPairs.forEach((pair, pIdx) => {
-           const sMatch = stdAns[pIdx];
-           const rMatch = pair.right;
-           if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
-             correctMatches++;
-           }
-        });
-        if (correctMatches === matchingPairs.length) totalScore += q.points;
-      }
+       if (q.type === 'mcq' || q.type === 'boolean' || q.type === 'fill') {
+         if (normalizeArabic(String(stdAns)) === normalizeArabic(String(correctAns))) {
+           totalScore += q.points;
+         }
+       } else if (q.type === 'matching') {
+         let correctMatches = 0;
+         const matchingPairs = q.matchingPairs || [];
+         matchingPairs.forEach((pair, pIdx) => {
+            const sMatch = stdAns[pIdx];
+            const rMatch = pair.right;
+            if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
+              correctMatches++;
+            }
+         });
+         if (correctMatches === matchingPairs.length) totalScore += q.points;
+       }
     });
 
     setScore(totalScore);
 
-    const field = SCORE_FIELD_MAP[selectedCompetition];
+    const scoreField = SCORE_FIELD_MAP[selectedCompetition];
+    const dbScoreFields: Record<string, string> = {
+      'academicScore': 'derasy_score',
+      'memorizationScore': 'mahfozat_score',
+      'copticL1Score': 'qebty_lvl1_score',
+      'copticL2Score': 'qebty_lvl2_score'
+    };
+    const targetDbColumn = dbScoreFields[scoreField];
 
     try {
-      const batch = writeBatch(db);
-      
-      const payload: any = {
-        studentId: activeStudent.id,
-        studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
-        gender: activeStudent.gender || '',
-        church: activeStudent.churchName || 'غير محدد',
-        churchName: activeStudent.churchName || 'غير محدد',
+      // Clean, structured payload matching Supabase layout
+      const submissionPayload: any = {
+        id: activeStudent.id,
+        student_name: activeStudent.studentName || activeStudent.name || 'بدون اسم',
+        church_name: activeStudent.churchName || 'غير مكتمل',
         stage: activeExam.stage,
-        score: totalScore,
-        year: String(CURRENT_YEAR),
-        grade: '--',
-        timestamp: new Date().toISOString(),
-        isSubmitted: true,
-        [field]: totalScore,
-        data: {
-          [selectedCompetition]: totalScore
-        }
+        gender: activeStudent.gender || '',
+        submitted_at: new Date().toISOString(),
+        detailed_answers: answers
       };
 
-      const onlineResultPayload = {
-        studentId: activeStudent.id,
-        studentID: activeStudent.id,
-        studentName: activeStudent.studentName || activeStudent.name || 'بدون اسم',
-        gender: activeStudent.gender || '',
-        church: activeStudent.churchName || 'غير محدد',
-        churchName: activeStudent.churchName || 'غير محدد',
-        stage: activeExam.stage,
-        year: String(CURRENT_YEAR),
-        [`مسابقة ${selectedCompetition}`]: totalScore,
-        submissionTimestamp: new Date().toISOString(),
-        timestamp: new Date().toISOString()
-      };
+      if (targetDbColumn) {
+        submissionPayload[targetDbColumn] = totalScore;
+      }
 
-      batch.set(doc(db, 'results', activeStudent.id), payload, { merge: true });
-      batch.set(doc(db, 'online_results', activeStudent.id), onlineResultPayload, { merge: true });
-      batch.set(doc(db, 'participants', activeStudent.id), { [field]: totalScore, isSubmitted: true }, { merge: true });
-      batch.delete(doc(db, 'active_sessions', activeStudent.id));
-      
-      await batch.commit();
-      
+      // 1. Double upsert results directly into Supabase exam_submissions table
+      const { error: subErr } = await supabase
+        .from('exam_submissions')
+        .upsert(submissionPayload);
+
+      if (subErr) throw subErr;
+
+      // 2. Set monitoring to completed status
+      await supabase
+        .from('live_monitoring')
+        .update({
+          status: 'completed',
+          device_type: `أنهى امتحان: ${selectedCompetition}`,
+          updated_at: new Date().toISOString()
+        })
+        .eq('student_id', activeStudent.id);
+
+      // Local update in cache
+      const fieldMap: Record<string, string> = {
+        'academicScore': 'academicScore',
+        'memorizationScore': 'memorizationScore',
+        'copticL1Score': 'copticL1Score',
+        'copticL2Score': 'copticL2Score'
+      };
+      const cacheField = fieldMap[scoreField];
+      const updatedProfile = { ...activeStudent, [cacheField]: totalScore };
+      localStorage.setItem(`student_profile_${activeStudent.id}`, JSON.stringify(updatedProfile));
+      setActiveStudent(updatedProfile);
+
       setIsExamCompleted(true);
-
       localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
+      setIsLoading(false);
     } catch (e: any) {
       setIsLoading(false);
-      alert('فشل في حفظ الدرجة: ' + (e.message || 'Error occurred'));
+      alert('فشل في حفظ درجة الامتحان بالخادم: ' + (e.message || 'Error occurred'));
     }
   };
 
   if (isExamCompleted) {
     return (
-      <div className="LiveExamGateway text-center p-12 bg-white border border-emerald-200 rounded-3xl shadow-xl overflow-hidden relative">
+      <div className="text-center p-12 bg-white border border-emerald-200 rounded-3xl shadow-xl overflow-hidden relative">
         <div className="absolute top-0 inset-x-0 h-2 bg-emerald-500" />
         <h2 className="text-3xl font-black mb-4 text-emerald-600">
           {isAlreadyExamined ? 'لقد قمت بتسليم هذا الامتحان مسبقاً!' : 'تم استلام إجاباتك بنجاح!'}
         </h2>
-        {isAlreadyExamined && score > 0 && (
+        {score >= 0 && (
           <div className="mb-6 mx-auto inline-block bg-emerald-50 px-6 py-2 rounded-xl border border-emerald-100">
             <span className="font-bold text-emerald-800">الدرجة المسجلة: {score}</span>
           </div>
         )}
-        <p className="text-slate-600 font-bold mb-6">نتمنى لك التوفيق.</p>
+        <p className="text-slate-600 font-bold mb-6">نتمنى لك التوفيق دائمًا.</p>
         <button 
-          onClick={() => { localStorage.removeItem('active_student_id'); setIsExamCompleted(false); setIsAlreadyExamined(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
-          className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all"
+          onClick={() => { 
+            localStorage.removeItem('active_student_id'); 
+            setIsExamCompleted(false); 
+            setIsAlreadyExamined(false); 
+            setActiveStudent(null); 
+            setActiveExam(null); 
+            setSelectedCompetition(null); 
+          }} 
+          className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all font-sans"
         >
-          خروج
+          خروج البوابة
         </button>
       </div>
     );
@@ -855,17 +945,24 @@ export const LiveExamGateway: React.FC = () => {
 
   if (isTerminated) {
     return (
-      <div className="LiveExamGateway text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl overflow-hidden relative">
+      <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl overflow-hidden relative">
         <div className="absolute top-0 inset-x-0 h-2 bg-rose-500" />
         <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
           <ShieldX size={48} />
         </div>
-        <h2 className="text-3xl font-black mb-4 text-slate-800">تم إنهاء الجلسة</h2>
+        <h2 className="text-3xl font-black mb-4 text-slate-800">تم إنهاء وتجميد الجلسة</h2>
+        <p className="text-slate-450 font-medium mb-6 text-sm">تم قطع الاتصال وحظر هذا الجهاز من اللجان المركزية.</p>
         <button 
-          onClick={() => { localStorage.removeItem('active_student_id'); setIsTerminated(false); setActiveStudent(null); setActiveExam(null); setSelectedCompetition(null); }} 
-          className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all"
+          onClick={() => { 
+            localStorage.removeItem('active_student_id'); 
+            setIsTerminated(false); 
+            setActiveStudent(null); 
+            setActiveExam(null); 
+            setSelectedCompetition(null); 
+          }} 
+          className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
         >
-          الخروج
+          خروج
         </button>
       </div>
     );
@@ -873,22 +970,23 @@ export const LiveExamGateway: React.FC = () => {
 
   if (!activeStudent && !isScanning) {
     return (
-      <div className="LiveExamGateway text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
-        <h3 className="text-2xl font-black mb-2 text-slate-800">بوابة الامتحان الإلكتروني</h3>
+      <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
+        <h3 className="text-2xl font-black mb-2 text-slate-800">بوابة الامتحان الإلكتروني المحمية</h3>
+        <p className="text-xs text-slate-400 mb-6">بوابة رصد الأداء الفوري لشهادة الكرازة ٢٠٢٦</p>
         
         <div className="max-w-xs mx-auto space-y-4">
           <button 
             onClick={() => setIsScanning(true)} 
-            className="w-full px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg hover:scale-105 active:scale-95 transition-all"
+            className="w-full px-8 py-4 bg-indigo-600 hover:bg-indigo-750 text-white rounded-2xl font-black shadow-lg transition-all"
           >
-            مسح QR كود
+            مسح QR كود المشترك
           </button>
           
           <div className="flex gap-2">
             <input 
               type="text" 
-              placeholder="كود الطالب"
-              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none text-center"
+              placeholder="اكتب رقمك الكودي يدويًا..."
+              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none text-center font-bold text-sm"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') fetchStudentAndExam((e.target as HTMLInputElement).value);
               }}
@@ -899,7 +997,7 @@ export const LiveExamGateway: React.FC = () => {
                 const input = document.getElementById('manual-student-id') as HTMLInputElement;
                 if (input?.value) fetchStudentAndExam(input.value);
               }}
-              className="px-4 py-3 bg-indigo-100 text-indigo-600 rounded-xl font-black"
+              className="px-4 py-3 bg-indigo-100 text-indigo-600 rounded-xl font-black font-sans text-sm hover:bg-indigo-200"
             >
               دخول
             </button>
@@ -911,48 +1009,35 @@ export const LiveExamGateway: React.FC = () => {
 
   if (!activeStudent && isScanning) {
     return (
-      <div className="LiveExamGateway bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
-        <h3 className="text-2xl font-black mb-6 text-slate-800">توجيه الكاميرا نحو كود الطالب</h3>
+      <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
+        <h3 className="text-2xl font-black mb-6 text-slate-800">توجيه الكاميرا نحو باركود الطالب</h3>
         <div className="max-w-md mx-auto aspect-square rounded-2xl overflow-hidden bg-slate-900 border-4 border-slate-100 shadow-inner mb-6 relative">
           <QRScanner onScanSuccess={(id) => fetchStudentAndExam(id)} />
         </div>
         <button 
           onClick={() => setIsScanning(false)}
-          className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all"
+          className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
         >
-          إلغاء
+          إلغاء وتراجع
         </button>
       </div>
     );
   }
 
   if (activeStudent && !selectedCompetition) {
-     const stage = activeStudent.data?.['المرحلة'] || activeStudent.stage;
      return (
-       <div className="LiveExamGateway bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
-         <h3 className="text-2xl font-black text-slate-800 mb-8">{activeStudent.studentName}</h3>
+       <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
+         <span className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full">{activeStudent.stage}</span>
+         <h3 className="text-2xl font-black text-slate-800 mt-3 mb-1">{activeStudent.studentName}</h3>
+         <p className="text-slate-450 text-xs mb-8">{activeStudent.churchName}</p>
          
          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto mb-8">
-           {COMPETITION_TYPES.filter(type => {
-              if (activeStudent.enrolled_subjects && Array.isArray(activeStudent.enrolled_subjects)) {
-                  if (!activeStudent.enrolled_subjects.includes(type)) return false;
-              }
-              if (type === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) return false;
-              if (type === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) return false;
-              return true;
-            }).length === 0 ? (
-              <div className="col-span-full p-8 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 font-bold text-center">
-                لا يوجد امتحانات متاحة لك حالياً.
-              </div>
-            ) : (
-                COMPETITION_TYPES.filter(type => {
-                  if (activeStudent.enrolled_subjects && Array.isArray(activeStudent.enrolled_subjects)) {
-                      if (!activeStudent.enrolled_subjects.includes(type)) return false;
-                  }
-                  if (type === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) return false;
-                  if (type === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) return false;
-                  return true;
-                }).map(type => (
+           {COMPETITION_TYPES.map(type => {
+             // Basic criteria validation
+             if (type === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) return null;
+             if (type === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) return null;
+             
+             return (
                <button
                  key={type}
                  onClick={() => startExam(type)}
@@ -960,15 +1045,20 @@ export const LiveExamGateway: React.FC = () => {
                  className="p-6 bg-slate-50 border border-slate-200 rounded-2xl hover:border-indigo-500 hover:bg-indigo-50 transition-all"
                >
                  <h5 className="font-black text-slate-800 text-lg mb-1">{type}</h5>
+                 <span className="text-xs text-indigo-500 font-bold block">اضغط لبدء رصد الامتحان</span>
                </button>
-             ))
-           )}
+             );
+           })}
          </div>
+         
          <button 
-           onClick={() => { localStorage.removeItem('active_student_id'); setActiveStudent(null); }} 
-           className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all"
+           onClick={() => { 
+             localStorage.removeItem('active_student_id'); 
+             setActiveStudent(null); 
+           }} 
+           className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all font-sans"
          >
-           إلغاء / خروج
+           إلغاء وخروج
          </button>
        </div>
      );
@@ -976,23 +1066,26 @@ export const LiveExamGateway: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="LiveExamGateway text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
+      <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
         <Loader2 className="animate-spin text-indigo-600 mx-auto" size={48} />
-        <p className="mt-4 text-slate-500 font-bold">جاري تحميل أسئلة الامتحان...</p>
+        <p className="mt-4 text-slate-500 font-bold">جاري تحميل أسئلة وتهيئة امتحان {selectedCompetition}...</p>
       </div>
     );
   }
 
   if (!activeExam || !activeExam.questions || activeExam.questions.length === 0) {
     return (
-      <div className="LiveExamGateway text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl">
+      <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl">
         <ShieldX className="text-rose-500 mx-auto mb-4" size={48} />
-        <p className="text-slate-700 font-bold">عذراً، لم يتم العثور على أسئلة لهذه المسابقة أو انتهى وقت الامتحان.</p>
+        <p className="text-slate-700 font-bold">عذراً، لم تضع اللجنة أي أسئلة مسبقة لهذا النموذج حاليًا.</p>
         <button 
-          onClick={() => { localStorage.removeItem('active_student_id'); setActiveStudent(null); setSelectedCompetition(null); setActiveExam(null); }} 
-          className="mt-6 px-6 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors"
+          onClick={() => { 
+            setActiveExam(null); 
+            setSelectedCompetition(null); 
+          }} 
+          className="mt-6 px-6 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors font-sans"
         >
-          رجوع
+          عودة للاختيار
         </button>
       </div>
     );
@@ -1001,29 +1094,74 @@ export const LiveExamGateway: React.FC = () => {
   return (
     <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
       <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto">
-        {activeExam.questions.map((q, i) => (
+        <div className="border-b pb-4">
+          <span className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full">امتحان {selectedCompetition}</span>
+          <h4 className="text-xl font-black mt-2 text-slate-850">أجب عن كافة الأسئلة بدقة بالغة</h4>
+        </div>
+        
+        {activeExam.questions.map((q, qIdx) => (
           <div key={q.id} className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-            <h4 className="text-lg font-bold mb-4">{i + 1}. {q.text}</h4>
+            <h4 className="text-lg font-black mb-4 text-slate-800">{qIdx + 1}. {q.text}</h4>
             
             {(q.type === 'mcq' || q.type === 'boolean') && (
               <div className="space-y-3">
                 {q.options.map((opt, oIndex) => (
-                    <label key={oIndex} className="block p-4 rounded-xl border border-slate-200 cursor-pointer">
+                    <label key={oIndex} className="flex items-center gap-3 p-4 rounded-xl border border-slate-205 cursor-pointer hover:bg-white transition-all bg-slate-100">
                       <input 
                         type="radio"
+                        name={`q_ans_${q.id}`}
                         checked={answers[q.id] === opt}
                         onChange={() => handleAnswer(q.id, opt)}
                         className="w-5 h-5 accent-indigo-600"
                       />
-                      <span className="font-medium text-slate-700 ml-2">{opt}</span>
+                      <span className="font-bold text-slate-700">{opt}</span>
                     </label>
                 ))}
               </div>
             )}
+
+            {q.type === 'fill' && (
+              <input 
+                type="text"
+                placeholder="اكتب إجابتك هنا..."
+                value={answers[q.id] || ''}
+                onChange={(e) => handleAnswer(q.id, e.target.value)}
+                className="w-full px-4 py-3 border rounded-xl bg-white focus:ring-1 focus:ring-indigo-500 font-bold outline-none"
+              />
+            )}
+
+            {q.type === 'matching' && q.matchingPairs && (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-400 mb-2">اختر الإقران الصحيح لكل عنصر من القائمة اليسرى:</p>
+                {q.matchingPairs.map((pair, pIdx) => {
+                  const currentListAnswers = answers[q.id] || {};
+                  return (
+                    <div key={pIdx} className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+                      <span className="font-bold text-slate-700 text-sm">{pair.left}</span>
+                      <span className="text-slate-300 text-center hidden sm:block">↔</span>
+                      <select 
+                        value={currentListAnswers[pIdx] || ''}
+                        onChange={(e) => {
+                          const nextList = { ...currentListAnswers, [pIdx]: e.target.value };
+                          handleAnswer(q.id, nextList);
+                        }}
+                        className="px-3 py-2 border rounded-lg bg-white font-bold text-xs"
+                      >
+                        <option value="">اختر المطابقة الصحيحة...</option>
+                        {(q as any).shuffledRights?.map((rItem: string, rIdx: number) => (
+                          <option key={rIdx} value={rItem}>{rItem}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ))}
-        <button onClick={handleSubmit} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-lg shadow-xl hover:bg-indigo-700">
-          تسليم الامتحان
+        
+        <button onClick={handleSubmit} className="w-full py-4 bg-indigo-600 hover:bg-indigo-755 text-white rounded-2xl font-black text-lg shadow-xl transition-all font-sans">
+          تأكيد وتسليم الامتحان بالكامل
         </button>
       </div>
     </div>

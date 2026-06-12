@@ -1,25 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, auth, rdb, rdbRef, onValue, getCountFromServer, writeBatch } from '../firebase';
-import { collection, query, orderBy, limit, doc, updateDoc, setDoc, deleteDoc, getDocs, where } from 'firebase/firestore';
+import { supabase } from '../utils/supabaseClient';
 import { Activity, Users, Monitor, Clock, TrendingUp, ShieldAlert, Smartphone, ShieldX, UserMinus, RotateCcw, RotateCw, Trash2, AlertCircle } from 'lucide-react';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-function handleFirestoreError(error: any, op: OperationType, path: string) {
-  console.error(`Firestore Error [${op}] at ${path}:`, error);
-  const authInfo = {
-    uid: auth.currentUser?.uid,
-    email: auth.currentUser?.email,
-  };
-  throw new Error(JSON.stringify({ error: error.message, operationType: op, path, authInfo }));
-}
 
 export const LiveExamMonitoring: React.FC<{ 
   results: any[], 
@@ -29,45 +10,58 @@ export const LiveExamMonitoring: React.FC<{
 }> = ({ results, onlineResults = [], globalChurchFilter, onResetExam }) => {
   const [logs, setLogs] = useState<any[]>([]);
   const [activeSessionsData, setActiveSessionsData] = useState<any[]>([]);
-  const [rdbPresence, setRdbPresence] = useState<Record<string, any>>({});
   const [totalRegistered, setTotalRegistered] = useState(0);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  useEffect(() => {
-    // 1. RDB Presence listener
-    const presenceRef = rdbRef(rdb, 'presence');
-    const unsubRdb = onValue(presenceRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      setRdbPresence(data);
-    });
-
-    return () => unsubRdb();
-  }, []);
-
   const fetchTotalRegistered = async () => {
     try {
-      const coll = collection(db, 'participants');
-      // For simplicity, count all if church filter is 'الكل', otherwise count per church
-      const q = globalChurchFilter === 'الكل' 
-        ? query(coll) 
-        : query(coll, where('churchName', '==', globalChurchFilter));
-      const snap = await getCountFromServer(q);
-      setTotalRegistered(snap.data().count);
-    } catch (e) { console.error(e); }
+      const query = supabase.from('registrations').select('*', { count: 'exact', head: true });
+      if (globalChurchFilter !== 'الكل') {
+        query.eq('church_name', globalChurchFilter);
+      }
+      const { count, error } = await query;
+      if (error) throw error;
+      setTotalRegistered(count || 0);
+    } catch (e) { 
+      console.error("Failed to fetch count in Live Monitor:", e); 
+    }
   };
 
   const fetchData = async () => {
     setIsLoading(true);
     try {
       await fetchTotalRegistered();
-      const logsSnap = await getDocs(query(collection(db, 'exam_logs'), orderBy('timestamp', 'desc'), limit(200)));
-      setLogs(logsSnap.docs.map(d => ({id: d.id, ...d.data()})));
       
-      const sessionsSnap = await getDocs(collection(db, 'active_sessions'));
-      setActiveSessionsData(sessionsSnap.docs.map(d => ({id: d.id, ...d.data()})));
+      const { data: monitors, error } = await supabase
+        .from('live_monitoring')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (monitors) {
+        // Map Supabase rows to local variables
+        const mappedRows = monitors.map((sbRow: any) => ({
+          studentId: sbRow.student_id,
+          studentName: sbRow.student_name,
+          churchName: sbRow.church_name,
+          stage: sbRow.stage,
+          status: sbRow.status,
+          deviceId: sbRow.student_id,
+          deviceType: sbRow.device_type || 'متصفح الكاميرا',
+          ip: sbRow.ip_address || '127.0.0.1',
+          attempts: sbRow.attempts_count || 1,
+          timestamp: sbRow.updated_at || new Date().toISOString(),
+          is_locked: sbRow.is_locked || false,
+          fingerprint: sbRow.fingerprint || null
+        }));
+
+        setActiveSessionsData(mappedRows);
+        setLogs(mappedRows);
+      }
     } catch (e: any) {
-      console.error("Error fetching monitoring data:", e);
+      console.error("Error fetching monitoring data from Supabase:", e);
     } finally {
       setIsLoading(false);
     }
@@ -75,67 +69,58 @@ export const LiveExamMonitoring: React.FC<{
 
   useEffect(() => {
     fetchData();
-  }, []);
 
-  const handleTerminateSession = async (studentId: string, deviceId?: string) => {
-    console.log('Admin calling handleTerminateSession:', { studentId, deviceId });
+    // Subscribe to Postgres Realtime channel
+    const channel = supabase
+      .channel('live_monitoring_changes_channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'live_monitoring' },
+        (payload) => {
+          console.log('Realtime table event:', payload);
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [globalChurchFilter]);
+
+  const handleTerminateSession = async (studentId: string) => {
     if (!confirm('هل أنت متأكد من طرد هذا الطالب وحظر جهازه من الامتحان؟')) return;
     
-    // Optimistic UI Update
-    setActiveSessionsData(prev => prev.map(s => s.id === studentId ? { ...s, status: 'terminated' } : s));
-
     setIsProcessing(studentId);
     try {
-      const sessionRef = doc(db, 'active_sessions', studentId);
-      // 1. Mark session as terminated (this triggers the Kill Switch on student's side)
-      await setDoc(sessionRef, {
-        status: 'terminated',
-        terminatedAt: new Date().toISOString(),
-        allowReentry: false
-      }, { merge: true });
+      const { error } = await supabase
+        .from('live_monitoring')
+        .update({
+          status: 'terminated',
+          updated_at: new Date().toISOString()
+        })
+        .eq('student_id', studentId);
 
-      // 2. Blacklist the device if available
-      if (deviceId) {
-        await setDoc(doc(db, 'blacklist', deviceId), {
-          studentId,
-          reason: 'Remote termination by admin',
-          timestamp: new Date().toISOString()
-        });
-      }
-
-      // 3. Clear RDB presence immediately
-      const { rdbSet } = await import('../firebase');
-      await rdbSet(rdbRef(rdb, `presence/${studentId}`), null);
-
-      alert('تم إنهاء الجلسة بنجاح');
+      if (error) throw error;
+      alert('تم إرسال أمر الطرد والإنهاء بنجاح');
+      fetchData();
     } catch (e: any) {
-      handleFirestoreError(e, OperationType.UPDATE, `active_sessions/${studentId}`);
+      console.error(e);
+      alert('فشل أمر الطرد: ' + e.message);
     } finally {
       setIsProcessing(null);
     }
   };
 
   const handleResetAllMonitoring = async () => {
-    if (!confirm('سيتم مسح كافة بيانات المراقبة المباشرة وسجلات الدخول (Logs). هل أنت متأكد؟')) return;
+    if (!confirm('سيتم مسح كافة بيانات المراقبة المباشرة وسجلات الدخول (Logs) من Supabase. هل أنت متأكد؟')) return;
     setIsLoading(true);
     try {
-      const logsSnap = await getDocs(collection(db, 'exam_logs'));
-      const sessSnap = await getDocs(collection(db, 'active_sessions'));
-      
-      const batch = writeBatch(db);
-      logsSnap.docs.forEach(d => batch.delete(d.ref));
-      sessSnap.docs.forEach(d => batch.delete(d.ref));
-      
-      await batch.commit();
-      
-      // Clear RDB presence
-      const { rdbSet } = await import('../firebase');
-      await rdbSet(rdbRef(rdb, 'presence'), null);
-      
+      const { error } = await supabase.from('live_monitoring').delete().neq('student_id', '0');
+      if (error) throw error;
       setLogs([]);
       setActiveSessionsData([]);
-      setRdbPresence({});
-      alert('تم تصفير كافة البيانات بنجاح');
+      alert('تم تصفير كافة البيانات بنجاح ');
     } catch (e) {
       console.error(e);
       alert('حدث خطأ أثناء تصفير البيانات');
@@ -147,88 +132,75 @@ export const LiveExamMonitoring: React.FC<{
   const handleDeleteLogRow = async (studentId: string) => {
     if (!confirm('هل تريد حذف هذا السجل من شاشة المراقبة؟')) return;
     try {
-      // Find all logs for this student
-      const studentLogs = logs.filter(l => l.studentId === studentId);
-      const batch = writeBatch(db);
-      studentLogs.forEach(l => batch.delete(doc(db, 'exam_logs', l.id)));
-      
-      // Also delete active session if any
-      batch.delete(doc(db, 'active_sessions', studentId));
-      
-      await batch.commit();
+      const { error } = await supabase
+        .from('live_monitoring')
+        .delete()
+        .eq('student_id', studentId);
+
+      if (error) throw error;
       setLogs(prev => prev.filter(l => l.studentId !== studentId));
-      setActiveSessionsData(prev => prev.filter(s => s.id !== studentId));
+      setActiveSessionsData(prev => prev.filter(s => s.studentId !== studentId));
       alert('تم حذف السجل بنجاح');
     } catch (e) {
       console.error(e);
     }
   };
 
-  const handleClearBlacklist = async (deviceId: string) => {
-    console.log('Admin calling handleClearBlacklist:', deviceId);
+  const handleClearBlacklist = async (studentId: string) => {
     if (!confirm('هل تريد فك الحظر عن هذا الجهاز؟')) return;
     try {
-      await deleteDoc(doc(db, 'blacklist', deviceId));
+      const { error } = await supabase
+        .from('live_monitoring')
+        .update({
+          status: 'active',
+          updated_at: new Date().toISOString()
+        })
+        .eq('student_id', studentId);
+
+      if (error) throw error;
       alert('تم فك الحظر بنجاح');
+      fetchData();
     } catch (e: any) {
-      handleFirestoreError(e, OperationType.DELETE, `blacklist/${deviceId}`);
+      alert('حدث خطأ أثناء فك الحظر: ' + e.message);
     }
   };
 
-  // Filtered results
-  const filteredResults = results.filter(r => globalChurchFilter === 'الكل' || r.churchName === globalChurchFilter);
-  
   // Stats per stage
-  const stageStats = filteredResults.reduce((acc: any, r) => {
-    const stage = r.data?.['المرحلة'] || r.stage || 'غير محدد';
+  const stageStats = logs.reduce((acc: any, r) => {
+    const stage = r.stage || 'غير محدد';
     acc[stage] = (acc[stage] || 0) + 1;
     return acc;
   }, {});
 
-  // Device duplication detection
+  // Device Counts
   const deviceCounts = logs.reduce((acc: any, log) => {
-    if (log.deviceId) {
-      acc[log.deviceId] = (acc[log.deviceId] || 0) + 1;
+    if (log.ip) {
+      acc[log.ip] = (acc[log.ip] || 0) + 1;
     }
     return acc;
   }, {});
 
-  const activeSessionsCount = Object.keys(rdbPresence).length;
-
-  // Group logs by studentId to prevent row duplication
-  const groupedLogs = Object.values(logs.reduce((acc: any, log) => {
-    const studentId = log.studentId;
-    if (!acc[studentId] || new Date(log.timestamp) > new Date(acc[studentId].timestamp)) {
-      // Store latest log but keep cumulative stats
-      acc[studentId] = {
-        ...log,
-        attempts: (acc[studentId]?.attempts || 0) + 1
-      };
-    } else {
-      acc[studentId].attempts += 1;
-    }
-    return acc;
-  }, {})).sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const activeSessionsCount = logs.filter(s => s.status === 'active').length;
 
   return (
     <div className="space-y-8">
       <div className="flex justify-between items-center bg-white p-4 rounded-3xl border border-slate-200">
-        <h3 className="font-black text-slate-800 text-lg">المتابعة المباشرة للامتحانات</h3>
+        <h3 className="font-black text-slate-800 text-lg">المتابعة المباشرة للامتحانات (Supabase Control)</h3>
         <div className="flex items-center gap-2">
           <button 
             onClick={handleResetAllMonitoring}
             disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl font-bold hover:bg-rose-100 transition-all disabled:opacity-50 border border-rose-200"
+            className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl font-bold hover:bg-rose-100 transition-all disabled:opacity-50 border border-rose-200 text-xs"
           >
-            <ShieldX size={18} />
+            <ShieldX size={15} />
             تصفير بيانات المراقبة المباشرة
           </button>
           <button 
             onClick={fetchData}
             disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all disabled:opacity-50 text-xs"
           >
-            {isLoading ? <RotateCw className="animate-spin" size={18} /> : <RotateCw size={18} />}
+            {isLoading ? <RotateCw className="animate-spin" size={15} /> : <RotateCw size={15} />}
             تحديث البيانات
           </button>
         </div>
@@ -241,12 +213,12 @@ export const LiveExamMonitoring: React.FC<{
               <Activity size={24} />
             </div>
             <div>
-              <p className="text-xs font-black text-slate-400 uppercase">الجلسات النشطة (حالياً)</p>
+              <p className="text-xs font-black text-slate-400 uppercase">الجلسات النشطة (Supabase)</p>
               <h3 className="text-2xl font-black text-slate-800">{activeSessionsCount}</h3>
             </div>
           </div>
           <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-             <div className="h-full bg-indigo-500 animate-pulse" style={{ width: '40%' }} />
+             <div className="h-full bg-indigo-500 animate-pulse" style={{ width: '45%' }} />
           </div>
         </div>
 
@@ -256,8 +228,8 @@ export const LiveExamMonitoring: React.FC<{
               <Users size={24} />
             </div>
             <div>
-              <p className="text-xs font-black text-slate-400 uppercase">إجمالي المسجلين</p>
-              <h3 className="text-2xl font-black text-slate-800">{totalRegistered}</h3>
+              <p className="text-xs font-black text-slate-400 uppercase">إجمالي المسجلين (Registrations)</p>
+              <h3 className="text-2xl font-black text-slate-800">{totalRegistered.toLocaleString('ar-EG')}</h3>
             </div>
           </div>
         </div>
@@ -268,7 +240,7 @@ export const LiveExamMonitoring: React.FC<{
               <Monitor size={24} />
             </div>
             <div>
-              <p className="text-xs font-black text-slate-400 uppercase">الأجهزة الفريدة (الأخيرة)</p>
+              <p className="text-xs font-black text-slate-400 uppercase">الأجهزة الفريدة / IPs</p>
               <h3 className="text-2xl font-black text-slate-800">{Object.keys(deviceCounts).length}</h3>
             </div>
           </div>
@@ -287,6 +259,9 @@ export const LiveExamMonitoring: React.FC<{
                  <span className="font-black text-indigo-600">{count}</span>
               </div>
             ))}
+            {Object.keys(stageStats).length === 0 && (
+              <div className="text-slate-400 text-xs italic text-center">لا توجد مراحل مسجلة حالياً</div>
+            )}
           </div>
         </div>
 
@@ -297,74 +272,42 @@ export const LiveExamMonitoring: React.FC<{
           <div className="overflow-x-auto">
             <table className="w-full text-right">
               <thead>
-                <tr className="text-xs font-black text-slate-400 uppercase border-b border-slate-100">
+                <tr className="text-xs font-black text-slate-400 uppercase border-b border-slate-100 pb-4">
                    <th className="pb-4">الطالب</th>
                    <th className="pb-4">الكنيسة</th>
-                   <th className="pb-4">الحالة (د/م/ق1/ق2)</th>
                    <th className="pb-4">الجهاز / IP</th>
-                   <th className="pb-4">محاولات الطالب</th>
+                   <th className="pb-4">المحاولات</th>
                    <th className="pb-4">التوقيت</th>
-                   <th className="pb-4">الإجراء</th>
+                   <th className="pb-4 text-center">الإجراء</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {groupedLogs.slice(0, 50).map((log: any) => {
+                {logs.slice(0, 50).map((log: any) => {
+                  const isActive = log.status === 'active';
+                  const isTerminated = log.status === 'terminated';
                   const fp = log.fingerprint;
-                  const activeSession = activeSessionsData.find(s => s.id === log.studentId && s.status === 'active');
-                  const isActive = !!activeSession;
-                  const isTerminated = activeSessionsData.some(s => s.id === log.studentId && s.status === 'terminated');
-                  
-                  const isActiveInRdb = !!rdbPresence[log.studentId];
 
-                  const studentResults = onlineResults.find(r => r.studentID === log.studentId || r.studentId === log.studentId);
-                  const checkStatus = (comp: string) => {
-                     if (studentResults?.[`مسابقة ${comp}`] !== undefined) return '✅';
-                     if (activeSession?.competition === comp || (isActiveInRdb && rdbPresence[log.studentId].competition === comp)) return '⏳';
-                     return '❌';
-                  };
-
-                  // Detect if this device UUID has been used by DIFFERENT students
-                  const distinctStudentsForThisDevice = logs.filter(l => l.deviceId === log.deviceId && l.deviceId)
-                    .reduce((acc: Set<string>, curr) => acc.add(curr.studentId), new Set<string>());
-                  
-                  const isDeviceShared = distinctStudentsForThisDevice.size > 1;
-                  
                   return (
-                    <tr key={log.studentId} className={`text-xs group ${isDeviceShared ? 'bg-amber-50' : ''} ${isTerminated ? 'opacity-50 grayscale' : ''}`}>
+                    <tr key={log.studentId} className={`text-xs group ${isTerminated ? 'opacity-50 grayscale' : ''}`}>
                       <td className="py-4 font-black text-slate-700">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
                              {log.studentName || 'غير معروف'}
-                             {isActiveInRdb && <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" title="نشط الآن" />}
-                             {!isActiveInRdb && isActive && <div className="w-2 h-2 bg-amber-400 rounded-full" title="جهاز مفصول" />}
+                             {isActive && <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" title="نشط الآن" />}
                              {isTerminated && <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[9px] uppercase font-black">تم الطرد</span>}
                           </div>
-                          {isDeviceShared && (
-                            <span className="text-[10px] text-amber-600 font-bold flex items-center gap-1">
-                              <ShieldAlert size={10} /> تنبيه: هذا الجهاز استخدمه {distinctStudentsForThisDevice.size} طلاب
-                            </span>
-                          )}
                         </div>
                       </td>
                       <td className="py-4 text-slate-500 font-bold">{log.churchName}</td>
                       <td className="py-4">
-                        <div className="flex gap-2 text-[10px] bg-slate-50 p-2 rounded-lg inline-flex border border-slate-100">
-                           <span title="دراسي">دراسي:{checkStatus('دراسي')}</span>
-                           <span title="محفوظات">محفوظات:{checkStatus('محفوظات')}</span>
-                           <span title="قبطي مستوى أول">ق1:{checkStatus('قبطي مستوى أول')}</span>
-                           <span title="قبطي مستوى ثاني">ق2:{checkStatus('قبطي مستوى ثاني')}</span>
-                        </div>
-                      </td>
-                      <td className="py-4">
-                         <div className="flex flex-col gap-1">
-                            <span className="flex items-center gap-1 font-bold text-slate-600">
-                              <Smartphone size={12} /> {fp ? `${fp.brand === 'Unknown' ? '' : fp.brand} ${fp.model} (${fp.os})`.trim() : log.deviceType}
-                            </span>
-                            <div className="flex gap-2 items-center text-[9px] text-slate-300 font-mono">
-                               <span>{log.ip}</span>
-                               {fp && <span>• {fp.browser} • {fp.resolution}</span>}
-                            </div>
-                         </div>
+                          <div className="flex flex-col gap-1">
+                             <span className="flex items-center gap-1 font-bold text-slate-600">
+                               <Smartphone size={12} /> {fp ? `${fp.brand === 'Unknown' ? '' : fp.brand} ${fp.model} (${fp.os})`.trim() : log.deviceType}
+                             </span>
+                             <div className="flex gap-2 items-center text-[9px] text-slate-350 font-mono">
+                                <span>{log.ip}</span>
+                             </div>
+                          </div>
                       </td>
                       <td className="py-4">
                         <span className="px-2 py-1 rounded-full font-black bg-slate-100 text-slate-500">
@@ -373,25 +316,23 @@ export const LiveExamMonitoring: React.FC<{
                       </td>
                       <td className="py-4 text-slate-400 font-bold">{new Date(log.timestamp).toLocaleTimeString('ar-EG')}</td>
                       <td className="py-4">
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center justify-center gap-1">
                           <button 
                             onClick={() => handleDeleteLogRow(log.studentId)}
                             className="p-2 text-slate-300 hover:text-rose-500 rounded-lg transition-colors"
                             title="حذف هذا السجل"
                           >
-                             <Trash2 size={16} />
+                             <Trash2 size={15} />
                           </button>
 
-                          {(isActive || isActiveInRdb) && !isTerminated && (
+                          {isActive && (
                             <button
-                              onClick={async () => {
-                                await handleTerminateSession(log.studentId, log.deviceId);
-                              }}
+                              onClick={() => handleTerminateSession(log.studentId)}
                               disabled={isProcessing === log.studentId}
                               className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-1 font-black"
                               title="طرد وحظر الجهاز"
                             >
-                              <ShieldX size={16} />
+                              <ShieldX size={15} />
                               <span className="hidden group-hover:inline text-[10px]">طرد</span>
                             </button>
                           )}
@@ -400,22 +341,28 @@ export const LiveExamMonitoring: React.FC<{
                             onClick={async () => {
                               setIsProcessing(log.studentId);
                               await onResetExam(log.studentId, log.studentName);
+                              // Also reset in live_monitoring
+                              await supabase
+                                .from('live_monitoring')
+                                .update({ status: 'active', attempts_count: 0, is_locked: false, updated_at: new Date().toISOString() })
+                                .eq('student_id', log.studentId);
                               setIsProcessing(null);
+                              fetchData();
                             }}
                             disabled={isProcessing === log.studentId}
                             className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-colors"
                             title="إعادة فتح الامتحان (تصفير المحاولة)"
                           >
-                            <RotateCcw size={16} className={isProcessing === log.studentId ? 'animate-spin' : ''} />
+                            <RotateCcw size={15} className={isProcessing === log.studentId ? 'animate-spin' : ''} />
                           </button>
 
-                          {!isActive && log.deviceId && (
+                          {isTerminated && (
                              <button 
-                               onClick={() => handleClearBlacklist(log.deviceId)}
-                               className="p-2 text-slate-300 hover:text-emerald-500 rounded-lg transition-colors"
+                               onClick={() => handleClearBlacklist(log.studentId)}
+                               className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
                                title="فك حظر الجهاز"
                              >
-                               <UserMinus size={16} />
+                               <UserMinus size={15} />
                              </button>
                           )}
                         </div>
@@ -426,8 +373,8 @@ export const LiveExamMonitoring: React.FC<{
               </tbody>
             </table>
           </div>
-          {groupedLogs.length === 0 && (
-             <div className="text-center py-12 text-slate-300 italic">بانتظار دخول الطلاب...</div>
+          {logs.length === 0 && (
+             <div className="text-center py-12 text-slate-300 italic">بانتظار حركة للامتحانات الجارية...</div>
           )}
         </div>
       </div>
