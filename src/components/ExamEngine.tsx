@@ -432,6 +432,13 @@ export const LiveExamGateway: React.FC = () => {
   const [fingerprint, setFingerprint] = useState<DeviceFingerprint | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isTerminated, setIsTerminated] = useState(false);
+  const [completedSubjects, setCompletedSubjects] = useState<Record<string, number | null>>({
+    derasy: null,
+    mahfozat: null,
+    qebty_lvl1: null,
+    qebty_lvl2: null
+  });
+  const [allAnswers, setAllAnswers] = useState<Record<string, any>>({});
   const [examConfig, setExamConfig] = useState<any>({
     isExamLive: true,
     autoCloseTime: null,
@@ -473,6 +480,75 @@ export const LiveExamGateway: React.FC = () => {
       }
     }
   }, []);
+
+  // Add another useEffect to load/save completedSubjects and allAnswers to localStorage per-student
+  useEffect(() => {
+    if (activeStudent?.id) {
+      // Load completed subjects and answers from localStorage if present
+      const savedCompleted = localStorage.getItem(`completed_subjects_${activeStudent.id}`);
+      const savedAllAnswers = localStorage.getItem(`all_answers_${activeStudent.id}`);
+      
+      if (savedCompleted) {
+        try {
+          setCompletedSubjects(JSON.parse(savedCompleted));
+        } catch (e) {}
+      } else {
+        // If not in localStorage, default to standard scores or null
+        setCompletedSubjects({
+          derasy: activeStudent.academicScore ?? null,
+          mahfozat: activeStudent.memorizationScore ?? null,
+          qebty_lvl1: activeStudent.copticL1Score ?? null,
+          qebty_lvl2: activeStudent.copticL2Score ?? null
+        });
+      }
+
+      if (savedAllAnswers) {
+        try {
+          setAllAnswers(JSON.parse(savedAllAnswers));
+        } catch (e) {}
+      } else if (activeStudent.detailed_answers) {
+         try {
+           const parsedAnswers = typeof activeStudent.detailed_answers === 'string' 
+             ? JSON.parse(activeStudent.detailed_answers) 
+             : activeStudent.detailed_answers;
+           
+           if (Array.isArray(parsedAnswers)) {
+             const restored: Record<string, any> = {};
+             parsedAnswers.forEach((item: any) => {
+               if (item.subject) {
+                 if (!restored[item.subject]) restored[item.subject] = {};
+                 restored[item.subject][item.question_id || item.questionId] = item.student_answer || item.answer;
+               }
+             });
+             setAllAnswers(restored);
+           } else if (typeof parsedAnswers === 'object' && parsedAnswers !== null) {
+             setAllAnswers(parsedAnswers);
+           }
+         } catch (e) {}
+      }
+    } else {
+      setCompletedSubjects({
+        derasy: null,
+        mahfozat: null,
+        qebty_lvl1: null,
+        qebty_lvl2: null
+      });
+      setAllAnswers({});
+    }
+  }, [activeStudent]);
+
+  // Sync to localStorage
+  useEffect(() => {
+    if (activeStudent?.id) {
+      localStorage.setItem(`completed_subjects_${activeStudent.id}`, JSON.stringify(completedSubjects));
+    }
+  }, [completedSubjects, activeStudent?.id]);
+
+  useEffect(() => {
+    if (activeStudent?.id) {
+      localStorage.setItem(`all_answers_${activeStudent.id}`, JSON.stringify(allAnswers));
+    }
+  }, [allAnswers, activeStudent?.id]);
 
   // Monitor student session via Supabase realtime Isolated channel
   useEffect(() => {
@@ -600,6 +676,7 @@ export const LiveExamGateway: React.FC = () => {
         studentData.memorizationScore = existingSub.mahfozat_score;
         studentData.copticL1Score = existingSub.qebty_lvl1_score;
         studentData.copticL2Score = existingSub.qebty_lvl2_score;
+        studentData.detailed_answers = existingSub.detailed_answers;
       }
 
       // Log action to exam_logs in database gracefully
@@ -736,9 +813,17 @@ export const LiveExamGateway: React.FC = () => {
       };
       const studentField = fieldMap[scoreField];
       
-      if (activeStudent[studentField] !== undefined && activeStudent[studentField] !== null) {
+      const keyMapObj: Record<string, string> = {
+        'دراسي': 'derasy',
+        'محفوظات': 'mahfozat',
+        'قبطي مستوى أول': 'qebty_lvl1',
+        'قبطي مستوى ثاني': 'qebty_lvl2'
+      };
+      const subKey = keyMapObj[competitionType];
+      
+      if ((subKey && completedSubjects[subKey] !== null) || (activeStudent[studentField] !== undefined && activeStudent[studentField] !== null)) {
         setIsLoading(false);
-        setScore(activeStudent[studentField]);
+        setScore(subKey && completedSubjects[subKey] !== null ? completedSubjects[subKey]! : activeStudent[studentField]);
         setIsAlreadyExamined(true);
         setIsExamCompleted(true);
         setSelectedCompetition(competitionType);
@@ -819,7 +904,7 @@ export const LiveExamGateway: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!activeExam || !activeStudent || !selectedCompetition) return;
-    if (!confirm('هل أنت متأكد من إنهاء الامتحان وتأكيد تسليمه؟')) return;
+    if (!confirm('هل أنت متأكد من حفظ إجابات هذه المادة والعودة إلى الشاشة الرئيسية لمتابعة الامتحان؟')) return;
     setIsLoading(true);
 
     let totalScore = 0;
@@ -835,77 +920,142 @@ export const LiveExamGateway: React.FC = () => {
            totalScore += q.points;
          }
        } else if (q.type === 'matching') {
-         let correctMatches = 0;
-         const matchingPairs = q.matchingPairs || [];
-         matchingPairs.forEach((pair, pIdx) => {
-            const sMatch = stdAns[pIdx];
-            const rMatch = pair.right;
-            if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
-              correctMatches++;
-            }
-         });
-         if (correctMatches === matchingPairs.length) totalScore += q.points;
+          let correctMatches = 0;
+          const matchingPairs = q.matchingPairs || [];
+          matchingPairs.forEach((pair, pIdx) => {
+             const sMatch = stdAns[pIdx];
+             const rMatch = pair.right;
+             if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
+               correctMatches++;
+             }
+          });
+          if (correctMatches === matchingPairs.length) totalScore += q.points;
        }
     });
 
-    setScore(totalScore);
-
-    const scoreField = SCORE_FIELD_MAP[selectedCompetition];
-    const dbScoreFields: Record<string, string> = {
-      'academicScore': 'derasy_score',
-      'memorizationScore': 'mahfozat_score',
-      'copticL1Score': 'qebty_lvl1_score',
-      'copticL2Score': 'qebty_lvl2_score'
+    const keyMapObj: Record<string, string> = {
+      'دراسي': 'derasy',
+      'محفوظات': 'mahfozat',
+      'قبطي مستوى أول': 'qebty_lvl1',
+      'قبطي مستوى ثاني': 'qebty_lvl2'
     };
-    const targetDbColumn = dbScoreFields[scoreField];
+    const key = keyMapObj[selectedCompetition];
+
+    if (key) {
+      setCompletedSubjects(prev => {
+        const next = { ...prev, [key]: totalScore };
+        localStorage.setItem(`completed_subjects_${activeStudent.id}`, JSON.stringify(next));
+        return next;
+      });
+
+      setAllAnswers(prev => {
+        const next = { ...prev, [selectedCompetition]: answers };
+        localStorage.setItem(`all_answers_${activeStudent.id}`, JSON.stringify(next));
+        return next;
+      });
+    }
 
     try {
-      // Clean, structured payload matching Supabase layout
-      const submissionPayload: any = {
+      await supabase
+        .from('live_monitoring')
+        .update({
+          device_type: `حفظ مادة: ${selectedCompetition}`,
+          updated_at: new Date().toISOString()
+        })
+        .eq('student_id', activeStudent.id);
+    } catch (e) {
+      console.error("Failed to update status monitor:", e);
+    }
+
+    setActiveExam(null);
+    setSelectedCompetition(null);
+    setIsLoading(false);
+  };
+
+  const handleFinalSubmit = async () => {
+    if (!activeStudent) return;
+
+    const anySaved = Object.values(completedSubjects).some(score => score !== null);
+    if (!anySaved) {
+      alert("عذراً، يجب إتمام وحفظ مادة واحدة على الأقل قبل تسليم الامتحان بالكامل.");
+      return;
+    }
+
+    if (!confirm('هل أنت متأكد من تسليم وإرسال كافة المواد المكتملة كمسودة للامتحان النهائي؟ لن تتمكن من تعديل الإجابات بعد التسليم.')) return;
+    setIsLoading(true);
+
+    try {
+      const allCollectedAnswersArray = Object.entries(allAnswers).flatMap(([subj, ansObj]) => {
+        return Object.entries(ansObj as Record<string, any>).map(([qid, val]) => ({
+          subject: subj,
+          question_id: qid,
+          student_answer: val
+        }));
+      });
+
+      const finalPayload = {
         id: activeStudent.id,
         student_name: activeStudent.studentName || activeStudent.name || 'بدون اسم',
         church_name: activeStudent.churchName || 'غير مكتمل',
-        stage: activeExam.stage,
+        stage: activeStudent.stage || 'عام',
         gender: activeStudent.gender || '',
-        submitted_at: new Date().toISOString(),
-        detailed_answers: answers
+        derasy_score: completedSubjects.derasy || 0,
+        mahfozat_score: completedSubjects.mahfozat || 0,
+        qebty_lvl1_score: completedSubjects.qebty_lvl1 || 0,
+        qebty_lvl2_score: completedSubjects.qebty_lvl2 || 0,
+        detailed_answers: JSON.stringify(allCollectedAnswersArray),
+        submitted_at: new Date().toISOString()
       };
 
-      if (targetDbColumn) {
-        submissionPayload[targetDbColumn] = totalScore;
-      }
-
-      // 1. Double upsert results directly into Supabase exam_submissions table
       const { error: subErr } = await supabase
         .from('exam_submissions')
-        .upsert(submissionPayload);
+        .upsert(finalPayload);
 
       if (subErr) throw subErr;
 
-      // 2. Set monitoring to completed status
       await supabase
         .from('live_monitoring')
         .update({
           status: 'completed',
-          device_type: `أنهى امتحان: ${selectedCompetition}`,
+          device_type: `أنهى الامتحان بالكامل`,
           updated_at: new Date().toISOString()
         })
         .eq('student_id', activeStudent.id);
 
       // Local update in cache
-      const fieldMap: Record<string, string> = {
-        'academicScore': 'academicScore',
-        'memorizationScore': 'memorizationScore',
-        'copticL1Score': 'copticL1Score',
-        'copticL2Score': 'copticL2Score'
+      const updatedProfile = { 
+        ...activeStudent, 
+        academicScore: completedSubjects.derasy,
+        memorizationScore: completedSubjects.mahfozat,
+        copticL1Score: completedSubjects.qebty_lvl1,
+        copticL2Score: completedSubjects.qebty_lvl2
       };
-      const cacheField = fieldMap[scoreField];
-      const updatedProfile = { ...activeStudent, [cacheField]: totalScore };
+      
       localStorage.setItem(`student_profile_${activeStudent.id}`, JSON.stringify(updatedProfile));
-      setActiveStudent(updatedProfile);
 
+      // Cleanup localStorage details
+      localStorage.removeItem('active_student_id');
+      localStorage.removeItem(`student_profile_${activeStudent.id}`);
+      localStorage.removeItem(`completed_subjects_${activeStudent.id}`);
+      localStorage.removeItem(`all_answers_${activeStudent.id}`);
+      for (const type of COMPETITION_TYPES) {
+        localStorage.removeItem(`exam_${activeStudent.id}_${type}`);
+      }
+
+      setAnswers({});
+      setAllAnswers({});
+      setCompletedSubjects({
+        derasy: null,
+        mahfozat: null,
+        qebty_lvl1: null,
+        qebty_lvl2: null
+      });
+
+      setScore(0);
       setIsExamCompleted(true);
-      localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
+      setActiveStudent(null);
+      setActiveExam(null);
+      setSelectedCompetition(null);
       setIsLoading(false);
     } catch (e: any) {
       setIsLoading(false);
@@ -1029,7 +1179,7 @@ export const LiveExamGateway: React.FC = () => {
        <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
          <span className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full">{activeStudent.stage}</span>
          <h3 className="text-2xl font-black text-slate-800 mt-3 mb-1">{activeStudent.studentName}</h3>
-         <p className="text-slate-450 text-xs mb-8">{activeStudent.churchName}</p>
+         <p className="text-slate-400 text-xs mb-8">{activeStudent.churchName}</p>
          
          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto mb-8">
            {COMPETITION_TYPES.map(type => {
@@ -1037,29 +1187,66 @@ export const LiveExamGateway: React.FC = () => {
              if (type === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) return null;
              if (type === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) return null;
              
+             const keyMapObj: Record<string, string> = {
+               'دراسي': 'derasy',
+               'محفوظات': 'mahfozat',
+               'قبطي مستوى أول': 'qebty_lvl1',
+               'قبطي مستوى ثاني': 'qebty_lvl2'
+             };
+             const subKey = keyMapObj[type];
+             const scoreField = SCORE_FIELD_MAP[type];
+             const fieldMap: Record<string, string> = {
+               'academicScore': 'academicScore',
+               'memorizationScore': 'memorizationScore',
+               'copticL1Score': 'copticL1Score',
+               'copticL2Score': 'copticL2Score'
+             };
+             const studentField = fieldMap[scoreField];
+             const isSaved = (subKey && completedSubjects[subKey] !== null) || (activeStudent[studentField] !== undefined && activeStudent[studentField] !== null);
+             
              return (
                <button
                  key={type}
                  onClick={() => startExam(type)}
-                 disabled={isLoading}
-                 className="p-6 bg-slate-50 border border-slate-200 rounded-2xl hover:border-indigo-500 hover:bg-indigo-50 transition-all"
+                 disabled={isLoading || isSaved}
+                 className={`p-6 border rounded-2xl transition-all ${
+                   isSaved 
+                     ? 'bg-emerald-50 border-emerald-300 opacity-80 cursor-not-allowed'
+                     : 'bg-slate-50 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50'
+                 }`}
                >
-                 <h5 className="font-black text-slate-800 text-lg mb-1">{type}</h5>
-                 <span className="text-xs text-indigo-500 font-bold block">اضغط لبدء رصد الامتحان</span>
+                 <h5 className={`font-black text-lg mb-1 ${isSaved ? 'text-emerald-800' : 'text-slate-800'}`}>{type}</h5>
+                 {isSaved ? (
+                   <span className="text-xs text-emerald-600 font-bold block">
+                     تم الحفظ بنجاح ✅
+                   </span>
+                 ) : (
+                   <span className="text-xs text-indigo-500 font-bold block">اضغط لبدء رصد الامتحان</span>
+                 )}
                </button>
              );
            })}
          </div>
-         
-         <button 
-           onClick={() => { 
-             localStorage.removeItem('active_student_id'); 
-             setActiveStudent(null); 
-           }} 
-           className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all font-sans"
-         >
-           إلغاء وخروج
-         </button>
+
+         <div className="flex flex-col max-w-xl mx-auto gap-4">
+           <button 
+             onClick={handleFinalSubmit}
+             disabled={isLoading}
+             className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-lg shadow-xl transition-all font-sans flex items-center justify-center gap-2"
+           >
+             إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام
+           </button>
+           
+           <button 
+             onClick={() => { 
+               localStorage.removeItem('active_student_id'); 
+               setActiveStudent(null); 
+             }} 
+             className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all font-sans"
+           >
+             إلغاء وخروج
+           </button>
+         </div>
        </div>
      );
   }
@@ -1161,7 +1348,7 @@ export const LiveExamGateway: React.FC = () => {
         ))}
         
         <button onClick={handleSubmit} className="w-full py-4 bg-indigo-600 hover:bg-indigo-755 text-white rounded-2xl font-black text-lg shadow-xl transition-all font-sans">
-          تأكيد وتسليم الامتحان بالكامل
+          تأكيد وحفظ المادة والعودة للرئيسية
         </button>
       </div>
     </div>
