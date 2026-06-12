@@ -4431,12 +4431,6 @@ function AppComponent() {
 
   return (
     <div className="min-h-screen bg-bg-soft font-sans selection:bg-accent/30 relative" dir="rtl">
-      {isQuotaExceeded && (
-        <div className="bg-amber-600 text-white py-3 px-4 text-center text-xs md:text-sm font-bold flex items-center justify-center gap-2 z-[999999] relative shadow-md" dir="rtl">
-          <span>⚠️</span>
-          <span>تنبيه: تم تجاوز الحد الأقصى لقراءة البيانات اليومية المجانية لقاعدة البيانات (Firestore Quota Limit Exceeded). يرجى المحاولة غداً أو لاحقاً.</span>
-        </div>
-      )}
       {/* Global Watermark */}
       <div 
         className="fixed inset-0 pointer-events-none z-0 opacity-[0.03]"
