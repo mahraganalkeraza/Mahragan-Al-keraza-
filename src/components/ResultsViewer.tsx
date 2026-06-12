@@ -40,12 +40,12 @@ export const ResultsViewer: React.FC<{
 
       if (data) {
         const mapped: Result[] = data.map((sbRow: any) => ({
-          id: sbRow.id,
+          id: sbRow.student_id || sbRow.id,
           studentName: sbRow.student_name,
           churchName: sbRow.church_name,
           stage: sbRow.stage,
           academicScore: sbRow.derasy_score ?? null,
-          memorizationScore: sbRow.mahfozat_score ?? null,
+          memorizationScore: sbRow.mahfouzat_score ?? sbRow.mahfozat_score ?? null,
           copticL1Score: sbRow.qebty_lvl1_score ?? null,
           copticL2Score: sbRow.qebty_lvl2_score ?? null,
           timestamp: sbRow.submitted_at || null,
@@ -100,7 +100,7 @@ export const ResultsViewer: React.FC<{
       const { error } = await supabase
         .from('exam_submissions')
         .delete()
-        .eq('id', id);
+        .eq('student_id', id);
 
       if (error) throw error;
 

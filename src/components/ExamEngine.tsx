@@ -782,12 +782,12 @@ export const LiveExamGateway: React.FC = () => {
       const { data: existingSub } = await supabase
         .from('exam_submissions')
         .select('*')
-        .eq('id', studentData.id)
+        .eq('student_id', studentData.id)
         .maybeSingle();
 
       if (existingSub) {
         studentData.academicScore = existingSub.derasy_score;
-        studentData.memorizationScore = existingSub.mahfozat_score;
+        studentData.memorizationScore = existingSub.mahfouzat_score ?? existingSub.mahfozat_score;
         studentData.copticL1Score = existingSub.qebty_lvl1_score;
         studentData.copticL2Score = existingSub.qebty_lvl2_score;
         studentData.detailed_answers = existingSub.detailed_answers;
@@ -1160,13 +1160,13 @@ export const LiveExamGateway: React.FC = () => {
       });
 
       const finalPayload = {
-        id: activeStudent.id,
+        student_id: activeStudent.id,
         student_name: activeStudent.studentName || activeStudent.name || 'بدون اسم',
         church_name: activeStudent.churchName || 'غير مكتمل',
-        stage: activeStudent.stage || 'عام',
+        stage: activeStudent.stage || 'ثالثة ورابعة',
         gender: activeStudent.gender || '',
         derasy_score: completedSubjects.derasy || 0,
-        mahfozat_score: completedSubjects.mahfozat || 0,
+        mahfouzat_score: completedSubjects.mahfozat || 0,
         qebty_lvl1_score: completedSubjects.qebty_lvl1 || 0,
         qebty_lvl2_score: completedSubjects.qebty_lvl2 || 0,
         detailed_answers: JSON.stringify(allCollectedAnswersArray),
@@ -1175,15 +1175,18 @@ export const LiveExamGateway: React.FC = () => {
 
       const { error: subErr } = await supabase
         .from('exam_submissions')
-        .upsert(finalPayload);
+        .insert(finalPayload);
 
       if (subErr) throw subErr;
+
+      // Clean up local storage trace for this specific student
+      localStorage.removeItem('exam_progress_' + activeStudent.id);
 
       await supabase
         .from('live_monitoring')
         .update({
           status: 'completed',
-          device_type: `أنهى الامتحان بالكامل`,
+          device_type: 'أنهى الامتحان بالكامل',
           updated_at: new Date().toISOString()
         })
         .eq('student_id', activeStudent.id);
@@ -1208,6 +1211,7 @@ export const LiveExamGateway: React.FC = () => {
         localStorage.removeItem(`exam_${activeStudent.id}_${type}`);
       }
 
+      // Purge all intermediate component states tracking answer indexes before success screen
       setAnswers({});
       setAllAnswers({});
       setCompletedSubjects({
@@ -1231,110 +1235,120 @@ export const LiveExamGateway: React.FC = () => {
 
   if (isExamCompleted) {
     return (
-      <div className="text-center p-12 bg-white border border-emerald-200 rounded-3xl shadow-xl overflow-hidden relative">
-        <div className="absolute top-0 inset-x-0 h-2 bg-emerald-500" />
-        <h2 className="text-3xl font-black mb-4 text-emerald-600">
-          {isAlreadyExamined ? 'لقد قمت بتسليم هذا الامتحان مسبقاً!' : 'تم استلام إجاباتك بنجاح!'}
-        </h2>
-        {score >= 0 && (
-          <div className="mb-6 mx-auto inline-block bg-emerald-50 px-6 py-2 rounded-xl border border-emerald-100">
-            <span className="font-bold text-emerald-800">الدرجة المسجلة: {score}</span>
-          </div>
-        )}
-        <p className="text-slate-600 font-bold mb-6">نتمنى لك التوفيق دائمًا.</p>
-        <button 
-          onClick={() => { 
-            localStorage.removeItem('active_student_id'); 
-            setIsExamCompleted(false); 
-            setIsAlreadyExamined(false); 
-            setActiveStudent(null); 
-            setActiveExam(null); 
-            setSelectedCompetition(null); 
-            setAnswers({});
-            setAllAnswers({});
-            setCompletedSubjects({
-              derasy: null,
-              mahfozat: null,
-              qebty_lvl1: null,
-              qebty_lvl2: null
-            });
-            setIsTerminated(false);
-          }} 
-          className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all font-sans"
-        >
-          خروج البوابة
-        </button>
+      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6" id="exam-completed-outer-container">
+        <div className="text-center p-12 bg-white border border-emerald-250 rounded-3xl shadow-xl overflow-hidden relative" id="exam-completed-card">
+          <div className="absolute top-0 inset-x-0 h-2 bg-emerald-500" />
+          <h2 className="text-3xl font-black mb-4 text-emerald-600" id="completed-header">
+            {isAlreadyExamined ? 'لقد قمت بتسليم هذا الامتحان مسبقاً!' : 'تم استلام إجاباتك بنجاح!'}
+          </h2>
+          {score >= 0 && (
+            <div className="mb-6 mx-auto inline-block bg-emerald-50 px-6 py-2 rounded-xl border border-emerald-100" id="score-display">
+              <span className="font-bold text-emerald-800">الدرجة المسجلة: {score}</span>
+            </div>
+          )}
+          <p className="text-slate-600 font-bold mb-6" id="completion-text-sub">نتمنى لك التوفيق دائمًا.</p>
+          <button 
+            id="exit-completion-btn"
+            onClick={() => { 
+              localStorage.removeItem('active_student_id'); 
+              setIsExamCompleted(false); 
+              setIsAlreadyExamined(false); 
+              setActiveStudent(null); 
+              setActiveExam(null); 
+              setSelectedCompetition(null); 
+              setAnswers({});
+              setAllAnswers({});
+              setCompletedSubjects({
+                derasy: null,
+                mahfozat: null,
+                qebty_lvl1: null,
+                qebty_lvl2: null
+              });
+              setIsTerminated(false);
+            }} 
+            className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all font-sans"
+          >
+            خروج البوابة
+          </button>
+        </div>
       </div>
     );
   }
 
   if (isTerminated) {
     return (
-      <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl overflow-hidden relative">
-        <div className="absolute top-0 inset-x-0 h-2 bg-rose-500" />
-        <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
-          <ShieldX size={48} />
+      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6" id="exam-terminated-outer-container">
+        <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl overflow-hidden relative" id="exam-terminated-card">
+          <div className="absolute top-0 inset-x-0 h-2 bg-rose-500" />
+          <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm" id="terminated-shield-container">
+            <ShieldX size={48} />
+          </div>
+          <h2 className="text-3xl font-black mb-4 text-slate-800" id="terminated-header">تم إنهاء وتجميد الجلسة</h2>
+          <p className="text-slate-450 font-medium mb-6 text-sm" id="terminated-subtext">تم قطع الاتصال وحظر هذا الجهاز من اللجان المركزية.</p>
+          <button 
+            id="terminated-exit-btn"
+            onClick={() => { 
+              localStorage.removeItem('active_student_id'); 
+              setIsTerminated(false); 
+              setActiveStudent(null); 
+              setActiveExam(null); 
+              setSelectedCompetition(null); 
+              setAnswers({});
+              setAllAnswers({});
+              setCompletedSubjects({
+                derasy: null,
+                mahfozat: null,
+                qebty_lvl1: null,
+                qebty_lvl2: null
+              });
+              setIsExamCompleted(false);
+            }} 
+            className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
+          >
+            خروج
+          </button>
         </div>
-        <h2 className="text-3xl font-black mb-4 text-slate-800">تم إنهاء وتجميد الجلسة</h2>
-        <p className="text-slate-450 font-medium mb-6 text-sm">تم قطع الاتصال وحظر هذا الجهاز من اللجان المركزية.</p>
-        <button 
-          onClick={() => { 
-            localStorage.removeItem('active_student_id'); 
-            setIsTerminated(false); 
-            setActiveStudent(null); 
-            setActiveExam(null); 
-            setSelectedCompetition(null); 
-            setAnswers({});
-            setAllAnswers({});
-            setCompletedSubjects({
-              derasy: null,
-              mahfozat: null,
-              qebty_lvl1: null,
-              qebty_lvl2: null
-            });
-            setIsExamCompleted(false);
-          }} 
-          className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
-        >
-          خروج
-        </button>
       </div>
     );
   }
 
   if (!activeStudent && !isScanning) {
     return (
-      <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
-        <h3 className="text-2xl font-black mb-2 text-slate-800">بوابة الامتحان الإلكتروني المحمية</h3>
-        <p className="text-xs text-slate-400 mb-6">بوابة رصد الأداء الفوري لشهادة الكرازة ٢٠٢٦</p>
-        
-        <div className="max-w-xs mx-auto space-y-4">
-          <button 
-            onClick={() => setIsScanning(true)} 
-            className="w-full px-8 py-4 bg-indigo-600 hover:bg-indigo-750 text-white rounded-2xl font-black shadow-lg transition-all"
-          >
-            مسح QR كود المشترك
-          </button>
+      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6 animate-fade-in" id="gate-login-outer-container">
+        <div className="text-center p-10 bg-white border border-slate-200 rounded-3xl shadow-xl" id="gate-login-card">
+          <h3 className="text-2xl font-black mb-2 text-slate-800" id="gate-main-heading">بوابة الامتحان الإلكتروني المحمية</h3>
+          <p className="text-xs text-slate-400 mb-6" id="gate-sub-heading">بوابة رصد الأداء الفوري لشهادة الكرازة ٢٠٢٦</p>
           
-          <div className="flex gap-2">
-            <input 
-              type="text" 
-              placeholder="اكتب رقمك الكودي يدويًا..."
-              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none text-center font-bold text-sm"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') fetchStudentAndExam((e.target as HTMLInputElement).value);
-              }}
-              id="manual-student-id"
-            />
+          <div className="max-w-xs mx-auto space-y-4" id="login-interactive-block">
             <button 
-              onClick={() => {
-                const input = document.getElementById('manual-student-id') as HTMLInputElement;
-                if (input?.value) fetchStudentAndExam(input.value);
-              }}
-              className="px-4 py-3 bg-indigo-100 text-indigo-600 rounded-xl font-black font-sans text-sm hover:bg-indigo-200"
+              id="start-camera-scan-btn"
+              onClick={() => setIsScanning(true)} 
+              className="w-full px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black shadow-lg transition-all"
             >
-              دخول
+              مسح QR كود المشترك
             </button>
+            
+            <div className="flex gap-2" id="manual-login-input-row">
+              <input 
+                type="text" 
+                placeholder="اكتب رقمك الكودي يدويًا..."
+                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none text-center font-bold text-sm text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:bg-white"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') fetchStudentAndExam((e.target as HTMLInputElement).value);
+                }}
+                id="manual-student-id"
+              />
+              <button 
+                id="manual-student-submit-btn"
+                onClick={() => {
+                  const input = document.getElementById('manual-student-id') as HTMLInputElement;
+                  if (input?.value) fetchStudentAndExam(input.value);
+                }}
+                className="px-4 py-3 bg-indigo-100 text-indigo-600 rounded-xl font-black font-sans text-sm hover:bg-indigo-200 transition-colors"
+              >
+                دخول
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1343,93 +1357,116 @@ export const LiveExamGateway: React.FC = () => {
 
   if (!activeStudent && isScanning) {
     return (
-      <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
-        <h3 className="text-2xl font-black mb-6 text-slate-800">توجيه الكاميرا نحو باركود الطالب</h3>
-        <div className="max-w-md mx-auto aspect-square rounded-2xl overflow-hidden bg-slate-900 border-4 border-slate-100 shadow-inner mb-6 relative">
-          <QRScanner onScanSuccess={(id) => fetchStudentAndExam(id)} />
+      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6" id="gate-scanning-outer-container">
+        <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center" id="gate-scanning-card">
+          <h3 className="text-2xl font-black mb-6 text-slate-800" id="scanning-heading">توجيه الكاميرا نحو باركود الطالب</h3>
+          <div className="max-w-md mx-auto aspect-square rounded-2xl overflow-hidden bg-slate-900 border-4 border-slate-100 shadow-inner mb-6 relative" id="qr-camera-frame">
+            <QRScanner onScanSuccess={(id) => fetchStudentAndExam(id)} />
+          </div>
+          <button 
+            id="cancel-scanner-btn"
+            onClick={() => setIsScanning(false)}
+            className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
+          >
+            إلغاء وتراجع
+          </button>
         </div>
-        <button 
-          onClick={() => setIsScanning(false)}
-          className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
-        >
-          إلغاء وتراجع
-        </button>
       </div>
     );
   }
 
   if (activeStudent && !selectedCompetition) {
      return (
-       <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center">
-         <span className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full">{activeStudent.stage}</span>
-         <h3 className="text-2xl font-black text-slate-800 mt-3 mb-1">{activeStudent.studentName}</h3>
-         <p className="text-slate-400 text-xs mb-8">{activeStudent.churchName}</p>
-         
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto mb-8">
-           {COMPETITION_TYPES.map(type => {
-             // Basic criteria validation
-             if (type === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) return null;
-             if (type === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) return null;
-             
-             const keyMapObj: Record<string, string> = {
-               'دراسي': 'derasy',
-               'محفوظات': 'mahfozat',
-               'قبطي مستوى أول': 'qebty_lvl1',
-               'قبطي مستوى ثاني': 'qebty_lvl2'
-             };
-             const subKey = keyMapObj[type];
-             const scoreField = SCORE_FIELD_MAP[type];
-             const fieldMap: Record<string, string> = {
-               'academicScore': 'academicScore',
-               'memorizationScore': 'memorizationScore',
-               'copticL1Score': 'copticL1Score',
-               'copticL2Score': 'copticL2Score'
-             };
-             const studentField = fieldMap[scoreField];
-             const isSaved = (subKey && completedSubjects[subKey] !== null) || (activeStudent[studentField] !== undefined && activeStudent[studentField] !== null);
-             
-             return (
-               <button
-                 key={type}
-                 onClick={() => startExam(type)}
-                 disabled={isLoading || isSaved}
-                 className={`p-6 border rounded-2xl transition-all ${
-                   isSaved 
-                     ? 'bg-emerald-50 border-emerald-300 opacity-80 cursor-not-allowed'
-                     : 'bg-slate-50 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50'
-                 }`}
-               >
-                 <h5 className={`font-black text-lg mb-1 ${isSaved ? 'text-emerald-800' : 'text-slate-800'}`}>{type}</h5>
-                 {isSaved ? (
-                   <span className="text-xs text-emerald-600 font-bold block">
-                     تم الحفظ بنجاح ✅
-                   </span>
-                 ) : (
-                   <span className="text-xs text-indigo-500 font-bold block">اضغط لبدء رصد الامتحان</span>
-                 )}
-               </button>
-             );
-           })}
-         </div>
-
-         <div className="flex flex-col max-w-xl mx-auto gap-4">
-           <button 
-             onClick={handleFinalSubmit}
-             disabled={isLoading}
-             className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-lg shadow-xl transition-all font-sans flex items-center justify-center gap-2"
-           >
-             إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام
-           </button>
+       <div className="w-full max-w-2xl mx-auto pt-20 mt-20 pb-8 px-4 sm:px-6 safe-top safe-bottom" id="student-selection-outer-container">
+         <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center" id="student-selection-card">
            
-           <button 
-             onClick={() => { 
-               localStorage.removeItem('active_student_id'); 
-               setActiveStudent(null); 
-             }} 
-             className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all font-sans"
-           >
-             إلغاء وخروج
-           </button>
+           {/* Section 2: METADATA STYLING UPGRADE - prominent and centered */}
+           <div className="w-full text-center py-4 px-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-600 mb-6 shadow-sm flex flex-col items-center justify-center gap-1.5 animate-fade-in" id="live-exam-metadata-upgrade">
+             <div className="flex flex-wrap items-center justify-center gap-2">
+               <span className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full border border-indigo-150" id="badge-stage">
+                 {activeStudent.stage}
+               </span>
+               <span className="text-emerald-700 text-xs font-black bg-emerald-50 px-3 py-1 rounded-full border border-emerald-150" id="badge-church">
+                 كنيسة {activeStudent.churchName}
+               </span>
+             </div>
+             <h3 className="text-2xl font-black text-slate-800 tracking-tight mt-1" id="student-name-text">
+               المشترك: <span className="text-indigo-600">{activeStudent.studentName}</span>
+             </h3>
+             <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider" id="student-meta-details-sub">
+               المشترك النشط بالبوابة الرقمية • كود خاص: <span className="font-mono text-indigo-500 font-black">{activeStudent.id}</span>
+             </p>
+           </div>
+           
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto mb-8" id="competition-choices-grid">
+             {COMPETITION_TYPES.map(type => {
+               // Basic criteria validation
+               if (type === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) return null;
+               if (type === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) return null;
+               
+               const keyMapObj: Record<string, string> = {
+                 'دراسي': 'derasy',
+                 'محفوظات': 'mahfozat',
+                 'قبطي مستوى أول': 'qebty_lvl1',
+                 'قبطي مستوى ثاني': 'qebty_lvl2'
+               };
+               const subKey = keyMapObj[type];
+               const scoreField = SCORE_FIELD_MAP[type];
+               const fieldMap: Record<string, string> = {
+                 'academicScore': 'academicScore',
+                 'memorizationScore': 'memorizationScore',
+                 'copticL1Score': 'copticL1Score',
+                 'copticL2Score': 'copticL2Score'
+               };
+               const studentField = fieldMap[scoreField];
+               const isSaved = (subKey && completedSubjects[subKey] !== null) || (activeStudent[studentField] !== undefined && activeStudent[studentField] !== null);
+               
+               return (
+                 <button
+                   key={type}
+                   id={`competition-btn-${subKey}`}
+                   onClick={() => startExam(type)}
+                   disabled={isLoading || isSaved}
+                   className={`p-6 border rounded-2xl transition-all ${
+                     isSaved 
+                       ? 'bg-emerald-50 border-emerald-300 opacity-80 cursor-not-allowed'
+                       : 'bg-slate-50 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 hover:shadow-md'
+                   }`}
+                 >
+                   <h5 className={`font-black text-lg mb-1 ${isSaved ? 'text-emerald-800' : 'text-slate-800'}`}>{type}</h5>
+                   {isSaved ? (
+                     <span className="text-xs text-emerald-600 font-bold block">
+                       تم الحفظ بنجاح ✅
+                     </span>
+                   ) : (
+                     <span className="text-xs text-indigo-500 font-bold block">اضغط لبدء رصد الامتحان</span>
+                   )}
+                 </button>
+               );
+             })}
+           </div>
+
+           <div className="flex flex-col max-w-xl mx-auto gap-4" id="portal-actions-block">
+             <button 
+               id="final-exam-submit-btn"
+               onClick={handleFinalSubmit}
+               disabled={isLoading}
+               className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-emerald-900/40 transition-all font-sans flex items-center justify-center gap-2"
+             >
+               إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام
+             </button>
+             
+             <button 
+               id="cancel-exam-exit-btn"
+               onClick={() => { 
+                 localStorage.removeItem('active_student_id'); 
+                 setActiveStudent(null); 
+               }} 
+               className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all font-sans"
+             >
+               إلغاء وخروج
+             </button>
+           </div>
          </div>
        </div>
      );
@@ -1437,103 +1474,117 @@ export const LiveExamGateway: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl">
-        <Loader2 className="animate-spin text-indigo-600 mx-auto" size={48} />
-        <p className="mt-4 text-slate-500 font-bold">جاري تحميل أسئلة وتهيئة امتحان {selectedCompetition}...</p>
+      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6" id="live-loader-outer-container">
+        <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl" id="loader-card">
+          <Loader2 className="animate-spin text-indigo-600 mx-auto" size={48} id="loader-spin-icon" />
+          <p className="mt-4 text-slate-500 font-bold" id="loader-text-status">جاري تحميل أسئلة وتهيئة امتحان {selectedCompetition}...</p>
+        </div>
       </div>
     );
   }
 
   if (!activeExam || !activeExam.questions || activeExam.questions.length === 0) {
     return (
-      <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl">
-        <ShieldX className="text-rose-500 mx-auto mb-4" size={48} />
-        <p className="text-slate-700 font-bold">عذراً، لم تضع اللجنة أي أسئلة مسبقة لهذا النموذج حاليًا.</p>
-        <button 
-          onClick={() => { 
-            setActiveExam(null); 
-            setSelectedCompetition(null); 
-          }} 
-          className="mt-6 px-6 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors font-sans"
-        >
-          عودة للاختيار
-        </button>
+      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6" id="no-exam-questions-outer-container">
+        <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl" id="no-exam-card">
+          <ShieldX className="text-rose-500 mx-auto mb-4" size={48} />
+          <p className="text-slate-700 font-bold" id="no-exam-text-msg">عذراً، لم تضع اللجنة أي أسئلة مسبقة لهذا النموذج حاليًا.</p>
+          <button 
+            id="return-selector-btn"
+            onClick={() => { 
+              setActiveExam(null); 
+              setSelectedCompetition(null); 
+            }} 
+            className="mt-6 px-6 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors font-sans"
+          >
+            عودة للاختيار
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
-      <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto">
-        <div className="border-b pb-4">
-          <span className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full">امتحان {selectedCompetition}</span>
-          <h4 className="text-xl font-black mt-2 text-slate-850">أجب عن كافة الأسئلة بدقة بالغة</h4>
-        </div>
-        
-        {activeExam.questions.map((q, qIdx) => (
-          <div key={q.id} className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-            <h4 className="text-lg font-black mb-4 text-slate-800">{qIdx + 1}. {q.text}</h4>
-            
-            {(q.type === 'mcq' || q.type === 'boolean') && (
-              <div className="space-y-3">
-                {q.options.map((opt, oIndex) => (
-                    <label key={oIndex} className="flex items-center gap-3 p-4 rounded-xl border border-slate-205 cursor-pointer hover:bg-white transition-all bg-slate-100">
-                      <input 
-                        type="radio"
-                        name={`q_ans_${q.id}`}
-                        checked={answers[q.id] === opt}
-                        onChange={() => handleAnswer(q.id, opt)}
-                        className="w-5 h-5 accent-indigo-600"
-                      />
-                      <span className="font-bold text-slate-700">{opt}</span>
-                    </label>
-                ))}
-              </div>
-            )}
-
-            {q.type === 'fill' && (
-              <input 
-                type="text"
-                placeholder="اكتب إجابتك هنا..."
-                value={answers[q.id] || ''}
-                onChange={(e) => handleAnswer(q.id, e.target.value)}
-                className="w-full px-4 py-3 border rounded-xl bg-white focus:ring-1 focus:ring-indigo-500 font-bold outline-none"
-              />
-            )}
-
-            {q.type === 'matching' && q.matchingPairs && (
-              <div className="space-y-3">
-                <p className="text-xs text-slate-400 mb-2">اختر الإقران الصحيح لكل عنصر من القائمة اليسرى:</p>
-                {q.matchingPairs.map((pair, pIdx) => {
-                  const currentListAnswers = answers[q.id] || {};
-                  return (
-                    <div key={pIdx} className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl">
-                      <span className="font-bold text-slate-700 text-sm">{pair.left}</span>
-                      <span className="text-slate-300 text-center hidden sm:block">↔</span>
-                      <select 
-                        value={currentListAnswers[pIdx] || ''}
-                        onChange={(e) => {
-                          const nextList = { ...currentListAnswers, [pIdx]: e.target.value };
-                          handleAnswer(q.id, nextList);
-                        }}
-                        className="px-3 py-2 border rounded-lg bg-white font-bold text-xs"
-                      >
-                        <option value="">اختر المطابقة الصحيحة...</option>
-                        {(q as any).shuffledRights?.map((rItem: string, rIdx: number) => (
-                          <option key={rIdx} value={rItem}>{rItem}</option>
-                        ))}
-                      </select>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+    <div className="w-full max-w-3xl mx-auto pt-20 mt-20 pb-8 px-4 sm:px-6 safe-top safe-bottom animate-fade-in" id="active-exam-questions-outer-container">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden" id="active-exam-questions-card">
+        <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto" id="active-exam-scroll-area">
+          <div className="border-b pb-4" id="active-exam-card-header">
+            <span className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full" id="active-exam-badge">امتحان {selectedCompetition}</span>
+            <h4 className="text-xl font-black mt-2 text-slate-850" id="active-exam-card-title">أجب عن كافة الأسئلة بدقة بالغة</h4>
           </div>
-        ))}
-        
-        <button onClick={handleSubmit} className="w-full py-4 bg-indigo-600 hover:bg-indigo-755 text-white rounded-2xl font-black text-lg shadow-xl transition-all font-sans">
-          تأكيد وحفظ المادة والعودة للرئيسية
-        </button>
+          
+          {activeExam.questions.map((q, qIdx) => (
+            <div key={q.id} className="p-6 bg-slate-50 rounded-2xl border border-slate-100" id={`question-block-${q.id}`}>
+              <h4 className="text-lg font-black mb-4 text-slate-800">{qIdx + 1}. {q.text}</h4>
+              
+              {(q.type === 'mcq' || q.type === 'boolean') && (
+                <div className="space-y-3" id={`answers-grp-${q.id}`}>
+                  {q.options.map((opt, oIndex) => (
+                      <label key={oIndex} className="flex items-center gap-3 p-4 rounded-xl border border-slate-205 cursor-pointer hover:bg-white transition-all bg-slate-100" id={`label-${q.id}-${oIndex}`}>
+                        <input 
+                          type="radio"
+                          name={`q_ans_${q.id}`}
+                          id={`radio-${q.id}-${oIndex}`}
+                          checked={answers[q.id] === opt}
+                          onChange={() => handleAnswer(q.id, opt)}
+                          className="w-5 h-5 accent-indigo-600"
+                        />
+                        <span className="font-bold text-slate-700">{opt}</span>
+                      </label>
+                  ))}
+                </div>
+              )}
+
+              {q.type === 'fill' && (
+                <input 
+                  type="text"
+                  id={`input-fill-${q.id}`}
+                  placeholder="اكتب إجابتك هنا..."
+                  value={answers[q.id] || ''}
+                  onChange={(e) => handleAnswer(q.id, e.target.value)}
+                  className="w-full px-4 py-3 border rounded-xl bg-white focus:ring-1 focus:ring-indigo-500 font-bold outline-none text-slate-850"
+                />
+              )}
+
+              {q.type === 'matching' && q.matchingPairs && (
+                <div className="space-y-3" id={`matching-grp-${q.id}`}>
+                  <p className="text-xs text-slate-400 mb-2">اختر الإقران الصحيح لكل عنصر من القائمة اليسرى:</p>
+                  {q.matchingPairs.map((pair, pIdx) => {
+                    const currentListAnswers = answers[q.id] || {};
+                    return (
+                      <div key={pIdx} className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl" id={`matching-pair-${q.id}-${pIdx}`}>
+                        <span className="font-bold text-slate-700 text-sm">{pair.left}</span>
+                        <span className="text-slate-300 text-center hidden sm:block">↔</span>
+                        <select 
+                          id={`select-match-${q.id}-${pIdx}`}
+                          value={currentListAnswers[pIdx] || ''}
+                          onChange={(e) => {
+                            const nextList = { ...currentListAnswers, [pIdx]: e.target.value };
+                            handleAnswer(q.id, nextList);
+                          }}
+                          className="px-3 py-2 border rounded-lg bg-white font-bold text-xs text-slate-700"
+                        >
+                          <option value="">اختر المطابقة الصحيحة...</option>
+                          {(q as any).shuffledRights?.map((rItem: string, rIdx: number) => (
+                            <option key={rIdx} value={rItem}>{rItem}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+          
+          <button 
+            id="submit-exam-section-btn"
+            onClick={handleSubmit} 
+            className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-lg shadow-xl transition-all font-sans"
+          >
+            تأكيد وحفظ المادة والعودة للرئيسية
+          </button>
+        </div>
       </div>
     </div>
   );
