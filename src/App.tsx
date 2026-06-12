@@ -4423,7 +4423,13 @@ function AppComponent() {
     </AnimatePresence>
   );
 
-  if (activeSection === 'exam-login') {
+  useEffect(() => {
+    if (activeSection === 'exam-login' && userRole !== 'admin' && userRole !== 'super_admin') {
+      setActiveSection('home');
+    }
+  }, [activeSection, userRole]);
+
+  if (activeSection === 'exam-login' && (userRole === 'admin' || userRole === 'super_admin')) {
     return (
       <ExamLoginPortal />
     );
