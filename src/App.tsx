@@ -1597,6 +1597,51 @@ function AppComponent() {
           }
         }, (error) => {
           console.error("Error watching user profile:", error);
+          const errMsg = String(error).toLowerCase();
+          const isQuota = errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('limit exceeded') || errMsg.includes('exhausted');
+          if (isQuota) {
+            (window as any).firestoreQuotaExceeded = true;
+            window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+          }
+
+          // Let's recover! Try to read from localStorage profile cache:
+          const cachedProfileStr = localStorage.getItem('userProfileCache');
+          if (cachedProfileStr) {
+            try {
+              const profile = JSON.parse(cachedProfileStr);
+              setUserProfile(profile);
+              setUserRole(profile.role);
+              setChurchName(profile.churchName || '');
+              setLocation(profile.country || '');
+              setDashboardBg(profile.dashboardBg || '');
+              setIsLoggedIn(true);
+            } catch (e) {
+              console.error("Local profile cache parse failed:", e);
+            }
+          } else if (firebaseUser.email) {
+            // No cache? Re-construct from current user's email
+            let role: 'admin' | 'church' = 'church';
+            let matchedChurchName = 'كنيسة';
+            if (firebaseUser.email === 'admin@mafk.com' || firebaseUser.email === 'mahraganalkeraza7esoyam@gmail.com') {
+              role = 'admin';
+              matchedChurchName = 'اللجنة المركزية منطقة18';
+            } else if (firebaseUser.email.endsWith('_2026@mafk.com')) {
+              const slug = firebaseUser.email.replace('_2026@mafk.com', '');
+              matchedChurchName = [...Object.keys(CHURCH_CREDENTIALS)].find(c => encodeURIComponent(c).replace(/%/g, '').toLowerCase() === slug.toLowerCase()) || 'كنيسة';
+            }
+            const profile = {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              role,
+              churchName: matchedChurchName,
+              dashboardBg: '',
+              isLocalFallback: true
+            };
+            setUserProfile(profile);
+            setUserRole(role);
+            setChurchName(matchedChurchName);
+            setIsLoggedIn(true);
+          }
           setIsAuthReady(true);
         });
       } else {
@@ -3087,12 +3132,38 @@ function AppComponent() {
       }
     }
 
+    // Check if Firestore quota is already exceeded
+    if ((window as any).firestoreQuotaExceeded) {
+      console.warn("Firestore limit exceeded! Logging in via local churches.json validation.");
+      const localProfile = {
+        uid: `local_${encodeURIComponent(targetChurch).replace(/%/g, '').toLowerCase()}`,
+        email,
+        role,
+        churchName: targetChurch,
+        dashboardBg: '',
+        isLocalFallback: true
+      };
+      setChurchName(targetChurch);
+      setUserRole(role);
+      setUserProfile(localProfile);
+      localStorage.setItem('userProfileCache', JSON.stringify(localProfile));
+      setIsLoggedIn(true);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       let firebaseUser;
       try {
         const result = await signInWithEmailAndPassword(auth, email, password);
         firebaseUser = result.user;
       } catch (error: any) {
+        const errMsg = String(error).toLowerCase();
+        const isQuotaErr = errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('limit exceeded') || errMsg.includes('exhausted');
+        if (isQuotaErr) {
+          throw error; // Let the outer catch handle and log in locally
+        }
+
         // If user doesn't exist, create them (first time login)
         if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/invalid-email') {
           try {
@@ -3132,17 +3203,44 @@ function AppComponent() {
           setChurchName(cName);
           setUserRole(role as 'admin' | 'church');
           setUserProfile(profile);
+          localStorage.setItem('userProfileCache', JSON.stringify(profile));
           setIsLoggedIn(true);
         } else {
           const profile = userDoc.data();
           setChurchName(profile?.churchName || '');
           setUserRole(profile?.role || 'church');
           setUserProfile(profile || null);
+          localStorage.setItem('userProfileCache', JSON.stringify(profile));
           setIsLoggedIn(true);
         }
       }
       setIsLoading(false);
     } catch (error: any) {
+      const errMsg = String(error).toLowerCase();
+      const isQuotaErr = errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('limit exceeded') || errMsg.includes('exhausted');
+
+      if (isQuotaErr) {
+        console.warn("Firestore Limit Exceeded caught during live login attempt! Logging in via local validation.");
+        (window as any).firestoreQuotaExceeded = true;
+        window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+
+        const localProfile = {
+          uid: `local_${encodeURIComponent(targetChurch).replace(/%/g, '').toLowerCase()}`,
+          email,
+          role,
+          churchName: targetChurch,
+          dashboardBg: '',
+          isLocalFallback: true
+        };
+        setChurchName(targetChurch);
+        setUserRole(role);
+        setUserProfile(localProfile);
+        localStorage.setItem('userProfileCache', JSON.stringify(localProfile));
+        setIsLoggedIn(true);
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(false);
       if (error.code === 'auth/wrong-password') {
         setLoginError('الكود غير صحيح');
