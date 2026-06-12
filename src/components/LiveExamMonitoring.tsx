@@ -18,7 +18,7 @@ export const LiveExamMonitoring: React.FC<{
     try {
       const query = supabase.from('registrations').select('*', { count: 'exact', head: true });
       if (globalChurchFilter !== 'الكل') {
-        query.eq('church_name', globalChurchFilter);
+        query.eq('churchName', globalChurchFilter);
       }
       const { count, error } = await query;
       if (error) throw error;

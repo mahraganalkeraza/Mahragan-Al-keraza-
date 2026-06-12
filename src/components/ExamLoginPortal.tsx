@@ -87,16 +87,19 @@ export const ExamLoginPortal: React.FC = () => {
       // 2. Fetch Student Registrations from Supabase
       const { data: sbSubmissions, error: sbSubmissionsError } = await supabase
         .from('registrations')
-        .select('id, student_name, stage, church_name, gender, status');
+        .select('id, name, stage, churchName, gender');
 
       if (sbSubmissionsError) throw sbSubmissionsError;
 
       const mappedParticipants: Participant[] = (sbSubmissions || []).map((sbRow: any) => ({
         id: sbRow.id,
-        name: sbRow.student_name || '',
+        name: sbRow.name || '',
         stage: sbRow.stage || '',
-        churchName: sbRow.church_name || '',
-        serial: sbRow.id
+        churchName: sbRow.churchName || '',
+        serial: sbRow.id,
+        country: 'مصر',
+        competitions: sbRow.competitions || [],
+        timestamp: sbRow.timestamp || new Date().toISOString()
       }));
 
       // 3. Fast count exact total live registered count

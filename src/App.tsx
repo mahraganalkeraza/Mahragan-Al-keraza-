@@ -75,6 +75,7 @@ import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
 import { ExamLoginPortal } from './components/ExamLoginPortal';
+import { supabase } from './lib/supabaseClient';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore - html2pdf.js doesn't have great types but works
 import html2pdf from 'html2pdf.js';
@@ -941,6 +942,7 @@ function AppComponent() {
   const [allChurchParticipants, setAllChurchParticipants] = useState<Participant[]>([]);
   const [firestoreParticipants, setFirestoreParticipants] = useState<Participant[]>([]);
   const [rdbParticipants, setRdbParticipants] = useState<Participant[]>([]);
+  const [supabaseParticipants, setSupabaseParticipants] = useState<Participant[]>([]);
   const [totalParticipantsCount, setTotalParticipantsCount] = useState<number>(0);
   const [totalOrdersCount, setTotalOrdersCount] = useState<number>(0);
   const [totalTeamsCount, setTotalTeamsCount] = useState<number>(0);
@@ -2621,9 +2623,105 @@ function AppComponent() {
     await generateMasterExcel(userRole === 'admin' ? null : churchName);
   };
 
+  const fetchSupabaseParticipants = async () => {
+    try {
+      let query = supabase.from('registrations').select('*');
+      if (userRole !== 'admin' && churchName) {
+        query = query.eq('churchName', churchName);
+      }
+      const { data, error } = await query;
+      if (error) throw error;
+      
+      const mapped: Participant[] = (data || []).map((p: any) => ({
+        id: p.id,
+        serial: p.id,
+        name: p.name || '',
+        churchName: p.churchName || '',
+        stage: p.stage || '',
+        gender: p.gender || '',
+        competitions: p.competitions || [],
+        timestamp: p.timestamp || new Date().toISOString(),
+        country: p.country || 'مصر'
+      }));
+      setSupabaseParticipants(mapped);
+    } catch (e) {
+      console.error("Error fetching Supabase participants:", e);
+    }
+  };
+
+  useEffect(() => {
+    const handleQuotaExceeded = () => {
+      fetchSupabaseParticipants();
+      if (isLoggedIn) {
+        fetchParticipantsPage(true, true, debouncedParticipantSearch);
+      }
+    };
+
+    window.addEventListener('firestore-quota-exceeded', handleQuotaExceeded);
+    
+    // If it's already flagged on mount
+    if ((window as any).firestoreQuotaExceeded) {
+      handleQuotaExceeded();
+    }
+
+    return () => {
+      window.removeEventListener('firestore-quota-exceeded', handleQuotaExceeded);
+    };
+  }, [isLoggedIn, userRole, churchName, debouncedParticipantSearch]);
+
   const fetchParticipantsPage = async (isNext = true, isFirst = false, search = '') => {
     if (!isLoggedIn) return;
     setIsParticipantsLoading(true);
+
+    if ((window as any).firestoreQuotaExceeded) {
+      console.warn("Firestore quota exceeded! Loading participants page from Supabase 'registrations'...");
+      try {
+        let query = supabase.from('registrations').select('*');
+        
+        // Admin Church Filter
+        if (userRole === 'admin') {
+          if (partChurchFilter !== 'الكل') {
+            query = query.eq('churchName', partChurchFilter);
+          }
+        } else {
+          query = query.eq('churchName', churchName);
+        }
+
+        // Stage Filter
+        if (partStageFilter !== 'الكل') {
+          query = query.eq('stage', partStageFilter);
+        }
+
+        // Name Search Filter
+        if (search) {
+          query = query.ilike('name', `%${search}%`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const mapped: Participant[] = (data || []).map((p: any) => ({
+          id: p.id,
+          serial: p.id,
+          name: p.name || '',
+          churchName: p.churchName || '',
+          stage: p.stage || '',
+          gender: p.gender || '',
+          competitions: p.competitions || [],
+          timestamp: p.timestamp || new Date().toISOString(),
+          country: p.country || 'مصر'
+        }));
+
+        setParticipants(mapped);
+        setTotalParticipantsCount(mapped.length);
+        setIsParticipantsEnd(true);
+        setIsParticipantsLoading(false);
+        return;
+      } catch (err: any) {
+        console.error("Supabase load participants error: ", err.message);
+      }
+    }
+
     try {
       let baseQueryQ = collection(db, 'participants');
       const constraints: any[] = [where('year', '==', activeYear)];
@@ -2680,6 +2778,11 @@ function AppComponent() {
 
   const fetchAllChurchParticipants = async () => {
       if (!isLoggedIn) return;
+      if ((window as any).firestoreQuotaExceeded) {
+         console.warn("Firestore Quota Exceeded! Bypassing fetchAllChurchParticipants to fetchSupabaseParticipants.");
+         await fetchSupabaseParticipants();
+         return;
+      }
       try {
         let baseQueryQ = collection(db, 'participants');
         const constraints: any[] = [where('year', '==', activeYear)];
@@ -3338,7 +3441,38 @@ function AppComponent() {
                year: activeYear
              };
              const customId = generateShortId();
-             await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...newParticipant, serial: customId }));
+             let savedToFirestore = false;
+             if (!(window as any).firestoreQuotaExceeded) {
+               try {
+                 await withExponentialBackoff(() => setDoc(doc(db, 'participants', customId), { ...newParticipant, serial: customId }));
+                 savedToFirestore = true;
+               } catch (error) {
+                 const errMsg = String(error).toLowerCase();
+                 if (errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('limit exceeded') || errMsg.includes('exhausted')) {
+                   (window as any).firestoreQuotaExceeded = true;
+                   window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+                 } else {
+                   throw error;
+                 }
+               }
+             }
+
+             if (!savedToFirestore) {
+               console.warn("Directing registration data to Supabase 'registrations' table due to active Firestore Limit/Quota exhaustion.");
+               const { error: sbErr } = await supabase
+                 .from('registrations')
+                 .upsert({
+                   id: customId,
+                   name: newParticipant.name,
+                   churchName: newParticipant.churchName,
+                   stage: newParticipant.stage,
+                   gender: newParticipant.gender,
+                   competitions: newParticipant.competitions || [],
+                    country: newParticipant.country || 'مصر',
+                    timestamp: new Date().toISOString()
+                 });
+               if (sbErr) console.error("Supabase auto-registration save failed:", sbErr);
+             }
              
              // Instant state sync for newly added student from activity
              const newStudent: Participant = {
@@ -3565,8 +3699,38 @@ function AppComponent() {
           timestamp: new Date().toLocaleString('ar-EG')
         };
         
-        // Update in Firebase Firestore
-        await setDoc(doc(db, 'participants', editingParticipant.id), updatedFields, { merge: true });
+        let savedToFirestore = false;
+        if (!(window as any).firestoreQuotaExceeded) {
+          try {
+            await setDoc(doc(db, 'participants', editingParticipant.id), updatedFields, { merge: true });
+            savedToFirestore = true;
+          } catch (error) {
+            const errMsg = String(error).toLowerCase();
+            if (errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('limit exceeded') || errMsg.includes('exhausted')) {
+              (window as any).firestoreQuotaExceeded = true;
+              window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        if (!savedToFirestore) {
+          console.warn("Diverting participant update to Supabase registrations table...");
+          const { error: sbErr } = await supabase
+            .from('registrations')
+            .upsert({
+              id: editingParticipant.id,
+              name: updatedFields.name,
+              churchName: editingParticipant.churchName || churchName,
+              stage: updatedFields.stage,
+              gender: updatedFields.gender,
+              competitions: updatedFields.competitions || [],
+              country: editingParticipant.country || 'مصر',
+              timestamp: new Date().toISOString()
+            });
+          if (sbErr) console.error("Supabase edit participant save failed:", sbErr);
+        }
         
         // Instant state sync for edit
         const updatedParticipant: Participant = {
@@ -3593,7 +3757,38 @@ function AppComponent() {
           timestamp: new Date().toISOString()
         };
 
-        await setDoc(doc(db, 'participants', customId), newRecord);
+        let savedToFirestore = false;
+        if (!(window as any).firestoreQuotaExceeded) {
+          try {
+            await setDoc(doc(db, 'participants', customId), newRecord);
+            savedToFirestore = true;
+          } catch (error) {
+            const errMsg = String(error).toLowerCase();
+            if (errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota') || errMsg.includes('limit exceeded') || errMsg.includes('exhausted')) {
+              (window as any).firestoreQuotaExceeded = true;
+              window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+            } else {
+              throw error;
+            }
+          }
+        }
+
+        if (!savedToFirestore) {
+          console.warn("Diverting new participant create to Supabase registrations table...");
+          const { error: sbErr } = await supabase
+            .from('registrations')
+            .upsert({
+              id: customId,
+              name: newRecord.name,
+              churchName: newRecord.churchName,
+              stage: newRecord.stage,
+              gender: newRecord.gender,
+              competitions: newRecord.competitions || [],
+              country: newRecord.country || 'مصر',
+              timestamp: newRecord.timestamp || new Date().toISOString()
+            });
+          if (sbErr) console.error("Supabase create participant save failed:", sbErr);
+        }
         
         // Instant state sync for adding a new student
         const newStudent: Participant = newRecord as any as Participant;

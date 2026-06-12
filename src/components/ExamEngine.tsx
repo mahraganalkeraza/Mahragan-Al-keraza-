@@ -639,12 +639,12 @@ export const LiveExamGateway: React.FC = () => {
       if (studentObj) {
         studentData = {
           id: studentObj.id,
-          studentName: studentObj.student_name || studentObj.name || studentNameFromPayload || 'طالب',
-          churchName: studentObj.church_name || studentObj.church || 'غير محدد',
+          studentName: studentObj.name || studentObj.student_name || studentNameFromPayload || 'طالب',
+          churchName: studentObj.churchName || studentObj.church || studentObj.church_name || 'غير محدد',
           stage: studentObj.stage || 'عام',
           gender: studentObj.gender || '',
           coptic_level: studentObj.coptic_level ?? null,
-          enrolled_subjects: studentObj.enrolled_subjects ?? null
+          enrolled_subjects: (studentObj.competitions || studentObj.enrolled_subjects) ?? null
         };
       } else {
         // Fallback for demo/manual admin bypass
