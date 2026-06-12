@@ -101,12 +101,11 @@ const fetchAllExamsAndCache = async (): Promise<any[]> => {
     }
   }
   
-  // Cache missing or expired: fetch all active exams from Supabase
+  // Cache missing or expired: fetch all exams from Supabase
   try {
     const { data, error } = await supabase
       .from('exams_pool')
-      .select('id, stage, subject, model_type, is_active, updated_at, questions_data')
-      .eq('is_active', true);
+      .select('*');
       
     if (error) throw error;
     if (data) {
@@ -953,7 +952,7 @@ export const LiveExamGateway: React.FC = () => {
       // Read exams from cache or fetch all exams pool once per day (Zero-Egress Strategy)
       const allCachedPool = await fetchAllExamsAndCache();
       const matchedExams = allCachedPool.filter((row: any) => 
-        normalizeArabic(row.stage) === normalizeArabic(stage) &&
+        String(row.stage).trim() === String(stage).trim() &&
         normalizeArabic(row.subject || row.competition_type) === normalizeArabic(competitionType)
       );
 
@@ -963,9 +962,9 @@ export const LiveExamGateway: React.FC = () => {
         competitionType: row.subject || row.competition_type || '',
         model: row.model || row.model_type || 'A',
         questions: row.questions_data || [],
-        isActive: true,
+        isActive: row.is_active ?? true,
         updatedAt: row.updated_at || ''
-      }));
+      })).filter(exam => exam.isActive !== false);
       
       if (availableExams.length === 0) {
         setIsLoading(false);
@@ -1099,6 +1098,12 @@ export const LiveExamGateway: React.FC = () => {
     try {
       const cachedExams = JSON.parse(localStorage.getItem('exams_pool_cache') || '[]');
 
+      let derasyTotal = 0;
+      let mahfozatTotal = 0;
+      let qebtyLvl1Total = 0;
+      let qebtyLvl2Total = 0;
+      let primaryExamId = '';
+
       const allCollectedAnswersArray = Object.entries(allAnswers).flatMap(([subj, ansObj]) => {
         const keyMapObj: Record<string, string> = {
           'دراسي': 'derasy',
@@ -1107,8 +1112,15 @@ export const LiveExamGateway: React.FC = () => {
           'قبطي مستوى ثاني': 'qebty_lvl2'
         };
         const compactSub = keyMapObj[subj] || subj;
-        const examSchema = cachedExams.find((e: any) => e.competitionType === subj || (e.subject || e.competition_type) === subj);
+        const examSchema = cachedExams.find((e: any) => 
+          String(e.stage).trim() === String(activeStudent.stage).trim() &&
+          (e.competitionType === subj || (e.subject || e.competition_type) === subj)
+        );
         
+        if (examSchema && !primaryExamId) {
+          primaryExamId = examSchema.id;
+        }
+
         return Object.entries(ansObj as Record<string, any>).map(([qid, val]) => {
           let compactAns: any = val;
           let calculatedPts = 0;
@@ -1121,12 +1133,12 @@ export const LiveExamGateway: React.FC = () => {
               if (question.type === 'mcq' || question.type === 'boolean') {
                 compactAns = question.options?.indexOf(val) !== -1 ? question.options?.indexOf(val) : val;
                 if (normalizeArabic(String(val)) === normalizeArabic(String(correctAns))) {
-                  calculatedPts = question.points;
+                  calculatedPts = question.points || 0;
                 }
               } else if (question.type === 'fill') {
                 compactAns = val;
                 if (normalizeArabic(String(val)) === normalizeArabic(String(correctAns))) {
-                  calculatedPts = question.points;
+                  calculatedPts = question.points || 0;
                 }
               } else if (question.type === 'matching') {
                 calculatedPts = 0;
@@ -1145,11 +1157,16 @@ export const LiveExamGateway: React.FC = () => {
                   }
                 });
                 compactAns = matchedIndIndices;
-                if (correctMatches === matchingPairs.length) calculatedPts = question.points;
+                if (correctMatches === matchingPairs.length) calculatedPts = question.points || 0;
               }
             }
           }
           
+          if (compactSub === 'derasy') derasyTotal += calculatedPts;
+          if (compactSub === 'mahfozat') mahfozatTotal += calculatedPts;
+          if (compactSub === 'qebty_lvl1') qebtyLvl1Total += calculatedPts;
+          if (compactSub === 'qebty_lvl2') qebtyLvl2Total += calculatedPts;
+
           return {
             qId: qid,
             ans: compactAns,
@@ -1161,14 +1178,15 @@ export const LiveExamGateway: React.FC = () => {
 
       const finalPayload = {
         student_id: activeStudent.id,
+        exam_id: primaryExamId || 'UNKNOWN',
         student_name: activeStudent.studentName || activeStudent.name || 'بدون اسم',
         church_name: activeStudent.churchName || 'غير مكتمل',
         stage: activeStudent.stage || 'ثالثة ورابعة',
         gender: activeStudent.gender || '',
-        derasy_score: completedSubjects.derasy || 0,
-        mahfouzat_score: completedSubjects.mahfozat || 0,
-        qebty_lvl1_score: completedSubjects.qebty_lvl1 || 0,
-        qebty_lvl2_score: completedSubjects.qebty_lvl2 || 0,
+        derasy_score: derasyTotal || completedSubjects.derasy || 0,
+        mahfouzat_score: mahfozatTotal || completedSubjects.mahfozat || 0,
+        qebty_lvl1_score: qebtyLvl1Total || completedSubjects.qebty_lvl1 || 0,
+        qebty_lvl2_score: qebtyLvl2Total || completedSubjects.qebty_lvl2 || 0,
         detailed_answers: JSON.stringify(allCollectedAnswersArray),
         submitted_at: new Date().toISOString()
       };
@@ -1194,10 +1212,10 @@ export const LiveExamGateway: React.FC = () => {
       // Local update in cache
       const updatedProfile = { 
         ...activeStudent, 
-        academicScore: completedSubjects.derasy,
-        memorizationScore: completedSubjects.mahfozat,
-        copticL1Score: completedSubjects.qebty_lvl1,
-        copticL2Score: completedSubjects.qebty_lvl2
+        academicScore: derasyTotal || completedSubjects.derasy || 0,
+        memorizationScore: mahfozatTotal || completedSubjects.mahfozat || 0,
+        copticL1Score: qebtyLvl1Total || completedSubjects.qebty_lvl1 || 0,
+        copticL2Score: qebtyLvl2Total || completedSubjects.qebty_lvl2 || 0
       };
       
       localStorage.setItem(`student_profile_${activeStudent.id}`, JSON.stringify(updatedProfile));
