@@ -950,12 +950,59 @@ export const LiveExamGateway: React.FC = () => {
       setIsExamCompleted(false);
       setIsTerminated(false);
 
+      const robustNormalize = (str: string) => {
+        if (!str) return '';
+        return normalizeArabic(str).replace(/\s+/g, ' ').trim().toLowerCase();
+      };
+
+      const normalizedStage = robustNormalize(stage);
+      const normalizedCompetition = robustNormalize(competitionType);
+
       // Read exams from cache or fetch all exams pool once per day (Zero-Egress Strategy)
-      const allCachedPool = await fetchAllExamsAndCache();
-      const matchedExams = allCachedPool.filter((row: any) => 
-        normalizeArabic(row.stage) === normalizeArabic(stage) &&
-        normalizeArabic(row.subject || row.competition_type) === normalizeArabic(competitionType)
-      );
+      let allCachedPool = await fetchAllExamsAndCache();
+      
+      console.log("=== EXAM MATCHING CHECK ===");
+      console.log(`Looking for: Stage: "${normalizedStage}" | Competition: "${normalizedCompetition}"`);
+      
+      let matchedExams = allCachedPool.filter((row: any) => {
+        const rowStage = robustNormalize(row.stage);
+        const rowSubj = robustNormalize(row.subject || row.competition_type);
+        console.log(`Available Pool Row - Stage: "${rowStage}" | Competition: "${rowSubj}"`);
+        return rowStage === normalizedStage && rowSubj === normalizedCompetition;
+      });
+
+      // LOCAL CACHE FALLBACK (Zero-Failure Assurance)
+      if (matchedExams.length === 0) {
+        console.log("No match found in cache. Forcing direct Supabase fetch...");
+        try {
+          const { data, error } = await supabase
+            .from('exams_pool')
+            .select('*')
+            .eq('is_active', true);
+            
+          if (error) throw error;
+          if (data && data.length > 0) {
+            allCachedPool = data;
+            
+            // Recalculate matches
+            matchedExams = allCachedPool.filter((row: any) => {
+              const rowStage = robustNormalize(row.stage);
+              const rowSubj = robustNormalize(row.subject || row.competition_type);
+              console.log(`Fallback Pool Row - Stage: "${rowStage}" | Competition: "${rowSubj}"`);
+              return rowStage === normalizedStage && rowSubj === normalizedCompetition;
+            });
+            
+            if (matchedExams.length > 0) {
+              console.log("Successfully found exam via fallback fetch!");
+              // Overwrite cache with the fresh fetch
+              localStorage.setItem('exams_pool_cache', JSON.stringify(data));
+              localStorage.setItem('exams_pool_cache_time', String(Date.now()));
+            }
+          }
+        } catch (fbErr) {
+          console.error("Fallback fetch failed:", fbErr);
+        }
+      }
 
       const availableExams: Exam[] = matchedExams.map((row: any) => ({
         id: row.id,
