@@ -9349,8 +9349,8 @@ function AppComponent() {
               </button>
             </div>
             <div className="flex-1 bg-slate-50 overflow-hidden relative">
-              <div className="absolute inset-0 overflow-y-auto p-4 md:p-8 flex items-center justify-center">
-                 <div className="w-full max-w-4xl">
+              <div className="absolute inset-0 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-start">
+                 <div className="w-full max-w-4xl mt-auto mb-auto">
                    <LiveExamGateway />
                  </div>
               </div>

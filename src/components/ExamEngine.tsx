@@ -1253,7 +1253,7 @@ export const LiveExamGateway: React.FC = () => {
 
   if (isExamCompleted) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6" id="exam-completed-outer-container">
+      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6" id="exam-completed-outer-container">
         <div className="text-center p-12 bg-white border border-emerald-250 rounded-3xl shadow-xl overflow-hidden relative" id="exam-completed-card">
           <div className="absolute top-0 inset-x-0 h-2 bg-emerald-500" />
           <h2 className="text-3xl font-black mb-4 text-emerald-600" id="completed-header">
@@ -1295,7 +1295,7 @@ export const LiveExamGateway: React.FC = () => {
 
   if (isTerminated) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6" id="exam-terminated-outer-container">
+      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6" id="exam-terminated-outer-container">
         <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl overflow-hidden relative" id="exam-terminated-card">
           <div className="absolute top-0 inset-x-0 h-2 bg-rose-500" />
           <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm" id="terminated-shield-container">
@@ -1332,7 +1332,7 @@ export const LiveExamGateway: React.FC = () => {
 
   if (!activeStudent && !isScanning) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6 animate-fade-in" id="gate-login-outer-container">
+      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6 animate-fade-in" id="gate-login-outer-container">
         <div className="text-center p-10 bg-white border border-slate-200 rounded-3xl shadow-xl" id="gate-login-card">
           <h3 className="text-2xl font-black mb-2 text-slate-800" id="gate-main-heading">بوابة الامتحان الإلكتروني المحمية</h3>
           <p className="text-xs text-slate-400 mb-6" id="gate-sub-heading">بوابة رصد الأداء الفوري لشهادة الكرازة ٢٠٢٦</p>
@@ -1375,7 +1375,7 @@ export const LiveExamGateway: React.FC = () => {
 
   if (!activeStudent && isScanning) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6" id="gate-scanning-outer-container">
+      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6" id="gate-scanning-outer-container">
         <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center" id="gate-scanning-card">
           <h3 className="text-2xl font-black mb-6 text-slate-800" id="scanning-heading">توجيه الكاميرا نحو باركود الطالب</h3>
           <div className="max-w-md mx-auto aspect-square rounded-2xl overflow-hidden bg-slate-900 border-4 border-slate-100 shadow-inner mb-6 relative" id="qr-camera-frame">
@@ -1395,8 +1395,8 @@ export const LiveExamGateway: React.FC = () => {
 
   if (activeStudent && !selectedCompetition) {
      return (
-       <div className="w-full max-w-2xl mx-auto pt-20 mt-20 pb-8 px-4 sm:px-6 safe-top safe-bottom" id="student-selection-outer-container">
-         <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center" id="student-selection-card">
+       <div className="w-full max-w-2xl mx-auto pt-28 sm:pt-32 mt-8 pb-12 px-4 sm:px-6 safe-top safe-bottom overflow-y-auto" id="student-selection-outer-container">
+         <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl border border-slate-200 text-center" id="student-selection-card">
            
            {/* Section 2: METADATA STYLING UPGRADE - prominent and centered */}
            <div className="w-full text-center py-4 px-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-600 mb-6 shadow-sm flex flex-col items-center justify-center gap-1.5 animate-fade-in" id="live-exam-metadata-upgrade">
@@ -1408,10 +1408,10 @@ export const LiveExamGateway: React.FC = () => {
                  كنيسة {activeStudent.churchName}
                </span>
              </div>
-             <h3 className="text-2xl font-black text-slate-800 tracking-tight mt-1" id="student-name-text">
-               المشترك: <span className="text-indigo-600">{activeStudent.studentName}</span>
+             <h3 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight mt-2 break-words max-w-full" id="student-name-text">
+               المشترك: <span className="text-indigo-600 block sm:inline">{activeStudent.studentName}</span>
              </h3>
-             <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider" id="student-meta-details-sub">
+             <p className="text-[10px] sm:text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1" id="student-meta-details-sub">
                المشترك النشط بالبوابة الرقمية • كود خاص: <span className="font-mono text-indigo-500 font-black">{activeStudent.id}</span>
              </p>
            </div>
@@ -1492,7 +1492,7 @@ export const LiveExamGateway: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6" id="live-loader-outer-container">
+      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6" id="live-loader-outer-container">
         <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl" id="loader-card">
           <Loader2 className="animate-spin text-indigo-600 mx-auto" size={48} id="loader-spin-icon" />
           <p className="mt-4 text-slate-500 font-bold" id="loader-text-status">جاري تحميل أسئلة وتهيئة امتحان {selectedCompetition}...</p>
@@ -1503,7 +1503,7 @@ export const LiveExamGateway: React.FC = () => {
 
   if (!activeExam || !activeExam.questions || activeExam.questions.length === 0) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-20 pb-8 px-4 sm:px-6" id="no-exam-questions-outer-container">
+      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6" id="no-exam-questions-outer-container">
         <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl" id="no-exam-card">
           <ShieldX className="text-rose-500 mx-auto mb-4" size={48} />
           <p className="text-slate-700 font-bold" id="no-exam-text-msg">عذراً، لم تضع اللجنة أي أسئلة مسبقة لهذا النموذج حاليًا.</p>
@@ -1523,9 +1523,9 @@ export const LiveExamGateway: React.FC = () => {
   }
 
   return (
-    <div className="w-full max-w-3xl mx-auto pt-20 mt-20 pb-8 px-4 sm:px-6 safe-top safe-bottom animate-fade-in" id="active-exam-questions-outer-container">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden" id="active-exam-questions-card">
-        <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto" id="active-exam-scroll-area">
+    <div className="w-full max-w-3xl mx-auto pt-28 sm:pt-32 mt-4 sm:mt-12 pb-12 px-2 sm:px-6 safe-top safe-bottom animate-fade-in flex flex-col min-h-[90vh]" id="active-exam-questions-outer-container">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col flex-1" id="active-exam-questions-card">
+        <div className="p-5 sm:p-8 space-y-6 sm:space-y-8 flex-1 overflow-y-auto" id="active-exam-scroll-area">
           <div className="border-b pb-4" id="active-exam-card-header">
             <span className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full" id="active-exam-badge">امتحان {selectedCompetition}</span>
             <h4 className="text-xl font-black mt-2 text-slate-850" id="active-exam-card-title">أجب عن كافة الأسئلة بدقة بالغة</h4>
