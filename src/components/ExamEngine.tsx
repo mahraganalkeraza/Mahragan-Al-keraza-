@@ -64,27 +64,39 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
   const [currentQuestions, setCurrentQuestions] = useState<Question[]>([]);
   const [isDirty, setIsDirty] = useState(false);
 
-  useEffect(() => {
-    const loadExams = async () => {
-      try {
-        const { data, error } = await supabase.from('exams_pool').select('*');
-        if (data) {
-          const loaded: Exam[] = data.map((row: any) => ({
-            id: row.id,
-            stage: row.stage,
-            competitionType: row.subject || row.competition_type || '',
-            model: row.model || row.model_type || 'A',
-            questions: row.questions_data || [],
-            isActive: row.is_active ?? true,
-            updatedAt: row.updated_at
-          }));
-          setExams(loaded);
+  const fetchExamsPool = async () => {
+    try {
+      const { data, error } = await supabase.from('exams_pool').select('*');
+      if (error) {
+        console.error("Error fetching exams pool:", error);
+      } else if (data) {
+        const loaded: Exam[] = data.map((row: any) => ({
+          id: row.id,
+          stage: row.stage,
+          competitionType: row.subject || row.competition_type || '',
+          model: row.model || row.model_type || 'A',
+          questions: row.questions_data || [],
+          isActive: row.is_active ?? true,
+          updatedAt: row.updated_at
+        }));
+        setExams(loaded);
+
+        // Populate the exam form/inputs automatically if data exists in the state
+        if (loaded.length > 0) {
+          const firstExam = loaded[0];
+          setSelectedStage(firstExam.stage || '');
+          setSelectedCompetition(firstExam.competitionType || 'دراسي');
+          setSelectedModel(firstExam.model || 'A');
+          setCurrentQuestions(firstExam.questions || []);
         }
-      } catch (e) {
-        console.error('Error loading exams from Supabase:', e);
       }
-    };
-    loadExams();
+    } catch (e) {
+      console.error('Error loading exams from Supabase:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchExamsPool();
   }, []);
 
   useEffect(() => {
@@ -141,9 +153,25 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
         questions_data: currentQuestions
       };
 
-      const { error } = await supabase.from('exams_pool').upsert(cleanPayload);
+      const exists = exams.some(e => e.id === examId);
+      let saveErr;
 
-      if (error) throw error;
+      if (exists) {
+        // performs an .update() on that specific row
+        const { error } = await supabase
+          .from('exams_pool')
+          .update(cleanPayload)
+          .eq('id', examId);
+        saveErr = error;
+      } else {
+        // falls back to .upsert()
+        const { error } = await supabase
+          .from('exams_pool')
+          .upsert(cleanPayload);
+        saveErr = error;
+      }
+
+      if (saveErr) throw saveErr;
 
       setIsDirty(false);
       
