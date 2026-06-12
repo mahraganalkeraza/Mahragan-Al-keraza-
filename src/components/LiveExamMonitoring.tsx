@@ -34,7 +34,7 @@ export const LiveExamMonitoring: React.FC<{
       await fetchTotalRegistered();
       
       const { data: monitors, error } = await supabase
-        .from('live_monitoring')
+        .from('exam_device_logs')
         .select('*')
         .order('updated_at', { ascending: false });
 
@@ -43,18 +43,19 @@ export const LiveExamMonitoring: React.FC<{
       if (monitors) {
         // Map Supabase rows to local variables
         const mappedRows = monitors.map((sbRow: any) => ({
+          id: sbRow.id,
           studentId: sbRow.student_id,
           studentName: sbRow.student_name,
           churchName: sbRow.church_name,
           stage: sbRow.stage,
           status: sbRow.status,
           deviceId: sbRow.student_id,
-          deviceType: sbRow.device_type || 'متصفح الكاميرا',
+          deviceType: sbRow.device_type || 'غير معروف',
+          deviceOs: sbRow.device_os || '',
+          deviceModel: sbRow.device_model || '',
           ip: sbRow.ip_address || '127.0.0.1',
-          attempts: sbRow.attempts_count || 1,
+          attempts: sbRow.status, // We use status for this column per instruction
           timestamp: sbRow.updated_at || new Date().toISOString(),
-          is_locked: sbRow.is_locked || false,
-          fingerprint: sbRow.fingerprint || null
         }));
 
         setActiveSessionsData(mappedRows);
@@ -72,10 +73,10 @@ export const LiveExamMonitoring: React.FC<{
 
     // Subscribe to Postgres Realtime channel
     const channel = supabase
-      .channel('live_monitoring_changes_channel')
+      .channel('exam_device_logs_changes_channel')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'live_monitoring' },
+        { event: '*', schema: 'public', table: 'exam_device_logs' },
         (payload) => {
           console.log('Realtime table event:', payload);
           fetchData();
@@ -94,7 +95,7 @@ export const LiveExamMonitoring: React.FC<{
     setIsProcessing(studentId);
     try {
       const { error } = await supabase
-        .from('live_monitoring')
+        .from('exam_device_logs')
         .update({
           status: 'terminated',
           updated_at: new Date().toISOString()
@@ -116,7 +117,7 @@ export const LiveExamMonitoring: React.FC<{
     if (!confirm('سيتم مسح كافة بيانات المراقبة المباشرة وسجلات الدخول (Logs) من Supabase. هل أنت متأكد؟')) return;
     setIsLoading(true);
     try {
-      const { error } = await supabase.from('live_monitoring').delete().neq('student_id', '0');
+      const { error } = await supabase.from('exam_device_logs').delete().neq('student_id', '0');
       if (error) throw error;
       setLogs([]);
       setActiveSessionsData([]);
@@ -133,7 +134,7 @@ export const LiveExamMonitoring: React.FC<{
     if (!confirm('هل تريد حذف هذا السجل من شاشة المراقبة؟')) return;
     try {
       const { error } = await supabase
-        .from('live_monitoring')
+        .from('exam_device_logs')
         .delete()
         .eq('student_id', studentId);
 
@@ -150,9 +151,9 @@ export const LiveExamMonitoring: React.FC<{
     if (!confirm('هل تريد فك الحظر عن هذا الجهاز؟')) return;
     try {
       const { error } = await supabase
-        .from('live_monitoring')
+        .from('exam_device_logs')
         .update({
-          status: 'active',
+          status: 'جاري الامتحان',
           updated_at: new Date().toISOString()
         })
         .eq('student_id', studentId);
@@ -174,13 +175,12 @@ export const LiveExamMonitoring: React.FC<{
 
   // Device Counts
   const deviceCounts = logs.reduce((acc: any, log) => {
-    if (log.ip) {
-      acc[log.ip] = (acc[log.ip] || 0) + 1;
-    }
+    const fingerprintString = `${log.ip}-${log.deviceModel}-${log.deviceOs}`;
+    acc[fingerprintString] = (acc[fingerprintString] || 0) + 1;
     return acc;
   }, {});
 
-  const activeSessionsCount = logs.filter(s => s.status === 'active').length;
+  const activeSessionsCount = logs.filter(s => s.status === 'جاري الامتحان' || s.status === 'active').length;
 
   return (
     <div className="space-y-8">
@@ -276,25 +276,26 @@ export const LiveExamMonitoring: React.FC<{
                    <th className="pb-4">الطالب</th>
                    <th className="pb-4">الكنيسة</th>
                    <th className="pb-4">الجهاز / IP</th>
-                   <th className="pb-4">المحاولات</th>
+                   <th className="pb-4">الحالة / المحاولات</th>
                    <th className="pb-4">التوقيت</th>
                    <th className="pb-4 text-center">الإجراء</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {logs.slice(0, 50).map((log: any) => {
-                  const isActive = log.status === 'active';
+                {logs.slice(0, 50).map((log: any, idx: number) => {
+                  const isActive = log.status === 'جاري الامتحان' || log.status === 'active';
                   const isTerminated = log.status === 'terminated';
-                  const fp = log.fingerprint;
-
+                  const isCompleted = log.status === 'تم التسليم بنجاح' || log.status === 'completed';
+                  
                   return (
-                    <tr key={log.studentId} className={`text-xs group ${isTerminated ? 'opacity-50 grayscale' : ''}`}>
+                    <tr key={log.id || `${log.studentId}-${idx}`} className={`text-xs group ${isTerminated ? 'opacity-50 grayscale' : ''}`}>
                       <td className="py-4 font-black text-slate-700">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
                              {log.studentName || 'غير معروف'}
                              {isActive && <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" title="نشط الآن" />}
                              {isTerminated && <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[9px] uppercase font-black">تم الطرد</span>}
+                             {isCompleted && <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full" title="أنهى الامتحان" />}
                           </div>
                         </div>
                       </td>
@@ -302,7 +303,7 @@ export const LiveExamMonitoring: React.FC<{
                       <td className="py-4">
                           <div className="flex flex-col gap-1">
                              <span className="flex items-center gap-1 font-bold text-slate-600">
-                               <Smartphone size={12} /> {fp ? `${fp.brand === 'Unknown' ? '' : fp.brand} ${fp.model} (${fp.os})`.trim() : log.deviceType}
+                               <Smartphone size={12} /> {`${log.deviceModel || ''} ${log.deviceType || ''} ${log.deviceOs ? `(${log.deviceOs})` : ''}`.trim() || 'متصفح غير معروف'}
                              </span>
                              <div className="flex gap-2 items-center text-[9px] text-slate-350 font-mono">
                                 <span>{log.ip}</span>
@@ -310,8 +311,8 @@ export const LiveExamMonitoring: React.FC<{
                           </div>
                       </td>
                       <td className="py-4">
-                        <span className="px-2 py-1 rounded-full font-black bg-slate-100 text-slate-500">
-                          {log.attempts} محاولة
+                        <span className={`px-2 py-1 rounded-full font-black ${isCompleted ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}>
+                          {log.status || 'جاري الامتحان'}
                         </span>
                       </td>
                       <td className="py-4 text-slate-400 font-bold">{new Date(log.timestamp).toLocaleTimeString('ar-EG')}</td>
@@ -341,10 +342,10 @@ export const LiveExamMonitoring: React.FC<{
                             onClick={async () => {
                               setIsProcessing(log.studentId);
                               await onResetExam(log.studentId, log.studentName);
-                              // Also reset in live_monitoring
+                              // Also reset in exam_device_logs
                               await supabase
-                                .from('live_monitoring')
-                                .update({ status: 'active', attempts_count: 0, is_locked: false, updated_at: new Date().toISOString() })
+                                .from('exam_device_logs')
+                                .update({ status: 'جاري الامتحان', updated_at: new Date().toISOString() })
                                 .eq('student_id', log.studentId);
                               setIsProcessing(null);
                               fetchData();

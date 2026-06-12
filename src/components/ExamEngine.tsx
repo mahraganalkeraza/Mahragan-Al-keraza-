@@ -1,3 +1,4 @@
+import { UAParser } from 'ua-parser-js';
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { Plus, Trash2, Save, Loader2, Play, CheckCircle2, ShieldX, HelpCircle, ArrowRight } from 'lucide-react';
@@ -986,6 +987,31 @@ export const LiveExamGateway: React.FC = () => {
       setSelectedCompetition(competitionType);
       setActiveExam(randomModel);
       
+      // DEVICE METADATA EXTRACTION & DB LOGGING
+      try {
+        const parser = new UAParser();
+        const result = parser.getResult();
+        const osName = result.os.name || 'Unknown OS';
+        const deviceType = result.device.type || 'Desktop';
+        const deviceModel = result.device.model || result.browser.name || 'Unknown Device';
+        
+        await supabase.from('exam_device_logs').insert({
+          student_id: activeStudent.id,
+          student_name: activeStudent.studentName || activeStudent.name || 'بدون اسم',
+          church_name: activeStudent.churchName || 'غير مكتمل',
+          stage: stage,
+          device_type: deviceType,
+          device_os: osName,
+          device_model: deviceModel,
+          ip_address: deviceInfo?.ip || '127.0.0.1',
+          status: 'جاري الامتحان',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      } catch (logErr) {
+        console.error("Failed to insert into exam_device_logs:", logErr);
+      }
+
       // Update monitoring with chosen exam
       await supabase
         .from('live_monitoring')
@@ -1205,6 +1231,14 @@ export const LiveExamGateway: React.FC = () => {
         .update({
           status: 'completed',
           device_type: 'أنهى الامتحان بالكامل',
+          updated_at: new Date().toISOString()
+        })
+        .eq('student_id', activeStudent.id);
+
+      await supabase
+        .from('exam_device_logs')
+        .update({
+          status: 'تم التسليم بنجاح',
           updated_at: new Date().toISOString()
         })
         .eq('student_id', activeStudent.id);

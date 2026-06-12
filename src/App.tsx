@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { UAParser } from 'ua-parser-js';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Check,
@@ -3684,6 +3685,71 @@ function AppComponent() {
   };
 
   const [showExamGateway, setShowExamGateway] = useState(false);
+  const [showDevicePermissionModal, setShowDevicePermissionModal] = useState(false);
+  const [pendingDeviceIp, setPendingDeviceIp] = useState('');
+  const [isCheckingDevice, setIsCheckingDevice] = useState(false);
+
+  const handleOpenExams = async () => {
+    try {
+      setIsCheckingDevice(true);
+      const res = await fetch('https://api.ipify.org?format=json');
+      const data = await res.json();
+      const ip = data.ip;
+      
+      const sessionStr = localStorage.getItem('exam_session');
+      if (sessionStr) {
+        const session = JSON.parse(sessionStr);
+        if (session.deviceApproved && session.savedIp === ip) {
+          setShowExamGateway(true);
+          setIsCheckingDevice(false);
+          return;
+        }
+      }
+      
+      setPendingDeviceIp(ip);
+      setShowDevicePermissionModal(true);
+      setIsCheckingDevice(false);
+    } catch (e) {
+      console.error('Failed to get IP:', e);
+      setIsCheckingDevice(false);
+      setShowExamGateway(true); // Fallback to allow access if IP check fails entirely
+    }
+  };
+
+  const handleApproveDevice = async () => {
+    try {
+      setIsCheckingDevice(true);
+      const parser = new UAParser();
+      const result = parser.getResult();
+      const osName = result.os.name || 'Unknown OS';
+      const deviceType = result.device.type || 'Desktop';
+      const deviceModel = result.device.model || result.browser.name || 'Unknown Device';
+
+      await supabase.from('exam_device_logs').insert({
+        student_id: 'pending_login',
+        student_name: 'جهاز قيد التسجيل',
+        church_name: 'غير محدد',
+        device_type: deviceType,
+        device_os: osName,
+        device_model: deviceModel,
+        ip_address: pendingDeviceIp,
+        status: 'تم توثيق الجهاز',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+
+      localStorage.setItem('exam_session', JSON.stringify({ deviceApproved: true, savedIp: pendingDeviceIp }));
+      setShowDevicePermissionModal(false);
+      setShowExamGateway(true);
+    } catch (e) {
+      console.error('Device approval error:', e);
+      // Let them in anyway if network failed
+      setShowDevicePermissionModal(false);
+      setShowExamGateway(true);
+    } finally {
+      setIsCheckingDevice(false);
+    }
+  };
 
   const handleResetExam = async (studentId: string, studentName?: string) => {
     console.log('Admin calling handleResetExam:', { studentId, studentName });
@@ -4083,7 +4149,7 @@ function AppComponent() {
     <button
       onClick={() => { 
         if (id === 'exams_portal') {
-          setShowExamGateway(true);
+          handleOpenExams();
         } else {
           setActiveSection(id); 
         }
@@ -4992,7 +5058,13 @@ function AppComponent() {
               </div>
             </div>
 
-            <QuickActionsHub userRole={userRole === 'super_admin' ? 'admin' : userRole} onAction={setActiveSection} />
+            <QuickActionsHub userRole={userRole === 'super_admin' ? 'admin' : userRole} onAction={(action) => {
+              if (action === 'exams_portal') {
+                handleOpenExams();
+              } else {
+                setActiveSection(action);
+              }
+            }} />
             <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div className="flex items-center gap-4">
@@ -5006,7 +5078,7 @@ function AppComponent() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button 
-                    onClick={() => setShowExamGateway(true)}
+                    onClick={handleOpenExams}
                     className="px-6 py-3 bg-indigo-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-xl hover:scale-105 active:scale-95"
                   >
                     <BookOpen size={18} /> بدء دخول الامتحان (QR Scan)
@@ -9186,7 +9258,7 @@ function AppComponent() {
             <ul className="space-y-4 text-slate-400 font-bold text-base">
               <li><button onClick={() => setActiveSection('home')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> الرئيسية</button></li>
               <li><button onClick={() => setActiveSection('news')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> آخر الأخبار</button></li>
-              <li><button onClick={() => setShowExamGateway(true)} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> امتحانات الأونلاين</button></li>
+              <li><button onClick={handleOpenExams} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> امتحانات الأونلاين</button></li>
               <li><button onClick={() => setActiveSection('calculator')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> حاسبة الكتب</button></li>
             </ul>
           </div>
@@ -9339,6 +9411,46 @@ function AppComponent() {
               </div>
             </div>
           </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isCheckingDevice && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[150] flex flex-col items-center justify-center p-4">
+            <Loader2 className="animate-spin text-white w-16 h-16 mb-4" />
+            <h2 className="text-xl font-black text-white text-center">جاري التحقق من هوية الجهاز...</h2>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showDevicePermissionModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden text-center">
+              <div className="absolute top-0 inset-x-0 h-2 bg-indigo-600" />
+              <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 transform -rotate-6">
+                <ShieldCheck size={32} />
+              </div>
+              <h3 className="text-2xl font-black text-slate-800 mb-2">يرجى السماح بتأكيد هوية الجهاز</h3>
+              <p className="text-slate-500 mb-8 font-bold leading-relaxed text-sm">
+                لحماية وسلامة الامتحانات، النظام يطلب قراءة بيانات متصفحك والجهاز المستخدم (IP، النوع، النظام). سيتم تسجيل هذا مؤقتاً طوال فترة جلستك.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleApproveDevice}
+                  className="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
+                >
+                  موافق وتأكيد الدخول
+                </button>
+                <button
+                  onClick={() => setShowDevicePermissionModal(false)}
+                  className="flex-1 bg-slate-100 text-slate-600 py-3.5 rounded-xl font-black hover:bg-slate-200 transition-all active:scale-95"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
