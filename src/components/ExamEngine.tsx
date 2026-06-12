@@ -1021,29 +1021,47 @@ export const LiveExamGateway: React.FC = () => {
 
     let totalScore = 0;
 
+    console.log("=== STARTING SCORE CALCULATION FOR ===", selectedCompetition);
+
     activeExam.questions.forEach((q) => {
        const stdAns = answers[q.id];
        const correctAns = q.correctAnswers?.[0];
        
-       if (!stdAns) return;
+       if (stdAns === undefined || stdAns === null || stdAns === '') return;
+
+       let calculatedPts = 0;
 
        if (q.type === 'mcq' || q.type === 'boolean' || q.type === 'fill') {
-         if (normalizeArabic(String(stdAns)) === normalizeArabic(String(correctAns))) {
-           totalScore += q.points;
+         let resolvedCorrect = String(correctAns);
+         // If correctAns is an index string (e.g. "0") and we have options, resolve it to the string value
+         if (q.type !== 'fill' && /^\d+$/.test(resolvedCorrect) && q.options && q.options[Number(resolvedCorrect)] !== undefined) {
+            resolvedCorrect = String(q.options[Number(resolvedCorrect)]);
          }
+
+         if (normalizeArabic(String(stdAns)) === normalizeArabic(resolvedCorrect) || normalizeArabic(String(stdAns)) === normalizeArabic(String(correctAns))) {
+           calculatedPts = Number(q.points || 0);
+         }
+         console.log(`Q: ${q.id} | StdAns: ${stdAns} | Correct: ${correctAns} (Resolved: ${resolvedCorrect}) | Pts: ${calculatedPts}`);
        } else if (q.type === 'matching') {
           let correctMatches = 0;
           const matchingPairs = q.matchingPairs || [];
           matchingPairs.forEach((pair, pIdx) => {
              const sMatch = stdAns[pIdx];
              const rMatch = pair.right;
-             if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
+             if (sMatch !== undefined && normalizeArabic(String(sMatch)) === normalizeArabic(String(rMatch))) {
                correctMatches++;
              }
           });
-          if (correctMatches === matchingPairs.length) totalScore += q.points;
+          if (correctMatches === matchingPairs.length) {
+              calculatedPts = Number(q.points || 0);
+          }
+          console.log(`Q: ${q.id} (Matching) | Correct Matches: ${correctMatches}/${matchingPairs.length} | Pts: ${calculatedPts}`);
        }
+
+       totalScore += calculatedPts;
     });
+
+    console.log("=== TOTAL SCORE SUBMITTED FOR", selectedCompetition, "IS:", totalScore, "===");
 
     const keyMapObj: Record<string, string> = {
       'دراسي': 'derasy',
@@ -1099,6 +1117,16 @@ export const LiveExamGateway: React.FC = () => {
     try {
       const cachedExams = JSON.parse(localStorage.getItem('exams_pool_cache') || '[]');
 
+      // Calculate accurate sums during payload construction
+      let reCalcScores: Record<string, number> = {
+        derasy: 0,
+        mahfozat: 0,
+        qebty_lvl1: 0,
+        qebty_lvl2: 0
+      };
+
+      console.log("=== FINAL SUBMIT CALCULATION ===");
+
       const allCollectedAnswersArray = Object.entries(allAnswers).flatMap(([subj, ansObj]) => {
         const keyMapObj: Record<string, string> = {
           'دراسي': 'derasy',
@@ -1120,13 +1148,19 @@ export const LiveExamGateway: React.FC = () => {
               const correctAns = question.correctAnswers?.[0];
               if (question.type === 'mcq' || question.type === 'boolean') {
                 compactAns = question.options?.indexOf(val) !== -1 ? question.options?.indexOf(val) : val;
-                if (normalizeArabic(String(val)) === normalizeArabic(String(correctAns))) {
-                  calculatedPts = question.points;
+                
+                let resolvedCorrect = String(correctAns);
+                if (/^\d+$/.test(resolvedCorrect) && question.options && question.options[Number(resolvedCorrect)] !== undefined) {
+                   resolvedCorrect = String(question.options[Number(resolvedCorrect)]);
+                }
+
+                if (normalizeArabic(String(val)) === normalizeArabic(resolvedCorrect) || normalizeArabic(String(val)) === normalizeArabic(String(correctAns))) {
+                  calculatedPts = Number(question.points || 0);
                 }
               } else if (question.type === 'fill') {
                 compactAns = val;
                 if (normalizeArabic(String(val)) === normalizeArabic(String(correctAns))) {
-                  calculatedPts = question.points;
+                  calculatedPts = Number(question.points || 0);
                 }
               } else if (question.type === 'matching') {
                 calculatedPts = 0;
@@ -1140,16 +1174,20 @@ export const LiveExamGateway: React.FC = () => {
                   const rightList = (question as any).shuffledRights || matchingPairs.map((p: any) => p.right);
                   matchedIndIndices[pIdx] = rightList.indexOf(sMatch);
                   
-                  if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
+                  if (normalizeArabic(String(sMatch)) === normalizeArabic(String(rMatch))) {
                     correctMatches++;
                   }
                 });
                 compactAns = matchedIndIndices;
-                if (correctMatches === matchingPairs.length) calculatedPts = question.points;
+                if (correctMatches === matchingPairs.length) calculatedPts = Number(question.points || 0);
               }
             }
           }
           
+          if (reCalcScores[compactSub] !== undefined) {
+            reCalcScores[compactSub] += calculatedPts;
+          }
+
           return {
             qId: qid,
             ans: compactAns,
@@ -1159,19 +1197,22 @@ export const LiveExamGateway: React.FC = () => {
         });
       });
 
+      // Synchronize calculated scores with payload
       const finalPayload = {
         student_id: activeStudent.id,
         student_name: activeStudent.studentName || activeStudent.name || 'بدون اسم',
         church_name: activeStudent.churchName || 'غير مكتمل',
         stage: activeStudent.stage || 'ثالثة ورابعة',
         gender: activeStudent.gender || '',
-        derasy_score: completedSubjects.derasy || 0,
-        mahfouzat_score: completedSubjects.mahfozat || 0,
-        qebty_lvl1_score: completedSubjects.qebty_lvl1 || 0,
-        qebty_lvl2_score: completedSubjects.qebty_lvl2 || 0,
+        derasy_score: reCalcScores.derasy || completedSubjects.derasy || 0,
+        mahfouzat_score: reCalcScores.mahfozat || completedSubjects.mahfozat || 0,
+        qebty_lvl1_score: reCalcScores.qebty_lvl1 || completedSubjects.qebty_lvl1 || 0,
+        qebty_lvl2_score: reCalcScores.qebty_lvl2 || completedSubjects.qebty_lvl2 || 0,
         detailed_answers: JSON.stringify(allCollectedAnswersArray),
         submitted_at: new Date().toISOString()
       };
+
+      console.log("=== FINAL PAYLOAD DISPATCH ===", finalPayload);
 
       const { error: subErr } = await supabase
         .from('exam_submissions')
@@ -1179,7 +1220,7 @@ export const LiveExamGateway: React.FC = () => {
 
       if (subErr) throw subErr;
 
-      // Clean up local storage trace for this specific student
+      // Clean up local storage trace for this specific student ONLY AFTER success
       localStorage.removeItem('exam_progress_' + activeStudent.id);
 
       await supabase
@@ -1194,10 +1235,10 @@ export const LiveExamGateway: React.FC = () => {
       // Local update in cache
       const updatedProfile = { 
         ...activeStudent, 
-        academicScore: completedSubjects.derasy,
-        memorizationScore: completedSubjects.mahfozat,
-        copticL1Score: completedSubjects.qebty_lvl1,
-        copticL2Score: completedSubjects.qebty_lvl2
+        academicScore: finalPayload.derasy_score,
+        memorizationScore: finalPayload.mahfouzat_score,
+        copticL1Score: finalPayload.qebty_lvl1_score,
+        copticL2Score: finalPayload.qebty_lvl2_score
       };
       
       localStorage.setItem(`student_profile_${activeStudent.id}`, JSON.stringify(updatedProfile));
@@ -1221,7 +1262,10 @@ export const LiveExamGateway: React.FC = () => {
         qebty_lvl2: null
       });
 
-      setScore(0);
+      // Show final total score (from database insertion parameters)
+      const finalCalculatedTotal = finalPayload.derasy_score + finalPayload.mahfouzat_score + finalPayload.qebty_lvl1_score + finalPayload.qebty_lvl2_score;
+      setScore(finalCalculatedTotal);
+      
       setIsExamCompleted(true);
       setActiveStudent(null);
       setActiveExam(null);

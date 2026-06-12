@@ -33,28 +33,25 @@ export const LiveExamMonitoring: React.FC<{
     try {
       await fetchTotalRegistered();
       
-      const { data: monitors, error } = await supabase
-        .from('live_monitoring')
-        .select('*')
-        .order('updated_at', { ascending: false });
+      const { data: submissions, error } = await supabase
+        .from('exam_submissions')
+        .select('student_id, student_name, church_name, stage, submitted_at')
+        .order('submitted_at', { ascending: false });
 
       if (error) throw error;
 
-      if (monitors) {
+      if (submissions) {
         // Map Supabase rows to local variables
-        const mappedRows = monitors.map((sbRow: any) => ({
+        const mappedRows = submissions.map((sbRow: any) => ({
           studentId: sbRow.student_id,
           studentName: sbRow.student_name,
           churchName: sbRow.church_name,
           stage: sbRow.stage,
-          status: sbRow.status,
-          deviceId: sbRow.student_id,
-          deviceType: sbRow.device_type || 'متصفح الكاميرا',
-          ip: sbRow.ip_address || '127.0.0.1',
-          attempts: sbRow.attempts_count || 1,
-          timestamp: sbRow.updated_at || new Date().toISOString(),
-          is_locked: sbRow.is_locked || false,
-          fingerprint: sbRow.fingerprint || null
+          timestamp: sbRow.submitted_at || new Date().toISOString(),
+          status: 'completed', // Submissions are final
+          deviceType: 'تم التسليم',
+          ip: sbRow.church_name || '127.0.0.1', // Fallback for stats Grouping
+          attempts: 1,
         }));
 
         setActiveSessionsData(mappedRows);
@@ -70,22 +67,12 @@ export const LiveExamMonitoring: React.FC<{
   useEffect(() => {
     fetchData();
 
-    // Subscribe to Postgres Realtime channel
-    const channel = supabase
-      .channel('live_monitoring_changes_channel')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'live_monitoring' },
-        (payload) => {
-          console.log('Realtime table event:', payload);
-          fetchData();
-        }
-      )
-      .subscribe();
+    // Polling interval every 45 seconds to protect quota
+    const intervalId = setInterval(() => {
+      fetchData();
+    }, 45000);
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => clearInterval(intervalId);
   }, [globalChurchFilter]);
 
   const handleTerminateSession = async (studentId: string) => {
@@ -130,10 +117,10 @@ export const LiveExamMonitoring: React.FC<{
   };
 
   const handleDeleteLogRow = async (studentId: string) => {
-    if (!confirm('هل تريد حذف هذا السجل من شاشة المراقبة؟')) return;
+    if (!confirm('هل تريد حذف هذا السجل (التسليم) من شاشة المراقبة وقاعدة البيانات؟')) return;
     try {
       const { error } = await supabase
-        .from('live_monitoring')
+        .from('exam_submissions')
         .delete()
         .eq('student_id', studentId);
 
@@ -180,7 +167,7 @@ export const LiveExamMonitoring: React.FC<{
     return acc;
   }, {});
 
-  const activeSessionsCount = logs.filter(s => s.status === 'active').length;
+  const submissionsCount = logs.length;
 
   return (
     <div className="space-y-8">
@@ -213,12 +200,12 @@ export const LiveExamMonitoring: React.FC<{
               <Activity size={24} />
             </div>
             <div>
-              <p className="text-xs font-black text-slate-400 uppercase">الجلسات النشطة (Supabase)</p>
-              <h3 className="text-2xl font-black text-slate-800">{activeSessionsCount}</h3>
+              <p className="text-xs font-black text-slate-400 uppercase">الإمتحانات المسلمة (Submissions)</p>
+              <h3 className="text-2xl font-black text-slate-800">{submissionsCount}</h3>
             </div>
           </div>
           <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-             <div className="h-full bg-indigo-500 animate-pulse" style={{ width: '45%' }} />
+             <div className="h-full bg-indigo-500" style={{ width: '100%' }} />
           </div>
         </div>
 
@@ -341,7 +328,13 @@ export const LiveExamMonitoring: React.FC<{
                             onClick={async () => {
                               setIsProcessing(log.studentId);
                               await onResetExam(log.studentId, log.studentName);
-                              // Also reset in live_monitoring
+                              // Delete submission to allow student to re-enter
+                              await supabase
+                                .from('exam_submissions')
+                                .delete()
+                                .eq('student_id', log.studentId);
+                              
+                              // Cleanup monitoring node if it still exists
                               await supabase
                                 .from('live_monitoring')
                                 .update({ status: 'active', attempts_count: 0, is_locked: false, updated_at: new Date().toISOString() })
