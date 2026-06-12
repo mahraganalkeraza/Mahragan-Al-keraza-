@@ -46,69 +46,43 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
       return;
     }
 
-    let rQuery = isAdmin
-      ? collection(db, 'results')
-      : query(collection(db, 'results'), where('churchName', '==', churchName));
-    const rSnap = await getDocs(rQuery);
-    const results = rSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-
-    let tQuery = isAdmin
-      ? collection(db, 'activityTeams')
-      : query(collection(db, 'activityTeams'), where('churchName', '==', churchName));
-    const tSnap = await getDocs(tQuery);
-    const teams = tSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-    
-    // Merge logic
-    const studentData: Record<string, any> = {};
-
-    participants.forEach((p: any) => {
-        studentData[p.id?.toLowerCase().trim()] = {
-            id: p.id,
-            name: p.name || '-',
-            gender: p.gender || '-',
-            church: p.churchName || '-',
-            stage: p.stage || '-',
-            teams: [],
-            drasyScore: 0,
-            copticScore: 0,
-            mahfozatScore: 0
-        };
-    });
-
-    results.forEach((r: any) => {
-        const id = (r.studentId || r.id || '').toLowerCase().trim();
-        if (studentData[id]) {
-            studentData[id].drasyScore = r.academicScore || r.data?.['دراسي'] || 0;
-            studentData[id].mahfozatScore = r.memorizationScore || r.data?.['محفوظات'] || 0;
-            studentData[id].copticScore = (r.q1Score || 0) + (r.q2Score || 0);
-        }
-    });
-
-    teams.forEach((t: any) => {
-        t.members?.forEach((m: any) => {
-            const id = (m.id || '').toLowerCase().trim();
-            if (studentData[id]) {
-                studentData[id].teams.push(t.activityType || 'غير محدد');
-            }
-        });
-    });
-
     // 3. Create Workbook
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet('المشتركين');
     ws.columns = [
-        { header: 'ID', key: 'id', width: 15 },
-        { header: 'الاسم', key: 'name', width: 30 },
-        { header: 'النوع', key: 'gender', width: 12 },
-        { header: 'الكنيسة', key: 'church', width: 20 },
-        { header: 'المرحلة', key: 'stage', width: 15 },
-        { header: 'دراسي', key: 'drasyScore', width: 15 },
-        { header: 'قبطي', key: 'copticScore', width: 15 },
-        { header: 'محفوظات', key: 'mahfozatScore', width: 15 },
-        { header: 'الفرق', key: 'teams', width: 30 }
+        { header: 'id', key: 'id', width: 25 },
+        { header: 'serial', key: 'serial', width: 20 },
+        { header: 'churchName', key: 'churchName', width: 25 },
+        { header: 'country', key: 'country', width: 15 },
+        { header: 'name', key: 'name', width: 30 },
+        { header: 'stage', key: 'stage', width: 20 },
+        { header: 'gender', key: 'gender', width: 12 },
+        { header: 'competitions', key: 'competitions', width: 35 },
+        { header: 'timestamp', key: 'timestamp', width: 25 },
+        { header: 'year', key: 'year', width: 15 }
     ];
+
+    const mappedRows = participants.map((row: any) => {
+      const rawCompetitions = row.competitions || row.enrolled_subjects;
+      const churchNameVal = row.churchName || row.charchName || row.church || row.church_name;
+      const nameVal = row.name || row.student_name;
+      const timestampVal = row.timestamp || row.created_at;
+
+      return {
+        id: row.id || "Null",
+        serial: row.serial || row.id || "Null",
+        churchName: churchNameVal || "Null",
+        country: row.country || "Null",
+        name: nameVal || "Null",
+        stage: row.stage || "Null",
+        gender: row.gender || "Null",
+        competitions: Array.isArray(rawCompetitions) ? JSON.stringify(rawCompetitions) : "Null",
+        timestamp: timestampVal || "Null",
+        year: row.year || "Null"
+      };
+    });
     
-    ws.addRows(Object.values(studentData).map(s => ({...s, teams: s.teams.join(', ')})));
+    ws.addRows(mappedRows);
     ws.getRow(1).font = { bold: true };
     ws.views = [{ rightToLeft: true }];
 

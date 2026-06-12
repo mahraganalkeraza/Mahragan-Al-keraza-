@@ -18,6 +18,115 @@ const normalizeArabic = (text: any): string => {
     .replace(/\s+/g, ' ');
 };
 
+const restoreFullAnswers = (compactAnswers: any[]): Record<string, any> => {
+  const restored: Record<string, any> = {};
+  const cachedExams = JSON.parse(localStorage.getItem('exams_pool_cache') || '[]');
+  
+  compactAnswers.forEach((item: any) => {
+    const qId = item.qId || item.question_id || item.questionId;
+    const ansVal = item.ans !== undefined ? item.ans : item.student_answer || item.answer;
+    const rawSub = item.sub || item.subject;
+    
+    if (!rawSub) return;
+
+    // Map rawSub to official competition name if compact
+    const keyMapReverse: Record<string, string> = {
+      'derasy': 'دراسي',
+      'mahfozat': 'محفوظات',
+      'qebty_lvl1': 'قبطي مستوى أول',
+      'qebty_lvl2': 'قبطي مستوى ثاني',
+      'دراسي': 'دراسي',
+      'محفوظات': 'محفوظات',
+      'قبطي مستوى أول': 'قبطي مستوى أول',
+      'قبطي مستوى ثاني': 'قبطي مستوى ثاني'
+    };
+    const officialSub = keyMapReverse[rawSub] || rawSub;
+    if (!restored[officialSub]) restored[officialSub] = {};
+    
+    let actualValue = ansVal;
+    if (typeof ansVal === 'number') {
+      const examSchema = cachedExams.find((e: any) => e.competitionType === officialSub || (e.subject || e.competition_type) === officialSub);
+      const questionsList = examSchema?.questions || examSchema?.questions_data || [];
+      const question = questionsList.find((qu: any) => qu.id === qId);
+      if (question) {
+        if (question.type === 'mcq' || question.type === 'boolean') {
+          if (question.options?.[ansVal] !== undefined) {
+            actualValue = question.options[ansVal];
+          }
+        }
+      }
+    } else if (typeof ansVal === 'object' && ansVal !== null) {
+      const examSchema = cachedExams.find((e: any) => e.competitionType === officialSub || (e.subject || e.competition_type) === officialSub);
+      const questionsList = examSchema?.questions || examSchema?.questions_data || [];
+      const question = questionsList.find((qu: any) => qu.id === qId);
+      if (question) {
+        if (question.type === 'matching') {
+          const resolvedMatches: Record<number, string> = {};
+          const shuffledRights = (question as any).shuffledRights || question.matchingPairs?.map((p: any) => p.right);
+          Object.entries(ansVal).forEach(([idxKey, valIndex]) => {
+            const pIdx = Number(idxKey);
+            if (shuffledRights?.[valIndex as number] !== undefined) {
+              resolvedMatches[pIdx] = shuffledRights[valIndex as number];
+            } else if (question.matchingPairs?.[valIndex as number] !== undefined) {
+              resolvedMatches[pIdx] = question.matchingPairs[valIndex as number].right;
+            } else {
+              resolvedMatches[pIdx] = String(valIndex);
+            }
+          });
+          actualValue = resolvedMatches;
+        }
+      }
+    }
+    
+    restored[officialSub][qId] = actualValue;
+  });
+  
+  return restored;
+};
+
+const fetchAllExamsAndCache = async (): Promise<any[]> => {
+  const cacheKey = 'exams_pool_cache';
+  const cacheTimeKey = 'exams_pool_cache_time';
+  const cachedTime = localStorage.getItem(cacheTimeKey);
+  const now = Date.now();
+  
+  if (cachedTime && now - Number(cachedTime) < 24 * 60 * 60 * 1000) {
+    const cachedData = localStorage.getItem(cacheKey);
+    if (cachedData) {
+      try {
+        return JSON.parse(cachedData);
+      } catch (e) {
+        console.error("Error parsing cached exams_pool:", e);
+      }
+    }
+  }
+  
+  // Cache missing or expired: fetch all active exams from Supabase
+  try {
+    const { data, error } = await supabase
+      .from('exams_pool')
+      .select('id, stage, subject, model_type, is_active, updated_at, questions_data')
+      .eq('is_active', true);
+      
+    if (error) throw error;
+    if (data) {
+      localStorage.setItem(cacheKey, JSON.stringify(data));
+      localStorage.setItem(cacheTimeKey, String(now));
+      return data;
+    }
+  } catch (err) {
+    console.error("Failed to fetch and cache exams_pool from Supabase:", err);
+    // Fallback to existing cache if fetching fails (offline resiliency)
+    const cachedData = localStorage.getItem(cacheKey);
+    if (cachedData) {
+      try {
+        return JSON.parse(cachedData);
+      } catch (e) {}
+    }
+  }
+  return [];
+};
+
 interface Question {
   id: string;
   type: 'mcq' | 'boolean' | 'matching' | 'fill';
@@ -66,7 +175,9 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
 
   const fetchExamsPool = async () => {
     try {
-      const { data, error } = await supabase.from('exams_pool').select('*');
+      const { data, error } = await supabase
+        .from('exams_pool')
+        .select('id, stage, subject, model_type, is_active, updated_at');
       if (error) {
         console.error("Error fetching exams pool:", error);
       } else if (data) {
@@ -75,23 +186,22 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
           stage: row.stage,
           competitionType: row.subject || row.competition_type || '',
           model: row.model || row.model_type || 'A',
-          questions: row.questions_data || [],
+          questions: [], // Excluded initially for efficiency
           isActive: row.is_active ?? true,
           updatedAt: row.updated_at
         }));
         setExams(loaded);
 
-        // Populate the exam form/inputs automatically if data exists in the state
+        // Populate metadata form selectors automatically if data exists
         if (loaded.length > 0) {
           const firstExam = loaded[0];
           setSelectedStage(firstExam.stage || '');
           setSelectedCompetition(firstExam.competitionType || 'دراسي');
           setSelectedModel(firstExam.model || 'A');
-          setCurrentQuestions(firstExam.questions || []);
         }
       }
     } catch (e) {
-      console.error('Error loading exams from Supabase:', e);
+      console.error('Error loading exams metadata from Supabase:', e);
     }
   };
 
@@ -99,21 +209,39 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
     fetchExamsPool();
   }, []);
 
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+
   useEffect(() => {
-    if (selectedStage && selectedCompetition && selectedModel) {
-      const exam = exams.find(e => 
-        e.stage === selectedStage && 
-        e.competitionType === selectedCompetition && 
-        e.model === selectedModel
-      );
-      if (exam) {
-        setCurrentQuestions(exam.questions || []);
-      } else {
-        setCurrentQuestions([]);
+    const fetchQuestionsOnDemand = async () => {
+      if (selectedStage && selectedCompetition && selectedModel) {
+        setIsLoadingQuestions(true);
+        const examId = `${selectedStage}_${selectedCompetition}_${selectedModel}`;
+        try {
+          const { data, error } = await supabase
+            .from('exams_pool')
+            .select('questions_data')
+            .eq('id', examId)
+            .maybeSingle();
+            
+          if (error) {
+            console.error("Error fetching active exam questions:", error);
+            setCurrentQuestions([]);
+          } else if (data && data.questions_data) {
+            setCurrentQuestions(data.questions_data);
+          } else {
+            setCurrentQuestions([]);
+          }
+        } catch (e) {
+          console.error("Error loading questions:", e);
+          setCurrentQuestions([]);
+        } finally {
+          setIsLoadingQuestions(false);
+        }
+        setIsDirty(false);
       }
-      setIsDirty(false);
-    }
-  }, [selectedStage, selectedCompetition, selectedModel, exams]);
+    };
+    fetchQuestionsOnDemand();
+  }, [selectedStage, selectedCompetition, selectedModel]);
 
   // Auto-save logic every 60 seconds if dirty
   useEffect(() => {
@@ -541,13 +669,7 @@ export const LiveExamGateway: React.FC = () => {
              : activeStudent.detailed_answers;
            
            if (Array.isArray(parsedAnswers)) {
-             const restored: Record<string, any> = {};
-             parsedAnswers.forEach((item: any) => {
-               if (item.subject) {
-                 if (!restored[item.subject]) restored[item.subject] = {};
-                 restored[item.subject][item.question_id || item.questionId] = item.student_answer || item.answer;
-               }
-             });
+             const restored = restoreFullAnswers(parsedAnswers);
              setAllAnswers(restored);
            } else if (typeof parsedAnswers === 'object' && parsedAnswers !== null) {
              setAllAnswers(parsedAnswers);
@@ -578,43 +700,7 @@ export const LiveExamGateway: React.FC = () => {
     }
   }, [allAnswers, activeStudent?.id]);
 
-  // Monitor student session via Supabase realtime Isolated channel
-  useEffect(() => {
-    if (!activeStudent?.id) return;
-    
-    // Isolate Supabase subscription to avoid any global conflict
-    const channelName = `session_channel_${activeStudent.id}_${Date.now()}`;
-    const sessionChannel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'live_monitoring',
-          filter: `student_id=eq.${activeStudent.id}`
-        },
-        (payload: any) => {
-          const data = payload.new;
-          if (data) {
-            if (data.status === 'terminated') {
-              setIsTerminated(true);
-              localStorage.removeItem(`exam_${activeStudent.id}_${selectedCompetition}`);
-            }
-            if (data.status === 'active' && data.attempts_count === 0) {
-              setIsAlreadyExamined(false);
-              setIsExamCompleted(false);
-              setIsTerminated(false);
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(sessionChannel);
-    };
-  }, [activeStudent?.id, selectedCompetition]);
+  // Monitor student session realtime is disabled on shared terminal devices to enforce REST-only interaction and stay within free tier limits.
 
   // Load device info on mount
   useEffect(() => {
@@ -864,16 +950,14 @@ export const LiveExamGateway: React.FC = () => {
       setIsExamCompleted(false);
       setIsTerminated(false);
 
-      // Fetch active exams from Supabase exams_pool table
-      const { data: examsData, error: examsError } = await supabase
-        .from('exams_pool')
-        .select('*')
-        .eq('stage', stage)
-        .eq('subject', competitionType);
+      // Read exams from cache or fetch all exams pool once per day (Zero-Egress Strategy)
+      const allCachedPool = await fetchAllExamsAndCache();
+      const matchedExams = allCachedPool.filter((row: any) => 
+        normalizeArabic(row.stage) === normalizeArabic(stage) &&
+        normalizeArabic(row.subject || row.competition_type) === normalizeArabic(competitionType)
+      );
 
-      if (examsError) throw examsError;
-
-      const availableExams: Exam[] = (examsData || []).map((row: any) => ({
+      const availableExams: Exam[] = matchedExams.map((row: any) => ({
         id: row.id,
         stage: row.stage,
         competitionType: row.subject || row.competition_type || '',
@@ -1013,12 +1097,66 @@ export const LiveExamGateway: React.FC = () => {
     setIsLoading(true);
 
     try {
+      const cachedExams = JSON.parse(localStorage.getItem('exams_pool_cache') || '[]');
+
       const allCollectedAnswersArray = Object.entries(allAnswers).flatMap(([subj, ansObj]) => {
-        return Object.entries(ansObj as Record<string, any>).map(([qid, val]) => ({
-          subject: subj,
-          question_id: qid,
-          student_answer: val
-        }));
+        const keyMapObj: Record<string, string> = {
+          'دراسي': 'derasy',
+          'محفوظات': 'mahfozat',
+          'قبطي مستوى أول': 'qebty_lvl1',
+          'قبطي مستوى ثاني': 'qebty_lvl2'
+        };
+        const compactSub = keyMapObj[subj] || subj;
+        const examSchema = cachedExams.find((e: any) => e.competitionType === subj || (e.subject || e.competition_type) === subj);
+        
+        return Object.entries(ansObj as Record<string, any>).map(([qid, val]) => {
+          let compactAns: any = val;
+          let calculatedPts = 0;
+          
+          if (examSchema) {
+            const questionsList = examSchema.questions || examSchema.questions_data || [];
+            const question = questionsList.find((qu: any) => qu.id === qid);
+            if (question) {
+              const correctAns = question.correctAnswers?.[0];
+              if (question.type === 'mcq' || question.type === 'boolean') {
+                compactAns = question.options?.indexOf(val) !== -1 ? question.options?.indexOf(val) : val;
+                if (normalizeArabic(String(val)) === normalizeArabic(String(correctAns))) {
+                  calculatedPts = question.points;
+                }
+              } else if (question.type === 'fill') {
+                compactAns = val;
+                if (normalizeArabic(String(val)) === normalizeArabic(String(correctAns))) {
+                  calculatedPts = question.points;
+                }
+              } else if (question.type === 'matching') {
+                calculatedPts = 0;
+                const matchingPairs = question.matchingPairs || [];
+                const matchedIndIndices: Record<number, number> = {};
+                
+                let correctMatches = 0;
+                matchingPairs.forEach((pair: any, pIdx: number) => {
+                  const sMatch = val && typeof val === 'object' ? val[pIdx] : '';
+                  const rMatch = pair.right;
+                  const rightList = (question as any).shuffledRights || matchingPairs.map((p: any) => p.right);
+                  matchedIndIndices[pIdx] = rightList.indexOf(sMatch);
+                  
+                  if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
+                    correctMatches++;
+                  }
+                });
+                compactAns = matchedIndIndices;
+                if (correctMatches === matchingPairs.length) calculatedPts = question.points;
+              }
+            }
+          }
+          
+          return {
+            qId: qid,
+            ans: compactAns,
+            pts: calculatedPts,
+            sub: compactSub
+          };
+        });
       });
 
       const finalPayload = {
@@ -1112,6 +1250,15 @@ export const LiveExamGateway: React.FC = () => {
             setActiveStudent(null); 
             setActiveExam(null); 
             setSelectedCompetition(null); 
+            setAnswers({});
+            setAllAnswers({});
+            setCompletedSubjects({
+              derasy: null,
+              mahfozat: null,
+              qebty_lvl1: null,
+              qebty_lvl2: null
+            });
+            setIsTerminated(false);
           }} 
           className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all font-sans"
         >
@@ -1137,6 +1284,15 @@ export const LiveExamGateway: React.FC = () => {
             setActiveStudent(null); 
             setActiveExam(null); 
             setSelectedCompetition(null); 
+            setAnswers({});
+            setAllAnswers({});
+            setCompletedSubjects({
+              derasy: null,
+              mahfozat: null,
+              qebty_lvl1: null,
+              qebty_lvl2: null
+            });
+            setIsExamCompleted(false);
           }} 
           className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
         >
