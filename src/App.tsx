@@ -3926,6 +3926,10 @@ function AppComponent() {
 
   const handleDeleteParticipant = async (id: string) => {
     try {
+      const deletedParticipant = participants.find(p => p.id === id) || allChurchParticipants.find(p => p.id === id);
+      const targetChurch = deletedParticipant?.churchName || churchName;
+
+      // 1. Delete from Firebase Firestore
       const batch = writeBatch(db);
       batch.delete(doc(db, 'participants', id));
       batch.delete(doc(db, 'active_sessions', id));
@@ -3933,12 +3937,18 @@ function AppComponent() {
       batch.delete(doc(db, 'online_results', id));
       await batch.commit();
 
-      // Get the church name before deleting
-      const deletedParticipant = participants.find(p => p.id === id);
-      const targetChurch = deletedParticipant?.churchName || churchName;
+      // 2. Delete from Supabase registrations table
+      const { error: sbErr } = await supabase
+        .from('registrations')
+        .delete()
+        .eq('id', id);
+      if (sbErr) {
+        console.error("Supabase individual participant deletion error:", sbErr);
+      }
 
       // Instant local state sync
       setParticipants(prev => prev.filter(p => p.id !== id));
+      setAllChurchParticipants(prev => prev.filter(p => p && p.id !== id));
       setTotalParticipantsCount(prev => Math.max(0, prev - 1));
 
       setShowDeleteModal(false);
@@ -3948,6 +3958,12 @@ function AppComponent() {
       await updateChurchSubscribers(targetChurch);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `participants/${id}`);
+    }
+  };
+
+  const confirmAndDeleteParticipant = async (id: string) => {
+    if (window.confirm("هل أنت متأكد من حذف هذا المخدوم نهائياً؟")) {
+      await handleDeleteParticipant(id);
     }
   };
 
@@ -5599,9 +5615,8 @@ function AppComponent() {
                                 </button>
                                 <button 
                                   onClick={() => {
-                                    setParticipantToDelete(p.id);
-                                    setShowDeleteModal(true);
-                                  }} 
+                                    confirmAndDeleteParticipant(p.id);
+                                  }}
                                   className="p-1.5 text-rose-500 hover:text-red-700 transition-colors"
                                   title="حذف المشترك"
                                 >
@@ -6347,8 +6362,7 @@ function AppComponent() {
                                 </button>
                                 <button 
                                   onClick={() => {
-                                    setParticipantToDelete(p.id);
-                                    setShowDeleteModal(true);
+                                    confirmAndDeleteParticipant(p.id);
                                   }}
                                   className="p-2 text-slate-400 hover:text-coptic-red transition-colors"
                                   title="حذف"
@@ -7034,7 +7048,7 @@ function AppComponent() {
 
             {adminActiveTab === 'dynamic_management' && (
               <div className="space-y-12">
-                <DynamicAdminSettings />
+                <DynamicAdminSettings allStudents={allChurchParticipants} />
                 
                 {/* BATCH UPLOAD FIREWALL SECTION */}
                 {userRole === 'admin' && (
@@ -8037,8 +8051,7 @@ function AppComponent() {
                                 </button>
                                 <button 
                                   onClick={() => {
-                                    setParticipantToDelete(p.id);
-                                    setShowDeleteModal(true);
+                                    confirmAndDeleteParticipant(p.id);
                                   }}
                                   className="p-2 text-slate-400 hover:text-red-500 transition-colors"
                                   title="حذف"
@@ -9004,8 +9017,7 @@ function AppComponent() {
                             </button>
                             <button 
                               onClick={() => {
-                                setParticipantToDelete(p.id);
-                                setShowDeleteModal(true);
+                                confirmAndDeleteParticipant(p.id);
                               }}
                               className="p-2 text-slate-300 hover:text-red-500 transition-colors"
                               title="حذف"

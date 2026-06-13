@@ -43,10 +43,88 @@ const fetchPublicChurches = async () => {
   }
 };
 
+const getChurchCode = (churchName: string, databaseChurches?: any[]): string => {
+  const cleanName = (churchName || '').trim();
+  if (!cleanName) return '';
+
+  if (databaseChurches && databaseChurches.length > 0) {
+    const foundDb = databaseChurches.find(c => (c.name || '').trim().toLowerCase() === cleanName.toLowerCase());
+    if (foundDb) {
+      return foundDb.loginCode || foundDb.code || String(foundDb.id);
+    }
+  }
+
+  const CHURCH_CREDENTIALS: Record<string, string> = {
+    "العباسية": "Lk2*951",
+    "المطرانية": "Vp7@385",
+    "نزلة عصر": "Zw2#398",
+    "المداور": "Kf1@638",
+    "نزلة رمضان": "Nb7_264",
+    "البسقلون": "Rt5#930",
+    "عباد شارونة": "Mx2@901",
+    "علي باشا": "Js3@452",
+    "عزبة رزق": "Kz5#259",
+    "صفانية": "Dx1#924",
+    "الملاك ميخائيل - مغاغة": "Km1@245",
+    "عزبة بطرس": "Tr4#739",
+    "قصر لملوم": "Lk5_441",
+    "بني عامر": "Vz1#827",
+    "قفادة": "Jh4_333",
+    "عزبة سمعان": "Ty3@682",
+    "بلهاسة": "Bn6#218",
+    "بني خالد": "Xj7*195",
+    "شارونة": "Bm1*627",
+    "الشيخ زياد": "Dp2#118",
+    "أبو غطاس": "Xj9_803",
+    "طنبدي": "Jn5#572",
+    "ميانة": "Lk9*118",
+    "صعايدة الكوم الأخضر": "Qw9_106",
+    "الشيخ مسعود": "Sm7_134",
+    "كفر عبد الخالق": "Vn4@538",
+    "عطف حيدر": "Gx6_193",
+    "عزبة مهدي": "Kf4#819",
+    "الكوم الأخضر": "Bf3#614",
+    "الجزيرة": "Np8_423",
+    "شم القبلية": "Mr8*508",
+    "مارمينا مغاغة": "Gh8_682",
+    "برطباط": "Bt4@717",
+    "عزبة إسحق": "Rf1*860",
+    "صعايدة الساوي": "Tp2#742",
+    "العذراء مغاغة": "Gh9*515",
+    "شمس الدين": "Rt8*485",
+    "آبا البلد": "Jn2@551",
+    "دهروط": "Ts6*304",
+    "الساوي": "Lv6*373",
+    "بني واللمس": "Xz8_402",
+    "كوم الحاصل": "Tr8*704",
+    "دير الجرنوس": "Rf5#472",
+    "الزورة": "Wq3#490",
+    "إشنين": "Mb4@952",
+    "إبراهيم عبد السيد": "Qw4@316",
+    "القديسة دميانة": "Vz9@624",
+    "برمشا": "Wq2@714",
+    "القايات": "Zw7*291",
+    "محمد بيه": "Bt3*815",
+    "العدوة": "Vp3_726"
+  };
+
+  if (CHURCH_CREDENTIALS[cleanName]) {
+    return CHURCH_CREDENTIALS[cleanName];
+  }
+
+  let hash = 0;
+  for (let i = 0; i < cleanName.length; i++) {
+    hash = cleanName.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const numericCode = Math.abs(hash % 10000).toString().padStart(4, '0');
+  return `CH-${numericCode}`;
+};
+
 const createOMRSheetElement = async (
   student: Participant, 
   numQuestions: number, 
-  churchLogos: Record<string, string>
+  churchLogos: Record<string, string>,
+  rawChurches?: any[]
 ) => {
   const wrapper = document.createElement('div');
   wrapper.style.width = '148mm';
@@ -107,6 +185,7 @@ const createOMRSheetElement = async (
     id: student.id,
     name: student.name,
     church: student.churchName,
+    churchCode: getChurchCode(student.churchName, rawChurches),
     stage: student.stage
   });
   
@@ -236,7 +315,7 @@ const createOMRSheetElement = async (
   return wrapper;
 };
 
-const createQRCardPageElement = async (students: Participant[]) => {
+const createQRCardPageElement = async (students: Participant[], rawChurches?: any[]) => {
   const wrapper = document.createElement('div');
   wrapper.style.width = '210mm'; 
   wrapper.style.height = '297mm'; 
@@ -306,6 +385,7 @@ const createQRCardPageElement = async (students: Participant[]) => {
         id: s.id,
         name: s.name,
         church: s.churchName,
+        churchCode: getChurchCode(s.churchName, rawChurches),
         stage: s.stage
     });
     // High resolution QR
@@ -353,7 +433,8 @@ const createQRCardPageElement = async (students: Participant[]) => {
 
     // Church (Small)
     const churchLabel = document.createElement('div');
-    churchLabel.innerText = s.churchName;
+    const chCode = getChurchCode(s.churchName, rawChurches);
+    churchLabel.innerText = `${s.churchName} (${chCode})`;
     churchLabel.style.fontSize = '8px';
     churchLabel.style.fontWeight = '600';
     churchLabel.style.color = '#94a3b8';
@@ -377,6 +458,7 @@ const createQRCardPageElement = async (students: Participant[]) => {
 
 export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
   const [mode, setMode] = useState<'omr' | 'qr'>('omr');
+  const [rawChurches, setRawChurches] = useState<any[]>([]);
   const [churches, setChurches] = useState<string[]>([]);
   const [levels, setLevels] = useState<string[]>([]);
   const [selectedChurch, setSelectedChurch] = useState<string>('الكل');
@@ -422,8 +504,9 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
   useEffect(() => {
     const fetchDynamics = async () => {
       try {
-        const { data: churchesData } = await supabase.from('churches').select('name').range(0, 4999);
+        const { data: churchesData } = await supabase.from('churches').select('name, loginCode').range(0, 4999);
         if (churchesData) {
+          setRawChurches(churchesData);
           setChurches(churchesData.map((doc: any) => doc.name).filter(Boolean));
         }
 
@@ -513,7 +596,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
       for (let j = 0; j < batchList.length; j++) {
         const student = batchList[j];
         try {
-          const domElement = await createOMRSheetElement(student, numQuestions, churchLogos);
+          const domElement = await createOMRSheetElement(student, numQuestions, churchLogos, rawChurches);
           const canvas = await html2canvas(domElement, { scale: 3, useCORS: true, allowTaint: true });
           const imgData = canvas.toDataURL('image/jpeg', 0.95);
           doc.addImage(imgData, 'JPEG', 0, 0, 148, 210);
@@ -546,7 +629,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
     for (let pIdx = 0; pIdx < totalPagesNum; pIdx++) {
         const batch = students.slice(pIdx * cardsPerPage, (pIdx + 1) * cardsPerPage);
         try {
-          const domElement = await createQRCardPageElement(batch);
+          const domElement = await createQRCardPageElement(batch, rawChurches);
           
           // Use html2canvas to render the entire page of cards
           const canvas = await html2canvas(domElement, { 
