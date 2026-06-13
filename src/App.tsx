@@ -1694,6 +1694,30 @@ function AppComponent() {
     };
   }, [activeYear]);
 
+  const fetchBooksFromSupabase = async () => {
+    setIsCalculatorLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('books')
+        .select('*');
+      if (error) throw error;
+      
+      const mapped = (data || []).map((b: any) => ({
+        id: String(b.id),
+        stage: b.stage,
+        competition: b.competition,
+        material: b.competition || b.material,
+        price: Number(b.price) || 0
+      }));
+      setCalculatorSettings(mapped);
+    } catch (err: any) {
+      console.error("Error fetching books from Supabase:", err);
+      setNotification("حدث خطأ أثناء جلب قائمة الكتب.");
+    } finally {
+      setIsCalculatorLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthReady || !isLoggedIn) return;
     
@@ -1710,9 +1734,7 @@ function AppComponent() {
             const items = carouselSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as CarouselItem));
             setCarouselItems(items.sort((a, b) => (a.order || 0) - (b.order || 0)));
             
-            const calculatorSettingsSnap = await getDocsSafe(query(collection(db, 'calculator_settings'), where('year', '==', activeYear)));
-            setCalculatorSettings(calculatorSettingsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) })));
-            setIsCalculatorLoading(false);
+            await fetchBooksFromSupabase();
             
             const footerSnap = await getDocSafe(doc(db, 'settings', 'footer'));
             if (footerSnap.exists()) setSiteSettings(footerSnap.data() as SiteSettings);
@@ -2015,28 +2037,31 @@ function AppComponent() {
     setIsSubmittingCalculator(true);
     try {
       const stage = newCalculatorSetting.stage.trim();
-      const material = newCalculatorSetting.material.trim();
+      const competition = newCalculatorSetting.material.trim();
       const price = Number(newCalculatorSetting.price) || 0;
       
-      const id = `${stage}_${material}`;
-      const dataToSave = {
-        stage,
-        material,
-        price,
-        id,
-        timestamp: new Date().toISOString()
-      };
+      if (editingCalculatorSetting) {
+        // Update existing book
+        const { error } = await supabase
+          .from('books')
+          .update({ stage, competition, price })
+          .eq('id', editingCalculatorSetting.id);
+        if (error) throw error;
+      } else {
+        // Insert new book
+        const { error } = await supabase
+          .from('books')
+          .insert([{ stage, competition, price }]);
+        if (error) throw error;
+      }
       
-      console.log('Saving calculator setting:', dataToSave);
-      
-      await setDoc(doc(db, 'calculator_settings', id), { ...dataToSave, year: activeYear });
       setNewCalculatorSetting({ stage: '', material: '', price: 0 });
       setEditingCalculatorSetting(null);
       alert('تم حفظ الإعداد بنجاح');
+      await fetchBooksFromSupabase();
     } catch (error) {
-      console.error('Error saving calculator setting:', error);
+      console.error('Error saving book setting:', error);
       alert('خطأ في حفظ الإعداد');
-      handleFirestoreError(error, OperationType.WRITE, 'calculator_settings');
     } finally {
       setIsSubmittingCalculator(false);
     }
@@ -2050,14 +2075,19 @@ function AppComponent() {
   const confirmDeleteCalculatorSetting = async () => {
     if (!calculatorSettingToDelete) return;
     try {
-      await deleteDoc(doc(db, 'calculator_settings', calculatorSettingToDelete));
+      const { error } = await supabase
+        .from('books')
+        .delete()
+        .eq('id', calculatorSettingToDelete);
+      if (error) throw error;
+
       alert('تم حذف الإعداد بنجاح');
       setShowDeleteCalculatorModal(false);
       setCalculatorSettingToDelete(null);
+      await fetchBooksFromSupabase();
     } catch (error) {
-      console.error('Error deleting calculator setting:', error);
+      console.error('Error deleting book setting:', error);
       alert('خطأ في حذف الإعداد');
-      handleFirestoreError(error, OperationType.DELETE, `calculator_settings/${calculatorSettingToDelete}`);
     }
   };
 
@@ -3105,28 +3135,74 @@ function AppComponent() {
     if (!isLoggedIn) return;
     setIsOrdersLoading(true);
     try {
-      const baseQuery = userRole === 'admin' 
-        ? query(collection(db, 'orders'), where('year', '==', activeYear)) 
-        : query(collection(db, 'orders'), where('churchName', '==', churchName), where('year', '==', activeYear));
-      
-      if (isFirst || (!isFirst && !isNext)) {
-        getCountFromServer(baseQuery).then(snap => setTotalOrdersCount(snap.data().count)).catch(err => console.error("Firestore Core Error: ", err.message));
+      let querySb = supabase
+        .from('book_orders')
+        .select(`
+          id,
+          book_id,
+          church_name,
+          ordered_by,
+          quantity,
+          created_at,
+          books (
+            id,
+            stage,
+            competition,
+            price
+          )
+        `);
+
+      if (userRole !== 'admin' && churchName) {
+        querySb = querySb.eq('church_name', churchName);
       }
 
-      const constraints: any[] = [orderBy('timestamp', 'desc')];
-      
-      const q = query(baseQuery, ...constraints);
-      const snap = await getDocs(q);
-      
-      const newList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+      const { data, error } = await querySb;
+      if (error) throw error;
+
+      const grouped: Record<string, Order> = {};
+
+      (data || []).forEach((row: any) => {
+        const cName = row.church_name;
+        const bookSub = row.books || {};
+        const price = Number(bookSub.price) || 0;
+        const quantity = Number(row.quantity) || 0;
+        const subtotal = price * quantity;
+        const bookIdStr = String(row.book_id || '');
+
+        if (!grouped[cName]) {
+          const dateStr = row.created_at ? new Date(row.created_at).toLocaleString('ar-EG') : 'بدون تاريخ';
+          grouped[cName] = {
+            id: String(row.id),
+            churchName: cName,
+            country: '',
+            timestamp: dateStr,
+            grandTotal: 0,
+            details: []
+          };
+        }
+
+        grouped[cName].grandTotal += subtotal;
+        grouped[cName].details.push({
+          settingId: bookIdStr,
+          id: bookIdStr,
+          stage: bookSub.stage || 'غير محدد',
+          material: bookSub.competition || 'غير محدد',
+          price: price,
+          quantity: quantity,
+          subtotal: subtotal
+        });
+      });
+
+      const newList = Object.values(grouped);
       setOrders(newList);
+      setTotalOrdersCount(newList.length);
       setIsOrdersEnd(true);
       
       if (isFirst) setOrderPageCount(1);
       else if (isNext) setOrderPageCount(prev => prev + 1);
       
     } catch (err: any) { 
-      console.error("Firestore Core Error: ", err.message); 
+      console.error("Supabase Book Orders Error: ", err.message); 
     } finally { 
       setIsOrdersLoading(false); 
     }
@@ -3445,9 +3521,21 @@ function AppComponent() {
   const handleDeleteOrder = async (id: string) => {
     confirmAction('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الطلب؟', async () => {
       try {
-        await deleteDoc(doc(db, 'orders', id));
+        const orderToDelete = orders.find(o => o.id === id);
+        if (!orderToDelete) return;
+
+        const { error } = await supabase
+          .from('book_orders')
+          .delete()
+          .eq('church_name', orderToDelete.churchName);
+
+        if (error) throw error;
+        
+        setNotification('تم حذف الطلب بنجاح.');
+        await fetchOrdersPage(true, true);
       } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, `orders/${id}`);
+        console.error("Error deleting book orders:", error);
+        alert('حدث خطأ أثناء حذف طلب الكتب.');
       }
     });
   };
@@ -4214,6 +4302,19 @@ function AppComponent() {
     });
   }, [results, resultSearch, resultsFilterStage, resultsFilterGrade]);
 
+  const extractedStagesFromParticipants = useMemo(() => {
+    if (!allChurchParticipants || allChurchParticipants.length === 0) return [];
+    return Array.from(new Set(allChurchParticipants.map(s => s.stage).filter(Boolean))).sort();
+  }, [allChurchParticipants]);
+
+  const extractedCompetitionsFromParticipants = useMemo(() => {
+    if (!allChurchParticipants || allChurchParticipants.length === 0) return [];
+    return Array.from(new Set(allChurchParticipants.flatMap(s => {
+      const comps = s.competitions || [];
+      return Array.isArray(comps) ? comps : [comps];
+    }).filter(Boolean))).sort();
+  }, [allChurchParticipants]);
+
   const groupedSettings = useMemo(() => {
     console.log('Calculator settings:', calculatorSettings);
     const groups: Record<string, Record<string, any[]>> = {};
@@ -4265,48 +4366,37 @@ function AppComponent() {
     }
 
     setIsSubmitting(true);
-    let newOrder;
     try {
-      newOrder = {
-        churchName,
-        grandTotal: calculations.grandTotal,
-        timestamp: new Date().toLocaleString('ar-EG'),
-        details: activeRows.map(r => ({
-          settingId: r.id,
-          stage: r.stage,
-          material: r.material,
-          price: r.price,
-          quantity: r.quantity,
-          subtotal: r.subtotal
-        }))
-      };
+      // 1. Clear previous orders for this church to prevent duplication
+      await supabase
+        .from('book_orders')
+        .delete()
+        .eq('church_name', churchName);
 
-      const docRef = await withExponentialBackoff(() => addDoc(collection(db, 'orders'), { ...newOrder, year: activeYear }));
-      
-      // Instant state sync
-      const finalOrder: Order = {
-        id: docRef.id,
-        ...newOrder,
-        year: activeYear
-      } as any;
-      setOrders(prev => [finalOrder, ...prev]);
-      setTotalOrdersCount(prev => prev + 1);
+      // 2. Prepare items for insertion
+      const ordersToInsert = activeRows.map(r => ({
+        book_id: Number(r.id),
+        church_name: churchName,
+        ordered_by: user?.email || 'مستخدم الكنيسة',
+        quantity: Number(r.quantity)
+      }));
+
+      const { error: insertError } = await supabase
+        .from('book_orders')
+        .insert(ordersToInsert);
+
+      if (insertError) throw insertError;
+
+      // 3. Trigger immediate page sync
+      await fetchOrdersPage(true, true);
       
       setSubmitStatus('success');
       alert('تم إرسال طلب الكتب للجنة بنجاح!');
       setTimeout(() => setSubmitStatus('idle'), 5000);
     } catch (error: any) {
-      console.error('Error submitting order:', error);
-      if (error && (error.code === 'resource-exhausted' || error.message?.includes('quota'))) {
-        const existing = JSON.parse(localStorage.getItem('emergency_registrations') || '[]');
-        existing.push({ ...newOrder, type: 'orders', submittedAt: new Date().toISOString() });
-        localStorage.setItem('emergency_registrations', JSON.stringify(existing));
-        setSubmitStatus('success');
-        alert("تم حفظ البيانات مؤقتاً (بسبب ضغط على السيرفر). يرجى التواصل مع اللجنة.");
-      } else {
-        setSubmitStatus('error');
-        handleFirestoreError(error, OperationType.WRITE, 'orders');
-      }
+      console.error('Error submitting order on Supabase:', error);
+      setSubmitStatus('error');
+      alert('حدث خطأ أثناء إرسال الطلب. يرجى مراجعة الاتصال بالإنترنت.');
     } finally {
       setIsSubmitting(false);
     }
@@ -6827,7 +6917,9 @@ function AppComponent() {
                       className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
                     >
                       <option value="">-- اختر المرحلة --</option>
-                      {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
+                      {extractedStagesFromParticipants.map((lvl) => (
+                        <option key={lvl} value={lvl}>{lvl}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -6838,7 +6930,9 @@ function AppComponent() {
                       className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
                     >
                       <option value="">-- اختر المادة --</option>
-                      {['دراسي', 'محفوظات', 'قبطي', 'أنشطة', 'تطبيقات'].map(m => <option key={m} value={m}>{m}</option>)}
+                      {extractedCompetitionsFromParticipants.map((comp) => (
+                        <option key={comp} value={comp}>{comp}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
