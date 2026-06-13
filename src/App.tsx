@@ -167,6 +167,7 @@ import {
 import { generateMasterExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/newExcelExport';
 import { generateShortId } from './lib/utils';
 import DynamicAdminSettings from './components/DynamicAdminSettings';
+import AdminBulkRegister from './components/AdminBulkRegister';
 // @ts-ignore
 import logo from './by-logo.jpeg';
 
@@ -893,6 +894,7 @@ function AppComponent() {
   }, [participantSearch, partChurchFilter, partStageFilter, partCompFilter]);
   
   const [isDuplicateScanModalOpen, setIsDuplicateScanModalOpen] = useState(false);
+  const [isAdminBulkRegisterOpen, setIsAdminBulkRegisterOpen] = useState(false);
   const [duplicateRecords, setDuplicateRecords] = useState<Participant[][]>([]);
   const [isScanningDuplicates, setIsScanningDuplicates] = useState(false);
   const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
@@ -3832,6 +3834,11 @@ function AppComponent() {
     }
   };
 
+  const handleBulkRegisterSuccess = (newParticipants: any[]) => {
+    setParticipants(prev => [...prev, ...newParticipants]);
+    setTotalParticipantsCount(prev => prev + newParticipants.length);
+  };
+
   const handleAddParticipant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newParticipant.name || !newParticipant.stage || !newParticipant.gender) {
@@ -5950,6 +5957,12 @@ function AppComponent() {
                     <Users className="text-coptic-blue" /> إدارة المشتركين
                   </h4>
                   <div className="flex flex-wrap items-center gap-2">
+                    <button 
+                      onClick={() => setIsAdminBulkRegisterOpen(true)}
+                      className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 hover:from-emerald-600 hover:to-teal-700 transition-all hover:scale-105 active:scale-95 animate-fade-in"
+                    >
+                      <UserPlus size={14} /> التسجيل الجماعي (Bulk)
+                    </button>
                     <button 
                       onClick={() => setIsDuplicateScanModalOpen(true)}
                       className="px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black shadow-sm flex items-center gap-2 hover:bg-rose-100 transition-colors"
@@ -9300,6 +9313,14 @@ function AppComponent() {
       )}
       <DeleteConfirmationModal />
       <DuplicateScanModal />
+      <AdminBulkRegister
+        isOpen={isAdminBulkRegisterOpen}
+        onClose={() => setIsAdminBulkRegisterOpen(false)}
+        publicChurches={publicChurches}
+        dynamicLevels={dynamicLevels}
+        onSuccess={handleBulkRegisterSuccess}
+        activeYear={activeYear}
+      />
       <DeleteScheduleModal />
       <DeleteCalculatorModal />
       <OrderDetailsModal />
