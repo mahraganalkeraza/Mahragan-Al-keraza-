@@ -113,9 +113,11 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
   const [newChurchCode, setNewChurchCode] = useState('');
   
   const [newLevelName, setNewLevelName] = useState('');
+  const [newLevelType, setNewLevelType] = useState<'مهرجان' | 'أنشطة' | 'ألحان'>('مهرجان');
   const [selectedCompetitions, setSelectedCompetitions] = useState<string[]>([]);
 
   const [newCompName, setNewCompName] = useState('');
+  const [newCompCategory, setNewCompCategory] = useState<'مهرجان' | 'أنشطة' | 'ألحان'>('مهرجان');
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -401,8 +403,8 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
           { data: validationData }
         ] = await Promise.all([
           supabase.from('churches').select('*').range(0, 4999),
-          supabase.from('levels').select('*').range(0, 4999),
-          supabase.from('competitions').select('*').range(0, 4999),
+          supabase.from('stage_competitions').select('*').range(0, 4999),
+          supabase.from('competition_bank').select('*').range(0, 4999),
           supabase.from('activityStages').select('*').range(0, 4999),
           supabase.from('hymnStages').select('*').range(0, 4999),
           supabase.from('system_settings').select('*').eq('id', 'app_config').maybeSingle(),
@@ -412,7 +414,7 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
         if (!isMounted) return;
 
         if (churchesData) setChurches(churchesData);
-        if (levelsData) setLevels(levelsData.sort((a: any, b: any) => sortStages(a.name, b.name)));
+        if (levelsData) setLevels(levelsData.map(l => ({ ...l, name: l.stage_name, comps: l.allowed_competitions })));
         if (compData) setCompetitions(compData);
         if (activityData) setActivityStages(activityData);
         if (hymnData) setHymnStages(hymnData);
@@ -540,41 +542,90 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
   const addCompetition = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCompName) return;
+    setIsSaving(true);
     try {
-      alert('Operation disabled');
+      const { error } = await supabase
+        .from('competition_bank')
+        .insert([{ name: newCompName, category: newCompCategory }]);
+      
+      if (error) throw error;
+      
+      const { data } = await supabase.from('competition_bank').select('*');
+      if (data) setCompetitions(data);
+      
       setNewCompName('');
-    } catch (e) { 
+      alert('تمت إضافة المسابقة للبنك بنجاح!');
+    } catch (e: any) { 
       console.error(e);
-      console.error('Operation disabled');
+      alert('حدث خطأ: ' + e.message);
+    } finally {
+      setIsSaving(false);
     }
   };
   const deleteCompetition = async (id: string) => {
+    setIsSaving(true);
     try {
-      alert('Operation disabled');
+      const { error } = await supabase
+        .from('competition_bank')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      setCompetitions(prev => prev.filter(c => c.id !== id));
       setDeleteConfirmation(null);
-    } catch (e) {
-      console.error('Operation disabled');
+    } catch (e: any) {
+      console.error(e);
+      alert('حدث خطأ: ' + e.message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  // LEVELS
+  // LEVELS (Stage Allocation)
   const addLevel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLevelName) return;
+    setIsSaving(true);
     try {
-      alert('Operation disabled');
-      setNewLevelName(''); setSelectedCompetitions([]);
-    } catch (e) { 
+      const { error } = await supabase
+        .from('stage_competitions')
+        .upsert([{ 
+          stage_name: newLevelName, 
+          stage_type: newLevelType, 
+          allowed_competitions: selectedCompetitions 
+        }]);
+      
+      if (error) throw error;
+      
+      const { data } = await supabase.from('stage_competitions').select('*');
+      if (data) setLevels(data.map(l => ({ ...l, name: l.stage_name, comps: l.allowed_competitions })));
+      
+      setNewLevelName(''); 
+      setSelectedCompetitions([]);
+      alert('تم حفظ تخصيص المرحلة بنجاح!');
+    } catch (e: any) { 
       console.error(e);
-      console.error('Operation disabled');
+      alert('حدث خطأ: ' + e.message);
+    } finally {
+      setIsSaving(false);
     }
   };
   const deleteLevel = async (id: string) => {
+    setIsSaving(true);
     try {
-      alert('Operation disabled');
+      const { error } = await supabase
+        .from('stage_competitions')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+      setLevels(prev => prev.filter(l => l.id !== id));
       setDeleteConfirmation(null);
-    } catch (e) {
-      console.error('Operation disabled');
+    } catch (e: any) {
+      console.error(e);
+      alert('حدث خطأ: ' + e.message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -962,19 +1013,43 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
         {activeTab === 'competitions' && (
           <div className="space-y-8">
             <form onSubmit={addCompetition} className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-              <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Plus /> إضافة مسابقة جديدة للقائمة الرئيسية</h3>
-              <div>
-                <label className="block text-sm font-bold mb-2">اسم المسابقة</label>
-                <input type="text" value={newCompName} onChange={e => setNewCompName(e.target.value)} required className="w-full p-3 rounded-lg border border-slate-200" placeholder="مثال: دراسي، ألحان..." />
+              <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Plus /> إضافة مسابقة جديدة للقائمة الرئيسية (البنك)</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold mb-2">اسم المسابقة</label>
+                  <input type="text" value={newCompName} onChange={e => setNewCompName(e.target.value)} required className="w-full p-3 rounded-lg border border-slate-200" placeholder="مثال: دراسي، ألحان..." />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2">نوع المسابقة</label>
+                  <select 
+                    value={newCompCategory} 
+                    onChange={e => setNewCompCategory(e.target.value as any)} 
+                    className="w-full p-3 rounded-lg border border-slate-200"
+                  >
+                    <option value="مهرجان">مهرجان الكرازة</option>
+                    <option value="أنشطة">الأنشطة المدرسية/كتابية</option>
+                    <option value="ألحان">الألحان والتسبحة</option>
+                  </select>
+                </div>
               </div>
-              <button type="submit" className="mt-4 px-6 py-3 bg-primary text-white rounded-lg font-black flex items-center gap-2">إضافة للقائمة</button>
+              <button type="submit" disabled={isSaving} className="mt-4 px-6 py-3 bg-primary text-white rounded-lg font-black flex items-center gap-2">
+                {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
+                إضافة للقائمة
+              </button>
             </form>
 
-            <div className="flex flex-wrap gap-3">
-              {competitions.map(comp => (
-                <div key={comp.id} className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 text-indigo-700 px-4 py-2 rounded-full font-bold">
-                  {comp.name}
-                  <button onClick={() => setDeleteConfirmation({ id: comp.id, type: 'comp' })} className="text-indigo-400 hover:text-red-500"><X size={16} /></button>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {['مهرجان', 'أنشطة', 'ألحان'].map(cat => (
+                <div key={cat} className="space-y-3">
+                  <h4 className="font-black text-slate-400 text-xs uppercase px-2">{cat}</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {competitions.filter(c => c.category === cat || (!c.category && cat === 'مهرجان')).map(comp => (
+                      <div key={comp.id} className="flex items-center gap-3 bg-white border border-slate-200 text-slate-700 px-4 py-2 rounded-full font-bold shadow-sm whitespace-nowrap">
+                        {comp.name}
+                        <button onClick={() => setDeleteConfirmation({ id: comp.id, type: 'comp' })} className="text-slate-300 hover:text-red-500 transition-colors"><X size={16} /></button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -985,13 +1060,27 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
         {activeTab === 'levels' && (
           <div className="space-y-8">
             <form onSubmit={addLevel} className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-              <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Plus /> إضافة مرحلة تعليمية (والمسابقات المسموحة لها)</h3>
-              <div className="mb-6">
-                <label className="block text-sm font-bold mb-2">اسم المرحلة</label>
-                <input type="text" value={newLevelName} onChange={e => setNewLevelName(e.target.value)} required className="w-full p-3 rounded-lg border border-slate-200" placeholder="مثال: أولي وثانية، حضانة..." />
+              <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Plus /> إدارة المراحل وتخصيص مسابقاتها</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-bold mb-2">اسم المرحلة</label>
+                  <input type="text" value={newLevelName} onChange={e => setNewLevelName(e.target.value)} required className="w-full p-3 rounded-lg border border-slate-200" placeholder="مثال: أولي وثانية، حضانة..." />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2">نوع المرحلة</label>
+                  <select 
+                    value={newLevelType} 
+                    onChange={e => setNewLevelType(e.target.value as any)} 
+                    className="w-full p-3 rounded-lg border border-slate-200"
+                  >
+                    <option value="مهرجان">مهرجان الكرازة</option>
+                    <option value="أنشطة">الأنشطة المدرسية</option>
+                    <option value="ألحان">الألحان</option>
+                  </select>
+                </div>
               </div>
               
-              <label className="block text-sm font-bold mb-3">حدد المسابقات المتاحة لهذه المرحلة خصيصاً:</label>
+              <label className="block text-sm font-bold mb-3">حدد المسابقات المتاحة لهذه المرحلة والنوع خصيصاً:</label>
               <div className="flex flex-wrap gap-2 mb-6">
                 {competitions.map(comp => {
                   const isSelected = selectedCompetitions.includes(comp.name);
@@ -1000,27 +1089,36 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
                       type="button" 
                       key={comp.id}
                       onClick={() => toggleCompForLevel(comp.name)}
-                      className={`px-4 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-2 border ${isSelected ? 'bg-primary text-white border-primary' : 'bg-white text-slate-500 border-slate-200 hover:border-primary'}`}
+                      className={`px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-2 border ${isSelected ? 'bg-primary text-white border-primary shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-primary'}`}
                     >
-                      {isSelected && <Check size={14}/>} {comp.name}
+                      {isSelected && <Check size={12}/>} {comp.name} 
+                      <span className="text-[8px] opacity-50">({comp.category})</span>
                     </button>
                   );
                 })}
               </div>
 
-              <button type="submit" className="px-6 py-3 bg-primary text-white rounded-lg font-black flex items-center gap-2">اعتماد المرحلة</button>
+              <button type="submit" disabled={isSaving} className="px-6 py-3 bg-primary text-white rounded-lg font-black flex items-center gap-2 shadow-lg">
+                {isSaving ? <Loader2 className="animate-spin" size={20} /> : <Check size={20} />}
+                حفظ التخصيص للمرحلة
+              </button>
             </form>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {levels.map(level => (
-                <div key={level.id} className="p-5 border border-slate-200 rounded-xl flex flex-col justify-between shadow-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {levels.sort((a,b)=>sortStages(a.name, b.name)).map(level => (
+                <div key={level.id} className="p-5 bg-white border border-slate-200 rounded-2xl flex flex-col justify-between shadow-sm hover:shadow-md transition-all">
                   <div className="flex justify-between items-start mb-4">
-                    <h4 className="font-black text-lg text-slate-800">{level.name}</h4>
-                    <button onClick={() => setDeleteConfirmation({ id: level.id, type: 'level' })} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
+                    <div>
+                      <h4 className="font-black text-lg text-slate-800">{level.name}</h4>
+                      <span className="text-[10px] font-black bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase tracking-tighter">
+                        {level.stage_type || 'مهرجان'}
+                      </span>
+                    </div>
+                    <button onClick={() => setDeleteConfirmation({ id: level.id, type: 'level' })} className="text-slate-300 hover:text-red-500 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    {level.allowedCompetitions?.map((c: string, idx: number) => (
-                      <span key={idx} className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{c}</span>
+                    {level.comps?.map((c: string, idx: number) => (
+                      <span key={idx} className="text-[9px] font-bold bg-slate-50 text-slate-500 border border-slate-100 px-2 py-0.5 rounded-full">{c}</span>
                     ))}
                   </div>
                 </div>

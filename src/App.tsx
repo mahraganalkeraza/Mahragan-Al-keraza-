@@ -729,6 +729,33 @@ function AppComponent() {
     };
     fetchAppConfig();
 
+    // Fetch Stages and Competitions from Supabase
+    const fetchStagesAndCompetitions = async () => {
+      try {
+        const { data: stagesData, error: stagesError } = await supabase
+          .from('stage_competitions')
+          .select('*');
+        
+        if (stagesError) throw stagesError;
+
+        if (stagesData) {
+          const allStages = stagesData.map(l => ({
+            id: l.id,
+            name: l.stage_name,
+            comps: l.allowed_competitions || [],
+            stage_type: l.stage_type || 'مهرجان'
+          }));
+          
+          setDynamicLevels(allStages.filter(s => s.stage_type === 'مهرجان' || !s.stage_type).sort((a: any, b: any) => sortStages(a.name, b.name)));
+          setActivityStages(allStages.filter(s => s.stage_type === 'أنشطة').sort((a: any, b: any) => sortStages(a.name, b.name)));
+          setHymnStages(allStages.filter(s => s.stage_type === 'ألحان').sort((a: any, b: any) => sortStages(a.name, b.name)));
+        }
+      } catch (err) {
+        console.error("Error fetching stages from Supabase:", err);
+      }
+    };
+    fetchStagesAndCompetitions();
+
     const unsubChurches = onSnapshot(collection(db, 'churches'), (snapshot) => {
       const churchesData = snapshot.docs
         .map(d => ({ 
@@ -761,48 +788,9 @@ function AppComponent() {
       setPublicChurches(localChurches);
     });
 
-    const unsubLevels = onSnapshot(collection(db, 'levels'), (snapshot) => {
-      const levelsData = snapshot.docs.map(d => ({ 
-        id: d.id,
-        name: d.data().name?.trim() || '', 
-        comps: d.data().allowedCompetitions || d.data().comps || [] 
-      })).filter(l => l.name);
-      
-      const REQUIRED_COMPS = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
-      
-      let finalLevels = [];
-      if (levelsData.length > 0) {
-        // Source of truth: Purely from Firebase!
-        finalLevels = levelsData.map((l: any) => {
-          // Unify standard competitions: Ensure they include the required ones
-          const rawComps = l.comps && l.comps.length > 0 ? l.comps : REQUIRED_COMPS;
-          const uniqueComps = Array.from(new Set([...rawComps, ...REQUIRED_COMPS]));
-          return { ...l, comps: uniqueComps };
-        });
-      } else {
-        // Fallback default list if Firebase collection is completely empty
-        const REQUIRED_STAGES = [
-          'حضانة', 'أولى وثانية', 'ثالثة ورابعة', 'خامسة وسادسة', 'إعدادي', 'ثانوي',
-          'جامعة', 'خريجون', 'خدام وإعداد الخدام', 'تعليم كبار', 'قانا الجليل',
-          'سمعان الشيخ', 'قدرات خاصة', 'صم وبكم', 'ديديموس', 'بولس وسيلا'
-        ];
-        finalLevels = REQUIRED_STAGES.map(name => ({
-          id: name,
-          name,
-          comps: REQUIRED_COMPS
-        }));
-      }
-      
-      setDynamicLevels(finalLevels.sort((a: any, b: any) => sortStages(a.name, b.name)));
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'levels'));
-
-    const unsubActivityStages = onSnapshot(collection(db, 'activityStages'), (snapshot) => {
-      setActivityStages(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'activityStages'));
-
-    const unsubHymnStages = onSnapshot(collection(db, 'hymnStages'), (snapshot) => {
-      setHymnStages(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'hymnStages'));
+    const unsubLevels = () => {};
+    const unsubActivityStages = () => {};
+    const unsubHymnStages = () => {};
 
     const unsubValidation = onSnapshot(doc(db, 'settings', 'validation'), (snapshot) => {
       const validationData = snapshot.exists() ? snapshot.data() : { 
@@ -3926,6 +3914,10 @@ function AppComponent() {
 
   const handleDeleteParticipant = async (id: string) => {
     try {
+      const deletedParticipant = participants.find(p => p.id === id) || allChurchParticipants.find(p => p.id === id);
+      const targetChurch = deletedParticipant?.churchName || churchName;
+
+      // 1. Delete from Firebase Firestore
       const batch = writeBatch(db);
       batch.delete(doc(db, 'participants', id));
       batch.delete(doc(db, 'active_sessions', id));
@@ -3933,12 +3925,18 @@ function AppComponent() {
       batch.delete(doc(db, 'online_results', id));
       await batch.commit();
 
-      // Get the church name before deleting
-      const deletedParticipant = participants.find(p => p.id === id);
-      const targetChurch = deletedParticipant?.churchName || churchName;
+      // 2. Delete from Supabase registrations table
+      const { error: sbErr } = await supabase
+        .from('registrations')
+        .delete()
+        .eq('id', id);
+      if (sbErr) {
+        console.error("Supabase individual participant deletion error:", sbErr);
+      }
 
       // Instant local state sync
       setParticipants(prev => prev.filter(p => p.id !== id));
+      setAllChurchParticipants(prev => prev.filter(p => p && p.id !== id));
       setTotalParticipantsCount(prev => Math.max(0, prev - 1));
 
       setShowDeleteModal(false);
@@ -3948,6 +3946,12 @@ function AppComponent() {
       await updateChurchSubscribers(targetChurch);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `participants/${id}`);
+    }
+  };
+
+  const confirmAndDeleteParticipant = async (id: string) => {
+    if (window.confirm("هل أنت متأكد من حذف هذا المخدوم نهائياً؟")) {
+      await handleDeleteParticipant(id);
     }
   };
 
@@ -5599,9 +5603,8 @@ function AppComponent() {
                                 </button>
                                 <button 
                                   onClick={() => {
-                                    setParticipantToDelete(p.id);
-                                    setShowDeleteModal(true);
-                                  }} 
+                                    confirmAndDeleteParticipant(p.id);
+                                  }}
                                   className="p-1.5 text-rose-500 hover:text-red-700 transition-colors"
                                   title="حذف المشترك"
                                 >
@@ -6347,8 +6350,7 @@ function AppComponent() {
                                 </button>
                                 <button 
                                   onClick={() => {
-                                    setParticipantToDelete(p.id);
-                                    setShowDeleteModal(true);
+                                    confirmAndDeleteParticipant(p.id);
                                   }}
                                   className="p-2 text-slate-400 hover:text-coptic-red transition-colors"
                                   title="حذف"
@@ -8037,8 +8039,7 @@ function AppComponent() {
                                 </button>
                                 <button 
                                   onClick={() => {
-                                    setParticipantToDelete(p.id);
-                                    setShowDeleteModal(true);
+                                    confirmAndDeleteParticipant(p.id);
                                   }}
                                   className="p-2 text-slate-400 hover:text-red-500 transition-colors"
                                   title="حذف"
@@ -9004,8 +9005,7 @@ function AppComponent() {
                             </button>
                             <button 
                               onClick={() => {
-                                setParticipantToDelete(p.id);
-                                setShowDeleteModal(true);
+                                confirmAndDeleteParticipant(p.id);
                               }}
                               className="p-2 text-slate-300 hover:text-red-500 transition-colors"
                               title="حذف"
