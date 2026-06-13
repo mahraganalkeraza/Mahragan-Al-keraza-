@@ -1,28 +1,6 @@
 import React, { useState, useEffect } from "react";
-import {
-  collection,
-  doc,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  writeBatch,
-  onSnapshot,
-  getDocs,
-} from "../firebase";
-import { db, storage, ref, uploadBytesResumable, getDownloadURL } from "../firebase";
-import { initializeApp } from "firebase/app";
-import {
-  getAuth,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  updatePassword,
-  signOut,
-} from "firebase/auth";
-import { OperationType, handleFirestoreError } from "../firebase";
+import { supabase } from "../lib/supabaseClient";
 import PaginationComponent from "./Pagination";
-import firebaseConfig from "../../firebase-applet-config.json";
 import {
   Trash2,
   Edit2,
@@ -39,13 +17,9 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-
-// Initialize secondary app for auth operations
-const secondaryApp = initializeApp(firebaseConfig, "Secondary");
-const secondaryAuth = getAuth(secondaryApp);
-
 interface User {
-  uid: string;
+  id: string; // Using id for standard Supabase/Postgres
+  uid?: string; // fallback if any legacy code uses .uid
   email: string;
   role: string;
   churchName: string;
@@ -91,36 +65,42 @@ export default function UserManagement() {
   };
 
   useEffect(() => {
-    // Sync users (Auth accounts)
-    const unsubscribeUsers = onSnapshot(collection(db, "users"), (snapshot) => {
-      const usersData: User[] = [];
-      snapshot.docs.forEach((doc) => {
-        if (doc.data().role !== "admin") {
-          usersData.push({ uid: doc.id, ...doc.data() } as User);
-        }
-      });
-      setUsers(usersData);
-      setIsLoading(false);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.GET, "users");
-      setError("حدث خطأ أثناء جلب المستخدمين");
-      setIsLoading(false);
-    });
-
-    // Sync churches bank (Dynamic settings)
-    const unsubscribeChurches = onSnapshot(collection(db, "churches"), (snapshot) => {
-      const bankData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      setChurchesBank(bankData);
-    }, (err) => handleFirestoreError(err, OperationType.GET, "churches"));
-
-    return () => {
-      unsubscribeUsers();
-      unsubscribeChurches();
+    // Fetch users (Auth accounts) from Supabase 'users' table
+    const fetchUsers = async () => {
+      setIsLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .neq('role', 'admin');
+        
+        if (error) throw error;
+        if (data) setUsers(data as any[]);
+      } catch (err: any) {
+        console.error("Supabase fetch users error:", err);
+        setError("حدث خطأ أثناء جلب المستخدمين");
+      } finally {
+        setIsLoading(false);
+      }
     };
+
+    // Fetch churches bank from Supabase 'churches' table
+    const fetchChurches = async () => {
+      try {
+        const { data, error } = await supabase.from('churches').select('*');
+        if (error) throw error;
+        if (data) setChurchesBank(data);
+      } catch (err: any) {
+        console.error("Supabase fetch churches error:", err);
+      }
+    };
+
+    fetchUsers();
+    fetchChurches();
   }, []);
 
   const handleEdit = (user: User) => {
-    setIsEditing(user.uid);
+    setIsEditing(user.id);
     setEditForm({
       ...user,
       password: user.password ||  "",
@@ -195,16 +175,17 @@ export default function UserManagement() {
         const emailSlug = encodeURIComponent(editForm.churchName).replace(/%/g, "");
         const email = `${emailSlug}_${Date.now()}@mafk.com`;
 
-        const userCredential = await createUserWithEmailAndPassword(
-          secondaryAuth,
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
           email,
-          editForm.password || ""
-        );
-        const newUid = userCredential.user.uid;
-        await signOut(secondaryAuth);
+          password: editForm.password || ""
+        });
+        
+        if (signUpError) throw signUpError;
+        const newUid = signUpData.user?.id;
+        if (!newUid) throw new Error("Could not create user ID");
 
         const newUser: User = {
-          uid: newUid,
+          id: newUid,
           email,
           role: "church",
           churchName: editForm.churchName,
@@ -214,13 +195,12 @@ export default function UserManagement() {
           logoUrl: finalLogoUrl,
         };
 
-        // Batch writes for data integrity
-        const batch = writeBatch(db);
-        batch.set(doc(db, "users", newUid), newUser);
+        // Profile insert
+        await supabase.from('users').insert(newUser);
         
         // Sync to dynamic login bank
-        const churchBankRef = doc(collection(db, "churches"));
-        batch.set(churchBankRef, {
+        await supabase.from('churches').insert({
+          id: newUid,
           name: editForm.churchName,
           loginCode: editForm.password,
           isEnabled: true,
@@ -228,15 +208,13 @@ export default function UserManagement() {
           logoUrl: finalLogoUrl
         });
 
-        await batch.commit();
         setSuccess("تم إنشاء كيان الكنيسة وبنك الدخول بنجاح");
       } else if (isEditing) {
         // Handle precise update for existing entity
-        const oldUser = users.find((u) => u.uid === isEditing);
+        const oldUser = users.find((u) => u.id === isEditing);
         if (!oldUser) throw new Error("Entity not found in current context");
 
         const updatedUser = {
-          ...oldUser,
           churchName: editForm.churchName,
           password: editForm.password,
           logoUrl: finalLogoUrl,
@@ -244,36 +222,33 @@ export default function UserManagement() {
           isAllowedToRead: editForm.isAllowedToRead ?? (oldUser.isAllowedToRead !== false),
         };
 
-        const batch = writeBatch(db);
-        batch.update(doc(db, "users", isEditing), updatedUser);
+        await supabase.from('users').update(updatedUser).eq('id', isEditing);
 
         // Relational Integrity: Update associated dynamic bank entries
-        const bankQuery = query(collection(db, "churches"), where("name", "==", oldUser.churchName));
-        const bankSnap = await getDocs(bankQuery);
-        bankSnap.docs.forEach(d => {
-          batch.update(d.ref, {
-            name: editForm.churchName,
-            loginCode: editForm.password,
-            isEnabled: editForm.isEnabled ?? oldUser.isEnabled,
-            isAllowedToRead: editForm.isAllowedToRead ?? (oldUser.isAllowedToRead !== false),
-            logoUrl: finalLogoUrl
-          });
-        });
+        await supabase.from('churches').update({
+          name: editForm.churchName,
+          loginCode: editForm.password,
+          isEnabled: editForm.isEnabled ?? oldUser.isEnabled,
+          isAllowedToRead: editForm.isAllowedToRead ?? (oldUser.isAllowedToRead !== false),
+          logoUrl: finalLogoUrl
+        }).eq('name', oldUser.churchName);
 
         // Cascade updates to all related collections (Integrity Guard)
         if (oldUser.churchName !== editForm.churchName) {
-          const collections = ['participants', 'activityTeams', 'results', 'orders', 'inquiries'];
+          const collections = ['registrations', 'activity_teams', 'results', 'book_orders', 'inquiries'];
           for (const col of collections) {
-            const relSnap = await getDocs(query(collection(db, col), where('churchName', '==', oldUser.churchName)));
-            relSnap.docs.forEach(d => batch.update(d.ref, { churchName: editForm.churchName }));
+            await supabase.from(col).update({ churchName: editForm.churchName }).eq('churchName', oldUser.churchName);
           }
         }
 
-        await batch.commit();
         setSuccess("تم تحديث بيانات الكيان والمجلدات المرتبطة بنجاح");
       }
 
       handleCancel();
+      // Reload users list
+      const { data: updatedUsers } = await supabase.from('users').select('*').neq('role', 'admin');
+      if (updatedUsers) setUsers(updatedUsers as any[]);
+      
     } catch (err: any) {
       setError(err.message || "حدث خطأ فني أثناء المعالجة");
       console.error("High-Precision error:", err);
@@ -285,20 +260,16 @@ export default function UserManagement() {
   /**
    * Precise Deletion with Cleaning Logic
    */
-  const handleDelete = async (uid: string) => {
-    const userToDel = users.find(u => u.uid === uid);
+  const handleDelete = async (id: string) => {
+    const userToDel = users.find(u => u.id === id);
     if (!userToDel) return;
 
     setIsSaving(true);
     try {
-      const batch = writeBatch(db);
-      batch.delete(doc(db, "users", uid));
+      await supabase.from('users').delete().eq('id', id);
+      await supabase.from('churches').delete().eq('name', userToDel.churchName);
 
-      const bankQuery = query(collection(db, "churches"), where("name", "==", userToDel.churchName));
-      const bankSnap = await getDocs(bankQuery);
-      bankSnap.docs.forEach(d => batch.delete(d.ref));
-
-      await batch.commit();
+      setUsers(prev => prev.filter(u => u.id !== id));
       setSuccess("تم حذف الكيان وكافة البيانات المرتبطة بنجاح");
     } catch (err) {
       console.error("Deletion error:", err);
@@ -312,14 +283,12 @@ export default function UserManagement() {
   const toggleStatus = async (user: User) => {
     try {
       const newStatus = !user.isEnabled;
-      await updateDoc(doc(db, "users", user.uid), { isEnabled: newStatus });
+      await supabase.from('users').update({ isEnabled: newStatus }).eq('id', user.id);
       
       // Sync with churches bank
-      const bankQuery = query(collection(db, "churches"), where("name", "==", user.churchName));
-      const bankSnap = await getDocs(bankQuery);
-      if (!bankSnap.empty) {
-        await updateDoc(doc(db, "churches", bankSnap.docs[0].id), { isEnabled: newStatus });
-      }
+      await supabase.from('churches').update({ isEnabled: newStatus }).eq('name', user.churchName);
+
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, isEnabled: newStatus } : u));
       setSuccess(`تم ${newStatus ? 'تفعيل' : 'تعطيل'} الحساب بنجاح`);
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
@@ -332,14 +301,12 @@ export default function UserManagement() {
     try {
       const currentStatus = user.isAllowedToRead === undefined ? true : user.isAllowedToRead;
       const newStatus = !currentStatus;
-      await updateDoc(doc(db, "users", user.uid), { isAllowedToRead: newStatus });
+      await supabase.from('users').update({ isAllowedToRead: newStatus }).eq('id', user.id);
       
       // Sync with churches bank
-      const bankQuery = query(collection(db, "churches"), where("name", "==", user.churchName));
-      const bankSnap = await getDocs(bankQuery);
-      if (!bankSnap.empty) {
-        await updateDoc(doc(db, "churches", bankSnap.docs[0].id), { isAllowedToRead: newStatus });
-      }
+      await supabase.from('churches').update({ isAllowedToRead: newStatus }).eq('name', user.churchName);
+
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, isAllowedToRead: newStatus } : u));
       setSuccess(`تم ${newStatus ? 'سماح القراءة' : 'إيقاف القراءة'} بنجاح`);
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
@@ -548,20 +515,20 @@ export default function UserManagement() {
             .slice((userPage - 1) * ITEMS_PER_PAGE, userPage * ITEMS_PER_PAGE)
             .map((user) => (
             <motion.div
-              key={user.uid}
+              key={user.id}
               layout
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className={`bg-white p-6 rounded-xl shadow-sm border transition-all ${
-                isEditing === user.uid 
+                isEditing === user.id 
                   ? "border-primary ring-2 ring-primary/20" 
                   : user.isEnabled === false 
                     ? "border-red-100 bg-red-50/10 grayscale-[0.5]" 
                     : "border-slate-100"
               }`}
             >
-              {isEditing === user.uid ? (
+              {isEditing === user.id ? (
                 <div className="space-y-4">
                   <div className="flex justify-between items-center mb-2">
                     <h3 className="font-black text-lg">تعديل بيانات الكنيسة</h3>
@@ -755,7 +722,7 @@ export default function UserManagement() {
                       <Edit2 size={16} /> تعديل
                     </button>
                     <button
-                      onClick={() => setUserToDelete(user.uid)}
+                      onClick={() => setUserToDelete(user.id)}
                       className="flex items-center justify-center p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
                     >
                       <Trash2 size={16} />

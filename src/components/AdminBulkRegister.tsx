@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { db, doc, setDoc, writeBatch } from '../firebase';
 import { generateShortId } from '../lib/utils';
 import { X, Users, CheckCircle2, AlertTriangle, HelpCircle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -64,20 +63,6 @@ export default function AdminBulkRegister({
         .in('id', lastInsertedIds);
         
       if (error) throw error;
-      
-      // Attempt Firebase cleanup to stay consistent (best effort)
-      try {
-        if (!(window as any).firestoreQuotaExceeded) {
-          const batch = writeBatch(db);
-          lastInsertedIds.forEach(id => {
-            const docRef = doc(db, 'participants', id);
-            batch.delete(docRef);
-          });
-          await batch.commit();
-        }
-      } catch (fbErr) {
-        console.error("Firebase undo cleanup failed, but Supabase succeed:", fbErr);
-      }
       
       setStatusMessage({
         type: 'success',
@@ -193,76 +178,28 @@ export default function AdminBulkRegister({
     });
 
     let supabaseSuccess = false;
-    let rpcMethodUsed = false;
 
-    // 1. Try Supabase RPC first as requested
+    // Direct insert multiple rows into Supabase 'registrations'
     try {
-      console.log("Attempting bulk insert via Supabase RPC...");
-      const { error: rpcError } = await supabase.rpc('bulk_register_students', {
-        student_names: namesArray,
-        p_stage: stage,
-        p_gender: gender,
-        p_church_name: churchName,
-        p_competitions: selectedCompetitions
-      });
+      console.log("Direct insert of multiple rows into Supabase 'registrations'...");
+      const { error: insertErr } = await supabase
+        .from('registrations')
+        .insert(supabaseInserts);
 
-      if (!rpcError) {
+      if (!insertErr) {
         supabaseSuccess = true;
-        rpcMethodUsed = true;
-        console.log("Supabase RPC registered successfully.");
+        console.log("Supabase direct insert completed successfully.");
       } else {
-        console.warn("RPC failed or does not exist, falling back to direct table insert:", rpcError);
+        console.error("Supabase direct insert failed:", insertErr);
       }
-    } catch (rpcErr) {
-      console.warn("RPC call threw error, falling back to direct insertion:", rpcErr);
+    } catch (insertErr) {
+      console.error("Supabase direct insert threw error:", insertErr);
     }
 
-    // 2. Client-side fallback to direct Supabase Insert if RPC was not resolved/successful
-    if (!supabaseSuccess) {
-      try {
-        console.log("Direct insert of multiple rows into Supabase 'registrations'...");
-        const { error: insertErr } = await supabase
-          .from('registrations')
-          .insert(supabaseInserts);
-
-        if (!insertErr) {
-          supabaseSuccess = true;
-          console.log("Supabase direct insert completed successfully.");
-        } else {
-          console.error("Supabase direct insert failed:", insertErr);
-        }
-      } catch (insertErr) {
-        console.error("Supabase direct insert threw error:", insertErr);
-      }
-    }
-
-    // 3. Sync to Firebase Firestore to maintain absolute double-database consistency
-    let firebaseSuccess = false;
-    if (!(window as any).firestoreQuotaExceeded) {
-      try {
-        console.log("Syncing bulk registration to Firebase Firestore...");
-        const batch = writeBatch(db);
-        newParticipants.forEach(participant => {
-          const docRef = doc(db, 'participants', participant.id);
-          batch.set(docRef, participant);
-        });
-        await batch.commit();
-        firebaseSuccess = true;
-        console.log("Firebase Firestore bulk sync completed.");
-      } catch (fbErr: any) {
-        console.error("Firebase Firestore bulk sync failed:", fbErr);
-        const errMsg = String(fbErr).toLowerCase();
-        if (errMsg.includes('quota') || errMsg.includes('resource_exhausted') || errMsg.includes('over_quota')) {
-          (window as any).firestoreQuotaExceeded = true;
-          window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
-        }
-      }
-    }
-
-    // 4. Conclude operations based on storage results (3-server failover logic)
+    // Conclude operations based on storage results
     setLoading(false);
 
-    if (supabaseSuccess || firebaseSuccess) {
+    if (supabaseSuccess) {
       setStatusMessage({
         type: 'success',
         text: `🚀 تم بنجاح تسجيل ${namesArray.length} طالب وحفظ البيانات في السحابة الآمنة!`

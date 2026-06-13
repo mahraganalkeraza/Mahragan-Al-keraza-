@@ -80,6 +80,7 @@ export const CHURCH_CREDENTIALS: Record<string, string> = {
 };
 
 export const ADMIN_PASSWORD = "ADMIN_MAFK_2026";
+export const CURRENT_YEAR = '2026';
 
 export const STAGE_ORDER = [
   'حضانة',

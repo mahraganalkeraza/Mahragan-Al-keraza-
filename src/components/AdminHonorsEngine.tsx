@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { db } from '../firebase';
-import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { supabase } from '../lib/supabaseClient';
 import { Result } from '../types';
 import { Save, Download, Award, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -29,20 +28,20 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
   const loadSettings = async () => {
     setIsLoading(true);
     try {
-      const [snap, stagesSnap, compSnap] = await Promise.all([
-        getDoc(doc(db, 'settings', 'examWeights')),
-        getDocs(collection(db, 'levels')),
-        getDocs(collection(db, 'competitions'))
+      const [weightsSnap, stagesSnap, bankSnap] = await Promise.all([
+        supabase.from('system_settings').select('*').eq('id', 'examWeights').maybeSingle(),
+        supabase.from('stage_competitions').select('stage_name'),
+        supabase.from('competition_bank').select('name')
       ]);
 
-      if (snap.exists()) {
-        const data = snap.data();
+      if (weightsSnap.data) {
+        const data = weightsSnap.data.details || {};
         if (data.weights) setWeights(data.weights);
         if (data.minThreshold !== undefined) setMinThreshold(data.minThreshold);
       }
 
-      setSystemStages(stagesSnap.docs.map(d => d.data().name).filter(Boolean));
-      setSystemSubjects(compSnap.docs.map(d => d.data().name).filter(Boolean));
+      setSystemStages(stagesSnap.data?.map(d => d.stage_name).filter(Boolean) as string[] || []);
+      setSystemSubjects(bankSnap.data?.map(d => d.name).filter(Boolean) as string[] || []);
     } catch (e) {
       console.error('Failed to load honors config', e);
     }
@@ -52,9 +51,9 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
   const saveSettings = async () => {
     setIsSaving(true);
     try {
-      await setDoc(doc(db, 'settings', 'examWeights'), {
-        weights,
-        minThreshold
+      await supabase.from('system_settings').upsert({
+        id: 'examWeights',
+        details: { weights, minThreshold }
       });
       alert('تم حفظ إعدادات ودرجات التكريم بنجاح!');
     } catch (e) {

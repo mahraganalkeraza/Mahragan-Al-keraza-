@@ -1,11 +1,21 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
+import dotenv from 'dotenv';
 
-const rawConfig = fs.readFileSync('./firebase-applet-config.json', 'utf8');
-const config = JSON.parse(rawConfig);
-const app = initializeApp(config);
-const db = getFirestore(app);
+// Load env vars if needed, or assume they are in process.env
+// For a script we might need to read .env
+if (fs.existsSync('.env')) {
+  const env = fs.readFileSync('.env', 'utf8');
+  env.split('\n').forEach(line => {
+    const [key, value] = line.split('=');
+    if (key && value) process.env[key.trim()] = value.trim();
+  });
+}
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const STAGES = [
   'حضانة',
@@ -31,25 +41,27 @@ const COMPS = [
 ];
 
 async function seedLevels() {
-  const levelsSnap = await getDocs(collection(db, 'levels'));
-  const batch = writeBatch(db);
+  console.log("Starting Supabase seeding...");
+  
+  // Delete all existing stage_competitions
+  const { error: delError } = await supabase
+    .from('stage_competitions')
+    .delete()
+    .neq('id', '0'); // Logic to delete all
 
-  // Delete all existing levels
-  levelsSnap.docs.forEach(d => {
-    batch.delete(d.ref);
-  });
+  if (delError) console.error("Error deleting old stages:", delError);
 
   // Recreate correct ones
   for (const name of STAGES) {
-      const ref = doc(collection(db, 'levels'));
-      batch.set(ref, {
-          name,
-          allowedCompetitions: COMPS
+      const { error: insError } = await supabase.from('stage_competitions').insert({
+          stage_name: name,
+          category: 'مهرجان الكرازة',
+          competition_ids: COMPS
       });
+      if (insError) console.error(`Error inserting ${name}:`, insError);
   }
 
-  await batch.commit();
-  console.log("Successfully seeded levels collection.");
+  console.log("Successfully seeded stage_competitions in Supabase.");
 }
 
 seedLevels().catch(console.error);
