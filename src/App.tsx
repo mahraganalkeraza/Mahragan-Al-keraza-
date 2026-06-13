@@ -909,6 +909,8 @@ function AppComponent() {
   const [duplicateRecords, setDuplicateRecords] = useState<Participant[][]>([]);
   const [isScanningDuplicates, setIsScanningDuplicates] = useState(false);
   const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
+  const [undoableDuplicates, setUndoableDuplicates] = useState<Participant[] | null>(null);
+  const [isRestoringDuplicates, setIsRestoringDuplicates] = useState(false);
   
   const [teamSearch, setTeamSearch] = useState('');
   const [resultSearch, setResultSearch] = useState('');
@@ -2600,9 +2602,40 @@ function AppComponent() {
     XLSX.writeFile(workbook, `detailed_orders_${new Date().toLocaleDateString('en-CA')}.xlsx`);
   };
 
-    const handlePurgeDuplicatesSupabase = async () => {
+      const handleUndoDuplicates = async () => {
+    if (!undoableDuplicates || undoableDuplicates.length === 0) return;
+    setIsRestoringDuplicates(true);
+    try {
+      // Upsert the deleted records back into registrations
+      const { error: restoreError } = await supabase.from('registrations').upsert(undoableDuplicates);
+      
+      if (restoreError) throw restoreError;
+
+      // Log the undo action
+      await supabase.from('logs').insert({
+        action: 'undo_delete_duplicates',
+        count: undoableDuplicates.length,
+        timestamp: new Date().toISOString(),
+        details: 'تم استرداد المشتركين المكررين.'
+      });
+
+      setNotification(`تم التراجع واعاد إدراج ${undoableDuplicates.length} سجل بنجاح!`);
+      setUndoableDuplicates(null);
+      fetchParticipantsPage(true, true, debouncedParticipantSearch);
+    } catch (err) {
+      console.error(err);
+      setNotification('حدث خطأ أثناء استرداد التكرارات.');
+    } finally {
+      setIsRestoringDuplicates(false);
+    }
+  };
+
+  const handlePurgeDuplicatesSupabase = async () => {
     setIsDeletingDuplicates(true);
     try {
+      // Fetch current registrations before deletion to compute diff
+      const { data: beforeData } = await supabase.from('registrations').select('*');
+
       const { data, error } = await supabase.rpc('delete_duplicate_students');
       if (error) {
         console.error(error);
@@ -2616,6 +2649,24 @@ function AppComponent() {
         }
 
         if (count > 0) {
+          const { data: afterData } = await supabase.from('registrations').select('id');
+          const afterIds = new Set((afterData || []).map(a => String(a.id)));
+          const deletedRecords = (beforeData || []).filter(b => !afterIds.has(String(b.id)));
+          
+          if (deletedRecords.length > 0) {
+             setUndoableDuplicates(deletedRecords);
+             try {
+                await supabase.from('logs').insert({
+                   action: 'delete_duplicates',
+                   count: deletedRecords.length,
+                   details: JSON.stringify(deletedRecords),
+                   timestamp: new Date().toISOString()
+                });
+             } catch (logErr) {
+                console.error("Logging failed:", logErr);
+             }
+          }
+
           setNotification(`تم مسح ${count} من الأسماء المكررة بنجاح!`);
           fetchParticipantsPage(true, true, debouncedParticipantSearch);
         } else {
@@ -5961,6 +6012,15 @@ function AppComponent() {
                     >
                       {isDeletingDuplicates ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />} فحص وتطهير التكرار
                     </button>
+                    {undoableDuplicates && undoableDuplicates.length > 0 && (
+                      <button 
+                        onClick={handleUndoDuplicates}
+                        disabled={isRestoringDuplicates}
+                        className="px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-xs font-black shadow-sm flex items-center gap-2 hover:bg-amber-100 transition-colors"
+                      >
+                        {isRestoringDuplicates ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} استرداد ({undoableDuplicates.length})
+                      </button>
+                    )}
                     <button 
                       onClick={exportAllRegistrationsToExcel}
                       className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-sm"
