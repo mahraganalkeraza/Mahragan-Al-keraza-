@@ -911,6 +911,7 @@ function AppComponent() {
   const [isDeletingDuplicates, setIsDeletingDuplicates] = useState(false);
   const [undoableDuplicates, setUndoableDuplicates] = useState<Participant[] | null>(null);
   const [isRestoringDuplicates, setIsRestoringDuplicates] = useState(false);
+  const [detectedDuplicates, setDetectedDuplicates] = useState<any[] | null>(null);
   
   const [teamSearch, setTeamSearch] = useState('');
   const [resultSearch, setResultSearch] = useState('');
@@ -2630,52 +2631,107 @@ function AppComponent() {
     }
   };
 
-  const handlePurgeDuplicatesSupabase = async () => {
-    setIsDeletingDuplicates(true);
+  const handleDetectDuplicates = async () => {
+    setIsScanningDuplicates(true);
+    setDetectedDuplicates(null);
     try {
-      // Fetch current registrations before deletion to compute diff
-      const { data: beforeData } = await supabase.from('registrations').select('*');
-
-      const { data, error } = await supabase.rpc('delete_duplicate_students');
+      const { data, error } = await supabase.from('registrations').select('*').range(0, 4999);
       if (error) {
-        console.error(error);
-        setNotification('حدث خطأ أثناء حذف التكرارات.');
-      } else {
-        let count = 0;
-        if (Array.isArray(data) && data.length > 0) {
-          count = data[0].deleted_count;
-        } else if (typeof data === 'number') {
-          count = data;
-        }
+        console.error("Error fetching students for deduplication:", error);
+        setNotification('حدث خطأ أثناء فحص البيانات.');
+        return;
+      }
 
-        if (count > 0) {
-          const { data: afterData } = await supabase.from('registrations').select('id');
-          const afterIds = new Set((afterData || []).map(a => String(a.id)));
-          const deletedRecords = (beforeData || []).filter(b => !afterIds.has(String(b.id)));
-          
-          if (deletedRecords.length > 0) {
-             setUndoableDuplicates(deletedRecords);
-             try {
-                await supabase.from('logs').insert({
-                   action: 'delete_duplicates',
-                   count: deletedRecords.length,
-                   details: JSON.stringify(deletedRecords),
-                   timestamp: new Date().toISOString()
-                });
-             } catch (logErr) {
-                console.error("Logging failed:", logErr);
-             }
-          }
+      if (!data || data.length === 0) {
+        setDetectedDuplicates([]);
+        return;
+      }
 
-          setNotification(`تم مسح ${count} من الأسماء المكررة بنجاح!`);
-          fetchParticipantsPage(true, true, debouncedParticipantSearch);
+      // Sort by ID or original array order to keep the first (earliest) record
+      const sortedRecords = [...data].sort((a, b) => {
+        const idA = String(a.id);
+        const idB = String(b.id);
+        return idA.localeCompare(idB, undefined, { numeric: true });
+      });
+
+      const seenNames = new Map<string, any>();
+      const duplicates: any[] = [];
+
+      for (const record of sortedRecords) {
+        const rawName = record.name || '';
+        const normalized = rawName.trim().replace(/\s+/g, ' ');
+        if (!normalized) continue;
+
+        if (seenNames.has(normalized)) {
+          // Trailing duplicate record with ALL fields so it can be restored on undo
+          duplicates.push(record);
         } else {
-          setNotification('لا يوجد أسماء مكررة بالتطابق التام حالياً.');
+          seenNames.set(normalized, record);
         }
+      }
+
+      setDetectedDuplicates(duplicates);
+      if (duplicates.length === 0) {
+        setNotification('قاعدة البيانات نظيفة تماماً! لم يتم العثور على أي أسماء مكررة.');
+      } else {
+        setNotification(`تم العثور على ${duplicates.length} أسماء مكررة.`);
       }
     } catch (err) {
       console.error(err);
-      setNotification('حدث خطأ أثناء حذف التكرارات.');
+      setNotification('حدث خطأ أثناء فحص البيانات.');
+    } finally {
+      setIsScanningDuplicates(false);
+    }
+  };
+
+  const handleConfirmDeleteDuplicates = async () => {
+    if (!detectedDuplicates || detectedDuplicates.length === 0) return;
+    
+    const confirmMessage = `هل أنت متأكد من رغبتك في حذف السجلات المكررة بالتطابق التام؟ سيتم حذف ${detectedDuplicates.length} سجل مكرر بشكل نهائي.`;
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setIsDeletingDuplicates(true);
+    try {
+      const idsToDelete = detectedDuplicates.map(d => d.id);
+      
+      const { error } = await supabase
+        .from('registrations')
+        .delete()
+        .in('id', idsToDelete);
+
+      if (error) {
+        console.error("Error deleting duplicates:", error);
+        setNotification('حدث خطأ أثناء حذف السجلات المكررة.');
+        return;
+      }
+
+      // Log to logs table in Supabase
+      try {
+        await supabase.from('logs').insert({
+          action: 'delete_duplicates_v2',
+          count: detectedDuplicates.length,
+          details: JSON.stringify(detectedDuplicates),
+          timestamp: new Date().toISOString()
+        });
+      } catch (logErr) {
+        console.error("Failed to insert log:", logErr);
+      }
+
+      // Save to undo state
+      setUndoableDuplicates(detectedDuplicates);
+      setNotification(`تم مسح ${detectedDuplicates.length} من الأسماء المكررة بنجاح!`);
+      setDetectedDuplicates(null);
+
+      // Refresh both states so dashboard updates sync up
+      fetchParticipantsPage(true, true, debouncedParticipantSearch);
+      if (typeof fetchSupabaseParticipants === 'function') {
+        fetchSupabaseParticipants();
+      }
+    } catch (err) {
+      console.error(err);
+      setNotification('حدث خطأ أثناء حذف السجلات المكررة.');
     } finally {
       setIsDeletingDuplicates(false);
     }
@@ -6006,11 +6062,11 @@ function AppComponent() {
                       <UserPlus size={14} /> التسجيل الجماعي (Bulk)
                     </button>
                     <button 
-                      onClick={handlePurgeDuplicatesSupabase}
-                      disabled={isDeletingDuplicates}
+                      onClick={handleDetectDuplicates}
+                      disabled={isScanningDuplicates}
                       className="px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black shadow-sm flex items-center gap-2 hover:bg-rose-100 transition-colors disabled:opacity-50"
                     >
-                      {isDeletingDuplicates ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />} فحص وتطهير التكرار
+                      {isScanningDuplicates ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />} فحص الأسماء المكررة
                     </button>
                     {undoableDuplicates && undoableDuplicates.length > 0 && (
                       <button 
@@ -6029,6 +6085,60 @@ function AppComponent() {
                     </button>
                   </div>
                 </div>
+
+                {/* Deduplication & Preview Panel */}
+                {detectedDuplicates !== null && (
+                  <div className="mb-6 p-5 bg-white border border-slate-200 rounded-2xl shadow-sm transition-all animate-fade-in">
+                    <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                      <div>
+                        <h5 className="text-sm font-black text-slate-800 flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                          معاينة وتطهير الأسماء المكررة (Deduplication Preview)
+                        </h5>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {detectedDuplicates.length === 0 
+                            ? "قاعدة البيانات نظيفة تماماً! لم يتم العثور على أي أسماء مكررة بالتطابق التام." 
+                            : `وجدنا عدد ${detectedDuplicates.length} من الأسماء المسجلة مكررة بالتطابق التام (مع تجاهل المسافات الزائدة).`
+                          }
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        {detectedDuplicates.length > 0 && (
+                          <button
+                            onClick={handleConfirmDeleteDuplicates}
+                            disabled={isDeletingDuplicates}
+                            className="px-4 py-2 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-700 hover:to-rose-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                          >
+                            {isDeletingDuplicates ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                            تأكيد مسح {detectedDuplicates.length} أسماء مكررة
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setDetectedDuplicates(null)}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black transition-all"
+                        >
+                          إلغاء المعاينة
+                        </button>
+                      </div>
+                    </div>
+
+                    {detectedDuplicates.length > 0 && (
+                      <div className="mt-4 border-t border-slate-100 pt-3">
+                        <label className="text-[10px] font-black text-slate-400 block mb-2">قائمة السجلات التابعة (Trailing Duplicates) المقترح حذفها:</label>
+                        <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-xl bg-slate-50 p-2 text-xs font-bold text-slate-600">
+                          {detectedDuplicates.map((dup, index) => (
+                            <div key={dup.id || index} className="py-2.5 px-3 flex items-center justify-between hover:bg-white rounded-lg transition-colors">
+                              <span className="text-slate-700">وجدنا اسم <strong className="text-rose-600">'{dup.name}'</strong> مكرر</span>
+                              <span className="text-[10px] px-2 py-0.5 bg-slate-200 text-slate-600 rounded-md font-mono">
+                                {dup.churchName || 'بدون كنيسة'} • {dup.stage || 'بدون مرحلة'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 mb-6 flex flex-col md:flex-row items-end gap-4 shadow-sm">
                   {userRole === 'admin' && (
