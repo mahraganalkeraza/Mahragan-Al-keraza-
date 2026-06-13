@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase } from '../lib/supabaseClient';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 import html2canvas from 'html2canvas';
@@ -15,6 +14,7 @@ interface Participant {
   churchName: string;
   stage: string;
   serial?: string;
+  studentName?: string;
 }
 
 const preloadImage = (src: string): Promise<string> => {
@@ -29,12 +29,12 @@ const preloadImage = (src: string): Promise<string> => {
 
 const fetchPublicChurches = async () => {
   try {
-      const snap = await getDocs(collection(db, 'public_churches'));
+      const { data, error } = await supabase.from('churches').select('name, logoUrl').range(0, 4999);
+      if (error) throw error;
       const logos: Record<string, string> = {};
-      snap.forEach(doc => {
-          const data = doc.data();
-          if (data.name && data.logoUrl) {
-              logos[data.name] = data.logoUrl;
+      data?.forEach(row => {
+          if (row.name && row.logoUrl) {
+              logos[row.name] = row.logoUrl;
           }
       });
       return logos;
@@ -391,11 +391,15 @@ export default function OmrGenerator() {
   useEffect(() => {
     const fetchDynamics = async () => {
       try {
-        const churchesSnap = await getDocs(collection(db, 'churches'));
-        setChurches(churchesSnap.docs.map(doc => doc.data().name).filter(Boolean));
+        const { data: churchesData } = await supabase.from('churches').select('name').range(0, 4999);
+        if (churchesData) {
+          setChurches(churchesData.map((doc: any) => doc.name).filter(Boolean));
+        }
 
-        const levelsSnap = await getDocs(collection(db, 'levels'));
-        setLevels(levelsSnap.docs.map(doc => doc.data().name).filter(Boolean));
+        const { data: levelsData } = await supabase.from('levels').select('name').range(0, 4999);
+        if (levelsData) {
+          setLevels(levelsData.map((doc: any) => doc.name).filter(Boolean));
+        }
       } catch (err) {
         console.error("Error fetching dynamics:", err);
       }
@@ -418,30 +422,41 @@ export default function OmrGenerator() {
       
       if (search) {
         // Individual Search - try literal, upper, and lower
-        const participantsRef = collection(db, 'participants');
         const searchVariations = [search, search.toUpperCase(), search.toLowerCase()];
+        let found = false;
         
         for (const variant of searchVariations) {
-          const q = query(participantsRef, where('serial', '==', variant), limit(1));
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            students = snap.docs.map(d => {
-              const data = d.data();
-              return { id: d.id, ...data, name: data.name || data.studentName || 'بدون اسم' };
-            }) as Participant[];
+          const { data, error } = await supabase
+            .from('registrations')
+            .select('*')
+            .eq('serial', variant)
+            .limit(1);
+            
+          if (!error && data && data.length > 0) {
+            students = data.map((d: any) => ({
+              ...d,
+              name: d.name || d.studentName || 'بدون اسم'
+            }));
+            found = true;
             break;
           }
         }
 
-        if (students.length === 0) {
+        if (!found) {
           // Try by ID directly as fallback
           for (const variant of searchVariations) {
-            const docSnap = await getDocs(query(participantsRef, where('id', '==', variant), limit(1)));
-            if (!docSnap.empty) {
-              students = docSnap.docs.map(d => {
-                const data = d.data();
-                return { id: d.id, ...data, name: data.name || data.studentName || 'بدون اسم' };
-              }) as Participant[];
+            const { data, error } = await supabase
+              .from('registrations')
+              .select('*')
+              .eq('id', variant)
+              .limit(1);
+              
+            if (!error && data && data.length > 0) {
+              students = data.map((d: any) => ({
+                ...d,
+                name: d.name || d.studentName || 'بدون اسم'
+              }));
+              found = true;
               break;
             }
           }
@@ -454,17 +469,22 @@ export default function OmrGenerator() {
         }
       } else {
         // Filtered Search
-        let conditions = [];
-        if (selectedChurch !== 'الكل') conditions.push(where('churchName', '==', selectedChurch));
-        if (selectedStage !== 'الكل') conditions.push(where('stage', '==', selectedStage));
-
-        const participantsRef = collection(db, 'participants');
-        const q = conditions.length > 0 ? query(participantsRef, ...conditions) : query(participantsRef);
-        const snap = await getDocs(q);
-        students = snap.docs.map(doc => {
-          const data = doc.data();
-          return { id: doc.id, ...data, name: data.name || data.studentName || 'بدون اسم' };
-        }) as Participant[];
+        let query = supabase.from('registrations').select('*').range(0, 4999);
+        
+        if (selectedChurch !== 'الكل') {
+          query = query.eq('churchName', selectedChurch);
+        }
+        if (selectedStage !== 'الكل') {
+          query = query.eq('stage', selectedStage);
+        }
+        
+        const { data, error } = await query;
+        if (!error && data) {
+          students = data.map((d: any) => ({
+            ...d,
+            name: d.name || d.studentName || 'بدون اسم'
+          }));
+        }
       }
 
       if (mode === 'omr') {

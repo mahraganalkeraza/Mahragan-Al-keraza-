@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 import { 
   db, 
   storage, 
@@ -354,53 +355,60 @@ export default function DynamicAdminSettings() {
   };
 
   useEffect(() => {
-    setIsLoading(true);
-    const unsubChurches = onSnapshot(collection(db, 'churches'), (snap) => {
-      setChurches(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setIsLoading(false);
-    });
+    let isMounted = true;
+    
+    const fetchDynamicData = async () => {
+      setIsLoading(true);
+      try {
+        const [
+          { data: churchesData },
+          { data: levelsData },
+          { data: compData },
+          { data: activityData },
+          { data: hymnData },
+          { data: configData },
+          { data: validationData }
+        ] = await Promise.all([
+          supabase.from('churches').select('*').range(0, 4999),
+          supabase.from('levels').select('*').range(0, 4999),
+          supabase.from('competitions').select('*').range(0, 4999),
+          supabase.from('activityStages').select('*').range(0, 4999),
+          supabase.from('hymnStages').select('*').range(0, 4999),
+          supabase.from('system_settings').select('*').eq('id', 'app_config').maybeSingle(),
+          supabase.from('system_settings').select('*').eq('id', 'validation').maybeSingle()
+        ]);
 
-    const unsubLevels = onSnapshot(collection(db, 'levels'), (snap) => {
-      setLevels(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => sortStages(a.name, b.name)));
-    });
+        if (!isMounted) return;
 
-    const unsubComp = onSnapshot(collection(db, 'competitions'), (snap) => {
-      setCompetitions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
-    const unsubActivityStages = onSnapshot(collection(db, 'activityStages'), (snap) => {
-      setActivityStages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
-    const unsubHymnStages = onSnapshot(collection(db, 'hymnStages'), (snap) => {
-      setHymnStages(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-
-    const unsubConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snap) => {
-      if (snap.exists()) {
-        setAppLogo(snap.data().appLogo || null);
-        setGlobalReadAccess(snap.data().globalReadAccess !== false);
+        if (churchesData) setChurches(churchesData);
+        if (levelsData) setLevels(levelsData.sort((a: any, b: any) => sortStages(a.name, b.name)));
+        if (compData) setCompetitions(compData);
+        if (activityData) setActivityStages(activityData);
+        if (hymnData) setHymnStages(hymnData);
+        
+        if (configData) {
+          setAppLogo(configData.appLogo || null);
+          setGlobalReadAccess(configData.global_read_access !== false);
+        }
+        
+        if (validationData) {
+          setValidationSettings({
+            templates: validationData.templates || [],
+            ageMappings: validationData.ageMappings || [],
+            rules: validationData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
+          });
+        }
+      } catch (err) {
+        console.error("Error fetching dynamic admin settings from Supabase:", err);
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
-    });
+    };
 
-    const unsubValidation = onSnapshot(doc(db, 'settings', 'validation'), (snap) => {
-      if (snap.exists()) {
-        setValidationSettings({
-          templates: snap.data().templates || [],
-          ageMappings: snap.data().ageMappings || [],
-          rules: snap.data().rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
-        });
-      }
-    });
+    fetchDynamicData();
 
     return () => {
-      unsubChurches();
-      unsubLevels();
-      unsubComp();
-      unsubActivityStages();
-      unsubHymnStages();
-      unsubConfig();
-      unsubValidation();
+      isMounted = false;
     };
   }, []);
 

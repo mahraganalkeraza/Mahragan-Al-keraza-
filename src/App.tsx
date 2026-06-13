@@ -702,20 +702,31 @@ function AppComponent() {
       return () => {};
     }
 
-    const unsubAppConfig = onSnapshot(doc(db, 'settings', 'app_config'), (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        setActiveYear(data.activeYear || CURRENT_YEAR);
-        setGlobalReadAccess(data.globalReadAccess !== false);
-        if (data.appLogo) {
-          localStorage.setItem('appLogoCache', data.appLogo);
-          setAppLogo(data.appLogo);
-        } else {
-          localStorage.removeItem('appLogoCache');
-          setAppLogo(null);
+    // Fetch app_config from Supabase
+    const fetchAppConfig = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('system_settings')
+          .select('*')
+          .eq('id', 'app_config')
+          .maybeSingle();
+
+        if (data) {
+          setActiveYear(data.activeYear || CURRENT_YEAR);
+          setGlobalReadAccess(data.global_read_access !== false);
+          if (data.appLogo) {
+            localStorage.setItem('appLogoCache', data.appLogo);
+            setAppLogo(data.appLogo);
+          } else {
+            localStorage.removeItem('appLogoCache');
+            setAppLogo(null);
+          }
         }
+      } catch (err) {
+        console.error("Error fetching app config from Supabase:", err);
       }
-    }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/app_config'));
+    };
+    fetchAppConfig();
 
     const unsubChurches = onSnapshot(collection(db, 'churches'), (snapshot) => {
       const churchesData = snapshot.docs
@@ -831,7 +842,6 @@ function AppComponent() {
     }, (error) => handleFirestoreError(error, OperationType.GET, 'settings/exam_config'));
 
     return () => {
-      unsubAppConfig();
       unsubChurches();
       unsubLevels();
       unsubActivityStages();
@@ -3487,28 +3497,17 @@ function AppComponent() {
 
   const toggleGlobalReadAccess = async (status: boolean) => {
     try {
-      // 1. Update master state in config
-      await setDoc(doc(db, 'settings', 'app_config'), { globalReadAccess: status }, { merge: true });
+      // 1. Update master state in Supabase system_settings
+      const { error: sbError } = await supabase
+        .from('system_settings')
+        .update({ global_read_access: status })
+        .eq('id', 'app_config');
+        
+      if (sbError) {
+        // Fallback to insert if the row doesn't exist yet
+        await supabase.from('system_settings').insert([{ id: 'app_config', global_read_access: status }]);
+      }
       
-      // 2. Perform batch update on all church users and church info docs
-      const usersQuery = query(collection(db, 'users'), where('role', '==', 'church'));
-      const churchesQuery = collection(db, 'churches');
-      
-      const [usersSnap, churchesSnap] = await Promise.all([
-        getDocs(usersQuery),
-        getDocs(churchesQuery)
-      ]);
-      
-      const batch = writeBatch(db);
-      usersSnap.docs.forEach((d) => {
-        batch.update(d.ref, { isAllowedToRead: status });
-      });
-      churchesSnap.docs.forEach((d) => {
-        batch.update(d.ref, { isAllowedToRead: status });
-      });
-      
-      await batch.commit();
-
       setGlobalReadAccess(status);
       setNotification(`تم ${status ? 'تفعيل' : 'إيقاف'} القراءة للجميع (تحديث شامل بنجاح)`);
     } catch (err) {

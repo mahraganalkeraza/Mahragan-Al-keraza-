@@ -1,45 +1,24 @@
 import ExcelJS from 'exceljs';
-import { db, rdb, rdbRef, rdbGet } from '../firebase';
-import { collection, getDocs, query, where } from 'firebase/firestore';
 import { saveAs } from 'file-saver';
+import { supabase } from '../lib/supabaseClient';
 
 export const generateMasterExcel = async (churchName: string | null = null) => {
   try {
     const isAdmin = !churchName;
     console.log(`Exporting for ${isAdmin ? 'Admin' : churchName}`);
 
-    // Fetch sequentially to guarantee resolution
-    let pQuery = isAdmin 
-      ? collection(db, 'participants') 
-      : query(collection(db, 'participants'), where('churchName', '==', churchName));
-      
-    const pSnap = await getDocs(pQuery);
-    const fsParticipants = pSnap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-
-    let rdbList: any[] = [];
-    try {
-      const rSnapshot = await rdbGet(rdbRef(rdb, 'participants'));
-      const rData = rSnapshot.val();
-      if (rData) {
-        let temp: any[] = [];
-        if (Array.isArray(rData)) {
-          temp = rData.filter(p => p).map((p, index) => ({ id: p.id || `rdb-${index}`, ...p }));
-        } else {
-          temp = Object.entries(rData).map(([id, val]: [string, any]) => ({ id, ...val }));
-        }
-        
-        rdbList = temp.filter(p => {
-          return isAdmin || p.churchName === churchName;
-        });
-      }
-    } catch (rdbError) {
-      console.error('Error fetching participants from Realtime Database for Excel export:', rdbError);
+    // Fetch using Supabase with .range(0, 4999) to get all students
+    let query = supabase.from('registrations').select('*').range(0, 4999);
+    
+    if (!isAdmin) {
+      query = query.eq('churchName', churchName);
     }
+    
+    const { data: participants, error } = await query;
 
-    const uniqueParticipantsMap = new Map();
-    fsParticipants.forEach(p => uniqueParticipantsMap.set(p.id, p));
-    rdbList.forEach(p => uniqueParticipantsMap.set(p.id, p));
-    const participants = Array.from(uniqueParticipantsMap.values());
+    if (error) {
+      throw error;
+    }
 
     if (!participants || participants.length === 0) {
       alert('لا توجد بيانات متاحة للتصدير لهذه الكنيسة.');
@@ -76,7 +55,7 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
         name: nameVal || "Null",
         stage: row.stage || "Null",
         gender: row.gender || "Null",
-        competitions: Array.isArray(rawCompetitions) ? JSON.stringify(rawCompetitions) : "Null",
+        competitions: Array.isArray(rawCompetitions) ? JSON.stringify(rawCompetitions) : (rawCompetitions || "Null"),
         timestamp: timestampVal || "Null",
         year: row.year || "Null"
       };
@@ -94,6 +73,7 @@ export const generateMasterExcel = async (churchName: string | null = null) => {
     alert(error.message || 'حدث خطأ غير متوقع أثناء التصدير.');
   }
 };
+
 
 
 export const downloadMasterTemplate = async () => {
