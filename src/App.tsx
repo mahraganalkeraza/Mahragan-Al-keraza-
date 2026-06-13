@@ -2600,67 +2600,28 @@ function AppComponent() {
     XLSX.writeFile(workbook, `detailed_orders_${new Date().toLocaleDateString('en-CA')}.xlsx`);
   };
 
-  const handleScanDuplicates = async () => {
-    setIsDuplicateScanModalOpen(true);
-    setIsScanningDuplicates(true);
-    setDuplicateRecords([]);
-    
-    try {
-      const q = query(
-        collection(db, 'participants'),
-        where('year', '==', activeYear)
-      );
-      
-      const snap = await getDocs(q);
-      const parts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
-      
-      const duplicatesMap: Record<string, Participant[]> = {};
-      
-      parts.forEach(p => {
-        const signature = `${p.name}_${p.churchName}_${p.stage}_${[...(p.competitions || [])].sort().join('-')}`;
-        if (!duplicatesMap[signature]) {
-          duplicatesMap[signature] = [];
-        }
-        duplicatesMap[signature].push(p);
-      });
-      
-      const duplicateGroups = Object.values(duplicatesMap).filter(group => group.length > 1);
-      setDuplicateRecords(duplicateGroups);
-    } catch (err) {
-      console.error(err);
-      setNotification('حدث خطأ أثناء فحص التكرارات.');
-    } finally {
-      setIsScanningDuplicates(false);
-    }
-  };
-
-  const handleDeleteDuplicates = async () => {
-    if (!duplicateRecords.length) return;
+    const handlePurgeDuplicatesSupabase = async () => {
     setIsDeletingDuplicates(true);
     try {
-      let batch = writeBatch(db);
-      let opCount = 0;
-      
-      for (const group of duplicateRecords) {
-        const toDelete = group.slice(1);
-        for (const record of toDelete) {
-          if (opCount >= 490) {
-            await batch.commit();
-            batch = writeBatch(db);
-            opCount = 0;
-          }
-          batch.delete(doc(db, 'participants', record.id));
-          opCount++;
+      const { data, error } = await supabase.rpc('delete_duplicate_students');
+      if (error) {
+        console.error(error);
+        setNotification('حدث خطأ أثناء حذف التكرارات.');
+      } else {
+        let count = 0;
+        if (Array.isArray(data) && data.length > 0) {
+          count = data[0].deleted_count;
+        } else if (typeof data === 'number') {
+          count = data;
+        }
+
+        if (count > 0) {
+          setNotification(`تم مسح ${count} من الأسماء المكررة بنجاح!`);
+          fetchParticipantsPage(true, true, debouncedParticipantSearch);
+        } else {
+          setNotification('لا يوجد أسماء مكررة بالتطابق التام حالياً.');
         }
       }
-      
-      if (opCount > 0) {
-        await batch.commit();
-      }
-      
-      setNotification('تم تطهير السجلات المكررة بنجاح.');
-      setIsDuplicateScanModalOpen(false);
-      fetchParticipantsPage(true, true, participantSearch);
     } catch (err) {
       console.error(err);
       setNotification('حدث خطأ أثناء حذف التكرارات.');
@@ -4524,86 +4485,7 @@ function AppComponent() {
     </AnimatePresence>
   );
 
-  const DuplicateScanModal = () => (
-    <AnimatePresence>
-      {isDuplicateScanModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => !isScanningDuplicates && !isDeletingDuplicates && setIsDuplicateScanModalOpen(false)}
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-          />
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            className="relative bg-white w-full max-w-lg flex flex-col rounded-3xl shadow-2xl p-8"
-          >
-            {isScanningDuplicates ? (
-              <div className="flex flex-col items-center justify-center py-8">
-                <Loader2 className="animate-spin text-coptic-blue mb-4" size={48} />
-                <h3 className="text-lg font-black text-slate-800 mb-2">جاري فحص السجلات...</h3>
-                <p className="text-sm font-bold text-slate-500 text-center">يتم الآن مطابقة الأسماء والمراحل والمسابقات عبر النظام</p>
-              </div>
-            ) : isDeletingDuplicates ? (
-              <div className="flex flex-col items-center justify-center py-8">
-                <Loader2 className="animate-spin text-red-500 mb-4" size={48} />
-                <h3 className="text-lg font-black text-red-600 mb-2">جاري تطهير قاعدة البيانات...</h3>
-                <p className="text-sm font-bold text-slate-500 text-center">يرجى الانتظار، يتم الآن حذف السجلات المكررة والاحتفاظ بنسخة واحدة أصلية</p>
-              </div>
-            ) : (
-              <>
-                <div className="mx-auto w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mb-6">
-                  <Layers className="text-rose-500" size={32} />
-                </div>
-                
-                <h3 className="text-2xl font-black text-center text-slate-800 mb-4">نتائج فحص التكرار</h3>
-                
-                {duplicateRecords.length === 0 ? (
-                  <div className="text-center">
-                    <div className="bg-emerald-50 text-emerald-700 p-4 rounded-xl border border-emerald-100 font-bold mb-6">
-                      قاعدة البيانات نظيفة تماماً! لم يتم العثور على أي استمارات مكررة.
-                    </div>
-                    <button 
-                      onClick={() => setIsDuplicateScanModalOpen(false)}
-                      className="w-full px-4 py-3 bg-slate-900 text-white rounded-xl font-black text-sm hover:bg-slate-800 transition-colors"
-                    >
-                      إغلاق
-                    </button>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <p className="text-sm font-bold text-rose-600 bg-rose-50 p-4 rounded-xl border border-rose-100 mb-6 leading-relaxed">
-                      تم العثور على <span className="font-black text-lg mx-1">{duplicateRecords.reduce((acc, curr) => acc + curr.length - 1, 0)}</span> سجلات مكررة ضمن <span className="font-black text-lg mx-1">{duplicateRecords.length}</span> طالب متطابق تماماً في (الاسم - الكنيسة - المرحلة - المسابقات).
-                      <br/><br/>
-                      الوظيفة الآمنة: سيتم الاحتفاظ بنسخة واحدة أصلية لكل شخص وحذف باقي النسخ الإضافية لضمان صحة أرقام الطباعة.
-                    </p>
-                    
-                    <div className="flex gap-3">
-                      <button 
-                        onClick={() => setIsDuplicateScanModalOpen(false)}
-                        className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 rounded-xl font-black text-sm hover:bg-slate-200 transition-colors"
-                      >
-                        إلغاء
-                      </button>
-                      <button 
-                        onClick={handleDeleteDuplicates}
-                        className="flex-1 px-4 py-3 bg-rose-600 text-white rounded-xl font-black text-sm hover:bg-rose-700 transition-colors shadow-lg shadow-rose-600/20 flex justify-center items-center gap-2"
-                      >
-                        تأكيد تطهير التكرار
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
+  
 
   useEffect(() => {
     if (activeSection === 'exam-login' && userRole !== 'admin' && userRole !== 'super_admin') {
@@ -6073,10 +5955,11 @@ function AppComponent() {
                       <UserPlus size={14} /> التسجيل الجماعي (Bulk)
                     </button>
                     <button 
-                      onClick={() => setIsDuplicateScanModalOpen(true)}
-                      className="px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black shadow-sm flex items-center gap-2 hover:bg-rose-100 transition-colors"
+                      onClick={handlePurgeDuplicatesSupabase}
+                      disabled={isDeletingDuplicates}
+                      className="px-4 py-2 bg-rose-50 text-rose-600 rounded-xl text-xs font-black shadow-sm flex items-center gap-2 hover:bg-rose-100 transition-colors disabled:opacity-50"
                     >
-                      <Layers size={14} /> فحص وتطهير التكرار
+                      {isDeletingDuplicates ? <Loader2 size={14} className="animate-spin" /> : <Layers size={14} />} فحص وتطهير التكرار
                     </button>
                     <button 
                       onClick={exportAllRegistrationsToExcel}
@@ -9421,7 +9304,7 @@ function AppComponent() {
         </button>
       )}
       <DeleteConfirmationModal />
-      <DuplicateScanModal />
+      
       <AdminBulkRegister
         isOpen={isAdminBulkRegisterOpen}
         onClose={() => setIsAdminBulkRegisterOpen(false)}
