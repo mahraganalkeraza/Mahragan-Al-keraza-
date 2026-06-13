@@ -381,12 +381,43 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
   const [levels, setLevels] = useState<string[]>([]);
   const [selectedChurch, setSelectedChurch] = useState<string>('الكل');
   const [selectedStage, setSelectedStage] = useState<string>('الكل');
+  const [selectedCompetition, setSelectedCompetition] = useState<string>('الكل');
   const [numQuestions, setNumQuestions] = useState<number>(40);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, batch: 0, totalBatches: 0 });
   const [error, setError] = useState<string | null>(null);
+
+  // Dynamically extract unique values from allStudents
+  const extractedChurches = React.useMemo(() => {
+    if (!allStudents || allStudents.length === 0) return [];
+    return Array.from(new Set(allStudents.map(s => s.churchName).filter(Boolean))).sort();
+  }, [allStudents]);
+
+  const extractedLevels = React.useMemo(() => {
+    if (!allStudents || allStudents.length === 0) return [];
+    return Array.from(new Set(allStudents.map(s => s.stage).filter(Boolean))).sort();
+  }, [allStudents]);
+
+  const extractedCompetitions = React.useMemo(() => {
+    if (!allStudents || allStudents.length === 0) return [];
+    return Array.from(new Set(allStudents.flatMap(s => s.competitions || []).filter(Boolean))).sort();
+  }, [allStudents]);
+
+  const finalChurches = React.useMemo(() => {
+    const combined = new Set([...extractedChurches, ...churches]);
+    return Array.from(combined).sort();
+  }, [extractedChurches, churches]);
+
+  const finalLevels = React.useMemo(() => {
+    const combined = new Set([...extractedLevels, ...levels]);
+    return Array.from(combined).sort();
+  }, [extractedLevels, levels]);
+
+  const finalCompetitions = React.useMemo(() => {
+    return extractedCompetitions;
+  }, [extractedCompetitions]);
 
   useEffect(() => {
     const fetchDynamics = async () => {
@@ -436,7 +467,8 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
           students = allStudents.filter(p => {
              const passChurch = selectedChurch === 'الكل' || p.churchName === selectedChurch;
              const passStage = selectedStage === 'الكل' || p.stage === selectedStage;
-             return passChurch && passStage;
+             const passComp = selectedCompetition === 'الكل' || (p.competitions && p.competitions.includes(selectedCompetition));
+             return passChurch && passStage && passComp;
           }).map(d => ({...d, name: d.name || d.studentName || 'بدون اسم'}));
         }
       }
@@ -580,8 +612,8 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
       )}
 
       {/* Advanced Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div className="md:col-span-2 relative">
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-8">
+        <div className="md:col-span-3 relative">
           <label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest whitespace-nowrap overflow-hidden">
             <Search size={14} className="inline ml-1"/> بحث عن متسابق (اختياري)
           </label>
@@ -597,7 +629,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
           </div>
         </div>
 
-        <div>
+        <div className="md:col-span-3">
           <label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">
             <Users size={14} className="inline ml-1"/> الكنيسة
           </label>
@@ -608,11 +640,11 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
             onChange={(e) => setSelectedChurch(e.target.value)}
           >
             <option value="الكل">جميع الكنائس</option>
-            {churches.map((c, i) => <option key={i} value={c}>{c}</option>)}
+            {finalChurches.map((c, i) => <option key={i} value={c}>{c}</option>)}
           </select>
         </div>
 
-        <div>
+        <div className="md:col-span-3">
           <label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">
             <LayoutGrid size={14} className="inline ml-1"/> المرحلة
           </label>
@@ -623,7 +655,22 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
             onChange={(e) => setSelectedStage(e.target.value)}
           >
             <option value="الكل">كل المراحل</option>
-            {levels.map((s, i) => <option key={i} value={s}>{s}</option>)}
+            {finalLevels.map((s, i) => <option key={i} value={s}>{s}</option>)}
+          </select>
+        </div>
+
+        <div className="md:col-span-3">
+          <label className="block text-xs font-black text-slate-400 mb-2 uppercase tracking-widest">
+            <LayoutGrid size={14} className="inline ml-1"/> المسابقة
+          </label>
+          <select 
+            disabled={!!searchQuery}
+            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl font-bold focus:ring-2 focus:ring-primary outline-none transition-all disabled:opacity-50"
+            value={selectedCompetition}
+            onChange={(e) => setSelectedCompetition(e.target.value)}
+          >
+            <option value="الكل">كل المسابقات</option>
+            {finalCompetitions.map((c, i) => <option key={i} value={c}>{c}</option>)}
           </select>
         </div>
       </div>
