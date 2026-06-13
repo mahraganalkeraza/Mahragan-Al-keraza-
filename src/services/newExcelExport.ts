@@ -2,23 +2,10 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { supabase } from '../lib/supabaseClient';
 
-export const generateMasterExcel = async (churchName: string | null = null) => {
+export const generateMasterExcel = async (participants: any[], churchName: string | null = null) => {
   try {
     const isAdmin = !churchName;
     console.log(`Exporting for ${isAdmin ? 'Admin' : churchName}`);
-
-    // Fetch using Supabase with .range(0, 4999) to get all students
-    let query = supabase.from('registrations').select('*').range(0, 4999);
-    
-    if (!isAdmin) {
-      query = query.eq('churchName', churchName);
-    }
-    
-    const { data: participants, error } = await query;
-
-    if (error) {
-      throw error;
-    }
 
     if (!participants || participants.length === 0) {
       alert('لا توجد بيانات متاحة للتصدير لهذه الكنيسة.');

@@ -98,6 +98,7 @@ import Lightbox from "yet-another-react-lightbox";
 import "yet-another-react-lightbox/styles.css";
 import Zoom from "yet-another-react-lightbox/plugins/zoom";
 
+
 import { 
   auth, 
   db, 
@@ -2669,7 +2670,7 @@ function AppComponent() {
   };
 
   const exportAllRegistrationsToExcel = async () => {
-    await generateMasterExcel(userRole === 'admin' ? null : churchName);
+    await generateMasterExcel(allChurchParticipants, userRole === 'admin' ? null : churchName);
   };
 
   const fetchSupabaseParticipants = async () => {
@@ -5199,7 +5200,7 @@ function AppComponent() {
                     <BookOpen size={18} /> بدء دخول الامتحان (QR Scan)
                   </button>
                   <button 
-                    onClick={() => generateMasterExcel(churchName)}
+                    onClick={() => generateMasterExcel(allChurchParticipants, churchName)}
                     className="px-6 py-3 bg-emerald-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-xl hover:scale-105 active:scale-95"
                   >
                     <Download size={18} /> التصدير الشامل الموحد (Excel)
@@ -5677,7 +5678,7 @@ function AppComponent() {
                   </div>
                   <div className="mt-6">
                     <button 
-                      onClick={() => { generateMasterExcel(userRole === 'admin' ? null : churchName); }}
+                      onClick={() => generateMasterExcel(allChurchParticipants, userRole === 'admin' ? null : churchName)}
                       className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-md active:scale-95"
                     >
                       <Download size={14} /> التصدير الشامل (Excel)
@@ -5757,7 +5758,7 @@ function AppComponent() {
                         <Award size={20} /> تحميل قالب التسجيل المعتمد
                       </button>
                       <button 
-                        onClick={() => generateMasterExcel(userRole === 'admin' ? null : churchName)}
+                        onClick={() => generateMasterExcel(allChurchParticipants, userRole === 'admin' ? null : churchName)}
                         className="px-6 py-3 bg-coptic-blue text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                       >
                         <Download size={20} /> {userRole === 'admin' ? 'تصدير كل بيانات التسجيل الموحد (Excel)' : 'تحميل بيانات المشتركين بصيغة XLSX'}
@@ -6329,7 +6330,7 @@ function AppComponent() {
             )}
 
             {adminActiveTab === 'omr' && (
-              <OmrGenerator />
+              <OmrGenerator allStudents={allChurchParticipants} />
             )}
 
             {adminActiveTab === 'results' && (
@@ -8195,7 +8196,7 @@ function AppComponent() {
                         <div className="flex items-center gap-3">
                           <button 
                             type="button"
-                            onClick={() => { generateMasterExcel(churchName); }}
+                            onClick={() => generateMasterExcel(allChurchParticipants, churchName)}
                             className="px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                           >
                             <Download size={20} /> التصدير الشامل (Excel)

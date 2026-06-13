@@ -375,7 +375,7 @@ const createQRCardPageElement = async (students: Participant[]) => {
   return wrapper;
 };
 
-export default function OmrGenerator() {
+export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
   const [mode, setMode] = useState<'omr' | 'qr'>('omr');
   const [churches, setChurches] = useState<string[]>([]);
   const [levels, setLevels] = useState<string[]>([]);
@@ -420,70 +420,24 @@ export default function OmrGenerator() {
       let students: Participant[] = [];
       const search = searchQuery.trim();
       
-      if (search) {
-        // Individual Search - try literal, upper, and lower
-        const searchVariations = [search, search.toUpperCase(), search.toLowerCase()];
-        let found = false;
-        
-        for (const variant of searchVariations) {
-          const { data, error } = await supabase
-            .from('registrations')
-            .select('*')
-            .eq('serial', variant)
-            .limit(1);
-            
-          if (!error && data && data.length > 0) {
-            students = data.map((d: any) => ({
-              ...d,
-              name: d.name || d.studentName || 'بدون اسم'
-            }));
-            found = true;
-            break;
+      if (allStudents && allStudents.length > 0) {
+        if (search) {
+          const searchVariations = [search, search.toUpperCase(), search.toLowerCase()];
+          students = allStudents.filter(p => 
+            searchVariations.includes(p.serial) || searchVariations.includes(p.id)
+          ).map(d => ({...d, name: d.name || d.studentName || 'بدون اسم'}));
+          
+          if (students.length === 0) {
+             setError("لم يتم العثور على طالب بهذا الرقم.");
+             setIsGenerating(false);
+             return;
           }
-        }
-
-        if (!found) {
-          // Try by ID directly as fallback
-          for (const variant of searchVariations) {
-            const { data, error } = await supabase
-              .from('registrations')
-              .select('*')
-              .eq('id', variant)
-              .limit(1);
-              
-            if (!error && data && data.length > 0) {
-              students = data.map((d: any) => ({
-                ...d,
-                name: d.name || d.studentName || 'بدون اسم'
-              }));
-              found = true;
-              break;
-            }
-          }
-        }
-
-        if (students.length === 0) {
-          setError("لم يتم العثور على طالب بهذا الرقم.");
-          setIsGenerating(false);
-          return;
-        }
-      } else {
-        // Filtered Search
-        let query = supabase.from('registrations').select('*').range(0, 4999);
-        
-        if (selectedChurch !== 'الكل') {
-          query = query.eq('churchName', selectedChurch);
-        }
-        if (selectedStage !== 'الكل') {
-          query = query.eq('stage', selectedStage);
-        }
-        
-        const { data, error } = await query;
-        if (!error && data) {
-          students = data.map((d: any) => ({
-            ...d,
-            name: d.name || d.studentName || 'بدون اسم'
-          }));
+        } else {
+          students = allStudents.filter(p => {
+             const passChurch = selectedChurch === 'الكل' || p.churchName === selectedChurch;
+             const passStage = selectedStage === 'الكل' || p.stage === selectedStage;
+             return passChurch && passStage;
+          }).map(d => ({...d, name: d.name || d.studentName || 'بدون اسم'}));
         }
       }
 

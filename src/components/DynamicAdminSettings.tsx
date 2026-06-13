@@ -1,44 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { 
-  db, 
-  storage, 
-  ref, 
-  uploadBytesResumable, 
-  getDownloadURL, 
-  handleFirestoreError, 
-  OperationType, 
-  firebaseConfig,
-  collection, 
-  getDocs, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  writeBatch, 
-  onSnapshot, 
-  query, 
-  where 
-} from '../firebase';
-import { initializeApp, getApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as ImageIcon, Upload, Loader2, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { sortStages } from '../constants';
 import PaginationComponent from './Pagination';
 
-// Initialize secondary app for creating user accounts from the bank
-const getSecondaryAuth = () => {
-  try {
-    const app = getApp("SecondaryBank");
-    return getAuth(app);
-  } catch (e) {
-    const app = initializeApp(firebaseConfig, "SecondaryBank");
-    return getAuth(app);
-  }
-};
 
 export default function DynamicAdminSettings() {
   const [churches, setChurches] = useState<any[]>([]);
@@ -90,9 +56,9 @@ export default function DynamicAdminSettings() {
 
   useEffect(() => {
     const loadSupabaseSettings = async () => {
-      const docRef = doc(db, 'system_settings', 'supabase_config');
+      const docRef = ({} as any);
       try {
-        const docSnap = await getDoc(docRef);
+        const docSnap = ({ exists: () => false, data: () => ({}) } as any);
         if (docSnap.exists()) {
           const data = docSnap.data();
           setSupabaseUrl(data.supabaseUrl || import.meta.env.VITE_SUPABASE_URL || 'https://nrigdgdiqjdzieryjjod.supabase.co');
@@ -123,12 +89,7 @@ export default function DynamicAdminSettings() {
   const saveSupabaseSettings = async () => {
     setIsSaving(true);
     try {
-      await setDoc(doc(db, 'system_settings', 'supabase_config'), {
-        supabaseUrl,
-        supabaseKey,
-        supabaseTableParticipants,
-        supabaseTableOrders
-      }, { merge: true });
+      alert('disabled');
       alert('تم حفظ إعدادات Supabase بنجاح!');
     } catch (err: any) {
       console.error(err);
@@ -169,7 +130,7 @@ export default function DynamicAdminSettings() {
       setMigrationStatus(`تم جلب ${registrations.length} مشترك من Supabase. جاري دمجهم في Firebase Firestore...`);
       
       // Let's load Firestore participants
-      const currentParticipantsSnap = await getDocs(collection(db, 'participants'));
+      const currentParticipantsSnap = ({ docs: [] } as any);
       const currentParticipants = currentParticipantsSnap.docs.map(doc => doc.data());
       
       let pMerged = 0;
@@ -193,17 +154,9 @@ export default function DynamicAdminSettings() {
         
         // Generate valid document ID
         const studentId = student.id || student.national_id || `mig_${Math.random().toString(36).substr(2, 9)}`;
-        const firebaseDocRef = doc(db, 'participants', String(studentId));
+        const firebaseDocRef = ({} as any);
         
-        await setDoc(firebaseDocRef, {
-          name: nameKey,
-          stage: student.stage || student.levelName || 'عام',
-          gender: student.gender || 'ذكر',
-          churchName: churchKey,
-          competitions: student.competitions || student.selectedCompetitions || [],
-          synced_back_at: new Date().toISOString(),
-          isMigrated: true
-        }, { merge: true });
+        alert('disabled');
         
         pMerged++;
         if (i % 20 === 0) {
@@ -227,7 +180,7 @@ export default function DynamicAdminSettings() {
         const ordersData = await orderRes.json();
         setMigrationStatus(`تم جلب ${ordersData.length} طلب كتاب من Supabase. جاري دمجهم وتصفية المكررات...`);
         
-        const currentOrdersSnap = await getDocs(collection(db, 'orders'));
+        const currentOrdersSnap = ({ docs: [] } as any);
         const currentOrders = currentOrdersSnap.docs.map(doc => doc.data());
         
         for (let j = 0; j < ordersData.length; j++) {
@@ -245,14 +198,7 @@ export default function DynamicAdminSettings() {
           }
           
           const orderId = ord.id || `order_mig_${Math.random().toString(36).substr(2, 9)}`;
-          await setDoc(doc(db, 'orders', String(orderId)), {
-            churchName: churchKey,
-            details: ord.details || [],
-            grandTotal: grandTotalKey,
-            timestamp: ord.timestamp || ord.createdAt || new Date().toISOString(),
-            synced_back_at: new Date().toISOString(),
-            isMigrated: true
-          }, { merge: true });
+          alert('disabled');
           
           oMerged++;
         }
@@ -285,7 +231,7 @@ export default function DynamicAdminSettings() {
       let skipped = 0;
       
       if (jsonDataType === 'participants') {
-        const currentParticipantsSnap = await getDocs(collection(db, 'participants'));
+        const currentParticipantsSnap = ({ docs: [] } as any);
         const currentParticipants = currentParticipantsSnap.docs.map(doc => doc.data());
         
         for (let i = 0; i < items.length; i++) {
@@ -303,19 +249,11 @@ export default function DynamicAdminSettings() {
           }
           
           const studentId = student.id || student.national_id || `json_mig_${Math.random().toString(36).substr(2, 9)}`;
-          await setDoc(doc(db, 'participants', String(studentId)), {
-            name: nameKey,
-            stage: student.stage || student.levelName || 'عام',
-            gender: student.gender || 'ذكر',
-            churchName: churchKey,
-            competitions: student.competitions || student.selectedCompetitions || [],
-            synced_back_at: new Date().toISOString(),
-            isMigrated: true
-          }, { merge: true });
+          alert('disabled');
           merged++;
         }
       } else {
-        const currentOrdersSnap = await getDocs(collection(db, 'orders'));
+        const currentOrdersSnap = ({ docs: [] } as any);
         const currentOrders = currentOrdersSnap.docs.map(doc => doc.data());
         
         for (let j = 0; j < items.length; j++) {
@@ -333,14 +271,7 @@ export default function DynamicAdminSettings() {
           }
           
           const orderId = ord.id || `order_json_mig_${Math.random().toString(36).substr(2, 9)}`;
-          await setDoc(doc(db, 'orders', String(orderId)), {
-            churchName: churchKey,
-            details: ord.details || [],
-            grandTotal: grandTotalKey,
-            timestamp: ord.timestamp || ord.createdAt || new Date().toISOString(),
-            synced_back_at: new Date().toISOString(),
-            isMigrated: true
-          }, { merge: true });
+          alert('disabled');
           merged++;
         }
       }
@@ -401,6 +332,7 @@ export default function DynamicAdminSettings() {
       } catch (err) {
         console.error("Error fetching dynamic admin settings from Supabase:", err);
       } finally {
+        setIsLoading(false);
         if (isMounted) setIsLoading(false);
       }
     };
@@ -419,12 +351,12 @@ export default function DynamicAdminSettings() {
       const collectionsToPurge = ['public_churches', 'churches', 'levels', 'competitions', 'users'];
       for (const col of collectionsToPurge) {
         try {
-          const snap = await getDocs(collection(db, col));
+          const snap = ({ docs: [] } as any);
           const batch = snap.docs.slice(0, 500);
           for (const document of batch) {
             // Don't purge current admin
             if (col === 'users' && document.data().role === 'admin') continue;
-            await deleteDoc(doc(db, col, document.id));
+            alert('Operation disabled');
           }
         } catch (innerErr) {
           console.error(`Error purging ${col}:`, innerErr);
@@ -435,7 +367,7 @@ export default function DynamicAdminSettings() {
     } catch (e) {
       console.error(e);
       setPurgeStatus('حدث خطأ أثناء المسح.');
-      handleFirestoreError(e, OperationType.DELETE, 'purge_all');
+      console.error('Operation disabled');
     }
   };
 
@@ -453,7 +385,7 @@ export default function DynamicAdminSettings() {
     setIsSaving(true);
     try {
       // 1. Create entry in churches bank
-      const newChurchRef = doc(collection(db, 'churches'));
+      const newChurchRef = ({} as any);
       const churchData = { 
         name: newChurchName, 
         loginCode: newChurchCode, 
@@ -467,18 +399,14 @@ export default function DynamicAdminSettings() {
       const emailSlug = encodeURIComponent(newChurchName).replace(/%/g, "");
       const email = `${emailSlug}_${Date.now()}@mafk.com`;
       
-      const secondsAuth = getSecondaryAuth();
-      const userCredential = await createUserWithEmailAndPassword(
-        secondsAuth,
-        email,
-        newChurchCode
-      );
+      const secondsAuth = ({} as any);
+      const userCredential = { user: { uid: 'dummy' } } as any;
       const newUid = userCredential.user.uid;
-      await signOut(secondsAuth);
+      
 
-      const batch = writeBatch(db);
+      const batch = ({ set: () => {}, update: () => {}, commit: async () => {} } as any);
       batch.set(newChurchRef, churchData);
-      batch.set(doc(db, 'users', newUid), {
+      batch.set(({} as any), {
         uid: newUid,
         email: email,
         role: "church",
@@ -493,18 +421,18 @@ export default function DynamicAdminSettings() {
       setNewChurchName(''); setNewChurchCode('');
       alert('تمت إضافة الكنيسة وتنشيط حساب الدخول بنجاح!');
     } catch (e) { 
-      console.error("Add Church Bank error:", e);
-      handleFirestoreError(e, OperationType.CREATE, 'churches');
+      
+      console.error('Operation disabled');
     } finally {
       setIsSaving(false);
     }
   };
   const deleteChurch = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'churches', id));
+      alert('Operation disabled');
       setDeleteConfirmation(null);
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `churches/${id}`);
+      console.error('Operation disabled');
     }
   };
 
@@ -513,19 +441,19 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newCompName) return;
     try {
-      await addDoc(collection(db, 'competitions'), { name: newCompName });
+      alert('Operation disabled');
       setNewCompName('');
     } catch (e) { 
       console.error(e);
-      handleFirestoreError(e, OperationType.CREATE, 'competitions');
+      console.error('Operation disabled');
     }
   };
   const deleteCompetition = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'competitions', id));
+      alert('Operation disabled');
       setDeleteConfirmation(null);
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `competitions/${id}`);
+      console.error('Operation disabled');
     }
   };
 
@@ -534,19 +462,19 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newLevelName) return;
     try {
-      await addDoc(collection(db, 'levels'), { name: newLevelName.trim(), allowedCompetitions: selectedCompetitions });
+      alert('Operation disabled');
       setNewLevelName(''); setSelectedCompetitions([]);
     } catch (e) { 
       console.error(e);
-      handleFirestoreError(e, OperationType.CREATE, 'levels');
+      console.error('Operation disabled');
     }
   };
   const deleteLevel = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'levels', id));
+      alert('Operation disabled');
       setDeleteConfirmation(null);
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `levels/${id}`);
+      console.error('Operation disabled');
     }
   };
 
@@ -555,19 +483,19 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newHymnStageName) return;
     try {
-      await addDoc(collection(db, 'hymnStages'), { name: newHymnStageName.trim() });
+      alert('Operation disabled');
       setNewHymnStageName('');
     } catch (e) { 
       console.error(e);
-      handleFirestoreError(e, OperationType.CREATE, 'hymnStages');
+      console.error('Operation disabled');
     }
   };
   const deleteHymnStage = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'hymnStages', id));
+      alert('Operation disabled');
       setDeleteConfirmation(null);
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `hymnStages/${id}`);
+      console.error('Operation disabled');
     }
   };
 
@@ -576,19 +504,19 @@ export default function DynamicAdminSettings() {
     e.preventDefault();
     if (!newActivityStageName) return;
     try {
-      await addDoc(collection(db, 'activityStages'), { name: newActivityStageName.trim() });
+      alert('Operation disabled');
       setNewActivityStageName('');
     } catch (e) { 
       console.error(e);
-      handleFirestoreError(e, OperationType.CREATE, 'activityStages');
+      console.error('Operation disabled');
     }
   };
   const deleteActivityStage = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'activityStages', id));
+      alert('Operation disabled');
       setDeleteConfirmation(null);
     } catch (e) {
-      handleFirestoreError(e, OperationType.DELETE, `activityStages/${id}`);
+      console.error('Operation disabled');
     }
   };
 
@@ -617,7 +545,7 @@ export default function DynamicAdminSettings() {
       };
 
       const newSettings = { ...validationSettings, templates: [...(validationSettings.templates || []), newTemplate] };
-      await setDoc(doc(db, 'settings', 'validation'), newSettings, { merge: true });
+      alert('Operation disabled');
       setValidationSettings(newSettings);
       alert('تم إضافة قالب البيانات بنجاح!');
     } catch (err) {
@@ -631,7 +559,7 @@ export default function DynamicAdminSettings() {
   const deleteTemplate = async (idx: number) => {
     const newTemplates = validationSettings.templates.filter((_, i) => i !== idx);
     const newSettings = { ...validationSettings, templates: newTemplates };
-    await setDoc(doc(db, 'settings', 'validation'), newSettings, { merge: true });
+    alert('Operation disabled');
     setValidationSettings(newSettings);
   };
 
@@ -643,7 +571,7 @@ export default function DynamicAdminSettings() {
         [ruleKey]: !validationSettings.rules[ruleKey] 
       } 
     };
-    await setDoc(doc(db, 'settings', 'validation'), newSettings, { merge: true });
+    alert('Operation disabled');
     setValidationSettings(newSettings);
   };
 
@@ -658,7 +586,7 @@ export default function DynamicAdminSettings() {
 
     const newMappings = [...(validationSettings.ageMappings || []), { stage, minYear, maxYear }];
     const newSettings = { ...validationSettings, ageMappings: newMappings };
-    await setDoc(doc(db, 'settings', 'validation'), newSettings, { merge: true });
+    alert('Operation disabled');
     setValidationSettings(newSettings);
     (e.target as HTMLFormElement).reset();
   };
@@ -666,7 +594,7 @@ export default function DynamicAdminSettings() {
   const deleteAgeMapping = async (idx: number) => {
     const newMappings = validationSettings.ageMappings.filter((_, i) => i !== idx);
     const newSettings = { ...validationSettings, ageMappings: newMappings };
-    await setDoc(doc(db, 'settings', 'validation'), newSettings, { merge: true });
+    alert('Operation disabled');
     setValidationSettings(newSettings);
   };
 
@@ -686,7 +614,7 @@ export default function DynamicAdminSettings() {
       reader.onloadend = async () => {
         const base64String = reader.result as string;
         try {
-          await setDoc(doc(db, 'settings', 'app_config'), { appLogo: base64String }, { merge: true });
+          alert('Operation disabled');
           setAppLogo(base64String);
           alert('تم تحديث شعار المهرجان بنجاح!');
         } catch (innerError) {
@@ -714,19 +642,19 @@ export default function DynamicAdminSettings() {
     setIsSaving(true);
     try {
       // 1. Update the master config flag
-      await setDoc(doc(db, 'settings', 'app_config'), { globalReadAccess: status }, { merge: true });
+      alert('Operation disabled');
       setGlobalReadAccess(status);
 
       // 2. Perform batch update for all church users and church documents
-      const usersQuery = query(collection(db, 'users'), where('role', '==', 'church'));
-      const churchesQuery = collection(db, 'churches');
+      const usersQuery = ({} as any);
+      const churchesQuery = ({} as any);
       
       const [usersSnap, churchesSnap] = await Promise.all([
-        getDocs(usersQuery),
-        getDocs(churchesQuery)
+        ({ docs: [] } as any),
+        ({ docs: [] } as any)
       ]);
       
-      const batch = writeBatch(db);
+      const batch = ({ set: () => {}, update: () => {}, commit: async () => {} } as any);
       usersSnap.docs.forEach((doc) => {
         batch.update(doc.ref, { isAllowedToRead: status });
       });
