@@ -943,8 +943,6 @@ function AppComponent() {
 
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [allChurchParticipants, setAllChurchParticipants] = useState<Participant[]>([]);
-  const [firestoreParticipants, setFirestoreParticipants] = useState<Participant[]>([]);
-  const [rdbParticipants, setRdbParticipants] = useState<Participant[]>([]);
   const [supabaseParticipants, setSupabaseParticipants] = useState<Participant[]>([]);
   const [totalParticipantsCount, setTotalParticipantsCount] = useState<number>(0);
   const [totalOrdersCount, setTotalOrdersCount] = useState<number>(0);
@@ -1285,13 +1283,40 @@ function AppComponent() {
       return [];
     };
 
+    // Filtered participants based on current selected church / scope
+    const activeParticipants = allChurchParticipants.filter(p => {
+      const matchChurch = (userRole === 'admin') 
+        ? (globalChurchFilter === 'الكل' || p.churchName === globalChurchFilter)
+        : (p.churchName === churchName);
+      return matchChurch;
+    });
+
+    const totalParticipants = activeParticipants.length;
+
+    // Filtered orders count
+    const activeOrders = (orders || []).filter(o => {
+      const matchChurch = (userRole === 'admin')
+        ? (globalChurchFilter === 'الكل' || o.churchName === globalChurchFilter)
+        : (o.churchName === churchName);
+      return matchChurch;
+    });
+    const totalOrders = activeOrders.length;
+
+    // Filtered teams count
+    const activeTeamsCount = (activityTeams || []).filter(t => {
+      const matchChurch = (userRole === 'admin')
+        ? (globalChurchFilter === 'الكل' || t.churchName === globalChurchFilter)
+        : (t.churchName === churchName);
+      return matchChurch;
+    }).length;
+
     const demographicsData = STAGE_ORDER.map(stg => ({
       name: stg,
-      "المشتركين": allChurchParticipants.filter(p => p.stage === stg).length
+      "المشتركين": activeParticipants.filter(p => p.stage === stg).length
     })).filter(d => d["المشتركين"] > 0);
 
     const booksPerStage: Record<string, number> = {};
-    (orders || []).forEach(order => {
+    activeOrders.forEach(order => {
         (order.details || []).forEach((item: any) => {
             const stg = item.stage;
             if (stg) {
@@ -1300,7 +1325,7 @@ function AppComponent() {
         });
     });
 
-    const retentionData = (userRole === 'admin' ? publicChurches.map(c => c.name) : [churchName]).map(cName => {
+    const retentionData = (userRole === 'admin' ? (globalChurchFilter === 'الكل' ? publicChurches.map(c => c.name) : [globalChurchFilter]) : [churchName]).map(cName => {
         let competitionsDemand = 0;
         let orderedBooks = 0;
         
@@ -1330,10 +1355,7 @@ function AppComponent() {
     let compsCount: any = { "مادة واحدة": 0, "مادتين": 0, "٣ مواد أو أكثر": 0 };
     const compTypesMap: Record<string, number> = {};
     
-    allChurchParticipants.forEach(p => {
-       if (globalChurchFilter !== 'الكل' && p.churchName !== globalChurchFilter && userRole === 'admin') return;
-       if (userRole === 'church' && p.churchName !== churchName) return;
-       
+    activeParticipants.forEach(p => {
        const parsedComps = parseCompetitionsSafely(p.competitions);
        const len = parsedComps.length;
        if (len === 1) compsCount["مادة واحدة"]++;
@@ -1344,6 +1366,7 @@ function AppComponent() {
            compTypesMap[c] = (compTypesMap[c] || 0) + 1;
        });
     });
+
     const engagementData = [
        { name: 'مادة واحدة', value: compsCount["مادة واحدة"] },
        { name: 'مادتين', value: compsCount["مادتين"] },
@@ -1355,8 +1378,16 @@ function AppComponent() {
        value: compTypesMap[k]
     })).filter(d => d.value > 0);
 
-    return { demographicsData, retentionData, engagementData, competitionTypesData };
-  }, [allChurchParticipants, orders, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
+    return { 
+      demographicsData, 
+      retentionData, 
+      engagementData, 
+      competitionTypesData,
+      totalParticipants,
+      totalOrders,
+      totalTeams: activeTeamsCount
+    };
+  }, [allChurchParticipants, orders, activityTeams, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
 
   const COLORS = ['#0f172a', '#d97706', '#e11d48', '#059669', '#2563eb', '#8b5cf6'];
 
@@ -1495,71 +1526,6 @@ function AppComponent() {
       console.error("Error saving tabs config", error);
     }
   };
-
-  // subscribeToParticipants: Merged real-time listener for Firestore and RTDB
-  useEffect(() => {
-    if (!isLoggedIn || !isAuthReady) return;
-
-    // 1. Firestore Participant Listener
-    const fsParticipantsRef = collection(db, 'participants');
-    const fsConstraints = [where('year', '==', activeYear)];
-    if (userRole !== 'admin') {
-      fsConstraints.push(where('churchName', '==', churchName));
-    }
-    const fsQuery = query(fsParticipantsRef, ...fsConstraints);
-
-    const unsubscribeFirestore = onSnapshot(fsQuery, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Participant));
-      setFirestoreParticipants(list);
-    }, (error) => handleFirestoreError(error, OperationType.LIST, 'participants'));
-
-    // 2. Realtime Database Participant Listener
-    const rdbRefPath = rdbRef(rdb, 'participants');
-    const unsubscribeRdb = onValue(rdbRefPath, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        let list: Participant[] = [];
-        if (Array.isArray(data)) {
-          list = data.filter(p => p).map((p, index) => ({ id: p.id || `rdb-${index}`, ...p }));
-        } else {
-          list = Object.entries(data).map(([id, val]: [string, any]) => ({ id, ...val } as Participant));
-        }
-        
-        // Filter by year and church on client for RTDB entries
-        const filteredList = list.filter(p => {
-          const matchYear = !p.year || String(p.year) === String(activeYear);
-          const matchChurch = userRole === 'admin' || p.churchName === churchName;
-          return matchYear && matchChurch;
-        });
-        setRdbParticipants(filteredList);
-      } else {
-        setRdbParticipants([]);
-      }
-    }, (err) => console.error("RTDB Sync Error:", err));
-
-    return () => {
-      unsubscribeFirestore();
-      unsubscribeRdb();
-    };
-  }, [isLoggedIn, isAuthReady, userRole, churchName, activeYear]);
-
-  // Cleanly merge both sources in UI State
-  useEffect(() => {
-    const merged = [...firestoreParticipants, ...rdbParticipants];
-    // De-duplicate if needed (by ID), though they should be distinct
-    const uniqueMap = new Map();
-    merged.forEach(p => uniqueMap.set(p.id, p));
-    const finalData = Array.from(uniqueMap.values()).sort((a, b) => {
-      const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-      const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-      return tB - tA;
-    });
-    
-    setAllChurchParticipants(finalData);
-    setTotalParticipantsCount(finalData.length);
-    // Also update current participants list for the list view to avoid breaking existing logic
-    setParticipants(finalData);
-  }, [firestoreParticipants, rdbParticipants]);
 
   // Firebase Auth Listener
   useEffect(() => {
@@ -1722,7 +1688,7 @@ function AppComponent() {
 
     async function fetchStaticData() {
         try {
-            // fetchAllChurchParticipants is now handled by real-time listeners above
+            await fetchAllChurchParticipants();
             const newsSnap = await getDocsSafe(query(collection(db, 'news'), where('year', '==', activeYear), orderBy('timestamp', 'desc'), limit(10)));
             setNews(newsSnap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as News)));
             
@@ -2698,7 +2664,7 @@ function AppComponent() {
 
   const fetchSupabaseParticipants = async () => {
     try {
-      let query = supabase.from('registrations').select('*');
+      let query = supabase.from('registrations').select('*').range(0, 4999);
       if (userRole !== 'admin' && churchName) {
         query = query.eq('churchName', churchName);
       }
@@ -2749,7 +2715,7 @@ function AppComponent() {
     if ((window as any).firestoreQuotaExceeded) {
       console.warn("Firestore quota exceeded! Loading participants page from Supabase 'registrations'...");
       try {
-        let query = supabase.from('registrations').select('*');
+        let query = supabase.from('registrations').select('*').range(0, 4999);
         
         // Admin Church Filter
         if (userRole === 'admin') {
@@ -2853,7 +2819,7 @@ function AppComponent() {
     if (!isLoggedIn) return;
     try {
       // 1. Fetch only 'id' and 'timestamp' for checking differences (Super lightweight query)
-      let headQuery = supabase.from('registrations').select('id, timestamp');
+      let headQuery = supabase.from('registrations').select('id, timestamp').range(0, 4999);
       if (userRole !== 'admin' && churchName) {
         headQuery = headQuery.eq('churchName', churchName);
       }
@@ -2979,11 +2945,11 @@ function AppComponent() {
     } catch (err: any) {
       console.error("Supabase Analytics Dashboard fetch error, running full table load fallback: ", err);
       try {
-        let fbQuery = supabase.from('registrations').select('*');
+        let fallbackQuery = supabase.from('registrations').select('*').range(0, 4999);
         if (userRole !== 'admin' && churchName) {
-          fbQuery = fbQuery.eq('churchName', churchName);
+          fallbackQuery = fallbackQuery.eq('churchName', churchName);
         }
-        const { data, error } = await fbQuery;
+        const { data, error } = await fallbackQuery;
         if (error) throw error;
         
         const mapped: Participant[] = (data || []).map((p: any) => {
@@ -3019,8 +2985,8 @@ function AppComponent() {
         setAllChurchParticipants(mapped);
         setTotalParticipantsCount(mapped.length);
         setParticipants(mapped);
-      } catch (fbErr) {
-        console.error("Supabase fallback fetch failed completely:", fbErr);
+      } catch (fallbackErr) {
+        console.error("Supabase fallback fetch failed completely:", fallbackErr);
       }
     }
   };
@@ -5756,19 +5722,19 @@ function AppComponent() {
                 <div className="p-6 bg-coptic-blue/5 rounded-3xl border border-coptic-blue/10">
                   <p className="text-[10px] font-black text-coptic-blue uppercase mb-1">المشتركين ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
-                    {totalParticipantsCount}
+                    {analyticsData.totalParticipants}
                   </p>
                 </div>
                 <div className="p-6 bg-coptic-gold/5 rounded-3xl border border-coptic-gold/10">
                   <p className="text-[10px] font-black text-coptic-gold uppercase mb-1">طلبات الكتب ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
-                    {totalOrdersCount}
+                    {analyticsData.totalOrders}
                   </p>
                 </div>
                 <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100">
                   <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">الفرق ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
-                    {totalTeamsCount}
+                    {analyticsData.totalTeams}
                   </p>
                 </div>
                 <div className="p-6 bg-coptic-red/5 rounded-3xl border border-coptic-red/10">
@@ -7479,11 +7445,11 @@ function AppComponent() {
                       <div className="grid grid-cols-2 gap-8 w-full max-w-2xl text-right">
                         <div className="border border-slate-200 rounded-3xl p-8 bg-slate-50">
                           <p className="text-slate-500 font-bold mb-2">إجمالي المشتركين الفعليين</p>
-                          <p className="text-5xl font-black text-slate-900">{totalParticipantsCount}</p>
+                          <p className="text-5xl font-black text-slate-900">{analyticsData.totalParticipants}</p>
                         </div>
                         <div className="border border-slate-200 rounded-3xl p-8 bg-slate-50">
                           <p className="text-slate-500 font-bold mb-2">إجمالي طلبات الكتب</p>
-                          <p className="text-5xl font-black text-slate-900">{totalOrdersCount}</p>
+                          <p className="text-5xl font-black text-slate-900">{analyticsData.totalOrders}</p>
                         </div>
                       </div>
                       

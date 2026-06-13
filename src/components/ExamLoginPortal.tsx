@@ -87,7 +87,8 @@ export const ExamLoginPortal: React.FC = () => {
       // 2. Fetch Student Registrations from Supabase
       const { data: sbSubmissions, error: sbSubmissionsError } = await supabase
         .from('registrations')
-        .select('id, name, stage, churchName, gender');
+        .select('id, name, stage, churchName, gender')
+        .range(0, 4999);
 
       if (sbSubmissionsError) throw sbSubmissionsError;
 
