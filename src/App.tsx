@@ -1262,6 +1262,29 @@ function AppComponent() {
 
   // Analytical Metrics for the Advanced Dashboard
   const analyticsData = useMemo(() => {
+    // Helper function to safely parse variations of the competitions field
+    const parseCompetitionsSafely = (competitions: any): string[] => {
+      if (!competitions) return [];
+      if (Array.isArray(competitions)) {
+        return competitions.map(c => typeof c === 'string' ? c : String(c)).filter(Boolean);
+      }
+      if (typeof competitions === 'string') {
+        const trimmed = competitions.trim();
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) {
+              return parsed.map(c => typeof c === 'string' ? c : String(c)).filter(Boolean);
+            }
+          } catch (e) {
+            // handle error gracefully
+          }
+        }
+        return trimmed.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      return [];
+    };
+
     const demographicsData = STAGE_ORDER.map(stg => ({
       name: stg,
       "المشتركين": allChurchParticipants.filter(p => p.stage === stg).length
@@ -1284,7 +1307,8 @@ function AppComponent() {
         // Sum competitions enrollments for this church
         const churchParticipants = allChurchParticipants.filter(p => p.churchName === cName);
         churchParticipants.forEach(p => {
-             competitionsDemand += (p.competitions?.filter(c => c).length || 0);
+             const parsedComps = parseCompetitionsSafely(p.competitions);
+             competitionsDemand += parsedComps.length;
         });
 
         // Sum ordered books for this church
@@ -1310,12 +1334,13 @@ function AppComponent() {
        if (globalChurchFilter !== 'الكل' && p.churchName !== globalChurchFilter && userRole === 'admin') return;
        if (userRole === 'church' && p.churchName !== churchName) return;
        
-       const len = p.competitions?.length || 0;
+       const parsedComps = parseCompetitionsSafely(p.competitions);
+       const len = parsedComps.length;
        if (len === 1) compsCount["مادة واحدة"]++;
        else if (len === 2) compsCount["مادتين"]++;
        else if (len >= 3) compsCount["٣ مواد أو أكثر"]++;
 
-       (p.competitions || []).forEach((c: string) => {
+       parsedComps.forEach((c: string) => {
            compTypesMap[c] = (compTypesMap[c] || 0) + 1;
        });
     });
@@ -1323,7 +1348,7 @@ function AppComponent() {
        { name: 'مادة واحدة', value: compsCount["مادة واحدة"] },
        { name: 'مادتين', value: compsCount["مادتين"] },
        { name: '٣ مواد أو أكثر', value: compsCount["٣ مواد أو أكثر"] }
-    ].filter(d => d.value > 0);
+     ].filter(d => d.value > 0);
 
     const competitionTypesData = Object.keys(compTypesMap).map(k => ({
        name: k,
@@ -2825,61 +2850,179 @@ function AppComponent() {
   };
 
   const fetchAllChurchParticipants = async () => {
-      if (!isLoggedIn) return;
-      if ((window as any).firestoreQuotaExceeded) {
-         console.warn("Firestore Quota Exceeded! Bypassing fetchAllChurchParticipants to fetchSupabaseParticipants.");
-         await fetchSupabaseParticipants();
-         return;
+    if (!isLoggedIn) return;
+    try {
+      // 1. Fetch only 'id' and 'timestamp' for checking differences (Super lightweight query)
+      let headQuery = supabase.from('registrations').select('id, timestamp');
+      if (userRole !== 'admin' && churchName) {
+        headQuery = headQuery.eq('churchName', churchName);
       }
-      try {
-        let baseQueryQ = collection(db, 'participants');
-        const constraints: any[] = [where('year', '==', activeYear)];
-        if (userRole !== 'admin') {
-          constraints.push(where('churchName', '==', churchName));
+      
+      const { data: headData, error: headError } = await headQuery;
+      if (headError) throw headError;
+      
+      const headList = headData || [];
+      const headMap = new Map<string, string>(); // id -> timestamp
+      headList.forEach((h: any) => {
+        headMap.set(h.id, h.timestamp || '');
+      });
+      
+      // 2. Map current local participants
+      const currentMap = new Map<string, Participant>();
+      allChurchParticipants.forEach(p => {
+        currentMap.set(p.id, p);
+      });
+      
+      // 3. Find deleted IDs
+      const idsToDelete: string[] = [];
+      allChurchParticipants.forEach(p => {
+        if (!headMap.has(p.id)) {
+          idsToDelete.push(p.id);
         }
+      });
+      
+      // 4. Find new or changed IDs that need full fetching
+      const idsToFetch: string[] = [];
+      headList.forEach((h: any) => {
+        const local = currentMap.get(h.id);
+        if (!local || local.timestamp !== h.timestamp) {
+          idsToFetch.push(h.id);
+        }
+      });
+      
+      let updatedList = [...allChurchParticipants];
+      
+      // Remove deleted ones
+      if (idsToDelete.length > 0) {
+        const deleteSet = new Set(idsToDelete);
+        updatedList = updatedList.filter(p => !deleteSet.has(p.id));
+      }
+      
+      // 5. Fetch only the delta rows
+      if (idsToFetch.length > 0) {
+        console.log(`Delta-Fetching ${idsToFetch.length} records from Supabase registrations to save API quota...`);
         
-        const q = query(baseQueryQ, ...constraints);
-        const snap = await getDocsSafe(q);
-        const fsParticipants = snap.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) } as Participant));
-
-        let rdbList: Participant[] = [];
-        try {
-          const rdbRefPath = rdbRef(rdb, 'participants');
-          const rSnapshot = await rdbGet(rdbRefPath);
-          const rData = rSnapshot.val();
-          if (rData) {
-            let temp: Participant[] = [];
-            if (Array.isArray(rData)) {
-              temp = rData.filter(p => p).map((p, index) => ({ id: p.id || `rdb-${index}`, ...p } as Participant));
-            } else {
-              temp = Object.entries(rData).map(([id, val]: [string, any]) => ({ id, ...val } as Participant));
-            }
+        // Split into chunks of 100 to avoid query parameter limit issues
+        const chunkSize = 100;
+        const fetchedParticipants: Participant[] = [];
+        
+        for (let i = 0; i < idsToFetch.length; i += chunkSize) {
+          const chunk = idsToFetch.slice(i, i + chunkSize);
+          const { data: chunkData, error: chunkError } = await supabase
+            .from('registrations')
+            .select('*')
+            .in('id', chunk);
             
-            rdbList = temp.filter(p => {
-              const matchYear = !p.year || String(p.year) === String(activeYear);
-              const matchChurch = userRole === 'admin' || p.churchName === churchName;
-              return matchYear && matchChurch;
+          if (chunkError) throw chunkError;
+          
+          if (chunkData) {
+            chunkData.forEach((p: any) => {
+              // Parse competitions safely
+              let competitionsArr: string[] = [];
+              if (Array.isArray(p.competitions)) {
+                competitionsArr = p.competitions;
+              } else if (typeof p.competitions === 'string') {
+                try {
+                  const parsed = JSON.parse(p.competitions);
+                  if (Array.isArray(parsed)) {
+                    competitionsArr = parsed;
+                  } else {
+                    competitionsArr = [p.competitions];
+                  }
+                } catch (e) {
+                  competitionsArr = p.competitions ? [p.competitions] : [];
+                }
+              }
+              
+              fetchedParticipants.push({
+                id: p.id,
+                serial: p.id,
+                name: p.name || '',
+                churchName: p.churchName || '',
+                stage: p.stage || '',
+                gender: p.gender || '',
+                competitions: competitionsArr,
+                timestamp: p.timestamp || new Date().toISOString(),
+                country: p.country || 'مصر',
+                year: p.year || activeYear || '2026'
+              });
             });
           }
-        } catch (rdbErr) {
-          console.error("RDB fetch failed during fetchAllChurchParticipants:", rdbErr);
         }
-
-        const merged = [...fsParticipants, ...rdbList];
-        const uniqueMap = new Map();
-        merged.forEach(p => uniqueMap.set(p.id, p));
-        const finalData = Array.from(uniqueMap.values()).sort((a, b) => {
-          const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-          const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-          return tB - tA;
+        
+        // Merge fetched participants back with replacement
+        const fetchedMap = new Map<string, Participant>();
+        fetchedParticipants.forEach(p => fetchedMap.set(p.id, p));
+        
+        // Update updatedList with newly fetched records
+        updatedList = updatedList.map(p => fetchedMap.has(p.id) ? fetchedMap.get(p.id)! : p);
+        
+        // Add completely new ones
+        fetchedParticipants.forEach(p => {
+          if (!currentMap.has(p.id)) {
+            updatedList.push(p);
+          }
         });
-
-        setAllChurchParticipants(finalData);
-        setTotalParticipantsCount(finalData.length);
-        setParticipants(finalData);
-      } catch(err: any) {
-        console.error("Firebase fetch failed for all participants:", err);
       }
+      
+      // Sort final data by timestamp descending
+      const sortedData = updatedList.sort((a, b) => {
+        const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return tB - tA;
+      });
+      
+      setAllChurchParticipants(sortedData);
+      setTotalParticipantsCount(sortedData.length);
+      setParticipants(sortedData);
+      
+    } catch (err: any) {
+      console.error("Supabase Analytics Dashboard fetch error, running full table load fallback: ", err);
+      try {
+        let fbQuery = supabase.from('registrations').select('*');
+        if (userRole !== 'admin' && churchName) {
+          fbQuery = fbQuery.eq('churchName', churchName);
+        }
+        const { data, error } = await fbQuery;
+        if (error) throw error;
+        
+        const mapped: Participant[] = (data || []).map((p: any) => {
+          let competitionsArr: string[] = [];
+          if (Array.isArray(p.competitions)) {
+            competitionsArr = p.competitions;
+          } else if (typeof p.competitions === 'string') {
+            try {
+              const parsed = JSON.parse(p.competitions);
+              if (Array.isArray(parsed)) {
+                competitionsArr = parsed;
+              } else {
+                competitionsArr = [p.competitions];
+              }
+            } catch (e) {
+              competitionsArr = p.competitions ? [p.competitions] : [];
+            }
+          }
+          return {
+            id: p.id,
+            serial: p.id,
+            name: p.name || '',
+            churchName: p.churchName || '',
+            stage: p.stage || '',
+            gender: p.gender || '',
+            competitions: competitionsArr,
+            timestamp: p.timestamp || new Date().toISOString(),
+            country: p.country || 'مصر',
+            year: p.year || activeYear || '2026'
+          };
+        });
+        
+        setAllChurchParticipants(mapped);
+        setTotalParticipantsCount(mapped.length);
+        setParticipants(mapped);
+      } catch (fbErr) {
+        console.error("Supabase fallback fetch failed completely:", fbErr);
+      }
+    }
   };
 
   const fetchLargeData = async (toast = true) => {
