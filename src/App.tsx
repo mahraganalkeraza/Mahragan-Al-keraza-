@@ -713,7 +713,7 @@ function AppComponent() {
         }
 
         const { data: actData, error: actErr } = await supabase
-          .from('activityStages')
+          .from('hymnStages')
           .select('id, name')
           .order('name', { ascending: true });
 
@@ -2226,7 +2226,9 @@ function AppComponent() {
             .map((row: any) => ({
               serial: String(row['الرقم التعريفي'] || ''),
               churchName: String(row['الكنيسة/البلد'] || ''),
+              church_name: String(row['الكنيسة/البلد'] || ''),
               studentName: String(row['الاسم'] || ''),
+              student_name: String(row['الاسم'] || ''),
               stage: '',
               score: 0,
               grade: '',
@@ -2234,7 +2236,7 @@ function AppComponent() {
               timestamp: row['توقيت التسجيل'] ? String(row['توقيت التسجيل']) : new Date().toISOString(),
               year: String(activeYear)
             }))
-            .filter(r => r.studentName.trim() !== '');
+            .filter(r => r.student_name.trim() !== '');
 
           const { error: sbErr } = await supabase
             .from('results')
@@ -3233,7 +3235,7 @@ function AppComponent() {
       }
 
       if (search) {
-        queryBuilder = queryBuilder.ilike('studentName', `%${search}%`);
+        queryBuilder = queryBuilder.ilike('student_name', `%${search}%`);
       }
 
       const { data, count, error } = await queryBuilder
@@ -3297,10 +3299,23 @@ function AppComponent() {
 
       if (error) throw error;
 
-      const mappedData = (data || []).map((row: any) => ({
-        ...row,
-        churchName: row.churchName || row.church_name,
-      }));
+      const mappedData = (data || []).map((row: any) => {
+        const isIndividual = row.stage_name && row.stage_name.includes('فردي');
+        const inferredType = row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'ترنيم فردي'));
+        return {
+          id: row.id,
+          team_name: row.team_name,
+          stage_name: row.stage_name,
+          church_name: row.church_name,
+          churchName: row.church_name,
+          activityType: inferredType,
+          choirLevel: row.stage_name,
+          members: isIndividual && row.team_name ? [{ name: row.team_name, gender: 'ذكر' as const, stage: row.stage_name }] : [],
+          maleCount: 0,
+          femaleCount: 0,
+          timestamp: row.created_at || new Date().toISOString()
+        } as ActivityTeam;
+      });
 
       if (isFirst) {
         setActivityTeams(mappedData);
@@ -3490,6 +3505,8 @@ function AppComponent() {
     try {
       const payload = {
         ...newResult,
+        church_name: newResult.churchName,
+        student_name: newResult.studentName,
         timestamp: new Date().toISOString(),
         year: activeYear
       };
@@ -3677,25 +3694,21 @@ function AppComponent() {
     
     setIsSubmittingTeam(true);
 
-    const maleCount = Number(newTeam.maleCount) || 0;
-    const femaleCount = Number(newTeam.femaleCount) || 0;
+    const currentTeamName = isGroupActivity 
+      ? (`فريق ${newTeam.activityType || 'نشاط'} - ${selectedStageName}`)
+      : (individualParticipantName || newTeam.members?.[0]?.name || 'مشترك فردي');
 
-    const team = {
-      churchName,
-      activityType: newTeam.activityType,
-      members: isGroupActivity ? [] : (newTeam.members as TeamMember[]),
-      maleCount: isGroupActivity ? maleCount : 0,
-      femaleCount: isGroupActivity ? femaleCount : 0,
-      choirLevel: newTeam.choirLevel || '',
-      instrumentType: newTeam.instrumentType || '',
-      timestamp: new Date().toISOString()
+    const dbPayload = {
+      team_name: currentTeamName,
+      stage_name: selectedStageName,
+      church_name: churchName
     };
 
     try {
       if (editingTeam) {
         const { error } = await supabase
           .from('activity_teams')
-          .update({ ...team, year: activeYear })
+          .update(dbPayload)
           .eq('id', editingTeam.id);
         
         if (error) throw error;
@@ -3703,8 +3716,17 @@ function AppComponent() {
         // Instant state sync
         const updatedTeam: ActivityTeam = {
           ...editingTeam,
-          ...team,
-          year: activeYear
+          id: editingTeam.id,
+          team_name: currentTeamName,
+          stage_name: selectedStageName,
+          church_name: churchName,
+          churchName: churchName,
+          activityType: newTeam.activityType || '',
+          choirLevel: newTeam.choirLevel || '',
+          members: isGroupActivity ? [] : (newTeam.members as TeamMember[]),
+          maleCount: Number(newTeam.maleCount) || 0,
+          femaleCount: Number(newTeam.femaleCount) || 0,
+          timestamp: new Date().toISOString()
         } as any;
         setActivityTeams(prev => prev.map(t => t.id === editingTeam.id ? updatedTeam : t));
 
@@ -3713,13 +3735,28 @@ function AppComponent() {
       } else {
         const { data, error } = await supabase
           .from('activity_teams')
-          .insert([{ ...team, year: activeYear }])
+          .insert([dbPayload])
           .select();
         
         if (error) throw error;
         
-        if (data) {
-          const createdTeam: ActivityTeam = data[0];
+        if (data && data.length > 0) {
+          const row = data[0];
+          const isIndividual = row.stage_name && row.stage_name.includes('فردي');
+          const inferredType = row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'ترنيم فردي'));
+          const createdTeam: ActivityTeam = {
+            id: row.id,
+            team_name: row.team_name,
+            stage_name: row.stage_name,
+            church_name: row.church_name,
+            churchName: row.church_name,
+            activityType: inferredType,
+            choirLevel: row.stage_name,
+            members: isIndividual && row.team_name ? [{ name: row.team_name, gender: 'ذكر', stage: row.stage_name }] : [],
+            maleCount: 0,
+            femaleCount: 0,
+            timestamp: row.created_at || new Date().toISOString()
+          } as any;
           setActivityTeams(prev => [createdTeam, ...prev]);
           setTotalTeamsCount(prev => prev + 1);
         }
@@ -3775,16 +3812,24 @@ function AppComponent() {
     }
   };
 
-  const handleEditTeam = (team: ActivityTeam) => {
+  const handleEditTeam = (team: any) => {
+    const sName = team.stage_name || team.choirLevel || '';
+    const isIndiv = sName.includes('فردي');
+
     setNewTeam({
-      activityType: team.activityType,
-      members: team.members?.length ? team.members : [{ name: '', gender: 'ذكر', stage: '' }],
-      choirLevel: team.choirLevel || '',
+      activityType: team.activityType || (sName.includes('ألحان') ? 'ألحان' : (sName.includes('كورال') ? 'كورال' : (sName.includes('عزف') ? 'عزف' : 'ترنيم فردي'))),
+      members: team.members?.length ? team.members : [{ name: team.team_name || '', gender: 'ذكر', stage: sName }],
+      choirLevel: team.choirLevel || sName,
       instrumentType: team.instrumentType || '',
       performanceType: team.performanceType || '',
       maleCount: team.maleCount || 0,
       femaleCount: team.femaleCount || 0
     });
+    if (isIndiv) {
+      setIndividualParticipantName(team.team_name || '');
+    } else {
+      setIndividualParticipantName('');
+    }
     setEditingTeam(team);
     setActiveSection('activities');
     // Scroll to form
