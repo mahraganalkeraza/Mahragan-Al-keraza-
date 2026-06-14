@@ -7455,124 +7455,22 @@ function AppComponent() {
                       <UserPlus className="text-coptic-blue" /> المشتركين المسجلين
                     </h4>
                     <div className="flex items-center gap-2">
-                      <input 
-                        type="text" 
-                        placeholder="البحث بالاسم أو الرقم القومي..." 
-                        value={participantSearch}
-                        onChange={(e) => setParticipantSearch(e.target.value)}
-                        className="p-2 border border-slate-200 rounded-xl text-xs font-bold w-48"
-                      />
                       <button 
                         onClick={() => fetchParticipantsPage(true, true, participantSearch)}
                         disabled={isParticipantsLoading}
                         className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition flex items-center gap-2"
                       >
-                         <RotateCw size={14} className={isParticipantsLoading ? 'animate-spin' : ''} /> تحديث
-                      </button>
-                      <button 
-                        onClick={() => exportToExcel(participants, 'participants')}
-                        className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-emerald-100 transition-colors"
-                      >
-                        <Download size={14} /> Excel
-                      </button>
-                      <button 
-                        onClick={exportParticipantsPDF}
-                        className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-red-100 transition-colors"
-                      >
-                        <FileText size={14} /> PDF
+                         <RotateCw size={14} className={isParticipantsLoading ? 'animate-spin' : ''} /> تحديث البيانات
                       </button>
                     </div>
                   </div>
-                  <div className="overflow-x-auto" id="participants-table-admin">
-                    <div className="p-4 mb-4 bg-white border-b-4 border-coptic-blue relative">
-                      <div className="absolute top-4 right-4 flex items-center justify-center">
-                        <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-12 h-12 object-contain" />
-                      </div>
-                      <h2 className="text-3xl font-black text-coptic-blue text-center mb-1">تقارير التقييم والمشتركين</h2>
-                      <p className="text-coptic-gold font-black uppercase tracking-widest text-xs text-center">مهرجان الكرازة {activeYear}</p>
-                      <p className="text-[10px] text-slate-400 mt-2 text-center">تاريخ التقرير: {new Date().toLocaleDateString('ar-EG')}</p>
-                    </div>
-                    <table className="w-full text-right border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 text-xs font-black text-slate-500 uppercase">
-                          <th className="p-4">الكنيسة</th>
-                          <th className="p-4">الاسم</th>
-                          <th className="p-4">المرحلة</th>
-                          <th className="p-4">المسابقات</th>
-                          <th className="p-4">التاريخ</th>
-                          <th className="p-4 text-center">إجراءات</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {participants
-                          .map(p => (
-                          <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="p-4 font-bold text-coptic-blue">{p.churchName}</td>
-                            <td className="p-4 text-slate-800 font-bold">{p.name}</td>
-                            <td className="p-4 text-slate-600 font-bold">{p.stage}</td>
-                            <td className="p-4">
-                              <div className="flex flex-wrap gap-1">
-                                {(p.competitions || []).map((c, i) => (
-                                  <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-black rounded-full whitespace-nowrap">
-                                    {c}
-                                  </span>
-                                ))}
-                              </div>
-                            </td>
-                            <td className="p-4 text-[10px] text-slate-400">{p.timestamp}</td>
-                            <td className="p-4">
-                              <div className="flex justify-center gap-2">
-                                <button 
-                                  onClick={() => handleEditParticipant(p)}
-                                  className="p-2 text-slate-400 hover:text-coptic-blue transition-colors"
-                                  title="تعديل"
-                                >
-                                  <Pencil size={16} />
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    confirmAndDeleteParticipant(p.id);
-                                  }}
-                                  className="p-2 text-slate-400 hover:text-red-500 transition-colors"
-                                  title="حذف"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
-                    <div className="flex items-center gap-4">
-                      <button 
-                         disabled={participantPageCount === 1 || isParticipantsLoading}
-                         onClick={() => {
-                            const prevPage = participantPageCount - 1;
-                            setParticipantPageCount(prevPage);
-                         }}
-                         className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
-                      >
-                         <ChevronRight size={20} />
-                      </button>
-                      <span className="font-black text-slate-800 not-italic text-sm">صفحة {participantPageCount}</span>
-                      <button 
-                         disabled={participantPageCount * 20 >= participants.length || isParticipantsLoading}
-                         onClick={() => setParticipantPageCount(prev => prev + 1)}
-                         className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl disabled:opacity-30 transition-all font-black text-slate-600"
-                      >
-                         <ChevronLeft size={20} />
-                      </button>
-                    </div>
-                    {isParticipantsLoading && (
-                      <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
-                         <Loader2 className="animate-spin" size={14} /> جاري التحميل...
-                      </div>
-                    )}
-                    {!isParticipantsLoading && <span className="text-[10px]">عرض ٢٠ مشترك في الصفحة</span>}
+                  
+                  <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-12 text-center">
+                    <Users size={48} className="mx-auto text-slate-300 mb-4" />
+                    <h5 className="text-lg font-black text-slate-700">بيانات المشتركين التفصيلية</h5>
+                    <p className="text-sm text-slate-500 font-bold max-w-md mx-auto mt-2">
+                      تم نقل عرض الأسماء والبيانات الفردية إلى قسم "إدارة المشتركين" لضمان خصوصية البيانات وتوحيد واجهة الإدارة.
+                    </p>
                   </div>
                 </section>
 
@@ -7611,12 +7509,10 @@ function AppComponent() {
                             <td className="p-4 text-slate-800 font-bold">{t.activityType}</td>
                             <td className="p-4 text-slate-600 font-bold">{t.choirLevel || t.instrumentType || '-'}</td>
                             <td className="p-4">
-                              <div className="flex flex-wrap gap-1 max-w-xs">
-                                {t.members.map((m, i) => (
-                                  <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-black rounded-full whitespace-nowrap">
-                                    {m.name} ({m.gender})
-                                  </span>
-                                ))}
+                              <div className="flex flex-wrap gap-2">
+                                <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-black rounded-lg border border-slate-200">
+                                   عدد الأعضاء: {t.members.length}
+                                </span>
                               </div>
                             </td>
                             <td className="p-4">
@@ -7865,6 +7761,7 @@ function AppComponent() {
                      results={filteredResults} 
                      onReset={handleResetExam}
                      isAdmin={userRole === 'admin'}
+                     hideNames={true}
                    />
                  </section>
 

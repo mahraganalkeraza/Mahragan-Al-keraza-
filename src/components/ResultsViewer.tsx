@@ -8,24 +8,28 @@ import PaginationComponent from './Pagination';
 export const ResultsViewer: React.FC<{ 
   results?: Result[], 
   onReset?: (id: string) => void,
-  isAdmin?: boolean 
-}> = ({ results: resultsProp, onReset: onResetProp, isAdmin }) => {
+  isAdmin?: boolean,
+  hideNames?: boolean
+}> = ({ results: resultsProp, onReset: onResetProp, isAdmin, hideNames }) => {
   const [supabaseSubmissions, setSupabaseSubmissions] = useState<Result[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [honorsRanks, setHonorsRanks] = useState<Record<string, { rank: number; colorClass: string, percentage: number, title: string }>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 20;
 
-  const MASTER_HEADERS = [
-    'وقت التسليم',
-    'الاسم',
-    'الكنيسة/البلد',
-    'النوع',
-    'التحصيل الدراسي',
-    'محفوظات',
-    'قبطي مستوى أول',
-    'قبطي مستوى ثاني'
-  ];
+  const MASTER_HEADERS = useMemo(() => {
+    const base = [
+      'وقت التسليم',
+      ...(hideNames ? [] : ['الاسم']),
+      'الكنيسة/البلد',
+      'النوع',
+      'التحصيل الدراسي',
+      'محفوظات',
+      'قبطي مستوى أول',
+      'قبطي مستوى ثاني'
+    ];
+    return base;
+  }, [hideNames]);
 
   // Fetch results dynamically from Supabase exam_submissions table
   const fetchSubmissionsFromSupabase = async () => {
