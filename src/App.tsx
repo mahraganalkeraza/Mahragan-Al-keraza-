@@ -3219,10 +3219,10 @@ function AppComponent() {
       
       if (userRole === 'admin') {
         if (globalChurchFilter !== 'الكل') {
-          queryBuilder = queryBuilder.eq('churchName', globalChurchFilter);
+          queryBuilder = queryBuilder.eq('church_name', globalChurchFilter);
         }
       } else {
-        queryBuilder = queryBuilder.eq('churchName', churchName);
+        queryBuilder = queryBuilder.eq('church_name', churchName);
       }
 
       if (globalStageFilter !== 'الكل') {
@@ -3242,10 +3242,16 @@ function AppComponent() {
 
       if (error) throw error;
 
+      const mappedData = (data || []).map((row: any) => ({
+        ...row,
+        churchName: row.churchName || row.church_name,
+        studentName: row.studentName || row.student_name,
+      }));
+
       if (isFirst) {
-        setResults(data || []);
+        setResults(mappedData);
       } else {
-        setResults(prev => [...prev, ...(data || [])]);
+        setResults(prev => [...prev, ...mappedData]);
       }
       
       if (count !== null) setTotalResultsCount(count);
@@ -3274,10 +3280,10 @@ function AppComponent() {
       
       if (userRole === 'admin') {
         if (globalChurchFilter !== 'الكل') {
-          queryBuilder = queryBuilder.eq('churchName', globalChurchFilter);
+          queryBuilder = queryBuilder.eq('church_name', globalChurchFilter);
         }
       } else {
-        queryBuilder = queryBuilder.eq('churchName', churchName);
+        queryBuilder = queryBuilder.eq('church_name', churchName);
       }
 
       // If there's an activityType column or similar, handle search
@@ -3291,10 +3297,15 @@ function AppComponent() {
 
       if (error) throw error;
 
+      const mappedData = (data || []).map((row: any) => ({
+        ...row,
+        churchName: row.churchName || row.church_name,
+      }));
+
       if (isFirst) {
-        setActivityTeams(data || []);
+        setActivityTeams(mappedData);
       } else {
-        setActivityTeams(prev => [...prev, ...(data || [])]);
+        setActivityTeams(prev => [...prev, ...mappedData]);
       }
       
       if (count !== null) setTotalTeamsCount(count);
