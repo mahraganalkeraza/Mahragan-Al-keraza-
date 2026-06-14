@@ -536,9 +536,22 @@ const normalizeArabic = (str: string) => {
 function AppComponent() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [dbChurches, setDbChurches] = useState<string[]>([]);
 
   const getInitialProfile = () => {
     try {
+      const sessionStr = localStorage.getItem('church_session');
+      if (sessionStr) {
+        const session = JSON.parse(sessionStr);
+        if (session && session.isAuthenticated) {
+          return {
+            uid: session.church || 'church-session',
+            role: session.role || 'church',
+            churchName: session.church,
+            email: `${session.church}@mafk.com`
+          };
+        }
+      }
       const stored = localStorage.getItem('userProfileCache');
       return stored ? JSON.parse(stored) : null;
     } catch { return null; }
@@ -1416,7 +1429,44 @@ function AppComponent() {
 
   // Supabase Auth and User Profile Logic
   useEffect(() => {
+    // Fetch live church names from DB if available
+    const fetchChurchesFromDB = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('church_access_codes')
+          .select('church_name')
+          .order('church_name', { ascending: true });
+        if (data && data.length > 0) {
+          setDbChurches(data.map((d: any) => d.church_name));
+        }
+      } catch (err) {
+        console.error("Error fetching church names from DB on mount:", err);
+      }
+    };
+    fetchChurchesFromDB();
+
     const checkAuth = async () => {
+      const sessionStr = localStorage.getItem('church_session');
+      if (sessionStr) {
+        try {
+          const session = JSON.parse(sessionStr);
+          if (session && session.isAuthenticated) {
+            const profile = {
+              uid: session.church || 'church-session',
+              role: session.role === 'admin' ? 'admin' : 'church',
+              churchName: session.church,
+              email: `${encodeURIComponent(session.church).replace(/%/g, '').toLowerCase()}_2026@mafk.com`
+            };
+            setUserProfile(profile);
+            setUserRole(profile.role as any);
+            setChurchName(profile.churchName || '');
+            setIsLoggedIn(true);
+            setIsAuthReady(true);
+            return;
+          }
+        } catch (e) {}
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         setUser(session.user);
@@ -1439,6 +1489,17 @@ function AppComponent() {
     checkAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      // If we are authenticated via custom local session, ignore Supabase changes
+      const sessionStr = localStorage.getItem('church_session');
+      if (sessionStr) {
+        try {
+          const session = JSON.parse(sessionStr);
+          if (session && session.isAuthenticated) {
+            return;
+          }
+        } catch (e) {}
+      }
+
       if (session) {
         setUser(session.user);
         await fetchUserProfile(session.user.id);
@@ -3165,11 +3226,6 @@ function AppComponent() {
       return;
     }
 
-    let email = '';
-    let password = '';
-    let role: 'admin' | 'church' = 'church';
-    let targetChurch = loginChurch;
-
     const code = loginCode.trim();
 
     if (loginChurch === 'مسئول') {
@@ -3178,85 +3234,69 @@ function AppComponent() {
         setIsLoading(false);
         return;
       }
-      email = 'admin@mafk.com';
-      password = ADMIN_PASSWORD;
-      role = 'admin';
-      targetChurch = 'اللجنة المركزية منطقة18';
-    } else {
-      try {
-        const expectedPassword = CHURCH_CREDENTIALS[loginChurch];
-        
-        if (expectedPassword) {
-            if (code !== expectedPassword) {
-              setLoginError('كود الكنيسة غير صحيح');
-              setIsLoading(false);
-              return;
-            }
-        }
-        
-        const slug = encodeURIComponent(loginChurch).replace(/%/g, '').toLowerCase();
-        email = `${slug}_2026@mafk.com`;
-        password = code;
-        role = 'church';
-      } catch (err) {
-        console.error('Error verifying church code:', err);
-        setLoginError('تعذر التحقق من البيانات');
-        setIsLoading(false);
-        return;
-      }
+      
+      const adminProfile = {
+        uid: 'admin-session-id',
+        email: 'admin@mafk.com',
+        role: 'admin' as const,
+        churchName: 'اللجنة المركزية منطقة18',
+        dashboardBg: ''
+      };
+
+      setUserProfile(adminProfile);
+      setChurchName('اللجنة المركزية منطقة18');
+      setUserRole('admin');
+      setIsLoggedIn(true);
+
+      localStorage.setItem('church_session', JSON.stringify({ 
+        church: 'اللجنة المركزية منطقة18', 
+        isAuthenticated: true, 
+        role: 'admin' 
+      }));
+      localStorage.setItem('userProfileCache', JSON.stringify(adminProfile));
+      setIsLoading(false);
+      return;
     }
 
     try {
-      let { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email,
-        password: password,
-      });
+      // Direct, ultra-fast query to our new table 'church_access_codes'
+      const { data, error } = await supabase
+        .from('church_access_codes')
+        .select('church_name')
+        .eq('church_name', loginChurch)
+        .eq('access_code', code)
+        .single();
 
-      if (authError) {
-        if (authError.message.includes('Invalid login credentials') || authError.status === 400) {
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: email,
-            password: password,
-          });
-          if (signUpError) throw signUpError;
-          authData = signUpData;
-        } else {
-          throw authError;
-        }
+      if (error || !data) {
+        setLoginError('الكود السري غير صحيح، يرجى المحاولة مرة أخرى');
+        setIsLoading(false);
+        return;
       }
 
-      const user = authData.user;
-      if (user) {
-        const { data: profileData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('uid', user.id)
-          .maybeSingle();
+      // Success!
+      const profile = {
+        uid: data.church_name,
+        email: `${encodeURIComponent(data.church_name).replace(/%/g, '').toLowerCase()}_2026@mafk.com`,
+        role: 'church' as const,
+        churchName: data.church_name,
+        dashboardBg: ''
+      };
 
-        if (!profileData) {
-          const profile = {
-            uid: user.id,
-            email: user.email,
-            role,
-            churchName: targetChurch,
-            dashboardBg: ''
-          };
-          await supabase.from('users').insert([profile]);
-          setUserProfile(profile);
-          setChurchName(targetChurch);
-          setUserRole(role as any);
-          localStorage.setItem('userProfileCache', JSON.stringify(profile));
-        } else {
-          setUserProfile(profileData);
-          setChurchName(profileData.churchName);
-          setUserRole(profileData.role);
-          localStorage.setItem('userProfileCache', JSON.stringify(profileData));
-        }
-        setIsLoggedIn(true);
-      }
+      setUserProfile(profile);
+      setChurchName(data.church_name);
+      setUserRole('church');
+      setIsLoggedIn(true);
+
+      localStorage.setItem('church_session', JSON.stringify({ 
+        church: data.church_name, 
+        isAuthenticated: true, 
+        role: 'servant' 
+      }));
+      localStorage.setItem('userProfileCache', JSON.stringify(profile));
+
     } catch (err: any) {
       console.error('Login error:', err);
-      setLoginError('خطأ في تسجيل الدخول: ' + (err.message || 'فشل الاتصال'));
+      setLoginError('الكود السري غير صحيح، يرجى المحاولة مرة أخرى');
     } finally {
       setIsLoading(false);
     }
@@ -3417,7 +3457,14 @@ function AppComponent() {
 
   const handleLogout = async () => {
     try {
+      localStorage.removeItem('church_session');
+      localStorage.removeItem('userProfileCache');
       await supabase.auth.signOut();
+      setUser(null);
+      setUserProfile(null);
+      setIsLoggedIn(false);
+      setUserRole('guest');
+      setChurchName('');
       setActiveSection('home');
     } catch (error) {
       console.error(error);
@@ -4557,7 +4604,11 @@ function AppComponent() {
                 >
                   <option value="">اختر الكنيسة</option>
                   <option value="مسئول">دخول مسئول (Admin)</option>
-                  {Array.from(new Set([...Object.keys(CHURCH_CREDENTIALS), ...publicChurches.map(c => c.name)])).sort().map(church => (
+                  {Array.from(new Set([
+                    ...dbChurches,
+                    ...Object.keys(CHURCH_CREDENTIALS),
+                    ...publicChurches.map(c => c.name)
+                  ])).sort().map(church => (
                     <option key={church} value={church}>{church}</option>
                   ))}
                 </select>
