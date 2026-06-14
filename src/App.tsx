@@ -691,14 +691,42 @@ function AppComponent() {
           }));
           
           setDynamicLevels(allStages.filter(s => s.stage_type === 'مهرجان' || !s.stage_type).sort((a: any, b: any) => sortStages(a.name, b.name)));
-          setActivityStages(allStages.filter(s => s.stage_type === 'أنشطة').sort((a: any, b: any) => sortStages(a.name, b.name)));
-          setHymnStages(allStages.filter(s => s.stage_type === 'ألحان').sort((a: any, b: any) => sortStages(a.name, b.name)));
         }
       } catch (err) {
         console.error("Error fetching stages from Supabase:", err);
       }
     };
     fetchStagesAndCompetitions();
+
+    // Fetch Hymn Stages and Activity Stages dynamically from their respective new tables
+    const fetchHymnAndActivityStages = async () => {
+      try {
+        const { data: hymnData, error: hymnErr } = await supabase
+          .from('hymnStages')
+          .select('id, name')
+          .order('name', { ascending: true });
+        
+        if (!hymnErr && hymnData) {
+          setHymnStages(hymnData);
+        } else if (hymnErr) {
+          console.error("Error fetching hymn stages:", hymnErr);
+        }
+
+        const { data: actData, error: actErr } = await supabase
+          .from('activityStages')
+          .select('id, name')
+          .order('name', { ascending: true });
+
+        if (!actErr && actData) {
+          setActivityStages(actData);
+        } else if (actErr) {
+          console.error("Error fetching activity stages:", actErr);
+        }
+      } catch (err) {
+        console.error("Error in fetchHymnAndActivityStages:", err);
+      }
+    };
+    fetchHymnAndActivityStages();
 
     const fetchChurches = async () => {
       const { data } = await supabase.from('churches').select('*');
@@ -8642,11 +8670,11 @@ function AppComponent() {
                               <option value="">-- اختر المرحلة --</option>
                               {newTeam.activityType === 'ألحان' ? (
                                 hymnStages.map((stage: any) => (
-                                  <option key={stage.id} value={stage.name}>{stage.name}</option>
+                                  <option key={stage.id} value={stage.id}>{stage.name}</option>
                                 ))
                               ) : (
                                 activityStages.map((stage: any) => (
-                                  <option key={stage.id} value={stage.name}>{stage.name}</option>
+                                  <option key={stage.id} value={stage.id}>{stage.name}</option>
                                 ))
                               )}
                             </select>
