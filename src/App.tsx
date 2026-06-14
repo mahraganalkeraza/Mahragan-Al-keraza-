@@ -3606,7 +3606,10 @@ function AppComponent() {
       return;
     }
 
-    const selectedStageName = newTeam.choirLevel || '';
+    const selectedStageId = newTeam.choirLevel || '';
+    const selectedStage = hymnStages.find((stage: any) => stage.id === selectedStageId || stage.name === selectedStageId)
+      || activityStages.find((stage: any) => stage.id === selectedStageId || stage.name === selectedStageId);
+    const selectedStageName = selectedStage?.name || selectedStageId;
     const isIndividualStage = selectedStageName.includes('فردي');
     const isGroupStage = selectedStageName.includes('جماعي');
 
@@ -8680,7 +8683,10 @@ function AppComponent() {
                         )}
 
                         {(() => {
-                          const selectedStageName = newTeam.choirLevel || '';
+                          const selectedStageId = newTeam.choirLevel || '';
+                          const selectedStage = hymnStages.find((stage: any) => stage.id === selectedStageId || stage.name === selectedStageId)
+                            || activityStages.find((stage: any) => stage.id === selectedStageId || stage.name === selectedStageId);
+                          const selectedStageName = selectedStage?.name || selectedStageId;
                           const isIndividualStage = selectedStageName.includes('فردي');
                           const isGroupStage = selectedStageName.includes('جماعي');
                           const isGroupRender = isGroupStage || (!isIndividualStage && (newTeam.activityType === 'كورال' || newTeam.activityType === 'ألحان'));
