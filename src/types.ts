@@ -50,6 +50,7 @@ export interface Participant {
 }
 
 export interface TeamMember {
+  id?: string;
   name: string;
   gender: 'ذكر' | 'أنثى';
   stage: string;
