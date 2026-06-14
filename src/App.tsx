@@ -3160,7 +3160,7 @@ function AppComponent() {
     }
 
     try {
-      let queryBuilder = supabase.from('activityTeams').select('*', { count: 'exact' });
+      let queryBuilder = supabase.from('activity_teams').select('*', { count: 'exact' });
       
       if (userRole === 'admin') {
         if (globalChurchFilter !== 'الكل') {
@@ -3559,7 +3559,7 @@ function AppComponent() {
     try {
       if (editingTeam) {
         const { error } = await supabase
-          .from('activityTeams')
+          .from('activity_teams')
           .update({ ...team, year: activeYear })
           .eq('id', editingTeam.id);
         
@@ -3577,7 +3577,7 @@ function AppComponent() {
         alert('تم تحديث النشاط بنجاح.');
       } else {
         const { data, error } = await supabase
-          .from('activityTeams')
+          .from('activity_teams')
           .insert([{ ...team, year: activeYear }])
           .select();
         
@@ -3657,7 +3657,7 @@ function AppComponent() {
   const handleDeleteTeam = async (id: string) => {
     confirmAction('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الفريق؟', async () => {
       try {
-        await supabase.from('activityTeams').delete().eq('id', id);
+        await supabase.from('activity_teams').delete().eq('id', id);
         setActivityTeams(prev => prev.filter(t => t.id !== id));
         setTotalTeamsCount(prev => Math.max(0, prev - 1));
       } catch (error) {

@@ -633,20 +633,49 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
   const addHymnStage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newHymnStageName) return;
+    setIsSaving(true);
     try {
-      alert('Operation disabled');
+      const { data, error } = await supabase
+        .from('hymnStages')
+        .insert([{ name: newHymnStageName }])
+        .select();
+
+      if (error) throw error;
+
+      if (data) {
+        setHymnStages(prev => [...prev, ...data]);
+      } else {
+        const { data: fetchRes } = await supabase.from('hymnStages').select('*');
+        if (fetchRes) setHymnStages(fetchRes);
+      }
       setNewHymnStageName('');
-    } catch (e) { 
-      console.error(e);
-      console.error('Operation disabled');
+      alert('تم إضافة مرحلة الألحان بنجاح!');
+    } catch (err: any) { 
+      console.error(err);
+      alert('حدث خطأ أثناء إضافة مرحلة الألحان: ' + err.message);
+    } finally {
+      setIsSaving(false);
     }
   };
+
   const deleteHymnStage = async (id: string) => {
+    setIsSaving(true);
     try {
-      alert('Operation disabled');
+      const { error } = await supabase
+        .from('hymnStages')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setHymnStages(prev => prev.filter(s => s.id !== id));
       setDeleteConfirmation(null);
-    } catch (e) {
-      console.error('Operation disabled');
+      alert('تم حذف مرحلة الألحان بنجاح!');
+    } catch (err: any) {
+      console.error(err);
+      alert('حدث خطأ أثناء حذف مرحلة الألحان: ' + err.message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -654,20 +683,49 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
   const addActivityStage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newActivityStageName) return;
+    setIsSaving(true);
     try {
-      alert('Operation disabled');
+      const { data, error } = await supabase
+        .from('activityStages')
+        .insert([{ name: newActivityStageName }])
+        .select();
+
+      if (error) throw error;
+
+      if (data) {
+        setActivityStages(prev => [...prev, ...data]);
+      } else {
+        const { data: fetchRes } = await supabase.from('activityStages').select('*');
+        if (fetchRes) setActivityStages(fetchRes);
+      }
       setNewActivityStageName('');
-    } catch (e) { 
-      console.error(e);
-      console.error('Operation disabled');
+      alert('تم إضافة مرحلة الأنشطة بنجاح!');
+    } catch (err: any) { 
+      console.error(err);
+      alert('حدث خطأ أثناء إضافة مرحلة الأنشطة: ' + err.message);
+    } finally {
+      setIsSaving(false);
     }
   };
+
   const deleteActivityStage = async (id: string) => {
+    setIsSaving(true);
     try {
-      alert('Operation disabled');
+      const { error } = await supabase
+        .from('activityStages')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setActivityStages(prev => prev.filter(s => s.id !== id));
       setDeleteConfirmation(null);
-    } catch (e) {
-      console.error('Operation disabled');
+      alert('تم حذف مرحلة الأنشطة بنجاح!');
+    } catch (err: any) {
+      console.error(err);
+      alert('حدث خطأ أثناء حذف مرحلة الأنشطة: ' + err.message);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -831,8 +889,8 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
         <div className="flex items-center gap-4">
           <ShieldCheck size={32} className="text-emerald-400" />
           <div>
-            <h2 className="text-2xl font-black">نظام الإدارة الديناميكي</h2>
-            <p className="text-slate-300 font-bold opacity-80 mt-1">التحكم في الكنائس، المراحل، والأساسيات بدون برمجة ثابتة.</p>
+            <h2 className="text-2xl font-black">لوحة التحكم  </h2>
+            <p className="text-slate-300 font-bold opacity-80 mt-1">التحكم في الكنائس، المراحل، والأساسيات .</p>
           </div>
         </div>
 
@@ -858,11 +916,11 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
       <div className="flex border-b border-slate-200 overflow-x-auto no-scrollbar bg-slate-50">
         {[
           { id: 'churches', label: 'إدارة الكنائس وحساباتها' },
-          { id: 'competitions', label: 'بنك المسابقات' },
-          { id: 'levels', label: 'إدارة المراحل وتخصيص مسابقاتها' },
-          { id: 'activityStages', label: 'مراحل الأنشطة' },
+          { id: 'competitions', label: 'إدراج المسابقات العامة' },
+          { id: 'levels', label: 'إدخال المراحل وتخصيص مسابقاتها' },
+          { id: 'activityStages', label: '  مراحل الأنشطة الأخرى' },
           { id: 'hymnStages', label: 'مراحل الألحان' },
-          { id: 'validation', label: 'محرك التحقق وإدارة الملفات' },
+          { id: 'validation', label: 'فحص شيتات الأسقفية قبل الرفع' },
           { id: 'logo', label: 'شعار المهرجان السنوي' },
           { id: 'migration', label: 'الدمج والترحيل العكسي (Backup/Supabase)' },
           { id: 'purge', label: 'تنظيف البيانات القديمة (Wipe)' }
@@ -944,7 +1002,7 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
                     <ShieldCheck className="text-emerald-500" /> شبكة مطابقة وإعدادات أكواد الكنائس (Church Codes & Config)
                   </h3>
                   <p className="text-xs text-slate-500 mt-1 font-bold">
-                    مسح تلقائي ومباشر لقاعدة البيانات لاستخراج الكنائس المسجلة، توليد رموز المطابقة المعتمدة لنظام البابل شيت والكروت التعريفية (QR).
+                    مسح تلقائي ومباشر لقاعدة البيانات لاستخراج الكنائس المسجلة، جاري استخراج رموز المطابقة المعتمدة لنظام البابل شيت والكروت التعريفية (QR).
                   </p>
                 </div>
                 <div className="bg-emerald-50 text-emerald-800 px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2">
@@ -1027,7 +1085,7 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
                     className="w-full p-3 rounded-lg border border-slate-200"
                   >
                     <option value="مهرجان">مهرجان الكرازة</option>
-                    <option value="أنشطة">الأنشطة المدرسية/كتابية</option>
+                    <option value="أنشطة">الأنشطة</option>
                     <option value="ألحان">الألحان والتسبحة</option>
                   </select>
                 </div>
@@ -1074,7 +1132,7 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
                     className="w-full p-3 rounded-lg border border-slate-200"
                   >
                     <option value="مهرجان">مهرجان الكرازة</option>
-                    <option value="أنشطة">الأنشطة المدرسية</option>
+                    <option value="أنشطة">الأنشطة </option>
                     <option value="ألحان">الألحان</option>
                   </select>
                 </div>
@@ -1166,7 +1224,7 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
         {activeTab === 'hymnStages' && (
           <div className="space-y-8">
             <form onSubmit={addHymnStage} className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-              <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Plus /> صياغة مرحلة الألحان (للألحان فقط)</h3>
+              <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Plus /> إضافة مرحلة الألحان (للألحان فقط)</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-bold mb-2">اسم المرحلة</label>
