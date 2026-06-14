@@ -3663,8 +3663,8 @@ function AppComponent() {
     }
 
     const selectedStageId = newTeam.choirLevel || '';
-    const selectedStage = hymnStages.find((stage: any) => stage.id === selectedStageId || stage.name === selectedStageId)
-      || activityStages.find((stage: any) => stage.id === selectedStageId || stage.name === selectedStageId);
+    const selectedStage = hymnStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId))
+      || activityStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId));
     const selectedStageName = selectedStage?.name || selectedStageId;
     const isIndividualStage = selectedStageName.includes('فردي');
     const isGroupStage = selectedStageName.includes('جماعي');
@@ -8768,8 +8768,8 @@ function AppComponent() {
 
                         {(() => {
                           const selectedStageId = newTeam.choirLevel || '';
-                          const selectedStage = hymnStages.find((stage: any) => stage.id === selectedStageId || stage.name === selectedStageId)
-                            || activityStages.find((stage: any) => stage.id === selectedStageId || stage.name === selectedStageId);
+                          const selectedStage = hymnStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId))
+                            || activityStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId));
                           const selectedStageName = selectedStage?.name || selectedStageId;
                           const isIndividualStage = selectedStageName.includes('فردي');
                           const isGroupStage = selectedStageName.includes('جماعي');
@@ -8987,8 +8987,10 @@ function AppComponent() {
                             )}
                             
                             <div className="mb-4">
-                              <h5 className="text-lg font-black text-slate-800">{t.activityType}</h5>
-                              {t.choirLevel && <p className="text-xs font-bold text-primary mt-1">{t.choirLevel}</p>}
+                              <h5 className="text-lg font-black text-slate-800">{(t as any).stage_name || t.choirLevel || t.activityType}</h5>
+                              {(t as any).team_name && (t as any).team_name !== ((t as any).stage_name || t.choirLevel) && (
+                                <p className="text-xs font-bold text-primary mt-1">{(t as any).team_name}</p>
+                              )}
                               {t.performanceType && <p className="text-xs font-bold text-emerald-600 mt-1">{t.performanceType}</p>}
                               {t.instrumentType && <p className="text-xs font-bold text-primary mt-1">{t.instrumentType}</p>}
                             </div>
