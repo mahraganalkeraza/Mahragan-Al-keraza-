@@ -3903,16 +3903,25 @@ function AppComponent() {
     if (formElement) formElement.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleDeleteTeam = async (id: string) => {
-    confirmAction('تأكيد الحذف', 'هل أنت متأكد من حذف هذا الفريق؟', async () => {
-      try {
-        await supabase.from('activity_teams').delete().eq('id', id);
-        setActivityTeams(prev => prev.filter(t => t.id !== id));
-        setTotalTeamsCount(prev => Math.max(0, prev - 1));
-      } catch (error) {
-        console.error("Supabase delete team failed:", error);
+  const handleDeleteTeam = async (teamId: string | number) => {
+    const isConfirmed = window.confirm("هل أنت متأكد من رغبتك في حذف هذا الفريق/المشترك؟");
+    if (!isConfirmed) return;
+    try {
+      const { error } = await supabase
+        .from('activity_teams')
+        .delete()
+        .eq('id', teamId);
+      
+      if (error) {
+        throw error;
       }
-    });
+      
+      setActivityTeams(prev => prev.filter(t => t.id !== teamId));
+      setTotalTeamsCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error("Supabase delete team failed:", error);
+      alert("حدث خطأ أثناء حذف الفريق/المشترك");
+    }
   };
 
   const handleEditParticipant = (participant: Participant) => {
