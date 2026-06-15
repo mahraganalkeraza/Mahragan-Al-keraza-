@@ -563,6 +563,7 @@ function AppComponent() {
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [allActivityStages, setAllActivityStages] = useState<any[]>([]);
   const [availableActivities, setAvailableActivities] = useState<string[]>([]);
+  const [activities] = useState<string[]>(['ألحان', 'كورال', 'ترنيم فردي', 'عزف']);
   const [hymnStages, setHymnStages] = useState<any[]>([]);
 
   // Customization State
@@ -8840,7 +8841,7 @@ function AppComponent() {
                             required
                           >
                             <option value="">-- اختر النشاط --</option>
-                            {availableActivities.map((activity: string) => (
+                            {activities.map((activity: string) => (
                               <option key={activity} value={activity}>{activity}</option>
                             ))}
                           </select>
