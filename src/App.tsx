@@ -713,9 +713,9 @@ function AppComponent() {
         }
 
         const { data: actData, error: actErr } = await supabase
-          .from('hymnStages')
-          .select('id, name')
-          .order('name', { ascending: true });
+          .from('activity_stages')
+          .select('id, activity_type, stage_name, form_type')
+          .order('stage_name', { ascending: true });
 
         if (!actErr && actData) {
           setActivityStages(actData);
@@ -3278,7 +3278,7 @@ function AppComponent() {
     }
 
     try {
-      let queryBuilder = supabase.from('activity_teams').select('*', { count: 'exact' });
+      let queryBuilder = supabase.from('activity_teams').select('id, team_name, stage_name, church_name, created_at, members_number', { count: 'exact' });
       
       if (userRole === 'admin') {
         if (globalChurchFilter !== 'الكل') {
@@ -3313,6 +3313,7 @@ function AppComponent() {
           members: isIndividual && row.team_name ? [{ name: row.team_name, gender: 'ذكر' as const, stage: row.stage_name }] : [],
           maleCount: 0,
           femaleCount: 0,
+          members_number: row.members_number || 0,
           timestamp: row.created_at || new Date().toISOString()
         } as ActivityTeam;
       });
@@ -3655,6 +3656,52 @@ function AppComponent() {
     setNewTeam({ ...newTeam, members: newMembers });
   };
 
+  const handleActivityTypeChange = async (type: string) => {
+    setNewTeam(prev => ({
+      ...prev,
+      activityType: type,
+      choirLevel: '',
+      maleCount: 0,
+      femaleCount: 0,
+      members: [{ name: '', gender: 'ذكر', stage: '' }],
+      team_name: ''
+    }));
+    setIndividualParticipantName('');
+    setActivitySearchTerm('');
+    setActivityLinkSuccess('');
+
+    if (!type) return;
+
+    try {
+      if (type === 'ألحان') {
+        const { data, error } = await supabase
+          .from('hymnStages')
+          .select('id, name')
+          .order('name', { ascending: true });
+        
+        if (!error && data) {
+          setHymnStages(data);
+        } else if (error) {
+          console.error("Error fetching hymn stages:", error);
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('activity_stages')
+          .select('id, activity_type, stage_name, form_type')
+          .eq('activity_type', type)
+          .order('stage_name', { ascending: true });
+        
+        if (!error && data) {
+          setActivityStages(data);
+        } else if (error) {
+          console.error("Error fetching activity stages:", error);
+        }
+      }
+    } catch (err) {
+      console.error("Error in handleActivityTypeChange:", err);
+    }
+  };
+
   const handleAddTeam = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTeam.activityType || !newTeam.choirLevel) {
@@ -3663,20 +3710,18 @@ function AppComponent() {
     }
 
     const selectedStageId = newTeam.choirLevel || '';
-    const selectedStage = hymnStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId))
-      || activityStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId));
-    const selectedStageName = selectedStage?.name || selectedStageId;
-    const isIndividualStage = selectedStageName.includes('فردي');
-    const isGroupStage = selectedStageName.includes('جماعي');
-
-    let isGroupActivity = newTeam.activityType === 'كورال' || newTeam.activityType === 'ألحان';
-    if (newTeam.choirLevel) {
-      if (isIndividualStage) {
-        isGroupActivity = false;
-      } else if (isGroupStage) {
-        isGroupActivity = true;
-      }
+    const selectedStage = newTeam.activityType === 'ألحان'
+      ? hymnStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId))
+      : activityStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.stage_name) === String(selectedStageId));
+    
+    const selectedStageName = selectedStage?.stage_name || selectedStage?.name || selectedStageId;
+    
+    let formType = selectedStage?.form_type || '';
+    if (newTeam.activityType === 'ألحان') {
+      formType = selectedStageName.includes('فردي') ? 'فردي' : 'جماعي';
     }
+
+    const isGroupActivity = formType === 'جماعي';
 
     // Strict limit of TWO teams per stage per church
     const stageTeams = activityTeams.filter(t => t.churchName === churchName && t.choirLevel === newTeam.choirLevel && t.activityType === newTeam.activityType);
@@ -3685,8 +3730,9 @@ function AppComponent() {
       return;
     }
 
-    if (!isGroupActivity) {
-      if (!newTeam.members || newTeam.members.length === 0 || !newTeam.members[0].name) {
+    if (formType !== 'جماعي') {
+      const typedName = individualParticipantName || newTeam.members?.[0]?.name || '';
+      if (!typedName.trim()) {
         alert('يرجى إدخال اسم المشترك');
         return;
       }
@@ -3694,14 +3740,31 @@ function AppComponent() {
     
     setIsSubmittingTeam(true);
 
-    const currentTeamName = isGroupActivity 
-      ? (`فريق ${newTeam.activityType || 'نشاط'} - ${selectedStageName}`)
-      : (individualParticipantName || newTeam.members?.[0]?.name || 'مشترك فردي');
+    let currentTeamName = '';
+    if (formType === 'جماعي') {
+      currentTeamName = newTeam.team_name?.trim() || `فريق ${newTeam.activityType || 'نشاط'} - ${selectedStageName}`;
+    } else if (formType === 'عزف') {
+      const pName = (individualParticipantName || newTeam.members?.[0]?.name || '').trim();
+      currentTeamName = `${pName} - ${newTeam.instrumentType || 'عزف'}`;
+    } else {
+      currentTeamName = (individualParticipantName || newTeam.members?.[0]?.name || 'مشترك فردي').trim();
+    }
+
+    const totalMembersCount = formType === 'جماعي'
+      ? ((Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0))
+      : 1;
+
+    if (!Number.isInteger(totalMembersCount) || totalMembersCount <= 0) {
+      alert('يرجى التأكد من إدخال صحيح لعدد الأعضاء وأن يكون أكبر من الصفر.');
+      setIsSubmittingTeam(false);
+      return;
+    }
 
     const dbPayload = {
       team_name: currentTeamName,
       stage_name: selectedStageName,
-      church_name: churchName
+      church_name: churchName,
+      members_number: totalMembersCount
     };
 
     try {
@@ -3724,8 +3787,9 @@ function AppComponent() {
           activityType: newTeam.activityType || '',
           choirLevel: newTeam.choirLevel || '',
           members: isGroupActivity ? [] : (newTeam.members as TeamMember[]),
-          maleCount: Number(newTeam.maleCount) || 0,
-          femaleCount: Number(newTeam.femaleCount) || 0,
+          maleCount: isGroupActivity ? (Number(newTeam.maleCount) || 0) : 0,
+          femaleCount: isGroupActivity ? (Number(newTeam.femaleCount) || 0) : 0,
+          members_number: totalMembersCount,
           timestamp: new Date().toISOString()
         } as any;
         setActivityTeams(prev => prev.map(t => t.id === editingTeam.id ? updatedTeam : t));
@@ -3742,7 +3806,7 @@ function AppComponent() {
         
         if (data && data.length > 0) {
           const row = data[0];
-          const isIndividual = row.stage_name && row.stage_name.includes('فردي');
+          const isIndividual = formType !== 'جماعي';
           const inferredType = row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'ترنيم فردي'));
           const createdTeam: ActivityTeam = {
             id: row.id,
@@ -3753,8 +3817,9 @@ function AppComponent() {
             activityType: inferredType,
             choirLevel: row.stage_name,
             members: isIndividual && row.team_name ? [{ name: row.team_name, gender: 'ذكر', stage: row.stage_name }] : [],
-            maleCount: 0,
-            femaleCount: 0,
+            maleCount: isIndividual ? 0 : (Number(newTeam.maleCount) || 0),
+            femaleCount: isIndividual ? 0 : (Number(newTeam.femaleCount) || 0),
+            members_number: row.members_number || totalMembersCount,
             timestamp: row.created_at || new Date().toISOString()
           } as any;
           setActivityTeams(prev => [createdTeam, ...prev]);
@@ -3771,7 +3836,7 @@ function AppComponent() {
                id: customId,
                name: memberName,
                churchName,
-               stage: newTeam.members[0].stage,
+               stage: newTeam.members[0].stage || selectedStageName,
                gender: newTeam.members[0].gender,
                country: 'مصر',
                timestamp: new Date().toISOString()
@@ -3789,7 +3854,8 @@ function AppComponent() {
         instrumentType: '',
         performanceType: '',
         maleCount: 0,
-        femaleCount: 0
+        femaleCount: 0,
+        team_name: ''
       });
       setActivitySearchTerm('');
       setIndividualParticipantName('');
@@ -6145,9 +6211,12 @@ function AppComponent() {
                   <table className="w-full text-right border-collapse">
                     <thead>
                       <tr className="bg-white text-[10px] font-black text-slate-500 uppercase">
-                        <th className="p-4 border-b border-slate-100">النشاط</th>
-                        <th className="p-4 border-b border-slate-100">الكنيسة</th>
-                        <th className="p-4 border-b border-slate-100">عدد الأعضاء</th>
+                        <th className="p-4 border-b border-slate-100 text-right">رقم التعريف (ID)</th>
+                        <th className="p-4 border-b border-slate-100 text-right">اسم الفريق / المشترك</th>
+                        <th className="p-4 border-b border-slate-100 text-right">النشاط</th>
+                        <th className="p-4 border-b border-slate-100 text-right">الكنيسة</th>
+                        <th className="p-4 border-b border-slate-100 text-right">عدد الأعضاء</th>
+                        <th className="p-4 border-b border-slate-100 text-right">تاريخ التسجيل</th>
                         <th className="p-4 border-b border-slate-100 text-center">الإجراءات</th>
                       </tr>
                     </thead>
@@ -6156,9 +6225,12 @@ function AppComponent() {
                         .slice((teamPageCount - 1) * 20, teamPageCount * 20)
                         .map(t => (
                           <tr key={t.id} className="bg-white hover:bg-slate-50 transition-colors">
-                            <td className="p-4 font-bold text-slate-800 text-sm">{t.activityType}</td>
-                            <td className="p-4 text-slate-600 text-xs">{t.churchName}</td>
-                            <td className="p-4 text-slate-600 text-xs">{t.members.length}</td>
+                            <td className="p-4 text-slate-400 font-mono text-[10px] select-all">{t.id}</td>
+                            <td className="p-4 font-bold text-slate-850 text-xs">{t.team_name || '-'}</td>
+                            <td className="p-4 text-slate-700 text-xs font-bold">{(t as any).stage_name || t.activityType || '-'}</td>
+                            <td className="p-4 text-slate-600 text-xs">{t.church_name || t.churchName || '-'}</td>
+                            <td className="p-4 text-slate-600 text-xs font-bold">{t.members_number ?? (t.members?.length || 0)}</td>
+                            <td className="p-4 text-slate-500 text-xs font-mono">{t.timestamp ? new Date(t.timestamp).toLocaleDateString('ar-EG') : '-'}</td>
                             <td className="p-4">
                               <div className="flex items-center justify-center gap-2">
                                 <button 
@@ -7745,7 +7817,7 @@ function AppComponent() {
                             <td className="p-4">
                               <div className="flex flex-wrap gap-2">
                                 <span className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-black rounded-lg border border-slate-200">
-                                   عدد الأعضاء: {t.members.length}
+                                   عدد الأعضاء: {t.members_number || t.members.length}
                                 </span>
                               </div>
                             </td>
@@ -8702,7 +8774,7 @@ function AppComponent() {
                           <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">نوع النشاط</label>
                           <select 
                             value={newTeam.activityType || ''}
-                            onChange={e => setNewTeam({...newTeam, activityType: e.target.value})}
+                            onChange={e => handleActivityTypeChange(e.target.value)}
                             className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
                             required
                           >
@@ -8730,225 +8802,162 @@ function AppComponent() {
                                 ))
                               ) : (
                                 activityStages.map((stage: any) => (
-                                  <option key={stage.id} value={stage.id}>{stage.name}</option>
+                                  <option key={stage.id} value={stage.id}>{stage.stage_name || stage.name}</option>
                                 ))
                               )}
                             </select>
                           </div>
                         )}
 
-                        {newTeam.activityType === 'عزف' && (
-                          <>
-                            <div className="space-y-2 mb-4">
-                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">نوع الأداء</label>
-                              <select 
-                                value={newTeam.performanceType || ''}
-                                onChange={e => setNewTeam({...newTeam, performanceType: e.target.value})}
-                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                                required
-                              >
-                                <option value="">-- اختر نوع الأداء --</option>
-                                <option value="عزف فردي">عزف فردي (Individual Performance)</option>
-                                <option value="عزف جماعي">عزف جماعي (Group Performance)</option>
-                              </select>
-                            </div>
-                            <div className="space-y-2">
-                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">الآلة الموسيقية</label>
-                              <input 
-                                type="text"
-                                placeholder="أدخل نوع الآلة"
-                                value={newTeam.instrumentType || ''}
-                                onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
-                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                                required
-                              />
-                            </div>
-                          </>
-                        )}
-
                         {(() => {
                           const selectedStageId = newTeam.choirLevel || '';
-                          const selectedStage = hymnStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId))
-                            || activityStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId));
-                          const selectedStageName = selectedStage?.name || selectedStageId;
-                          const isIndividualStage = selectedStageName.includes('فردي');
-                          const isGroupStage = selectedStageName.includes('جماعي');
-                          const isGroupRender = isGroupStage || (!isIndividualStage && (newTeam.activityType === 'كورال' || newTeam.activityType === 'ألحان'));
+                          if (!selectedStageId) return null;
 
-                          if (isGroupRender) {
+                          const selectedStage = newTeam.activityType === 'ألحان'
+                            ? hymnStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId))
+                            : activityStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.stage_name) === String(selectedStageId));
+                          
+                          const selectedStageName = selectedStage?.stage_name || selectedStage?.name || selectedStageId;
+                          
+                          let formType = selectedStage?.form_type || '';
+                          if (newTeam.activityType === 'ألحان') {
+                            formType = selectedStageName.includes('فردي') ? 'فردي' : 'جماعي';
+                          }
+
+                          if (formType === 'جماعي') {
                             return (
-                              <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                              <div className="space-y-4">
                                 <div className="space-y-2">
-                                  <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الذكور</p>
+                                  <label className="text-[11px] font-black text-slate-900 block mb-1">اسم الفريق</label>
                                   <input 
-                                    type="number"
-                                    min="0"
-                                    value={newTeam.maleCount || 0}
-                                    onChange={e => setNewTeam({...newTeam, maleCount: parseInt(e.target.value) || 0})}
-                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                                    type="text"
+                                    placeholder="أدخل اسم الفريق..."
+                                    value={newTeam.team_name || ''}
+                                    onChange={e => setNewTeam({...newTeam, team_name: e.target.value})}
+                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
                                   />
                                 </div>
-                                <div className="space-y-2">
-                                  <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الإناث</p>
-                                  <input 
-                                    type="number"
-                                    min="0"
-                                    value={newTeam.femaleCount || 0}
-                                    onChange={e => setNewTeam({...newTeam, femaleCount: parseInt(e.target.value) || 0})}
-                                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
-                                  />
-                                </div>
-                                <div className="space-y-2 flex flex-col justify-center">
-                                  <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي العدد</p>
-                                  <p className="text-2xl font-black text-primary">{(Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0)}</p>
+                                <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الذكور</p>
+                                    <input 
+                                      type="number"
+                                      min="0"
+                                      value={newTeam.maleCount || 0}
+                                      onChange={e => setNewTeam({...newTeam, maleCount: parseInt(e.target.value) || 0})}
+                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الإناث</p>
+                                    <input 
+                                      type="number"
+                                      min="0"
+                                      value={newTeam.femaleCount || 0}
+                                      onChange={e => setNewTeam({...newTeam, femaleCount: parseInt(e.target.value) || 0})}
+                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                  <div className="space-y-2 flex flex-col justify-center">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي العدد</p>
+                                    <p className="text-2xl font-black text-primary">{(Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0)}</p>
+                                  </div>
                                 </div>
                               </div>
                             );
-                          } else if (newTeam.activityType) {
+                          } else if (formType === 'فردي') {
                             return (
-                              <div className="space-y-4">
-                                {isIndividualStage ? (
-                                  <div className="space-y-3 bg-slate-50 p-6 rounded-xl border border-slate-100">
-                                    <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك (فردي)</label>
-                                    <div className="relative">
-                                      <input 
-                                        type="text"
-                                        placeholder="أدخل اسم المشترك..."
-                                        value={individualParticipantName}
-                                        onChange={e => handleIndividualNameChange(e.target.value)}
-                                        className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                        required
-                                      />
-                                      {matchingParticipants.length > 0 && (
-                                        <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
-                                          <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
-                                            هذا المشترك مسجل بالفعل، اختر الاسم للربط:
-                                          </div>
-                                          {matchingParticipants.map((p) => (
-                                            <button
-                                              key={p.id}
-                                              type="button"
-                                              onClick={() => selectMatchingParticipant(p)}
-                                              className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
-                                            >
-                                              <span>{p.name}</span>
-                                              <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                                                {p.stage}
-                                              </span>
-                                            </button>
-                                          ))}
-                                        </div>
-                                      )}
-                                      {linkedParticipantMessage && (
-                                        <p className="text-xs text-green-600 font-bold mt-2 text-right">
-                                          {linkedParticipantMessage}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                      <h5 className="text-sm font-black text-slate-800">بيانات المشترك</h5>
-                                      <div className="flex gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => setActiveActivityPath('existing')}
-                                          className={`px-3 py-1 text-xs font-black rounded-full ${activeActivityPath === 'existing' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500'}`}
-                                        >
-                                          مشترك مسجل
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setActiveActivityPath('new')}
-                                          className={`px-3 py-1 text-xs font-black rounded-full ${activeActivityPath === 'new' ? 'bg-primary text-white' : 'bg-slate-100 text-slate-500'}`}
-                                        >
-                                          مشترك جديد
-                                        </button>
+                              <div className="space-y-3 bg-slate-50 p-6 rounded-xl border border-slate-100">
+                                <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك (فردي)</label>
+                                <div className="relative">
+                                  <input 
+                                    type="text"
+                                    placeholder="أدخل اسم المشترك للبحث والربط..."
+                                    value={individualParticipantName || ''}
+                                    onChange={e => handleIndividualNameChange(e.target.value)}
+                                    className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
+                                    required
+                                  />
+                                  {matchingParticipants.length > 0 && (
+                                    <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto w-full">
+                                      <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
+                                        هذا المشترك مسجل بالفعل، اختر الاسم للربط:
                                       </div>
+                                      {matchingParticipants.map((p) => (
+                                        <button
+                                          key={p.id}
+                                          type="button"
+                                          onClick={() => selectMatchingParticipant(p)}
+                                          className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
+                                        >
+                                          <span>{p.name}</span>
+                                          <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                                            {p.stage}
+                                          </span>
+                                        </button>
+                                      ))}
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                      {activeActivityPath === 'existing' ? (
-                                        <div className="md:col-span-12 space-y-1">
-                                          <label className="text-[9px] font-black text-slate-400 uppercase">الاسم (بحث في المشتركين المسجلين)</label>
-                                          <div className="relative">
-                                            <input 
-                                              type="text"
-                                              list={`activityParticipantsList`}
-                                              placeholder="أدخل اسم المشترك للبحث..."
-                                              value={activitySearchTerm}
-                                              onChange={e => debouncedActivitySearch(e.target.value)}
-                                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold text-slate-800"
-                                            />
-                                            <datalist id={`activityParticipantsList`}>
-                                              {participants
-                                                .filter(p => p.churchName === churchName)
-                                                .map((p, pIdx) => (
-                                                <option key={pIdx} value={p.name}>{p.stage} - {p.churchName}</option>
-                                              ))}
-                                            </datalist>
-                                            {activityLinkSuccess && (
-                                              <p className="text-xs text-green-600 font-bold mt-2">{activityLinkSuccess}</p>
-                                            )}
-                                            {newTeam.members?.[0]?.name && !activityLinkSuccess && activitySearchTerm && (
-                                              <p className="text-xs text-primary font-bold mt-2">محدد: {newTeam.members[0].name} ({newTeam.members[0].stage})</p>
-                                            )}
-                                          </div>
+                                  )}
+                                  {linkedParticipantMessage && (
+                                    <p className="text-xs text-green-600 font-bold mt-2 text-right">
+                                      {linkedParticipantMessage}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          } else if (formType === 'عزف') {
+                            return (
+                              <div className="space-y-4 bg-slate-50 p-6 rounded-xl border border-slate-100">
+                                <div className="space-y-1">
+                                  <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك</label>
+                                  <div className="relative">
+                                    <input 
+                                      type="text"
+                                      placeholder="أدخل اسم المشترك للبحث والربط..."
+                                      value={individualParticipantName || ''}
+                                      onChange={e => handleIndividualNameChange(e.target.value)}
+                                      className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
+                                      required
+                                    />
+                                    {matchingParticipants.length > 0 && (
+                                      <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
+                                        <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
+                                          هذا المشترك مسجل بالفعل، اختر الاسم للربط:
                                         </div>
-                                      ) : (
-                                        <>
-                                          <div className="md:col-span-6 space-y-1">
-                                            <label className="text-[9px] font-black text-slate-400 uppercase">الاسم</label>
-                                            <input 
-                                              type="text"
-                                              placeholder="الاسم الثلاثي"
-                                              value={newTeam.members?.[0]?.name || ''}
-                                              onChange={e => {
-                                                const updated = [...(newTeam.members || [{ name: '', gender: 'ذكر', stage: '' }])];
-                                                updated[0].name = e.target.value;
-                                                setNewTeam({...newTeam, members: updated});
-                                              }}
-                                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold text-slate-800"
-                                              required
-                                            />
-                                          </div>
-                                          <div className="md:col-span-3 space-y-1">
-                                            <label className="text-[9px] font-black text-slate-400 uppercase">النوع</label>
-                                            <select 
-                                              value={newTeam.members?.[0]?.gender || 'ذكر'}
-                                              onChange={e => {
-                                                const updated = [...(newTeam.members || [{ name: '', gender: 'ذكر', stage: '' }])];
-                                                updated[0].gender = e.target.value as 'ذكر' | 'أنثى';
-                                                setNewTeam({...newTeam, members: updated});
-                                              }}
-                                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold text-slate-800"
-                                              required
-                                            >
-                                              <option value="ذكر">ذكر</option>
-                                              <option value="أنثى">أنثى</option>
-                                            </select>
-                                          </div>
-                                          <div className="md:col-span-3 space-y-1">
-                                            <label className="text-[9px] font-black text-slate-400 uppercase">المرحلة</label>
-                                            <select 
-                                              value={newTeam.members?.[0]?.stage || ''}
-                                              onChange={e => {
-                                                const updated = [...(newTeam.members || [{ name: '', gender: 'ذكر', stage: '' }])];
-                                                updated[0].stage = e.target.value;
-                                                setNewTeam({...newTeam, members: updated});
-                                              }}
-                                              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:border-primary font-bold text-slate-800"
-                                              required
-                                            >
-                                              <option value="">المرحلة</option>
-                                              {activityStages.map((p: any) => <option key={p.id} value={p.name}>{p.name}</option>)}
-                                            </select>
-                                          </div>
-                                        </>
-                                      )}
-                                    </div>
-                                  </>
-                                )}
+                                        {matchingParticipants.map((p) => (
+                                          <button
+                                            key={p.id}
+                                            type="button"
+                                            onClick={() => selectMatchingParticipant(p)}
+                                            className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
+                                          >
+                                            <span>{p.name}</span>
+                                            <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                                              {p.stage}
+                                            </span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {linkedParticipantMessage && (
+                                      <p className="text-xs text-green-600 font-bold mt-2 text-right">
+                                        {linkedParticipantMessage}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="space-y-2">
+                                  <label className="text-[11px] font-black text-slate-900 block mb-1">نوع الآلة الموسيقية (Instrument Type)</label>
+                                  <input 
+                                    type="text"
+                                    placeholder="أدخل نوع الآلة (أورج، كمان، جيتار...)"
+                                    value={newTeam.instrumentType || ''}
+                                    onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
+                                    className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
+                                    required
+                                  />
+                                </div>
                               </div>
                             );
                           }
@@ -8995,8 +9004,8 @@ function AppComponent() {
                               {t.instrumentType && <p className="text-xs font-bold text-primary mt-1">{t.instrumentType}</p>}
                             </div>
 
-                            <div className="space-y-3">
-                              {t.activityType === 'كورال' || t.activityType === 'ألحان' ? null : (
+                             <div className="space-y-3">
+                              {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || t.activityType === 'ألحان' ? null : (
                                 <>
                                   <p className="text-[10px] font-black text-slate-400 uppercase">المشترك</p>
                                   <div className="flex flex-wrap gap-2">
@@ -9011,11 +9020,11 @@ function AppComponent() {
                             </div>
 
                             <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
-                              {t.activityType === 'كورال' || t.activityType === 'ألحان' ? (
+                              {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || t.activityType === 'ألحان' ? (
                                 <div className="flex gap-4">
                                   <span className="text-[10px] font-black text-primary">ذكور: {t.maleCount || 0}</span>
                                   <span className="text-[10px] font-black text-primary">إناث: {t.femaleCount || 0}</span>
-                                  <span className="text-[10px] font-black text-slate-500">إجمالي: {(t.maleCount || 0) + (t.femaleCount || 0)}</span>
+                                  <span className="text-[10px] font-black text-slate-500">إجمالي: {t.members_number || (t.maleCount || 0) + (t.femaleCount || 0)}</span>
                                 </div>
                               ) : (
                                 <div className="flex gap-4">

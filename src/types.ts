@@ -68,6 +68,10 @@ export interface ActivityTeam {
   performanceType?: string;
   timestamp: string;
   year?: string;
+  members_number?: number;
+  team_name?: string;
+  stage_name?: string;
+  church_name?: string;
 }
 
 export interface Result {
