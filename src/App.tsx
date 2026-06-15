@@ -561,6 +561,8 @@ function AppComponent() {
   const [userProfile, setUserProfile] = useState<any>(initialProfile);
   const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
   const [activityStages, setActivityStages] = useState<any[]>([]);
+  const [allActivityStages, setAllActivityStages] = useState<any[]>([]);
+  const [availableActivities, setAvailableActivities] = useState<string[]>([]);
   const [hymnStages, setHymnStages] = useState<any[]>([]);
 
   // Customization State
@@ -701,24 +703,18 @@ function AppComponent() {
     // Fetch Hymn Stages and Activity Stages dynamically from their respective new tables
     const fetchHymnAndActivityStages = async () => {
       try {
-        const { data: hymnData, error: hymnErr } = await supabase
-          .from('hymnStages')
-          .select('id, name')
-          .order('name', { ascending: true });
-        
-        if (!hymnErr && hymnData) {
-          setHymnStages(hymnData);
-        } else if (hymnErr) {
-          console.error("Error fetching hymn stages:", hymnErr);
-        }
-
         const { data: actData, error: actErr } = await supabase
           .from('activity_stages')
           .select('id, activity_type, stage_name, form_type')
           .order('stage_name', { ascending: true });
 
         if (!actErr && actData) {
-          setActivityStages(actData);
+          setAllActivityStages(actData);
+          const uniqueTypes = Array.from(new Set(actData.map((item: any) => item.activity_type))).filter(Boolean) as string[];
+          if (!uniqueTypes.includes('ألحان')) {
+            uniqueTypes.push('ألحان');
+          }
+          setAvailableActivities(uniqueTypes);
         } else if (actErr) {
           console.error("Error fetching activity stages:", actErr);
         }
@@ -829,6 +825,43 @@ function AppComponent() {
   const [isCalculatorLoading, setIsCalculatorLoading] = useState(true);
   const [isSubmittingCalculator, setIsSubmittingCalculator] = useState(false);
   const [newCalculatorSetting, setNewCalculatorSetting] = useState({ stage: '', material: '', price: 0 });
+  
+  const calculatorFilteredStages = useMemo(() => {
+    const material = newCalculatorSetting.material;
+    if (!material) return dynamicLevels.map(l => l.name);
+    
+    const matched = dynamicLevels.filter(level => {
+      const list = level.comps || [];
+      return list.some((c: string) => {
+        const norm = c.toLowerCase();
+        const actNorm = material.toLowerCase();
+        if (norm.includes(actNorm)) return true;
+        if (actNorm === 'قبطي' && norm.includes('قبطي')) return true;
+        if (actNorm === 'دراسي' && norm.includes('دراسي')) return true;
+        if (actNorm === 'محفوظات' && norm.includes('محفوظات')) return true;
+        if (actNorm === 'تطبيقات' && norm.includes('تطبيقات')) return true;
+        if (actNorm === 'أنشطة' && (norm.includes('أنشطة') || norm.includes('نشاط') || norm.includes('كشافة') || norm.includes('رياضية') || norm.includes('مسرح' ) || norm.includes('فنون') || norm.includes('إبتكارات'))) return true;
+        return false;
+      });
+    }).map(level => level.name);
+    
+    return matched.length > 0 ? matched : dynamicLevels.map(l => l.name);
+  }, [newCalculatorSetting.material, dynamicLevels]);
+
+  const handleCalculatorMaterialChange = async (material: string) => {
+    setNewCalculatorSetting(prev => ({ ...prev, material, stage: '' }));
+    if (!material) return;
+    try {
+      const { data, error } = await supabase
+        .from('stage_competitions')
+        .select('stage_name, allowed_competitions');
+      if (!error && data) {
+        console.log("Dynamically fetched/verified stages for material:", material, data.length);
+      }
+    } catch (e) {
+      console.error("Error fetching calculator stages on material change:", e);
+    }
+  };
   const [showDeleteCalculatorModal, setShowDeleteCalculatorModal] = useState(false);
   const [calculatorSettingToDelete, setCalculatorSettingToDelete] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -3301,7 +3334,8 @@ function AppComponent() {
 
       const mappedData = (data || []).map((row: any) => {
         const isIndividual = row.stage_name && row.stage_name.includes('فردي');
-        const inferredType = row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'ترنيم فردي'));
+        const foundStage = allActivityStages.find((s: any) => s.stage_name === row.stage_name || s.name === row.stage_name);
+        const inferredType = foundStage ? foundStage.activity_type : (row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'ترنيم فردي')));
         return {
           id: row.id,
           team_name: row.team_name,
@@ -3656,6 +3690,44 @@ function AppComponent() {
     setNewTeam({ ...newTeam, members: newMembers });
   };
 
+  const fetchStagesForActivity = async (type: string) => {
+    if (!type) {
+      setHymnStages([]);
+      setActivityStages([]);
+      return;
+    }
+    try {
+      if (type === 'ألحان') {
+        const { data, error } = await supabase
+          .from('hymnStages')
+          .select('id, name')
+          .order('name', { ascending: true });
+        
+        if (!error && data) {
+          setHymnStages(data);
+          setActivityStages([]);
+        } else if (error) {
+          console.error("Error fetching hymn stages:", error);
+        }
+      } else {
+        const { data, error } = await supabase
+          .from('activity_stages')
+          .select('id, activity_type, stage_name, form_type')
+          .eq('activity_type', type)
+          .order('stage_name', { ascending: true });
+        
+        if (!error && data) {
+          setActivityStages(data);
+          setHymnStages([]);
+        } else if (error) {
+          console.error("Error fetching activity stages:", error);
+        }
+      }
+    } catch (err) {
+      console.error("Error in fetchStagesForActivity:", err);
+    }
+  };
+
   const handleActivityTypeChange = async (type: string) => {
     setNewTeam(prev => ({
       ...prev,
@@ -3670,36 +3742,7 @@ function AppComponent() {
     setActivitySearchTerm('');
     setActivityLinkSuccess('');
 
-    if (!type) return;
-
-    try {
-      if (type === 'ألحان') {
-        const { data, error } = await supabase
-          .from('hymnStages')
-          .select('id, name')
-          .order('name', { ascending: true });
-        
-        if (!error && data) {
-          setHymnStages(data);
-        } else if (error) {
-          console.error("Error fetching hymn stages:", error);
-        }
-      } else {
-        const { data, error } = await supabase
-          .from('activity_stages')
-          .select('id, activity_type, stage_name, form_type')
-          .eq('activity_type', type)
-          .order('stage_name', { ascending: true });
-        
-        if (!error && data) {
-          setActivityStages(data);
-        } else if (error) {
-          console.error("Error fetching activity stages:", error);
-        }
-      }
-    } catch (err) {
-      console.error("Error in handleActivityTypeChange:", err);
-    }
+    await fetchStagesForActivity(type);
   };
 
   const handleAddTeam = async (e: React.FormEvent) => {
@@ -3807,7 +3850,8 @@ function AppComponent() {
         if (data && data.length > 0) {
           const row = data[0];
           const isIndividual = formType !== 'جماعي';
-          const inferredType = row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'ترنيم فردي'));
+          const foundStage = allActivityStages.find((s: any) => s.stage_name === row.stage_name || s.name === row.stage_name);
+          const inferredType = newTeam.activityType || (foundStage ? foundStage.activity_type : (row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'ترنيم فردي'))));
           const createdTeam: ActivityTeam = {
             id: row.id,
             team_name: row.team_name,
@@ -3878,19 +3922,26 @@ function AppComponent() {
     }
   };
 
-  const handleEditTeam = (team: any) => {
+  const handleEditTeam = async (team: any) => {
     const sName = team.stage_name || team.choirLevel || '';
     const isIndiv = sName.includes('فردي');
 
+    const foundStage = allActivityStages.find((s: any) => s.stage_name === sName || s.name === sName);
+    const inferredActType = team.activityType || (foundStage ? foundStage.activity_type : (sName.includes('ألحان') ? 'ألحان' : (sName.includes('كورال') ? 'كورال' : (sName.includes('عزف') ? 'عزف' : 'ترنيم فردي'))));
+
+    await fetchStagesForActivity(inferredActType);
+
     setNewTeam({
-      activityType: team.activityType || (sName.includes('ألحان') ? 'ألحان' : (sName.includes('كورال') ? 'كورال' : (sName.includes('عزف') ? 'عزف' : 'ترنيم فردي'))),
+      activityType: inferredActType,
       members: team.members?.length ? team.members : [{ name: team.team_name || '', gender: 'ذكر', stage: sName }],
       choirLevel: team.choirLevel || sName,
       instrumentType: team.instrumentType || '',
       performanceType: team.performanceType || '',
       maleCount: team.maleCount || 0,
-      femaleCount: team.femaleCount || 0
+      femaleCount: team.femaleCount || 0,
+      team_name: team.team_name || ''
     });
+    
     if (isIndiv) {
       setIndividualParticipantName(team.team_name || '');
     } else {
@@ -6719,28 +6770,29 @@ function AppComponent() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                   <div>
+                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">المادة (النشاط)</label>
+                    <select 
+                      value={newCalculatorSetting.material}
+                      onChange={(e) => handleCalculatorMaterialChange(e.target.value)}
+                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
+                    >
+                      <option value="">-- اختر المادة --</option>
+                      {['دراسي', 'محفوظات', 'قبطي', 'تطبيقات', 'أنشطة'].map((act) => (
+                        <option key={act} value={act}>{act}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
                     <label className="text-xs font-black text-slate-400 uppercase mb-2 block">المرحلة</label>
                     <select 
                       value={newCalculatorSetting.stage}
                       onChange={(e) => setNewCalculatorSetting({...newCalculatorSetting, stage: e.target.value})}
                       className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
+                      required
                     >
                       <option value="">-- اختر المرحلة --</option>
-                      {extractedStagesFromParticipants.map((lvl) => (
+                      {calculatorFilteredStages.map((lvl) => (
                         <option key={lvl} value={lvl}>{lvl}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">المادة</label>
-                    <select 
-                      value={newCalculatorSetting.material}
-                      onChange={(e) => setNewCalculatorSetting({...newCalculatorSetting, material: e.target.value})}
-                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
-                    >
-                      <option value="">-- اختر المادة --</option>
-                      {extractedCompetitionsFromParticipants.map((comp) => (
-                        <option key={comp} value={comp}>{comp}</option>
                       ))}
                     </select>
                   </div>
@@ -8788,10 +8840,9 @@ function AppComponent() {
                             required
                           >
                             <option value="">-- اختر النشاط --</option>
-                            <option value="كورال">كورال</option>
-                            <option value="ألحان">ألحان</option>
-                            <option value="عزف">عزف</option>
-                            <option value="ترنيم فردي">ترنيم فردي</option>
+                            {availableActivities.map((activity: string) => (
+                              <option key={activity} value={activity}>{activity}</option>
+                            ))}
                           </select>
                         </div>
 
@@ -8995,10 +9046,11 @@ function AppComponent() {
                           .map(t => (
                           <div key={t.id} className="p-6 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-md transition-all relative group overflow-hidden">
                             <div className="absolute top-0 right-0 w-1 h-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                            {userRole === 'admin' && (
+                            {(userRole === 'admin' || userRole === 'church') && (
                               <button 
                                 onClick={() => handleDeleteTeam(t.id)}
-                                className="absolute left-4 top-4 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                className="absolute left-4 top-4 p-2.5 text-rose-500 bg-rose-50/70 hover:bg-rose-100 sm:text-slate-300 sm:bg-transparent sm:hover:bg-rose-50 sm:hover:text-rose-600 rounded-lg transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-10"
+                                title="حذف الفريق"
                               >
                                 <Trash2 size={18} />
                               </button>

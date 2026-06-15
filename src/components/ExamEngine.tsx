@@ -575,6 +575,65 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
   );
 };
 
+export const isStudentEnrolledInCompetition = (student: any, examType: string): boolean => {
+  if (!student) return false;
+  if (student.isManual) return true;
+
+  const enrolled = student.enrolled_subjects;
+  if (!enrolled) return false;
+
+  let arr: any[] = [];
+  if (Array.isArray(enrolled)) {
+    arr = enrolled;
+  } else if (typeof enrolled === 'string') {
+    try {
+      arr = JSON.parse(enrolled);
+    } catch (e) {
+      arr = [enrolled];
+    }
+  } else {
+    return false;
+  }
+
+  return arr.some((item: any) => {
+    if (!item) return false;
+    
+    if (typeof item === 'string') {
+      const normalizedItem = item.trim();
+      if (examType === 'قبطي مستوى أول') {
+        return normalizedItem === 'قبطي مستوى أول' || normalizedItem === 'قبطي مستوى 1';
+      }
+      if (examType === 'قبطي مستوى ثاني') {
+        return normalizedItem === 'قبطي مستوى ثاني' || normalizedItem === 'قبطي مستوى ثانٍ' || normalizedItem === 'قبطي مستوى 2';
+      }
+      return normalizedItem === examType;
+    }
+
+    if (typeof item === 'object') {
+      const activity = item.activity || item.competition || item.name || '';
+      const level = item.level || '';
+
+      const actNorm = activity.trim();
+      const lvlNorm = level.trim();
+
+      if (examType === 'دراسي') {
+        return actNorm === 'دراسي';
+      }
+      if (examType === 'محفوظات') {
+        return actNorm === 'محفوظات';
+      }
+      if (examType === 'قبطي مستوى أول') {
+        return actNorm === 'قبطي' && (lvlNorm === 'مستوى أول' || lvlNorm === 'مستوى اول' || lvlNorm === '1' || lvlNorm === 'الأول' || lvlNorm === 'الأولى');
+      }
+      if (examType === 'قبطي مستوى ثاني') {
+        return actNorm === 'قبطي' && (lvlNorm === 'مستوى ثاني' || lvlNorm === 'مستوى ثانٍ' || lvlNorm === 'ثاني' || lvlNorm === '2' || lvlNorm === 'الثاني' || lvlNorm === 'الثانية');
+      }
+    }
+
+    return false;
+  });
+};
+
 export const LiveExamGateway: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [activeStudent, setActiveStudent] = useState<any>(null);
@@ -902,11 +961,9 @@ export const LiveExamGateway: React.FC = () => {
         }
       }
 
-      if (activeStudent.enrolled_subjects && Array.isArray(activeStudent.enrolled_subjects)) {
-        if (!activeStudent.enrolled_subjects.includes(competitionType)) {
-          setIsLoading(false);
-          return alert("عذراً، أنت غير مسجل في هذه المسابقة. يرجى مراجعة اللجنة التنظيمية.");
-        }
+      if (!isStudentEnrolledInCompetition(activeStudent, competitionType)) {
+        setIsLoading(false);
+        return alert("عذراً، أنت غير مسجل في هذه المسابقة. يرجى مراجعة اللجنة التنظيمية.");
       }
 
       if (competitionType === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) {
@@ -1472,6 +1529,26 @@ export const LiveExamGateway: React.FC = () => {
                };
                const studentField = fieldMap[scoreField];
                const isSaved = (subKey && completedSubjects[subKey] !== null) || (activeStudent[studentField] !== undefined && activeStudent[studentField] !== null);
+                const isEnrolled = isStudentEnrolledInCompetition(activeStudent, type);
+                 if (!isEnrolled) {
+                   return (
+                     <div
+                       key={type}
+                       id={`competition-btn-${subKey}-locked`}
+                       className="p-6 border border-slate-200 bg-slate-100 opacity-60 rounded-2xl select-none flex flex-col justify-between"
+                     >
+                       <div>
+                         <div className="flex items-center gap-2 justify-between">
+                           <h5 className="font-black text-lg text-slate-400">{type}</h5>
+                           <span className="text-lg">🔒</span>
+                         </div>
+                         <span className="text-xs text-rose-500 font-bold block mt-3 bg-rose-50 border border-rose-150 px-3 py-1.5 rounded-xl text-center">
+                           عذرًا، أنت غير مسجل في هذه المسابقة
+                         </span>
+                       </div>
+                     </div>
+                   );
+                 }
                
                return (
                  <button
