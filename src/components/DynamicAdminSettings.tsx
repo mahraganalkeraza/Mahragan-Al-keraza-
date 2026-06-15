@@ -729,6 +729,24 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
     }
   };
 
+  const handleDeleteStage = async (stageId: string | number) => {
+    if (!window.confirm("هل أنت متأكد من رغبتك في حذف هذا الفريق/المشترك نهائياً؟")) return;
+    try {
+      const { error } = await supabase
+        .from('activity_stages')
+        .delete()
+        .eq('id', stageId);
+
+      if (error) throw error;
+
+      setActivityStages(prev => prev.filter(s => s.id !== stageId));
+      alert('تم الحذف بنجاح!');
+    } catch (e: any) {
+      console.error("Error deleting stage:", e);
+      alert("حدث خطأ أثناء حذف المرحلة: " + (e.message || e));
+    }
+  };
+
   const toggleCompForLevel = (compName: string) => {
     if (selectedCompetitions.includes(compName)) {
       setSelectedCompetitions(selectedCompetitions.filter(c => c !== compName));
@@ -1209,9 +1227,9 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
               {activityStages.map(stage => (
                 <div key={stage.id} className="p-4 border border-slate-100 rounded-xl flex items-center justify-between shadow-sm">
                   <div>
-                    <h4 className="font-black text-lg text-slate-800">{stage.name}</h4>
+                    <h4 className="font-black text-lg text-slate-800">{stage.name || stage.stage_name || stage.activity_type}</h4>
                   </div>
-                  <button onClick={() => setDeleteConfirmation({ id: stage.id, type: 'activityStage' as any })} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
+                  <button onClick={() => handleDeleteStage(stage.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="حذف">
                     <Trash2 size={18} />
                   </button>
                 </div>
