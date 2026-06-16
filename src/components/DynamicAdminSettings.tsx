@@ -4,6 +4,7 @@ import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as I
 import * as XLSX from 'xlsx';
 import { sortStages } from '../constants';
 import PaginationComponent from './Pagination';
+import ActivityStagesManager from './ActivityStagesManager';
 
 
 const getChurchCode = (churchName: string, databaseChurches?: any[]): string => {
@@ -1205,37 +1206,7 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
 
         {/* TAB: ACTIVITY STAGES */}
         {activeTab === 'activityStages' && (
-          <div className="space-y-8">
-            <form onSubmit={addActivityStage} className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-              <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Plus /> إضافة مرحلة أنشطة (لفرق الكورال، الألحان، والعزف)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold mb-2">اسم المرحلة</label>
-                  <input type="text" value={newActivityStageName} onChange={e => setNewActivityStageName(e.target.value)} required className="w-full p-3 rounded-lg border border-slate-200" placeholder="مثال: ابتدائي، إعدادي، مستوى أول..." />
-                </div>
-              </div>
-              <button 
-                type="submit" 
-                className="mt-4 px-6 py-3 bg-primary text-white rounded-lg font-black flex items-center gap-2"
-              >
-                <Plus size={20} />
-                إضافة المرحلة
-              </button>
-            </form>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {activityStages.map(stage => (
-                <div key={stage.id} className="p-4 border border-slate-100 rounded-xl flex items-center justify-between shadow-sm">
-                  <div>
-                    <h4 className="font-black text-lg text-slate-800">{stage.name || stage.stage_name || stage.activity_type}</h4>
-                  </div>
-                  <button onClick={() => handleDeleteStage(stage.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="حذف">
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ActivityStagesManager />
         )}
 
         {/* TAB: HYMN STAGES */}
