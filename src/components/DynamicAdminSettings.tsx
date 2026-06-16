@@ -104,6 +104,8 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
 
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [newActivityStageName, setNewActivityStageName] = useState('');
+  const [newActivityStageType, setNewActivityStageType] = useState<string>('');
+  const [newActivityStageFormType, setNewActivityStageFormType] = useState<'جماعي' | 'فردي' | 'عزف' | ''>('');
 
   const [hymnStages, setHymnStages] = useState<any[]>([]);
   const [newHymnStageName, setNewHymnStageName] = useState('');
@@ -405,7 +407,7 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
           supabase.from('churches').select('*').range(0, 4999),
           supabase.from('stage_competitions').select('*').range(0, 4999),
           supabase.from('competition_bank').select('*').range(0, 4999),
-          supabase.from('activityStages').select('*').range(0, 4999),
+          supabase.from('activity_stages').select('*').range(0, 4999),
           supabase.from('hymnStages').select('*').range(0, 4999),
           supabase.from('system_settings').select('*').eq('id', 'app_config').maybeSingle(),
           supabase.from('system_settings').select('*').eq('id', 'validation').maybeSingle()
@@ -682,24 +684,33 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
   // ACTIVITY STAGES
   const addActivityStage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newActivityStageName) return;
+    if (!newActivityStageType || !newActivityStageName || !newActivityStageFormType) {
+      alert('الرجاء ملء جميع الحقول المطلوبة واختيار نوع الفورم');
+      return;
+    }
     setIsSaving(true);
     try {
       const { data, error } = await supabase
-        .from('activityStages')
-        .insert([{ name: newActivityStageName }])
+        .from('activity_stages')
+        .insert([{
+          activity_type: newActivityStageType,
+          stage_name: newActivityStageName,
+          form_type: newActivityStageFormType
+        }])
         .select();
 
       if (error) throw error;
 
-      if (data) {
-        setActivityStages(prev => [...prev, ...data]);
+      if (data && data[0]) {
+        setActivityStages(prev => [data[0], ...prev]);
+        alert('تم إضافة المرحلة بنجاح إلى جدول الأنشطة! 🎉');
+        // Reset inputs (leaving type for easy back-to-back entries)
+        setNewActivityStageName('');
+        setNewActivityStageFormType('');
       } else {
-        const { data: fetchRes } = await supabase.from('activityStages').select('*');
+        const { data: fetchRes } = await supabase.from('activity_stages').select('*');
         if (fetchRes) setActivityStages(fetchRes);
       }
-      setNewActivityStageName('');
-      alert('تم إضافة مرحلة الأنشطة بنجاح!');
     } catch (err: any) { 
       console.error(err);
       alert('حدث خطأ أثناء إضافة مرحلة الأنشطة: ' + err.message);
@@ -708,11 +719,12 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
     }
   };
 
-  const deleteActivityStage = async (id: string) => {
+  const deleteActivityStage = async (id: string | number) => {
+    if (!window.confirm("هل أنت متأكد من رغبتك في حذف هذه المرحلة نهائياً؟")) return;
     setIsSaving(true);
     try {
       const { error } = await supabase
-        .from('activityStages')
+        .from('activity_stages')
         .delete()
         .eq('id', id);
 
@@ -1206,34 +1218,104 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
         {/* TAB: ACTIVITY STAGES */}
         {activeTab === 'activityStages' && (
           <div className="space-y-8">
-            <form onSubmit={addActivityStage} className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-              <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Plus /> إضافة مرحلة أنشطة (لفرق الكورال، الألحان، والعزف)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form onSubmit={addActivityStage} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <h3 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-2"><Plus /> إضافة مرحلة أنشطة جديدة</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-bold mb-2">اسم المرحلة</label>
-                  <input type="text" value={newActivityStageName} onChange={e => setNewActivityStageName(e.target.value)} required className="w-full p-3 rounded-lg border border-slate-200" placeholder="مثال: ابتدائي، إعدادي، مستوى أول..." />
+                  <label className="block text-sm font-bold mb-2 text-slate-700">نوع النشاط</label>
+                  <select
+                    value={newActivityStageType}
+                    onChange={(e) => setNewActivityStageType(e.target.value)}
+                    className="w-full p-3 rounded-lg border border-slate-200 bg-slate-50 font-bold focus:bg-white"
+                    required
+                  >
+                    <option value="">-- اختر النشاط --</option>
+                    {['ألحان', 'كورال', 'ترنيم فردي', 'عزف', 'الأدبية', 'الثقافية', 'الفنون التشكيلية', 'كمبيوتر'].map((act) => (
+                      <option key={act} value={act}>{act}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold mb-2 text-slate-700">اسم المرحلة</label>
+                  <input
+                    type="text"
+                    value={newActivityStageName}
+                    onChange={(e) => setNewActivityStageName(e.target.value)}
+                    required
+                    className="w-full p-3 rounded-lg border border-slate-200 font-bold"
+                    placeholder="مثال: ابتدائي، إعدادي، خريجين..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold mb-2 text-slate-700">نوع الفورم</label>
+                  <select
+                    value={newActivityStageFormType}
+                    onChange={(e) => setNewActivityStageFormType(e.target.value as any)}
+                    className="w-full p-3 rounded-lg border border-slate-200 bg-slate-50 font-bold focus:bg-white"
+                    required
+                  >
+                    <option value="">-- اختر نوع الفورم --</option>
+                    <option value="جماعي">جماعي (فرق ومجموعات)</option>
+                    <option value="فردي">فردي (مشترك واحد)</option>
+                    <option value="عزف">عزف (آلات موسيقية)</option>
+                  </select>
                 </div>
               </div>
+
               <button 
                 type="submit" 
-                className="mt-4 px-6 py-3 bg-primary text-white rounded-lg font-black flex items-center gap-2"
+                disabled={isSaving}
+                className="w-full mt-4 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black flex items-center justify-center gap-2 transition disabled:bg-slate-300"
               >
-                <Plus size={20} />
-                إضافة المرحلة
+                {isSaving ? 'جاري الحفظ...' : 'إضافة المرحلة وتحديث الكالوك'}
               </button>
             </form>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {activityStages.map(stage => (
-                <div key={stage.id} className="p-4 border border-slate-100 rounded-xl flex items-center justify-between shadow-sm">
-                  <div>
-                    <h4 className="font-black text-lg text-slate-800">{stage.name || stage.stage_name || stage.activity_type}</h4>
-                  </div>
-                  <button onClick={() => handleDeleteStage(stage.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="حذف">
-                    <Trash2 size={18} />
-                  </button>
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 className="text-md font-black text-slate-700 mb-4">المراحل الحالية بالسيستم:</h3>
+              {activityStages.length === 0 ? (
+                <p className="text-center text-slate-400 py-4 font-bold col-span-full">لا توجد مراحل مسجلة حالياً. املأ النموذج بالأعلى لإضافة مرحلة.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                        <th className="p-4">نوع النشاط</th>
+                        <th className="p-4">اسم المرحلة</th>
+                        <th className="p-4">نوع الفورم</th>
+                        <th className="p-4 text-center">إجراءات</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activityStages.map((stage) => (
+                        <tr key={stage.id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                          <td className="p-4 font-black text-slate-800">{stage.activity_type || 'نشاط'}</td>
+                          <td className="p-4 font-bold text-slate-600">{stage.stage_name}</td>
+                          <td className="p-4">
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${
+                              stage.form_type === 'جماعي' ? 'bg-blue-50 text-blue-800 border border-blue-100' :
+                              stage.form_type === 'عزف' ? 'bg-purple-50 text-purple-800 border border-purple-100' : 'bg-orange-50 text-orange-800 border border-orange-100'
+                            }`}>
+                              {stage.form_type || 'فردي'}
+                            </span>
+                          </td>
+                          <td className="p-4 text-center">
+                            <button
+                              onClick={() => deleteActivityStage(stage.id)}
+                              className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors inline-block text-xs font-bold"
+                            >
+                              مسح نهائي
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         )}

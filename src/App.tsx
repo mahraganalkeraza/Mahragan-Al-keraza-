@@ -563,7 +563,7 @@ function AppComponent() {
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [allActivityStages, setAllActivityStages] = useState<any[]>([]);
   const [availableActivities, setAvailableActivities] = useState<string[]>([]);
-  const [activities] = useState<string[]>(['ألحان', 'كورال', 'ترنيم فردي', 'عزف']);
+  const [activities] = useState<string[]>(['ألحان', 'كورال', 'ترنيم فردي', 'عزف', 'الأدبية', 'الثقافية', 'الفنون التشكيلية', 'كمبيوتر']);
   const [hymnStages, setHymnStages] = useState<any[]>([]);
 
   // Customization State
@@ -3956,7 +3956,7 @@ function AppComponent() {
   };
 
   const handleDeleteTeam = async (teamId: string | number) => {
-    const isConfirmed = window.confirm("هل أنت متأكد من رغبتك في حذف هذا الفريق/المشترك؟");
+    const isConfirmed = window.confirm("هل أنت متأكد من رغبتك في حذف هذا الفريق/المشترك نهائياً؟");
     if (!isConfirmed) return;
     try {
       const { error } = await supabase
