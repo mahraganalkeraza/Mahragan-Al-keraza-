@@ -66,7 +66,8 @@ import {
   ChevronDown,
   Layers,
   Printer,
-  AlertTriangle
+  AlertTriangle,
+  Bell
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
@@ -136,6 +137,15 @@ import DynamicAdminSettings from './components/DynamicAdminSettings';
 import AdminBulkRegister from './components/AdminBulkRegister';
 // @ts-ignore
 import logo from './by-logo.jpeg';
+
+interface LiveNotification {
+  id: string;
+  sourceTable: 'registrations' | 'academic_registrations' | 'book_orders';
+  churchName: string;
+  message: string;
+  timestamp: Date;
+  read: boolean;
+}
 
 
 function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carouselItems: CarouselItem[], appLogo: string | null }) {
@@ -931,6 +941,9 @@ function AppComponent() {
   const [totalResultsCount, setTotalResultsCount] = useState<number>(0);
   const [totalOnlineCount, setTotalOnlineCount] = useState<number>(0);
   const [trendViewMode, setTrendViewMode] = useState<'both' | 'cumulative' | 'daily'>('both');
+  const [notifications, setNotifications] = useState<LiveNotification[]>([]);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState<boolean>(false);
+  const [showNotificationsDropdown, setShowNotificationsDropdown] = useState<boolean>(false);
   const [debouncedParticipantSearch, setDebouncedParticipantSearch] = useState('');
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -944,6 +957,215 @@ function AppComponent() {
        fetchParticipantsPage(true, true, debouncedParticipantSearch);
     }
   }, [debouncedParticipantSearch, isLoggedIn]);
+
+  const fetchRecentNotifications = async () => {
+    setIsLoadingNotifications(true);
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    let tempNotifs: LiveNotification[] = [];
+
+    // 1. Fetch registrations
+    try {
+      const { data, error } = await supabase
+        .from('registrations')
+        .select('id, churchName, timestamp')
+        .neq('name', 'SYSTEM_LOCK')
+        .gt('timestamp', oneDayAgo)
+        .order('timestamp', { ascending: false })
+        .limit(30);
+
+      if (!error && data) {
+        data.forEach((item: any) => {
+          tempNotifs.push({
+            id: `reg-${item.id}`,
+            sourceTable: 'registrations',
+            churchName: item.churchName || 'كنيسة غير معروفة',
+            message: `كنيسة ${item.churchName || 'كنيسة غير معروفة'} تقوم بالتسجيل في الأنشطة`,
+            timestamp: new Date(item.timestamp),
+            read: true
+          });
+        });
+      }
+    } catch (err) {
+      console.warn('Error fetching recent registrations for notifications:', err);
+    }
+
+    // 2. Fetch book orders
+    try {
+      const { data, error } = await supabase
+        .from('book_orders')
+        .select('id, church_name, created_at')
+        .gt('created_at', oneDayAgo)
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      if (!error && data) {
+        data.forEach((item: any) => {
+          tempNotifs.push({
+            id: `book-${item.id}`,
+            sourceTable: 'book_orders',
+            churchName: item.church_name || 'كنيسة غير معروفة',
+            message: `كنيسة ${item.church_name || 'كنيسة غير معروفة'} طلبت كتب للمهرجان`,
+            timestamp: new Date(item.created_at || Date.now()),
+            read: true
+          });
+        });
+      }
+    } catch (err) {
+      console.warn('Error fetching recent book orders for notifications:', err);
+    }
+
+    // 3. Fetch academic registrations
+    try {
+      const { data, error } = await supabase
+        .from('academic_registrations')
+        .select('*')
+        .limit(30);
+
+      if (!error && data) {
+        data.forEach((item: any) => {
+          const itemTime = item.created_at || item.timestamp;
+          if (itemTime && new Date(itemTime).getTime() > Date.now() - 24 * 60 * 60 * 1000) {
+            const church = item.church_name || item.churchName || 'كنيسة غير معروفة';
+            tempNotifs.push({
+              id: `acad-${item.id}`,
+              sourceTable: 'academic_registrations',
+              churchName: church,
+              message: `كنيسة ${church} تقوم بالتسجيل في المسابقة الدراسية`,
+              timestamp: new Date(itemTime),
+              read: true
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('Error fetching academic registrations for notifications:', err);
+    }
+
+    // Mix in local storage unread notifications
+    const stored = localStorage.getItem('admin_notifications');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as any[];
+        parsed.forEach((item: any) => {
+          const parsedTime = new Date(item.timestamp);
+          if (!item.read && (Date.now() - parsedTime.getTime() < 24 * 60 * 60 * 1000)) {
+            if (!tempNotifs.some(n => n.id === item.id)) {
+              tempNotifs.push({
+                ...item,
+                timestamp: parsedTime
+              });
+            }
+          }
+        });
+      } catch (_) {}
+    }
+
+    // Sort descending
+    tempNotifs.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+    // Filter to only those younger than 24 hours
+    tempNotifs = tempNotifs.filter(n => (Date.now() - n.timestamp.getTime()) < 24 * 60 * 60 * 1000);
+
+    setNotifications(tempNotifs);
+    setIsLoadingNotifications(false);
+  };
+
+  useEffect(() => {
+    if (activeSection !== 'admin_dashboard' || !isLoggedIn || userRole !== 'admin') return;
+
+    fetchRecentNotifications();
+
+    const notificationsChannel = supabase
+      .channel('realtime-dashboard-notifications')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'registrations' },
+        (payload) => {
+          console.log('Realtime registration INSERT:', payload);
+          const record = payload.new;
+          if (record && record.name !== 'SYSTEM_LOCK') {
+            const church = record.churchName || record.church_name || 'كنيسة غير معروفة';
+            const newNotif: LiveNotification = {
+              id: `reg-live-${record.id || Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              sourceTable: 'registrations',
+              churchName: church,
+              message: `كنيسة ${church} تقوم بالتسجيل في الأنشطة`,
+              timestamp: new Date(),
+              read: false
+            };
+            setNotifications(prev => {
+              const updated = [newNotif, ...prev.filter(n => n.id !== newNotif.id && (Date.now() - n.timestamp.getTime() < 24 * 60 * 60 * 1000))];
+              localStorage.setItem('admin_notifications', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'academic_registrations' },
+        (payload) => {
+          console.log('Realtime academic_registrations INSERT:', payload);
+          const record = payload.new;
+          if (record) {
+            const church = record.church_name || record.churchName || 'كنيسة غير معروفة';
+            const newNotif: LiveNotification = {
+              id: `acad-live-${record.id || Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              sourceTable: 'academic_registrations',
+              churchName: church,
+              message: `كنيسة ${church} تقوم بالتسجيل في المسابقة الدراسية`,
+              timestamp: new Date(),
+              read: false
+            };
+            setNotifications(prev => {
+              const updated = [newNotif, ...prev.filter(n => n.id !== newNotif.id && (Date.now() - n.timestamp.getTime() < 24 * 60 * 60 * 1000))];
+              localStorage.setItem('admin_notifications', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'book_orders' },
+        (payload) => {
+          console.log('Realtime book_orders INSERT:', payload);
+          const record = payload.new;
+          if (record) {
+            const church = record.church_name || record.churchName || 'كنيسة غير معروفة';
+            const newNotif: LiveNotification = {
+              id: `book-live-${record.id || Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              sourceTable: 'book_orders',
+              churchName: church,
+              message: `كنيسة ${church} طلبت كتب للمهرجان`,
+              timestamp: new Date(),
+              read: false
+            };
+            setNotifications(prev => {
+              const updated = [newNotif, ...prev.filter(n => n.id !== newNotif.id && (Date.now() - n.timestamp.getTime() < 24 * 60 * 60 * 1000))];
+              localStorage.setItem('admin_notifications', JSON.stringify(updated));
+              return updated;
+            });
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('Supabase Realtime notifications status:', status);
+      });
+
+    const cleanupInterval = setInterval(() => {
+      setNotifications(prev => {
+        const filtered = prev.filter(n => (Date.now() - n.timestamp.getTime()) < 24 * 60 * 60 * 1000);
+        localStorage.setItem('admin_notifications', JSON.stringify(filtered));
+        return filtered;
+      });
+    }, 60000);
+
+    return () => {
+      supabase.removeChannel(notificationsChannel);
+      clearInterval(cleanupInterval);
+    };
+  }, [activeSection, isLoggedIn, userRole]);
 
   const [lastParticipantDoc, setLastParticipantDoc] = useState<any>(null);
   const [isParticipantsLoading, setIsParticipantsLoading] = useState(false);
@@ -8379,6 +8601,161 @@ function AppComponent() {
               </div>
             )}
             </div>
+          </div>
+
+          {/* Floating Live Real-time Notification System */}
+          <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+            {showNotificationsDropdown && (
+              <div 
+                className="fixed inset-0 z-40 bg-transparent" 
+                onClick={() => setShowNotificationsDropdown(false)} 
+              />
+            )}
+
+            <AnimatePresence>
+              {showNotificationsDropdown && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                  className="relative z-50 mb-4 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden flex flex-col font-arabic"
+                  dir="rtl"
+                >
+                  {/* Dropdown Header */}
+                  <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Bell size={18} className="text-coptic-gold animate-bounce" />
+                      <h4 className="font-black text-sm">البث المباشر للاشتراكات والطلبات</h4>
+                    </div>
+                    {notifications.filter(n => !n.read).length > 0 && (
+                      <button 
+                        onClick={() => {
+                          setNotifications(prev => {
+                            const updated = prev.map(n => ({ ...n, read: true }));
+                            localStorage.setItem('admin_notifications', JSON.stringify(updated));
+                            return updated;
+                          });
+                        }} 
+                        className="text-[10px] bg-white/10 hover:bg-white/20 transition-all font-black text-coptic-gold px-2.5 py-1 rounded-lg"
+                      >
+                        تعيين كمقروء
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Dropdown Body */}
+                  <div className="max-h-96 overflow-y-auto divide-y divide-slate-100">
+                    {isLoadingNotifications && notifications.length === 0 ? (
+                      <div className="p-8 text-center text-slate-400">
+                        <Loader2 className="animate-spin mx-auto mb-2 text-slate-500" size={24} />
+                        <p className="text-xs font-bold">جاري تحميل البث المباشر...</p>
+                      </div>
+                    ) : notifications.length === 0 ? (
+                      <div className="p-8 text-center text-slate-400">
+                        <Bell className="mx-auto mb-2 opacity-30 text-slate-500" size={32} />
+                        <p className="text-xs font-bold leading-relaxed">لا توجد إشعارات جديدة خلال الـ 24 ساعة الماضية.<br/>البث المباشر نشط الآن ومستعد لاستقبال التغييرات.</p>
+                      </div>
+                    ) : (
+                      notifications.map((notif) => {
+                        let bgClass = "bg-emerald-50 hover:bg-emerald-100/50 border-emerald-100 text-emerald-900";
+                        let borderClass = "border-r-4 border-emerald-500";
+                        let badgeColor = "bg-emerald-500 text-white";
+                        let IconComponent = Activity;
+
+                        if (notif.sourceTable === 'academic_registrations') {
+                          bgClass = "bg-sky-50 hover:bg-sky-100/50 border-sky-100 text-sky-900";
+                          borderClass = "border-r-4 border-blue-500";
+                          badgeColor = "bg-blue-500 text-white";
+                          IconComponent = Award;
+                        } else if (notif.sourceTable === 'book_orders') {
+                          bgClass = "bg-amber-50 hover:bg-amber-100/50 border-amber-100 text-amber-900";
+                          borderClass = "border-r-4 border-amber-500";
+                          badgeColor = "bg-amber-500 text-white";
+                          IconComponent = ShoppingCart;
+                        }
+
+                        // Helper relative time generator inline
+                        const getRelativeTimeArabic = (date: Date) => {
+                          const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+                          if (seconds < 0 || seconds < 10) return 'الآن';
+                          if (seconds < 60) return `منذ ${seconds} ثانية`;
+                          
+                          const minutes = Math.floor(seconds / 60);
+                          if (minutes === 1) return 'منذ دقيقة';
+                          if (minutes === 2) return 'منذ دقيقتين';
+                          if (minutes < 11) return `منذ ${minutes} دقائق`;
+                          if (minutes < 60) return `منذ ${minutes} دقيقة`;
+                          
+                          const hours = Math.floor(minutes / 60);
+                          if (hours === 1) return 'منذ ساعة';
+                          if (hours === 2) return 'منذ ساعتين';
+                          if (hours < 11) return `منذ ${hours} ساعات`;
+                          if (hours < 24) return `منذ ${hours} ساعة`;
+                          
+                          return 'منذ أكثر من يوم';
+                        };
+
+                        return (
+                          <div 
+                            key={notif.id} 
+                            className={`p-4 transition-all flex items-start gap-4 border-b border-slate-100 ${bgClass} ${borderClass} ${!notif.read ? 'font-black' : ''}`}
+                          >
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${badgeColor}`}>
+                              <IconComponent size={14} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-slate-800 leading-normal">{notif.message}</p>
+                              <div className="flex items-center justify-between mt-1.5 text-[9px] text-slate-400 font-bold">
+                                <span>{getRelativeTimeArabic(notif.timestamp)}</span>
+                                <span>
+                                  {notif.sourceTable === 'registrations' ? 'جدول الأنشطة' : 
+                                   notif.sourceTable === 'book_orders' ? 'طلب كتب' : 'مسابقة دراسية'}
+                                </span>
+                              </div>
+                            </div>
+                            {!notif.read && (
+                              <span className="w-2 h-2 rounded-full bg-red-500 shrink-0 mt-1.5 animate-pulse" />
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                  
+                  {/* Dropdown Footer */}
+                  <div className="p-3 bg-slate-50 border-t border-slate-100 text-center text-[10px] text-slate-400 font-bold">
+                    البث المباشر للإشراف العام مستمر
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Notification Bell Button */}
+            <button
+              onClick={() => {
+                setShowNotificationsDropdown(!showNotificationsDropdown);
+                if (!showNotificationsDropdown) {
+                  setNotifications(prev => {
+                    const updated = prev.map(n => ({ ...n, read: true }));
+                    localStorage.setItem('admin_notifications', JSON.stringify(updated));
+                    return updated;
+                  });
+                }
+              }}
+              className="relative w-14 h-14 bg-slate-900 text-white hover:bg-slate-800 rounded-full flex items-center justify-center shadow-2xl hover:scale-105 transition-all outline-none focus:ring-4 focus:ring-slate-300 z-50 group duration-300"
+            >
+              <Bell size={24} className={`text-white transition-all duration-300 ${notifications.filter(n => !n.read).length > 0 ? 'animate-bounce' : 'group-hover:rotate-12'}`} />
+              
+              {notifications.filter(n => !n.read).length > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-6 h-6 px-1.5 flex items-center justify-center bg-red-500 text-white font-black text-xs rounded-full border-2 border-white shadow-md">
+                  {notifications.filter(n => !n.read).length}
+                </span>
+              )}
+              
+              {notifications.filter(n => !n.read).length > 0 && (
+                <span className="absolute inset-0 rounded-full bg-red-500/20 window animate-ping -z-10" />
+              )}
+            </button>
           </div>
         </motion.div>
       )}
