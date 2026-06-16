@@ -838,24 +838,38 @@ function AppComponent() {
   
   const calculatorFilteredStages = useMemo(() => {
     const material = newCalculatorSetting.material;
-    if (!material) return dynamicLevels.map(l => l.name);
     
-    const matched = dynamicLevels.filter(level => {
-      const list = level.comps || [];
-      return list.some((c: string) => {
-        const norm = c.toLowerCase();
-        const actNorm = material.toLowerCase();
-        if (norm.includes(actNorm)) return true;
-        if (actNorm === 'قبطي' && norm.includes('قبطي')) return true;
-        if (actNorm === 'دراسي' && norm.includes('دراسي')) return true;
-        if (actNorm === 'محفوظات' && norm.includes('محفوظات')) return true;
-        if (actNorm === 'تطبيقات' && norm.includes('تطبيقات')) return true;
-        if (actNorm === 'أنشطة' && (norm.includes('أنشطة') || norm.includes('نشاط') || norm.includes('كشافة') || norm.includes('رياضية') || norm.includes('مسرح' ) || norm.includes('فنون') || norm.includes('إبتكارات'))) return true;
-        return false;
-      });
-    }).map(level => level.name);
+    // Explicitly requested stages for the Book Calculator
+    const additionalStages = [
+      "أنشطة الطفولة",
+      "أنشطة إعدادي وثانوي",
+      "أنشطة من جامعة:خدام"
+    ];
     
-    return matched.length > 0 ? matched : dynamicLevels.map(l => l.name);
+    let baseList: string[] = [];
+    if (!material) {
+      baseList = dynamicLevels.map(l => l.name);
+    } else {
+      const matched = dynamicLevels.filter(level => {
+        const list = level.comps || [];
+        return list.some((c: string) => {
+          const norm = c.toLowerCase();
+          const actNorm = material.toLowerCase();
+          if (norm.includes(actNorm)) return true;
+          if (actNorm === 'قبطي' && norm.includes('قبطي')) return true;
+          if (actNorm === 'دراسي' && norm.includes('دراسي')) return true;
+          if (actNorm === 'محفوظات' && norm.includes('محفوظات')) return true;
+          if (actNorm === 'تطبيقات' && norm.includes('تطبيقات')) return true;
+          if (actNorm === 'أنشطة' && (norm.includes('أنشطة') || norm.includes('نشاط') || norm.includes('كشافة') || norm.includes('رياضية') || norm.includes('مسرح' ) || norm.includes('فنون') || norm.includes('إبتكارات'))) return true;
+          return false;
+        });
+      }).map(level => level.name);
+      
+      baseList = matched.length > 0 ? matched : dynamicLevels.map(l => l.name);
+    }
+    
+    // Combine base dynamic list with the new hardcoded options, then remove duplicates and sort
+    return Array.from(new Set([...baseList, ...additionalStages])).sort(sortStages);
   }, [newCalculatorSetting.material, dynamicLevels]);
 
   const handleCalculatorMaterialChange = async (material: string) => {
