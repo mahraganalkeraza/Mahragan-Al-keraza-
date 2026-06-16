@@ -954,7 +954,7 @@ function AppComponent() {
     isBookCalculatorOpen: true
   });
 
-  const FORCE_OPEN_REGISTRATION = true; // Mandatory Override for Emergency
+  const FORCE_OPEN_REGISTRATION = false; // Emergency Override disabled to allow dynamic toggle
 
 
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({
@@ -6988,10 +6988,19 @@ function AppComponent() {
                       </div>
                       <button 
                         onClick={() => handleUpdateSystemControls({...systemControls, isRegistrationOpen: !systemControls.isRegistrationOpen})}
-                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}
+                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${systemControls.isRegistrationOpen ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
                       >
-                        {(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? <CheckCircle2 size={18}/> : <X size={18}/>}
-                        {(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? 'تسجيل المشتركين مفتوح (إجباري)' : 'مغلق الآن'}
+                        {systemControls.isRegistrationOpen ? (
+                          <>
+                            <X size={18}/>
+                            إغلاق التسجيل 🔒
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 size={18}/>
+                            فتح التسجيل 🔓
+                          </>
+                        )}
                       </button>
                     </div>
 
@@ -8576,13 +8585,13 @@ function AppComponent() {
                     <p className="text-slate-500 text-sm font-bold">يرجى ملء البيانات التالية بدقة</p>
                   </div>
 
-                {!(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? (
+                {!systemControls.isRegistrationOpen ? (
                   <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
                     <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mb-2">
-                      <UserPlus size={32} className="text-rose-600" />
+                      <Lock size={32} className="text-rose-600" />
                     </div>
-                    <h4 className="text-2xl font-black text-rose-700">التسجيل مغلق مؤقتاً وسيعود للعمل صباحاً</h4>
-                    <p className="text-slate-500 font-bold max-w-md">نعتذر، لقد تم انتهاء وقت التسجيل المحدد لكافة الكنائس من قبل الإدارة المركزية.</p>
+                    <h2 className="text-3xl font-black text-rose-700">التسجيل مغلق حالياً</h2>
+                    <p className="text-slate-500 font-bold max-w-md">نعتذر، لقد تم إيقاف التسجيل الإلكتروني من قِبل الإدارة المركزية.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-8">
@@ -8828,14 +8837,14 @@ function AppComponent() {
                       </div>
                       
                       <div className="relative">
-                        {!(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) && (
+                        {!systemControls.isRegistrationOpen && (
                           <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center rounded-xl">
                             <span className="bg-rose-100 text-rose-700 px-6 py-2 rounded-full font-black text-sm border border-rose-200 shadow-sm animate-pulse">
-                              التسجيل مغلق مؤقتاً وسيعود للعمل صباحاً
+                              التسجيل مغلق حالياً
                             </span>
                           </div>
                         )}
-                        <form id="team-registration-form" onSubmit={handleAddTeam} className={`bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8 ${!(systemControls.isRegistrationOpen || FORCE_OPEN_REGISTRATION) ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <form id="team-registration-form" onSubmit={handleAddTeam} className={`bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8 ${!systemControls.isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}`}>
                           {editingTeam && (
                           <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between">
                             <p className="text-sm font-bold text-blue-700">أنت الآن تقوم بتعديل بيانات فريق مسجل</p>
