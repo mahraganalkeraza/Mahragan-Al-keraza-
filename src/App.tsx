@@ -750,12 +750,21 @@ function AppComponent() {
         });
       }
 
+      // Check System Lock in registrations table
+      const { data: lockRow } = await supabase.from('registrations').select('name').eq('name', 'SYSTEM_LOCK').maybeSingle();
+      const isCurrentlyLocked = !!lockRow;
+
       const { data: ctrlData } = await supabase.from('system_settings').select('*').eq('id', 'system_controls').maybeSingle();
       if (ctrlData) {
         setSystemControls({
-          isRegistrationOpen: true,
+          isRegistrationOpen: !isCurrentlyLocked,
           isBookCalculatorOpen: ctrlData.isBookCalculatorOpen !== false
         });
+      } else {
+        setSystemControls(prev => ({
+          ...prev,
+          isRegistrationOpen: !isCurrentlyLocked
+        }));
       }
 
       const { data: examData } = await supabase.from('system_settings').select('*').eq('id', 'exam_config').maybeSingle();
@@ -2005,11 +2014,22 @@ function AppComponent() {
   const handleUpdateSystemControls = async (newControls: any) => {
     setIsLoading(true);
     try {
+      // If isRegistrationOpen changed, handle SYSTEM_LOCK in registrations table
+      if (newControls.isRegistrationOpen !== systemControls.isRegistrationOpen) {
+        if (!newControls.isRegistrationOpen) {
+          // Lock the system
+          await supabase.from('registrations').insert([{ name: 'SYSTEM_LOCK', churchName: 'SYSTEM' }]);
+        } else {
+          // Unlock the system
+          await supabase.from('registrations').delete().eq('name', 'SYSTEM_LOCK');
+        }
+      }
+
       await supabase
         .from('system_settings')
         .upsert({
           id: 'system_controls',
-          ...newControls,
+          isBookCalculatorOpen: newControls.isBookCalculatorOpen,
           updatedAt: new Date().toISOString()
         });
       

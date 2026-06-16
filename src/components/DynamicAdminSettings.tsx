@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { sortStages } from '../constants';
 import PaginationComponent from './Pagination';
 import ActivityStagesManager from './ActivityStagesManager';
+import PlatformManagement from './PlatformManagement';
 
 
 const getChurchCode = (churchName: string, databaseChurches?: any[]): string => {
@@ -1207,6 +1208,14 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
         {/* TAB: ACTIVITY STAGES */}
         {activeTab === 'activityStages' && (
           <ActivityStagesManager />
+        )}
+
+        {/* TAB: PLATFORM MANAGEMENT */}
+        {activeTab === 'purge' && (
+           <div className="space-y-8">
+              <PlatformManagement />
+              {/* Existing purge logic can go here if needed, but the user requested PlatformManagement */}
+           </div>
         )}
 
         {/* TAB: HYMN STAGES */}
