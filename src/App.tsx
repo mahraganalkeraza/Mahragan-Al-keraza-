@@ -8926,48 +8926,7 @@ function AppComponent() {
                                 </div>
                               </div>
                             );
-                          } else if (formType === 'فردي') {
-                            return (
-                              <div className="space-y-3 bg-slate-50 p-6 rounded-xl border border-slate-100">
-                                <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك (فردي)</label>
-                                <div className="relative">
-                                  <input 
-                                    type="text"
-                                    placeholder="أدخل اسم المشترك للبحث والربط..."
-                                    value={individualParticipantName || ''}
-                                    onChange={e => handleIndividualNameChange(e.target.value)}
-                                    className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                    required
-                                  />
-                                  {matchingParticipants.length > 0 && (
-                                    <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto w-full">
-                                      <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
-                                        هذا المشترك مسجل بالفعل، اختر الاسم للربط:
-                                      </div>
-                                      {matchingParticipants.map((p) => (
-                                        <button
-                                          key={p.id}
-                                          type="button"
-                                          onClick={() => selectMatchingParticipant(p)}
-                                          className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
-                                        >
-                                          <span>{p.name}</span>
-                                          <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                                            {p.stage}
-                                          </span>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {linkedParticipantMessage && (
-                                    <p className="text-xs text-green-600 font-bold mt-2 text-right">
-                                      {linkedParticipantMessage}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          } else if (formType === 'عزف') {
+                          } else {
                             return (
                               <div className="space-y-4 bg-slate-50 p-6 rounded-xl border border-slate-100">
                                 <div className="space-y-1">
@@ -9008,21 +8967,22 @@ function AppComponent() {
                                     )}
                                   </div>
                                 </div>
-                                <div className="space-y-2">
-                                  <label className="text-[11px] font-black text-slate-900 block mb-1">نوع الآلة الموسيقية (Instrument Type)</label>
-                                  <input 
-                                    type="text"
-                                    placeholder="أدخل نوع الآلة (أورج، كمان، جيتار...)"
-                                    value={newTeam.instrumentType || ''}
-                                    onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
-                                    className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                    required
-                                  />
-                                </div>
+                                {formType === 'عزف' && (
+                                  <div className="space-y-2">
+                                    <label className="text-[11px] font-black text-slate-900 block mb-1">نوع الآلة الموسيقية (Instrument Type)</label>
+                                    <input 
+                                      type="text"
+                                      placeholder="أدخل نوع الآلة (أورج، كمان، جيتار...)"
+                                      value={newTeam.instrumentType || ''}
+                                      onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
+                                      className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
+                                      required
+                                    />
+                                  </div>
+                                )}
                               </div>
                             );
                           }
-                          return null;
                         })()}
 
                         <button 
