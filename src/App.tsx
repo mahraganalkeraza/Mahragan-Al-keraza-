@@ -563,7 +563,7 @@ function AppComponent() {
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [allActivityStages, setAllActivityStages] = useState<any[]>([]);
   const [availableActivities, setAvailableActivities] = useState<string[]>([]);
-  const [activities] = useState<string[]>(['ألحان', 'كورال', 'ترنيم فردي', 'عزف', 'الأدبية', 'الثقافية', 'الفنون التشكيلية', 'كمبيوتر']);
+  const [activities] = useState<string[]>(['ألحان', 'كورال', 'ترنيم فردي', 'عزف', 'ثقافية', 'أدبية', 'فنون تشكيلية', 'كمبيوتر']);
   const [hymnStages, setHymnStages] = useState<any[]>([]);
 
   // Customization State
@@ -3717,15 +3717,34 @@ function AppComponent() {
           .eq('activity_type', type)
           .order('stage_name', { ascending: true });
         
-        if (!error && data) {
+        if (!error && data && data.length > 0) {
           setActivityStages(data);
           setHymnStages([]);
-        } else if (error) {
-          console.error("Error fetching activity stages:", error);
+        } else {
+          // Fallback to standard local stages to prevent crashes
+          const standardStages = [
+            { id: '1', name: 'ابتدائي', stage_name: 'ابتدائي' },
+            { id: '2', name: 'إعدادي', stage_name: 'إعدادي' },
+            { id: '3', name: 'ثانوي', stage_name: 'ثانوي' },
+            { id: '4', name: 'جامعة', stage_name: 'جامعة' },
+            { id: '5', name: 'خريجين', stage_name: 'خريجين' },
+          ];
+          setActivityStages(standardStages);
+          setHymnStages([]);
         }
       }
     } catch (err) {
       console.error("Error in fetchStagesForActivity:", err);
+      // Fallback on catch
+      const standardStages = [
+        { id: '1', name: 'ابتدائي', stage_name: 'ابتدائي' },
+        { id: '2', name: 'إعدادي', stage_name: 'إعدادي' },
+        { id: '3', name: 'ثانوي', stage_name: 'ثانوي' },
+        { id: '4', name: 'جامعة', stage_name: 'جامعة' },
+        { id: '5', name: 'خريجين', stage_name: 'خريجين' },
+      ];
+      setActivityStages(standardStages);
+      setHymnStages([]);
     }
   };
 
@@ -3761,8 +3780,16 @@ function AppComponent() {
     const selectedStageName = selectedStage?.stage_name || selectedStage?.name || selectedStageId;
     
     let formType = selectedStage?.form_type || '';
-    if (newTeam.activityType === 'ألحان') {
+    if (newTeam.activityType === 'عزف') {
+      formType = 'عزف';
+    } else if (['ترنيم فردي', 'ثقافية', 'أدبية', 'فنون تشكيلية', 'كمبيوتر', 'الأدبية', 'الثقافية', 'الفنون التشكيلية'].includes(newTeam.activityType || '')) {
+      formType = 'فردي';
+    } else if (newTeam.activityType === 'كورال') {
+      formType = 'جماعي';
+    } else if (newTeam.activityType === 'ألحان') {
       formType = selectedStageName.includes('فردي') ? 'فردي' : 'جماعي';
+    } else if (!formType) {
+      formType = 'فردي';
     }
 
     const isGroupActivity = formType === 'جماعي';
@@ -8881,8 +8908,16 @@ function AppComponent() {
                           const selectedStageName = selectedStage?.stage_name || selectedStage?.name || selectedStageId;
                           
                           let formType = selectedStage?.form_type || '';
-                          if (newTeam.activityType === 'ألحان') {
+                          if (newTeam.activityType === 'عزف') {
+                            formType = 'عزف';
+                          } else if (['ترنيم فردي', 'ثقافية', 'أدبية', 'فنون تشكيلية', 'كمبيوتر', 'الأدبية', 'الثقافية', 'الفنون التشكيلية'].includes(newTeam.activityType || '')) {
+                            formType = 'فردي';
+                          } else if (newTeam.activityType === 'كورال') {
+                            formType = 'جماعي';
+                          } else if (newTeam.activityType === 'ألحان') {
                             formType = selectedStageName.includes('فردي') ? 'فردي' : 'جماعي';
+                          } else if (!formType) {
+                            formType = 'فردي';
                           }
 
                           if (formType === 'جماعي') {
