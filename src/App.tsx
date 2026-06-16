@@ -930,6 +930,7 @@ function AppComponent() {
   const [totalTeamsCount, setTotalTeamsCount] = useState<number>(0);
   const [totalResultsCount, setTotalResultsCount] = useState<number>(0);
   const [totalOnlineCount, setTotalOnlineCount] = useState<number>(0);
+  const [trendViewMode, setTrendViewMode] = useState<'both' | 'cumulative' | 'daily'>('both');
   const [debouncedParticipantSearch, setDebouncedParticipantSearch] = useState('');
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -1442,6 +1443,56 @@ function AppComponent() {
        value: compTypesMap[k]
     })).filter(d => d.value > 0);
 
+    // Calculate registration trends over time
+    const parseLocalDate = (ts: string) => {
+      try {
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) return 'غير معروف';
+        return d.toISOString().split('T')[0]; // Extract YYYY-MM-DD
+      } catch (e) {
+        return 'غير معروف';
+      }
+    };
+
+    const formatDateArabic = (dateStr: string) => {
+      if (dateStr === 'غير معروف') return 'غير معروف';
+      const parts = dateStr.split('-');
+      if (parts.length !== 3) return dateStr;
+      
+      const monthNamesArabic = [
+        'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+        'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'
+      ];
+      
+      const mIdx = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      return `${day} ${monthNamesArabic[mIdx] || parts[1]}`;
+    };
+
+    const validParticipantsForTrend = activeParticipants.filter(p => p && p.name !== 'SYSTEM_LOCK' && p.timestamp);
+    
+    const dailyRegistrationsGroup: Record<string, number> = {};
+    validParticipantsForTrend.forEach(p => {
+      const dKey = parseLocalDate(p.timestamp);
+      if (dKey !== 'غير معروف') {
+        dailyRegistrationsGroup[dKey] = (dailyRegistrationsGroup[dKey] || 0) + 1;
+      }
+    });
+
+    const sortedTrendDates = Object.keys(dailyRegistrationsGroup).sort();
+    
+    let cumSum = 0;
+    const growthTrendData = sortedTrendDates.map(dStr => {
+      const count = dailyRegistrationsGroup[dStr];
+      cumSum += count;
+      return {
+        date: dStr,
+        formattedDate: formatDateArabic(dStr),
+        "التسجيلات اليومية": count,
+        "إجمالي المشتركين": cumSum
+      };
+    });
+
     return { 
       demographicsData, 
       retentionData, 
@@ -1449,7 +1500,8 @@ function AppComponent() {
       competitionTypesData,
       totalParticipants,
       totalOrders,
-      totalTeams: activeTeamsCount
+      totalTeams: activeTeamsCount,
+      growthTrendData
     };
   }, [allChurchParticipants, orders, activityTeams, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
 
@@ -7324,6 +7376,100 @@ function AppComponent() {
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-2">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                      <div>
+                        <h3 className="font-black text-slate-800 text-lg flex items-center gap-2">
+                          <TrendingUp size={20} className="text-primary" />
+                          معدل نمو الاشتراكات مع الوقت وحجم التسجيلات اليومية
+                        </h3>
+                        <p className="text-xs text-slate-400 font-bold mt-0.5">
+                          تتبع وتيرة التسجيلات والنمو التراكمي للمشتركين لتحديد فترات الذروة للتسجيل لعام {activeYear}
+                        </p>
+                      </div>
+                      <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold self-end sm:self-auto shrink-0" dir="ltr">
+                        <button
+                          onClick={() => setTrendViewMode('both')}
+                          className={`px-3 py-1.5 rounded-lg transition-all ${trendViewMode === 'both' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                        >
+                          المتكامل
+                        </button>
+                        <button
+                          onClick={() => setTrendViewMode('cumulative')}
+                          className={`px-3 py-1.5 rounded-lg transition-all ${trendViewMode === 'cumulative' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                        >
+                          النمو التراكمي
+                        </button>
+                        <button
+                          onClick={() => setTrendViewMode('daily')}
+                          className={`px-3 py-1.5 rounded-lg transition-all ${trendViewMode === 'daily' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                        >
+                          التسجيل اليومي
+                        </button>
+                      </div>
+                    </div>
+                    {(!analyticsData.growthTrendData || analyticsData.growthTrendData.length === 0) ? (
+                      <div className="h-64 flex items-center justify-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-400 text-sm font-bold">
+                        لا توجد بيانات تسجيل كافية لعرض منحنى النمو بعد.
+                      </div>
+                    ) : (
+                      <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={analyticsData.growthTrendData} margin={{ top: 15, right: 15, left: -20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis dataKey="formattedDate" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                            
+                            <YAxis 
+                              yAxisId="left"
+                              orientation="left"
+                              tick={{ fill: '#0f172a', fontSize: 11, fontWeight: 'bold' }} 
+                              axisLine={false} 
+                              tickLine={false} 
+                              label={trendViewMode === 'daily' ? undefined : { value: 'إجمالي المشتركين', angle: -90, position: 'insideLeft', style: { fill: '#0f172a', fontWeight: 'bold', fontSize: '11px', textAnchor: 'middle' } }}
+                            />
+                            
+                            {trendViewMode === 'both' && (
+                              <YAxis 
+                                yAxisId="right"
+                                orientation="right"
+                                tick={{ fill: '#d97706', fontSize: 11, fontWeight: 'bold' }} 
+                                axisLine={false} 
+                                tickLine={false} 
+                                label={{ value: 'التسجيل اليومي', angle: 90, position: 'insideRight', style: { fill: '#d97706', fontWeight: 'bold', fontSize: '11px', textAnchor: 'middle' } }}
+                              />
+                            )}
+
+                            <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontFamily: 'Tajawal', direction: 'rtl' }} />
+                            <Legend verticalAlign="top" height={36} wrapperStyle={{ fontFamily: 'Tajawal', fontWeight: 'bold', fontSize: '12px' }} />
+                            
+                            {(trendViewMode === 'both' || trendViewMode === 'cumulative') && (
+                              <Line 
+                                yAxisId="left"
+                                type="monotone" 
+                                dataKey="إجمالي المشتركين" 
+                                stroke="#0f172a" 
+                                strokeWidth={3}
+                                activeDot={{ r: 6 }}
+                                dot={{ stroke: '#0f172a', strokeWidth: 2, r: 4, fill: '#fff' }}
+                              />
+                            )}
+
+                            {(trendViewMode === 'both' || trendViewMode === 'daily') && (
+                              <Line 
+                                yAxisId={trendViewMode === 'both' ? "right" : "left"}
+                                type="monotone" 
+                                dataKey="التسجيلات اليومية" 
+                                stroke="#d97706" 
+                                strokeWidth={2.5}
+                                dot={{ stroke: '#d97706', strokeWidth: 1.5, r: 3, fill: '#fff' }}
+                              />
+                            )}
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </div>
 
                   <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-2">
