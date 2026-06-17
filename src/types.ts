@@ -63,6 +63,8 @@ export interface ActivityTeam {
   members: TeamMember[];
   maleCount: number;
   femaleCount: number;
+  males_count?: number;
+  females_count?: number;
   choirLevel?: string;
   instrumentType?: string;
   performanceType?: string;

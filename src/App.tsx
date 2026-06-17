@@ -1589,13 +1589,24 @@ function AppComponent() {
     });
     const totalOrders = activeOrders.length;
 
-    // Filtered teams count
-    const activeTeamsCount = (activityTeams || []).filter(t => {
+    // Filtered teams count and gender-sum totals
+    let totalTeamSubscribers = 0;
+    let totalTeamMales = 0;
+    let totalTeamFemales = 0;
+    const activeTeams = (activityTeams || []).filter(t => {
       const matchChurch = (userRole === 'admin')
         ? (globalChurchFilter === 'الكل' || t.churchName === globalChurchFilter)
         : (t.churchName === churchName);
       return matchChurch;
-    }).length;
+    });
+    const activeTeamsCount = activeTeams.length;
+    activeTeams.forEach(t => {
+      const m = Number(t.males_count ?? t.maleCount ?? 0);
+      const f = Number(t.females_count ?? t.femaleCount ?? 0);
+      totalTeamMales += m;
+      totalTeamFemales += f;
+      totalTeamSubscribers += (m + f);
+    });
 
     const demographicsData = STAGE_ORDER.map(stg => ({
       name: stg,
@@ -1723,6 +1734,9 @@ function AppComponent() {
       totalParticipants,
       totalOrders,
       totalTeams: activeTeamsCount,
+      totalTeamSubscribers,
+      totalTeamMales,
+      totalTeamFemales,
       growthTrendData
     };
   }, [allChurchParticipants, orders, activityTeams, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
@@ -3643,7 +3657,7 @@ function AppComponent() {
     }
 
     try {
-      let queryBuilder = supabase.from('activity_teams').select('id, team_name, stage_name, church_name, created_at, members_number, activity_type', { count: 'exact' });
+      let queryBuilder = supabase.from('activity_teams').select('id, team_name, stage_name, church_name, created_at, members_number, activity_type, males_count, females_count', { count: 'exact' });
       
       if (userRole === 'admin') {
         if (globalChurchFilter !== 'الكل') {
@@ -3667,7 +3681,7 @@ function AppComponent() {
       const mappedData = (data || []).map((row: any) => {
         const isIndividual = row.stage_name && row.stage_name.includes('فردي');
         const foundStage = allActivityStages.find((s: any) => s.stage_name === row.stage_name || s.name === row.stage_name);
-        const inferredType = foundStage ? foundStage.activity_type : (row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'ترنيم فردي')));
+        const inferredType = row.activity_type || (foundStage ? foundStage.activity_type : (row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'لم يحدد بعد ⚠️'))));
         return {
           id: row.id,
           team_name: row.team_name,
@@ -3677,9 +3691,11 @@ function AppComponent() {
           activityType: inferredType,
           choirLevel: row.stage_name,
           members: isIndividual && row.team_name ? [{ name: row.team_name, gender: 'ذكر' as const, stage: row.stage_name }] : [],
-          maleCount: 0,
-          femaleCount: 0,
-          members_number: row.members_number || 0,
+          maleCount: Number(row.males_count ?? 0),
+          femaleCount: Number(row.females_count ?? 0),
+          males_count: Number(row.males_count ?? 0),
+          females_count: Number(row.females_count ?? 0),
+          members_number: row.members_number || (Number(row.males_count ?? 0) + Number(row.females_count ?? 0)) || 0,
           timestamp: row.created_at || new Date().toISOString(),
           activity_type: row.activity_type
         } as ActivityTeam;
@@ -4160,9 +4176,7 @@ function AppComponent() {
       currentTeamName = (individualParticipantName || newTeam.members?.[0]?.name || 'مشترك فردي').trim();
     }
 
-    const totalMembersCount = formType === 'جماعي'
-      ? ((Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0))
-      : 1;
+    const totalMembersCount = (Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0);
 
     if (!Number.isInteger(totalMembersCount) || totalMembersCount <= 0) {
       alert('يرجى التأكد من إدخال صحيح لعدد الأعضاء وأن يكون أكبر من الصفر.');
@@ -4175,7 +4189,9 @@ function AppComponent() {
       stage_name: selectedStageName,
       church_name: churchName,
       members_number: totalMembersCount,
-      activity_type: activity_type
+      activity_type: activity_type,
+      males_count: Number(newTeam.maleCount) || 0,
+      females_count: Number(newTeam.femaleCount) || 0
     };
 
     try {
@@ -4198,8 +4214,10 @@ function AppComponent() {
           activityType: newTeam.activityType || '',
           choirLevel: newTeam.choirLevel || '',
           members: isGroupActivity ? [] : (newTeam.members as TeamMember[]),
-          maleCount: isGroupActivity ? (Number(newTeam.maleCount) || 0) : 0,
-          femaleCount: isGroupActivity ? (Number(newTeam.femaleCount) || 0) : 0,
+          maleCount: Number(newTeam.maleCount) || 0,
+          femaleCount: Number(newTeam.femaleCount) || 0,
+          males_count: Number(newTeam.maleCount) || 0,
+          females_count: Number(newTeam.femaleCount) || 0,
           members_number: totalMembersCount,
           timestamp: new Date().toISOString(),
           activity_type: activity_type
@@ -4220,7 +4238,7 @@ function AppComponent() {
           const row = data[0];
           const isIndividual = formType !== 'جماعي';
           const foundStage = allActivityStages.find((s: any) => s.stage_name === row.stage_name || s.name === row.stage_name);
-          const inferredType = newTeam.activityType || (foundStage ? foundStage.activity_type : (row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'ترنيم فردي'))));
+          const inferredType = row.activity_type || newTeam.activityType || (foundStage ? foundStage.activity_type : (row.stage_name?.includes('ألحان') ? 'ألحان' : (row.stage_name?.includes('كورال') ? 'كورال' : (row.stage_name?.includes('عزف') ? 'عزف' : 'لم يحدد بعد ⚠️'))));
           const createdTeam: ActivityTeam = {
             id: row.id,
             team_name: row.team_name,
@@ -4230,8 +4248,10 @@ function AppComponent() {
             activityType: inferredType,
             choirLevel: row.stage_name,
             members: isIndividual && row.team_name ? [{ name: row.team_name, gender: 'ذكر', stage: row.stage_name }] : [],
-            maleCount: isIndividual ? 0 : (Number(newTeam.maleCount) || 0),
-            femaleCount: isIndividual ? 0 : (Number(newTeam.femaleCount) || 0),
+            maleCount: Number(newTeam.maleCount) || 0,
+            femaleCount: Number(newTeam.femaleCount) || 0,
+            males_count: Number(newTeam.maleCount) || 0,
+            females_count: Number(newTeam.femaleCount) || 0,
             members_number: row.members_number || totalMembersCount,
             timestamp: row.created_at || new Date().toISOString(),
             activity_type: row.activity_type
@@ -4298,7 +4318,7 @@ function AppComponent() {
     const isIndiv = sName.includes('فردي');
 
     const foundStage = allActivityStages.find((s: any) => s.stage_name === sName || s.name === sName);
-    const inferredActType = team.activityType || (foundStage ? foundStage.activity_type : (sName.includes('ألحان') ? 'ألحان' : (sName.includes('كورال') ? 'كورال' : (sName.includes('عزف') ? 'عزف' : 'ترنيم فردي'))));
+    const inferredActType = team.activity_type || team.activityType || (foundStage ? foundStage.activity_type : (sName.includes('ألحان') ? 'ألحان' : (sName.includes('كورال') ? 'كورال' : (sName.includes('عزف') ? 'عزف' : 'لم يحدد بعد ⚠️'))));
 
     await fetchStagesForActivity(inferredActType);
 
@@ -4308,8 +4328,8 @@ function AppComponent() {
       choirLevel: team.choirLevel || sName,
       instrumentType: team.instrumentType || '',
       performanceType: team.performanceType || '',
-      maleCount: team.maleCount || 0,
-      femaleCount: team.femaleCount || 0,
+      maleCount: team.males_count ?? team.maleCount ?? 0,
+      femaleCount: team.females_count ?? team.femaleCount ?? 0,
       team_name: team.team_name || ''
     });
     setActivity_type(team.activity_type || '');
@@ -5998,11 +6018,20 @@ function AppComponent() {
                     {analyticsData.totalOrders}
                   </p>
                 </div>
-                <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100">
-                  <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">الفرق ({globalChurchFilter})</p>
-                  <p className="text-3xl font-black text-slate-800">
-                    {analyticsData.totalTeams}
-                  </p>
+                <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100 flex flex-col justify-between">
+                  <div>
+                    <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">الفرق ({globalChurchFilter})</p>
+                    <p className="text-3xl font-black text-slate-800">
+                      {analyticsData.totalTeams}
+                    </p>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-emerald-100/50 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-black text-emerald-700">
+                    <span>إجمالي المشتركين: {analyticsData.totalTeamSubscribers ?? 0}</span>
+                    <span className="text-emerald-300">|</span>
+                    <span>♂ {analyticsData.totalTeamMales ?? 0}</span>
+                    <span className="text-emerald-300">|</span>
+                    <span>♀ {analyticsData.totalTeamFemales ?? 0}</span>
+                  </div>
                 </div>
                 <div className="p-6 bg-coptic-red/5 rounded-3xl border border-coptic-red/10">
                   <p className="text-[10px] font-black text-coptic-red uppercase mb-1">الاستفسارات ({globalChurchFilter})</p>
@@ -9447,50 +9476,9 @@ function AppComponent() {
                             );
                           } else if (formType === 'فردي') {
                             return (
-                              <div className="space-y-3 bg-slate-50 p-6 rounded-xl border border-slate-100">
-                                <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك (فردي)</label>
-                                <div className="relative">
-                                  <input 
-                                    type="text"
-                                    placeholder="أدخل اسم المشترك للبحث والربط..."
-                                    value={individualParticipantName || ''}
-                                    onChange={e => handleIndividualNameChange(e.target.value)}
-                                    className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                    required
-                                  />
-                                  {matchingParticipants.length > 0 && (
-                                    <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto w-full">
-                                      <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
-                                        هذا المشترك مسجل بالفعل، اختر الاسم للربط:
-                                      </div>
-                                      {matchingParticipants.map((p) => (
-                                        <button
-                                          key={p.id}
-                                          type="button"
-                                          onClick={() => selectMatchingParticipant(p)}
-                                          className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
-                                        >
-                                          <span>{p.name}</span>
-                                          <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                                            {p.stage}
-                                          </span>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {linkedParticipantMessage && (
-                                    <p className="text-xs text-green-600 font-bold mt-2 text-right">
-                                      {linkedParticipantMessage}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          } else if (formType === 'عزف') {
-                            return (
-                              <div className="space-y-4 bg-slate-50 p-6 rounded-xl border border-slate-100">
-                                <div className="space-y-1">
-                                  <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك</label>
+                              <div className="space-y-4">
+                                <div className="space-y-3 bg-slate-50 p-6 rounded-xl border border-slate-100">
+                                  <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك (فردي)</label>
                                   <div className="relative">
                                     <input 
                                       type="text"
@@ -9501,7 +9489,7 @@ function AppComponent() {
                                       required
                                     />
                                     {matchingParticipants.length > 0 && (
-                                      <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
+                                      <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto w-full font-sans">
                                         <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
                                           هذا المشترك مسجل بالفعل، اختر الاسم للربط:
                                         </div>
@@ -9527,16 +9515,113 @@ function AppComponent() {
                                     )}
                                   </div>
                                 </div>
-                                <div className="space-y-2">
-                                  <label className="text-[11px] font-black text-slate-900 block mb-1">نوع الآلة الموسيقية (Instrument Type)</label>
-                                  <input 
-                                    type="text"
-                                    placeholder="أدخل نوع الآلة (أورج، كمان، جيتار...)"
-                                    value={newTeam.instrumentType || ''}
-                                    onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
-                                    className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                    required
-                                  />
+                                <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الذكور</p>
+                                    <input 
+                                      type="number"
+                                      min="0"
+                                      value={newTeam.maleCount || 0}
+                                      onChange={e => setNewTeam({...newTeam, maleCount: parseInt(e.target.value) || 0})}
+                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الإناث</p>
+                                    <input 
+                                      type="number"
+                                      min="0"
+                                      value={newTeam.femaleCount || 0}
+                                      onChange={e => setNewTeam({...newTeam, femaleCount: parseInt(e.target.value) || 0})}
+                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                  <div className="space-y-2 flex flex-col justify-center">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي العدد</p>
+                                    <p className="text-2xl font-black text-primary">{(Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0)}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          } else if (formType === 'عزف') {
+                            return (
+                              <div className="space-y-4">
+                                <div className="space-y-4 bg-slate-50 p-6 rounded-xl border border-slate-100">
+                                  <div className="space-y-1">
+                                    <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك</label>
+                                    <div className="relative">
+                                      <input 
+                                        type="text"
+                                        placeholder="أدخل اسم المشترك للبحث والربط..."
+                                        value={individualParticipantName || ''}
+                                        onChange={e => handleIndividualNameChange(e.target.value)}
+                                        className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
+                                        required
+                                      />
+                                      {matchingParticipants.length > 0 && (
+                                        <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
+                                          <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
+                                            هذا المشترك مسجل بالفعل، اختر الاسم للربط:
+                                          </div>
+                                          {matchingParticipants.map((p) => (
+                                            <button
+                                              key={p.id}
+                                              type="button"
+                                              onClick={() => selectMatchingParticipant(p)}
+                                              className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
+                                            >
+                                              <span>{p.name}</span>
+                                              <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                                                {p.stage}
+                                              </span>
+                                            </button>
+                                          ))}
+                                        </div>
+                                      )}
+                                      {linkedParticipantMessage && (
+                                        <p className="text-xs text-green-600 font-bold mt-2 text-right">
+                                          {linkedParticipantMessage}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <label className="text-[11px] font-black text-slate-900 block mb-1">نوع الآلة الموسيقية (Instrument Type)</label>
+                                    <input 
+                                      type="text"
+                                      placeholder="أدخل نوع الآلة (أورج، كمان، جيتار...)"
+                                      value={newTeam.instrumentType || ''}
+                                      onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
+                                      className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
+                                      required
+                                    />
+                                  </div>
+                                </div>
+                                <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الذكور</p>
+                                    <input 
+                                      type="number"
+                                      min="0"
+                                      value={newTeam.maleCount || 0}
+                                      onChange={e => setNewTeam({...newTeam, maleCount: parseInt(e.target.value) || 0})}
+                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الإناث</p>
+                                    <input 
+                                      type="number"
+                                      min="0"
+                                      value={newTeam.femaleCount || 0}
+                                      onChange={e => setNewTeam({...newTeam, femaleCount: parseInt(e.target.value) || 0})}
+                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                  <div className="space-y-2 flex flex-col justify-center">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي العدد</p>
+                                    <p className="text-2xl font-black text-primary">{(Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0)}</p>
+                                  </div>
                                 </div>
                               </div>
                             );
@@ -9601,17 +9686,11 @@ function AppComponent() {
                             </div>
 
                             <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
-                              {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || t.activityType === 'ألحان' ? (
-                                <div className="flex gap-4">
-                                  <span className="text-[10px] font-black text-primary">ذكور: {t.maleCount || 0}</span>
-                                  <span className="text-[10px] font-black text-primary">إناث: {t.femaleCount || 0}</span>
-                                  <span className="text-[10px] font-black text-slate-500">إجمالي: {t.members_number || (t.maleCount || 0) + (t.femaleCount || 0)}</span>
-                                </div>
-                              ) : (
-                                <div className="flex gap-4">
-                                  <span className="text-[10px] font-black text-primary">النوع: {t.members[0]?.gender || '-'}</span>
-                                </div>
-                              )}
+                              <div className="flex gap-4">
+                                <span className="text-[10px] font-black text-primary">ذكور: {t.males_count ?? t.maleCount ?? 0}</span>
+                                <span className="text-[10px] font-black text-primary">إناث: {t.females_count ?? t.femaleCount ?? 0}</span>
+                                <span className="text-[10px] font-black text-slate-500">إجمالي: {t.members_number || (Number(t.males_count ?? t.maleCount ?? 0) + Number(t.females_count ?? t.femaleCount ?? 0))}</span>
+                              </div>
                               <span className="text-[10px] font-bold text-slate-400">{new Date(t.timestamp).toLocaleDateString('ar-EG')}</span>
                             </div>
                           </div>
