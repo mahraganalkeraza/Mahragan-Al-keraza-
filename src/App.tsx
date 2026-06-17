@@ -5247,13 +5247,7 @@ function AppComponent() {
                 </button>
               </div>
             )}
-            <button 
-              onClick={() => setIsMenuOpen(true)}
-              className="hidden lg:flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-2xl hover:bg-primary/90 hover:scale-105 transition-all font-bold text-sm shadow-lg"
-            >
-              <Menu size={18} />
-              <span>القائمة</span>
-            </button>
+            {/* Removed redundant Menu button as requested */}
           </div>
         </div>
       </header>
