@@ -192,8 +192,9 @@ const createOMRSheetElement = async (
   // Use SVG for infinite resolution and optimized settings for scanning
   const svgString = await QRCode.toString(qrPayload, {
     type: 'svg',
-    errorCorrectionLevel: 'M',
+    errorCorrectionLevel: 'L',
     margin: 4,
+    width: 256,
     color: { dark: '#000000', light: '#ffffff' }
   });
   const qrDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgString)))}`;
@@ -393,8 +394,9 @@ const createQRCardPageElement = async (students: Participant[], rawChurches?: an
     // Optimized QR for scanability and print resolution
     const svgString = await QRCode.toString(qrPayload, {
         type: 'svg',
-        errorCorrectionLevel: 'M',
+        errorCorrectionLevel: 'L',
         margin: 4,
+        width: 256,
         color: { dark: '#000000', light: '#ffffff' }
     });
     qrImg.src = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgString)))}`;

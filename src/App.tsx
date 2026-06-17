@@ -944,6 +944,7 @@ function AppComponent() {
   const [isLoadingNotifications, setIsLoadingNotifications] = useState<boolean>(false);
   const [showNotificationsDropdown, setShowNotificationsDropdown] = useState<boolean>(false);
   const [debouncedParticipantSearch, setDebouncedParticipantSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit');
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedParticipantSearch(participantSearch);
@@ -9025,608 +9026,634 @@ function AppComponent() {
               {/* Team Registration form content starts below directly */}
 
               <div className="space-y-8">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
-                    <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
-                      <UserPlus size={28} className="text-primary" /> تسجيل مشترك جديد
-                      {userRole === 'admin' && (
-                        <button onClick={bulkInsertParticipants} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-black hover:bg-purple-700">
-                          حقن بيانات 20 مشترك (خاص)
-                        </button>
-                      )}
-                    </h4>
-                    <p className="text-slate-500 text-sm font-bold">يرجى ملء البيانات التالية بدقة</p>
-                  </div>
-
-                {!systemControls.isRegistrationOpen ? (
-                  <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
-                    <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mb-2">
-                      <Lock size={32} className="text-rose-600" />
-                    </div>
-                    <h2 className="text-3xl font-black text-rose-700">التسجيل مغلق حالياً</h2>
-                    <p className="text-slate-500 font-bold max-w-md">نعتذر، لقد تم إيقاف التسجيل الإلكتروني من قِبل الإدارة المركزية.</p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-8">
-                  {/* Basic Information Card */}
-                  <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
-                    <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                      <User size={20} className="text-primary" />
-                      <h5 className="font-black text-lg text-slate-800">البيانات الأساسية</h5>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                          اسم المخدوم ثلاثياً
-                        </label>
-                        <input 
-                          type="text" 
-                          placeholder="أدخل الاسم الثلاثي"
-                          value={newParticipant.name}
-                          onChange={e => setNewParticipant({...newParticipant, name: e.target.value})}
-                          className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none"
-                          required
-                        />
-                        {isCheckingParticipantDuplicate && (
-                          <p className="text-[10px] text-slate-400 animate-pulse font-medium mt-1">جاري التحقق من قاعدة البيانات...</p>
-                        )}
-                        {participantDuplicateWarning && (
-                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mt-1.5 flex items-start gap-2 text-amber-800 text-[11px] font-bold leading-relaxed shadow-sm transition-all animate-fade-in">
-                            <span className="shrink-0 text-amber-500 font-bold">⚠️</span>
-                            <span>{participantDuplicateWarning}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                          المرحلة الدراسية
-                        </label>
-                        <select 
-                          value={newParticipant.stage}
-                          onChange={e => setNewParticipant({...newParticipant, stage: e.target.value})}
-                          className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
-                          required
-                        >
-                          <option value="">اختر المرحلة</option>
-                          {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
-                        </select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                          النوع
-                        </label>
-                        <div className="flex bg-slate-100 rounded-lg p-1.5 gap-1.5 w-full h-[54px]">
-                          <button
-                            type="button"
-                            onClick={() => setNewParticipant({...newParticipant, gender: 'ذكر'})}
-                            className={`flex-1 flex items-center justify-center text-sm font-black rounded transition-all ${newParticipant.gender === 'ذكر' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:bg-slate-200'}`}
-                          >
-                            ذكر
+                {viewMode === 'edit' ? (
+                  <>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+                      <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
+                        <UserPlus size={28} className="text-primary" /> تسجيل مشترك جديد
+                        {userRole === 'admin' && (
+                          <button onClick={bulkInsertParticipants} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-black hover:bg-purple-700">
+                            حقن بيانات 20 مشترك (خاص)
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setNewParticipant({...newParticipant, gender: 'أنثى'})}
-                            className={`flex-1 flex items-center justify-center text-sm font-black rounded transition-all ${newParticipant.gender === 'أنثى' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:bg-slate-200'}`}
-                          >
-                            أنثى
-                          </button>
-                        </div>
-                        {/* Hidden required input for standard browser validation */}
-                        <input type="text" name="gender" value={newParticipant.gender} required className="hidden" readOnly />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Competition Selection Card */}
-                  <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
-                    <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                      <Trophy size={20} className="text-primary" />
-                      <h5 className="font-black text-lg text-slate-800">اختيار المسابقات</h5>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {[0, 1, 2].map((idx) => {
-                        const isCopticLevel2Allowed = ['خامسة وسادسة', 'إعدادي', 'ثانوي'].includes(newParticipant.stage);
-                        const selectedComps = newParticipant.competitions;
-                        const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
-                        const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
-                        
-                        const isOptionDisabled = (val: string) => {
-                          if (!val) return false;
-                          if (selectedComps.some((c, i) => i !== idx && c === val)) return true;
-                          if (val.includes('قبطي مستوى') && selectedComps.some((c, i) => i !== idx && c.includes('قبطي مستوى'))) return true;
-                          return false;
-                        };
-
-                        return (
-                          <div key={idx} className="space-y-2">
-                            <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                              المسابقة رقم {idx + 1}
-                            </label>
-                            <select 
-                              value={newParticipant.competitions[idx]}
-                              onChange={e => {
-                                const newComps = [...newParticipant.competitions];
-                                newComps[idx] = e.target.value;
-                                setNewParticipant({...newParticipant, competitions: newComps});
-                              }}
-                              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
-                            >
-                              <option value="">-- اختر المسابقة --</option>
-                              {availableCompsForLevel.map((comp: string) => (
-                                <option 
-                                  key={comp} 
-                                  value={comp} 
-                                  disabled={isOptionDisabled(comp)}
-                                >
-                                  {comp}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    
-                    {newParticipant.competitions.some(c => c.startsWith('قبطي')) && (
-                      <div className="p-4 bg-primary/5 rounded-lg border border-primary/10 flex items-start gap-3">
-                        <Info size={16} className="text-primary mt-0.5" />
-                        <p className="text-xs text-primary font-bold">
-                          ملاحظة: مسموح باختيار مستوى قبطي واحد فقط للمشترك الواحد.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Submit Button Section */}
-                  <div className="flex flex-col md:flex-row gap-4 pt-4">
-                    <button 
-                      onClick={handleAddParticipant}
-                      disabled={isSubmittingParticipant}
-                      className={`flex-1 py-4 text-white rounded-lg font-black text-base shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-3 ${isSubmittingParticipant ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary'}`}
-                    >
-                      {isSubmittingParticipant ? <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <UserPlus size={20} />}
-                      {isSubmittingParticipant ? 'جاري التسجيل...' : 'تسجيل المشترك'}
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setNewParticipant({ name: '', stage: '', gender: '', country: '', competitions: ['', '', ''] });
-                        setRegistrationStep(1);
-                      }}
-                      className="px-8 py-4 bg-slate-100 text-slate-600 rounded-lg font-black text-base hover:bg-slate-200 transition-all"
-                    >
-                      إعادة تعيين
-                    </button>
-                  </div>
-                </div>
-              )}
-
-                {/* Registered Participants List */}
-                <div className="pt-12 border-t border-slate-100 space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Users size={24} className="text-primary" />
-                      <h4 className="font-black text-xl text-slate-800">المشتركين المسجلين</h4>
-                    </div>
-                    <span className="px-4 py-1.5 bg-primary/10 text-primary rounded-full text-xs font-black">
-                      إجمالي: {totalParticipantsCount}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {participants
-                      .filter(p => p.churchName === churchName)
-                      .map(p => (
-                      <div key={p.id} className="p-5 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between group hover:bg-white hover:shadow-md transition-all">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-primary font-black shadow-sm">
-                            {p.name.charAt(0)}
-                          </div>
-                          <div>
-                            <h5 className="font-black text-slate-800 text-sm">{p.name}</h5>
-                            <p className="text-[10px] font-bold text-slate-400">{p.stage}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex -space-x-1">
-                            {(p.competitions || []).filter(Boolean).map((c, i) => (
-                              <div key={i} className="w-6 h-6 rounded-full bg-primary/10 border-2 border-white flex items-center justify-center text-[8px] font-black text-primary" title={c}>
-                                {c.charAt(0)}
-                              </div>
-                            ))}
-                          </div>
-                          <div className="flex gap-1 items-center">
-                            <button 
-                              onClick={() => {
-                                setActiveSection('registration');
-                                handleEditParticipant(p);
-                              }}
-                              className="p-2 text-slate-400 hover:text-coptic-blue transition-colors"
-                              title="تعديل (تحرير)"
-                            >
-                              <Pencil size={18} />
-                            </button>
-                            <button 
-                              onClick={() => {
-                                confirmAndDeleteParticipant(p.id);
-                              }}
-                              className="p-2 text-slate-300 hover:text-red-500 transition-colors"
-                              title="حذف"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {totalParticipantsCount === 0 && (
-                      <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                        <p className="text-slate-400 font-bold">لا يوجد مشتركين مسجلين بعد</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Activity Teams Registration */}
-                <div className="pt-12 border-t border-slate-100 space-y-8">
-                  <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                      <Users size={32} />
-                    </div>
-                    <div>
-                      <h3 className="text-2xl font-black text-slate-800">تسجيل فرق الأنشطة</h3>
-                      <p className="text-slate-500 font-bold">سجل فريقك في مسابقات الكورال، الألحان، أو العزف</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                    <div className="space-y-6">
-                      <div className="flex items-center gap-3">
-                        <Plus size={24} className="text-primary" />
-                        <h4 className="font-black text-xl text-slate-800">نموذج تسجيل فريق</h4>
-                      </div>
-                      
-                      <div className="relative">
-                        {!systemControls.isRegistrationOpen && (
-                          <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center rounded-xl">
-                            <span className="bg-rose-100 text-rose-700 px-6 py-2 rounded-full font-black text-sm border border-rose-200 shadow-sm animate-pulse">
-                              التسجيل مغلق حالياً
-                            </span>
-                          </div>
                         )}
-                        <form id="team-registration-form" onSubmit={handleAddTeam} className={`bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8 ${!systemControls.isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}`}>
-                          {editingTeam && (
-                          <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between">
-                            <p className="text-sm font-bold text-blue-700">أنت الآن تقوم بتعديل بيانات فريق مسجل</p>
-                            <button 
-                              type="button"
-                              onClick={() => {
-                                setEditingTeam(null);
-                                setNewTeam({
-                                  activityType: '',
-                                  members: [{ name: '', gender: 'ذكر', stage: '' }],
-                                  choirLevel: '',
-                                  instrumentType: '',
-                                  performanceType: '',
-                                  maleCount: 0,
-                                  femaleCount: 0
-                                });
-                                setActivity_type('');
-                              }}
-                              className="text-xs font-black text-blue-500 hover:underline"
-                            >
-                              إلغاء التعديل
-                            </button>
+                      </h4>
+                      <p className="text-slate-500 text-sm font-bold">يرجى ملء البيانات التالية بدقة</p>
+                    </div>
+
+                    {!systemControls.isRegistrationOpen ? (
+                      <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
+                        <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mb-2">
+                          <Lock size={32} className="text-rose-600" />
+                        </div>
+                        <h2 className="text-3xl font-black text-rose-700">التسجيل مغلق حالياً</h2>
+                        <p className="text-slate-500 font-bold max-w-md">نعتذر، لقد تم إيقاف التسجيل الإلكتروني من قِبل الإدارة المركزية.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-8">
+                        {/* Basic Information Card */}
+                        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
+                          <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                            <User size={20} className="text-primary" />
+                            <h5 className="font-black text-lg text-slate-800">البيانات الأساسية</h5>
                           </div>
-                        )}
-                        <div className="space-y-2">
-                          <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">المجال (نوع النشاط الرئيسي)</label>
-                          <select 
-                            value={newTeam.activityType || ''}
-                            onChange={e => handleActivityTypeChange(e.target.value)}
-                            className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                            required
-                          >
-                            <option value="">-- اختر النشاط الرئيسي --</option>
-                            {activities.map((activity: string) => (
-                              <option key={activity} value={activity}>{activity}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">نوع النشاط *</label>
-                          <select 
-                            value={activity_type}
-                            onChange={e => setActivity_type(e.target.value)}
-                            className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                            required
-                          >
-                            <option value="">-- اختر نوع النشاط --</option>
-                            <option value="كورال">كورال</option>
-                            <option value="ألحان فردي">ألحان فردي</option>
-                            <option value="ألحان جماعي">ألحان جماعي</option>
-                            <option value="ترنيم فردي">ترنيم فردي</option>
-                            <option value="عزف فردي">عزف فردي</option>
-                            <option value="عزف جماعي">عزف جماعي</option>
-                            <option value="كمبيوتر">كمبيوتر</option>
-                            <option value="أدبية">أدبية</option>
-                            <option value="ثقافية">ثقافية</option>
-                            <option value="فنون تشكيلية">فنون تشكيلية</option>
-                          </select>
-                        </div>
-
-                        {newTeam.activityType && (
-                          <div className="space-y-2">
-                            <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">المرحلة</label>
-                            <select 
-                              value={newTeam.choirLevel || ''}
-                              onChange={e => setNewTeam({...newTeam, choirLevel: e.target.value})}
-                              className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                              required
-                            >
-                              <option value="">-- اختر المرحلة --</option>
-                              {newTeam.activityType === 'ألحان' ? (
-                                hymnStages.map((stage: any) => (
-                                  <option key={stage.id} value={stage.id}>{stage.name}</option>
-                                ))
-                              ) : (
-                                activityStages.map((stage: any) => (
-                                  <option key={stage.id} value={stage.id}>{stage.stage_name || stage.name}</option>
-                                ))
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                                اسم المخدوم ثلاثياً
+                              </label>
+                              <input 
+                                type="text" 
+                                placeholder="أدخل الاسم الثلاثي"
+                                value={newParticipant.name}
+                                onChange={e => setNewParticipant({...newParticipant, name: e.target.value})}
+                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none"
+                                required
+                              />
+                              {isCheckingParticipantDuplicate && (
+                                <p className="text-[10px] text-slate-400 animate-pulse font-medium mt-1">جاري التحقق من قاعدة البيانات...</p>
                               )}
-                            </select>
+                              {participantDuplicateWarning && (
+                                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mt-1.5 flex items-start gap-2 text-amber-800 text-[11px] font-bold leading-relaxed shadow-sm transition-all animate-fade-in">
+                                  <span className="shrink-0 text-amber-500 font-bold">⚠️</span>
+                                  <span>{participantDuplicateWarning}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                                المرحلة الدراسية
+                              </label>
+                              <select 
+                                value={newParticipant.stage}
+                                onChange={e => setNewParticipant({...newParticipant, stage: e.target.value})}
+                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
+                                required
+                              >
+                                <option value="">اختر المرحلة</option>
+                                {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
+                              </select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                                النوع
+                              </label>
+                              <div className="flex bg-slate-100 rounded-lg p-1.5 gap-1.5 w-full h-[54px]">
+                                <button
+                                  type="button"
+                                  onClick={() => setNewParticipant({...newParticipant, gender: 'ذكر'})}
+                                  className={`flex-1 flex items-center justify-center text-sm font-black rounded transition-all ${newParticipant.gender === 'ذكر' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:bg-slate-200'}`}
+                                >
+                                  ذكر
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setNewParticipant({...newParticipant, gender: 'أنثى'})}
+                                  className={`flex-1 flex items-center justify-center text-sm font-black rounded transition-all ${newParticipant.gender === 'أنثى' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:bg-slate-200'}`}
+                                >
+                                  أنثى
+                                </button>
+                              </div>
+                              <input type="text" name="gender" value={newParticipant.gender} required className="hidden" readOnly />
+                            </div>
                           </div>
-                        )}
+                        </div>
 
-                        {(() => {
-                          const selectedStageId = newTeam.choirLevel || '';
-                          if (!selectedStageId) return null;
+                        {/* Competition Selection Card */}
+                        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
+                          <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                            <Trophy size={20} className="text-primary" />
+                            <h5 className="font-black text-lg text-slate-800">اختيار المسابقات</h5>
+                          </div>
 
-                          const selectedStage = newTeam.activityType === 'ألحان'
-                            ? hymnStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId))
-                            : activityStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.stage_name) === String(selectedStageId));
-                          
-                          const selectedStageName = selectedStage?.stage_name || selectedStage?.name || selectedStageId;
-                          
-                          let formType = selectedStage?.form_type || '';
-                          if (newTeam.activityType === 'عزف') {
-                            formType = 'عزف';
-                          } else if (['ترنيم فردي', 'ثقافية', 'أدبية', 'فنون تشكيلية', 'كمبيوتر', 'الأدبية', 'الثقافية', 'الفنون التشكيلية'].includes(newTeam.activityType || '')) {
-                            formType = 'فردي';
-                          } else if (newTeam.activityType === 'كورال') {
-                            formType = 'جماعي';
-                          } else if (newTeam.activityType === 'ألحان') {
-                            formType = selectedStageName.includes('فردي') ? 'فردي' : 'جماعي';
-                          } else if (!formType) {
-                            formType = 'فردي';
-                          }
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {[0, 1, 2].map((idx) => {
+                              const selectedComps = newParticipant.competitions;
+                              const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
+                              const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
+                              
+                              const isOptionDisabled = (val: string) => {
+                                if (!val) return false;
+                                if (selectedComps.some((c, i) => i !== idx && c === val)) return true;
+                                if (val.includes('قبطي مستوى') && selectedComps.some((c, i) => i !== idx && c.includes('قبطي مستوى'))) return true;
+                                return false;
+                              };
 
-                          if (formType === 'جماعي') {
-                            return (
-                              <div className="space-y-4">
-                                <div className="space-y-2">
-                                  <label className="text-[11px] font-black text-slate-900 block mb-1">اسم الفريق</label>
-                                  <input 
-                                    type="text"
-                                    placeholder="أدخل اسم الفريق..."
-                                    value={newTeam.team_name || ''}
-                                    onChange={e => setNewTeam({...newTeam, team_name: e.target.value})}
-                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                                  />
+                              return (
+                                <div key={idx} className="space-y-2">
+                                  <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                                    المسابقة رقم {idx + 1}
+                                  </label>
+                                  <select 
+                                    value={newParticipant.competitions[idx]}
+                                    onChange={e => {
+                                      const newComps = [...newParticipant.competitions];
+                                      newComps[idx] = e.target.value;
+                                      setNewParticipant({...newParticipant, competitions: newComps});
+                                    }}
+                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
+                                  >
+                                    <option value="">-- اختر المسابقة --</option>
+                                    {availableCompsForLevel.map((comp: string) => (
+                                      <option 
+                                        key={comp} 
+                                        value={comp} 
+                                        disabled={isOptionDisabled(comp)}
+                                      >
+                                        {comp}
+                                      </option>
+                                    ))}
+                                  </select>
                                 </div>
-                                <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-                                  <div className="space-y-2">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الذكور</p>
-                                    <input 
-                                      type="number"
-                                      min="0"
-                                      value={newTeam.maleCount || 0}
-                                      onChange={e => setNewTeam({...newTeam, maleCount: parseInt(e.target.value) || 0})}
-                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الإناث</p>
-                                    <input 
-                                      type="number"
-                                      min="0"
-                                      value={newTeam.femaleCount || 0}
-                                      onChange={e => setNewTeam({...newTeam, femaleCount: parseInt(e.target.value) || 0})}
-                                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
-                                    />
-                                  </div>
-                                  <div className="space-y-2 flex flex-col justify-center">
-                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي العدد</p>
-                                    <p className="text-2xl font-black text-primary">{(Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0)}</p>
-                                  </div>
-                                </div>
+                              );
+                            })}
+                          </div>
+                          
+                          {newParticipant.competitions.some(c => c.startsWith('قبطي')) && (
+                            <div className="p-4 bg-primary/5 rounded-lg border border-primary/10 flex items-start gap-3">
+                              <Info size={16} className="text-primary mt-0.5" />
+                              <p className="text-xs text-primary font-bold">
+                                ملاحظة: مسموح باختيار مستوى قبطي واحد فقط للمشترك الواحد.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Submit Button Section */}
+                        <div className="flex flex-col md:flex-row gap-4 pt-4">
+                          <button 
+                            onClick={handleAddParticipant}
+                            disabled={isSubmittingParticipant}
+                            className={`flex-1 py-4 text-white rounded-lg font-black text-base shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-3 ${isSubmittingParticipant ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary'}`}
+                          >
+                            {isSubmittingParticipant ? <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <UserPlus size={20} />}
+                            {isSubmittingParticipant ? 'جاري التسجيل...' : 'تسجيل المشترك'}
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setNewParticipant({ name: '', stage: '', gender: '', country: '', competitions: ['', '', ''] });
+                              setRegistrationStep(1);
+                            }}
+                            className="px-8 py-4 bg-slate-100 text-slate-600 rounded-lg font-black text-base hover:bg-slate-200 transition-all"
+                          >
+                            إعادة تعيين
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Preview Toggle Button */}
+                    <div className="pt-8 border-t border-slate-100">
+                      <button 
+                         onClick={() => setViewMode('preview')}
+                         className="w-full py-8 bg-white border-2 border-purple-200 rounded-[2rem] flex flex-col items-center justify-center gap-4 text-purple-600 hover:border-purple-600 hover:bg-purple-50 transition-all shadow-sm group border-dashed"
+                      >
+                        <div className="w-16 h-16 bg-purple-100 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                          <Eye size={32} />
+                        </div>
+                        <div className="text-center">
+                          <h4 className="font-black text-xl mb-1">معاينة المشتركين المسجلين</h4>
+                          <p className="text-sm font-bold text-slate-400">عرض وإدارة {totalParticipantsCount} مشترك تم تسجيلهم حالياً</p>
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Activity Teams Registration */}
+                    <div className="pt-12 border-t border-slate-100 space-y-8">
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
+                          <Users size={32} />
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-black text-slate-800">تسجيل فرق الأنشطة</h3>
+                          <p className="text-slate-500 font-bold">سجل فريقك في مسابقات الكورال، الألحان، أو العزف</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                        <div className="space-y-6">
+                          <div className="flex items-center gap-3">
+                            <Plus size={24} className="text-primary" />
+                            <h4 className="font-black text-xl text-slate-800">نموذج تسجيل فريق</h4>
+                          </div>
+                          
+                          <div className="relative">
+                            {!systemControls.isRegistrationOpen && (
+                              <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center rounded-xl">
+                                <span className="bg-rose-100 text-rose-700 px-6 py-2 rounded-full font-black text-sm border border-rose-200 shadow-sm animate-pulse">
+                                  التسجيل مغلق حالياً
+                                </span>
                               </div>
-                            );
-                          } else if (formType === 'فردي') {
-                            return (
-                              <div className="space-y-3 bg-slate-50 p-6 rounded-xl border border-slate-100">
-                                <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك (فردي)</label>
-                                <div className="relative">
-                                  <input 
-                                    type="text"
-                                    placeholder="أدخل اسم المشترك للبحث والربط..."
-                                    value={individualParticipantName || ''}
-                                    onChange={e => handleIndividualNameChange(e.target.value)}
-                                    className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                    required
-                                  />
-                                  {matchingParticipants.length > 0 && (
-                                    <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto w-full">
-                                      <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
-                                        هذا المشترك مسجل بالفعل، اختر الاسم للربط:
-                                      </div>
-                                      {matchingParticipants.map((p) => (
-                                        <button
-                                          key={p.id}
-                                          type="button"
-                                          onClick={() => selectMatchingParticipant(p)}
-                                          className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
-                                        >
-                                          <span>{p.name}</span>
-                                          <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                                            {p.stage}
-                                          </span>
-                                        </button>
-                                      ))}
+                            )}
+                            <form id="team-registration-form" onSubmit={handleAddTeam} className={`bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8 ${!systemControls.isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}`}>
+                              {editingTeam && (
+                              <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between">
+                                <p className="text-sm font-bold text-blue-700">أنت الآن تقوم بتعديل بيانات فريق مسجل</p>
+                                <button 
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingTeam(null);
+                                    setNewTeam({
+                                      activityType: '',
+                                      members: [{ name: '', gender: 'ذكر', stage: '' }],
+                                      choirLevel: '',
+                                      instrumentType: '',
+                                      performanceType: '',
+                                      maleCount: 0,
+                                      femaleCount: 0
+                                    });
+                                    setActivity_type('');
+                                  }}
+                                  className="text-xs font-black text-blue-500 hover:underline"
+                                >
+                                  إلغاء التعديل
+                                </button>
+                              </div>
+                            )}
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">المجال (نوع النشاط الرئيسي)</label>
+                              <select 
+                                value={newTeam.activityType || ''}
+                                onChange={e => handleActivityTypeChange(e.target.value)}
+                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
+                                required
+                              >
+                                <option value="">-- اختر النشاط الرئيسي --</option>
+                                {activities.map((activity: string) => (
+                                  <option key={activity} value={activity}>{activity}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">نوع النشاط *</label>
+                              <select 
+                                value={activity_type}
+                                onChange={e => setActivity_type(e.target.value)}
+                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
+                                required
+                              >
+                                <option value="">-- اختر نوع النشاط --</option>
+                                <option value="كورال">كورال</option>
+                                <option value="ألحان فردي">ألحان فردي</option>
+                                <option value="ألحان جماعي">ألحان جماعي</option>
+                                <option value="ترنيم فردي">ترنيم فردي</option>
+                                <option value="عزف فردي">عزف فردي</option>
+                                <option value="عزف جماعي">عزف جماعي</option>
+                                <option value="كمبيوتر">كمبيوتر</option>
+                                <option value="أدبية">أدبية</option>
+                                <option value="ثقافية">ثقافية</option>
+                                <option value="فنون تشكيلية">فنون تشكيلية</option>
+                              </select>
+                            </div>
+
+                            {newTeam.activityType && (
+                              <div className="space-y-2">
+                                <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">المرحلة</label>
+                                <select 
+                                  value={newTeam.choirLevel || ''}
+                                  onChange={e => setNewTeam({...newTeam, choirLevel: e.target.value})}
+                                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
+                                  required
+                                >
+                                  <option value="">-- اختر المرحلة --</option>
+                                  {newTeam.activityType === 'ألحان' ? (
+                                    hymnStages.map((stage: any) => (
+                                      <option key={stage.id} value={stage.id}>{stage.name}</option>
+                                    ))
+                                  ) : (
+                                    activityStages.map((stage: any) => (
+                                      <option key={stage.id} value={stage.id}>{stage.stage_name || stage.name}</option>
+                                    ))
+                                  )}
+                                </select>
+                              </div>
+                            )}
+
+                            {(() => {
+                              const selectedStageId = newTeam.choirLevel || '';
+                              if (!selectedStageId) return null;
+
+                              const selectedStage = newTeam.activityType === 'ألحان'
+                                ? hymnStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId))
+                                : activityStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.stage_name) === String(selectedStageId));
+                              
+                              const selectedStageName = selectedStage?.stage_name || selectedStage?.name || selectedStageId;
+                              
+                              let formType = selectedStage?.form_type || '';
+                              if (newTeam.activityType === 'عزف') {
+                                formType = 'عزف';
+                              } else if (['ترنيم فردي', 'ثقافية', 'أدبية', 'فنون تشكيلية', 'كمبيوتر', 'الأدبية', 'الثقافية', 'الفنون التشكيلية'].includes(newTeam.activityType || '')) {
+                                formType = 'فردي';
+                              } else if (newTeam.activityType === 'كورال') {
+                                formType = 'جماعي';
+                              } else if (newTeam.activityType === 'ألحان') {
+                                formType = selectedStageName.includes('فردي') ? 'فردي' : 'جماعي';
+                              } else if (!formType) {
+                                formType = 'فردي';
+                              }
+
+                              if (formType === 'جماعي') {
+                                return (
+                                  <div className="space-y-4">
+                                    <div className="space-y-2">
+                                      <label className="text-[11px] font-black text-slate-900 block mb-1">اسم الفريق</label>
+                                      <input 
+                                        type="text"
+                                        placeholder="أدخل اسم الفريق..."
+                                        value={newTeam.team_name || ''}
+                                        onChange={e => setNewTeam({...newTeam, team_name: e.target.value})}
+                                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
+                                      />
                                     </div>
-                                  )}
-                                  {linkedParticipantMessage && (
-                                    <p className="text-xs text-green-600 font-bold mt-2 text-right">
-                                      {linkedParticipantMessage}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          } else if (formType === 'عزف') {
-                            return (
-                              <div className="space-y-4 bg-slate-50 p-6 rounded-xl border border-slate-100">
-                                <div className="space-y-1">
-                                  <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك</label>
-                                  <div className="relative">
-                                    <input 
-                                      type="text"
-                                      placeholder="أدخل اسم المشترك للبحث والربط..."
-                                      value={individualParticipantName || ''}
-                                      onChange={e => handleIndividualNameChange(e.target.value)}
-                                      className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                      required
-                                    />
-                                    {matchingParticipants.length > 0 && (
-                                      <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
-                                        <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
-                                          هذا المشترك مسجل بالفعل، اختر الاسم للربط:
+                                    <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                                      <div className="space-y-2">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الذكور</p>
+                                        <input 
+                                          type="number"
+                                          min="0"
+                                          value={newTeam.maleCount || 0}
+                                          onChange={e => setNewTeam({...newTeam, maleCount: parseInt(e.target.value) || 0})}
+                                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                                        />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">عدد الإناث</p>
+                                        <input 
+                                          type="number"
+                                          min="0"
+                                          value={newTeam.femaleCount || 0}
+                                          onChange={e => setNewTeam({...newTeam, femaleCount: parseInt(e.target.value) || 0})}
+                                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
+                                        />
+                                      </div>
+                                      <div className="space-y-2 flex flex-col justify-center">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">إجمالي العدد</p>
+                                        <p className="text-2xl font-black text-primary">{(Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0)}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              } else if (formType === 'فردي') {
+                                return (
+                                  <div className="space-y-3 bg-slate-50 p-6 rounded-xl border border-slate-100">
+                                    <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك (فردي)</label>
+                                    <div className="relative">
+                                      <input 
+                                        type="text"
+                                        placeholder="أدخل اسم المشترك للبحث والربط..."
+                                        value={individualParticipantName || ''}
+                                        onChange={e => handleIndividualNameChange(e.target.value)}
+                                        className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
+                                        required
+                                      />
+                                      {matchingParticipants.length > 0 && (
+                                        <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto w-full">
+                                          <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
+                                            هذا المشترك مسجل بالفعل، اختر الاسم للربط:
+                                          </div>
+                                          {matchingParticipants.map((p) => (
+                                            <button
+                                              key={p.id}
+                                              type="button"
+                                              onClick={() => selectMatchingParticipant(p)}
+                                              className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
+                                            >
+                                              <span>{p.name}</span>
+                                              <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                                                {p.stage}
+                                              </span>
+                                            </button>
+                                          ))}
                                         </div>
-                                        {matchingParticipants.map((p) => (
-                                          <button
-                                            key={p.id}
-                                            type="button"
-                                            onClick={() => selectMatchingParticipant(p)}
-                                            className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
-                                          >
-                                            <span>{p.name}</span>
-                                            <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                                              {p.stage}
-                                            </span>
-                                          </button>
+                                      )}
+                                      {linkedParticipantMessage && (
+                                        <p className="text-xs text-green-600 font-bold mt-2 text-right">
+                                          {linkedParticipantMessage}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              } else if (formType === 'عزف') {
+                                return (
+                                  <div className="space-y-4 bg-slate-50 p-6 rounded-xl border border-slate-100">
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] font-black text-slate-900 block mb-1">اسم المشترك</label>
+                                      <div className="relative">
+                                        <input 
+                                          type="text"
+                                          placeholder="أدخل اسم المشترك للبحث والربط..."
+                                          value={individualParticipantName || ''}
+                                          onChange={e => handleIndividualNameChange(e.target.value)}
+                                          className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
+                                          required
+                                        />
+                                        {matchingParticipants.length > 0 && (
+                                          <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
+                                            <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
+                                              هذا المشترك مسجل بالفعل، اختر الاسم للربط:
+                                            </div>
+                                            {matchingParticipants.map((p) => (
+                                              <button
+                                                key={p.id}
+                                                type="button"
+                                                onClick={() => selectMatchingParticipant(p)}
+                                                className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
+                                              >
+                                                <span>{p.name}</span>
+                                                <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                                                  {p.stage}
+                                                </span>
+                                              </button>
+                                            ))}
+                                          </div>
+                                        )}
+                                        {linkedParticipantMessage && (
+                                          <p className="text-xs text-green-600 font-bold mt-2 text-right">
+                                            {linkedParticipantMessage}
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <label className="text-[11px] font-black text-slate-900 block mb-1">نوع الآلة الموسيقية (Instrument Type)</label>
+                                      <input 
+                                        type="text"
+                                        placeholder="أدخل نوع الآلة (أورج، كمان، جيتار...)"
+                                        value={newTeam.instrumentType || ''}
+                                        onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
+                                        className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
+                                        required
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+
+                            <button 
+                              type="submit" 
+                              disabled={isSubmittingTeam}
+                              className={`w-full py-4 text-white rounded-lg font-black text-base shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-3 ${isSubmittingTeam ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary'}`}
+                            >
+                              {isSubmittingTeam ? <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Users size={20} />}
+                              {isSubmittingTeam ? 'جاري التسجيل...' : 'تسجيل الفريق'}
+                            </button>
+                          </form>
+                          </div>
+                        </div>
+
+                        <div className="space-y-6">
+                          <div className="flex items-center gap-3">
+                            <Users size={24} className="text-primary" />
+                            <h4 className="font-black text-xl text-slate-800">الفرق المسجلة</h4>
+                          </div>
+                          <div className="max-h-[800px] overflow-y-auto space-y-6 pr-2 custom-scrollbar">
+                            {filteredTeamsList
+                              .map(t => (
+                              <div key={t.id} className="p-6 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-md transition-all relative group overflow-hidden">
+                                <div className="absolute top-0 right-0 w-1 h-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+                                {(userRole === 'admin' || userRole === 'church') && (
+                                  <button 
+                                    onClick={() => handleDeleteTeam(t.id)}
+                                    className="absolute left-4 top-4 p-2.5 text-rose-500 bg-rose-50/70 hover:bg-rose-100 sm:text-slate-300 sm:bg-transparent sm:hover:bg-rose-50 sm:hover:text-rose-600 rounded-lg transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-10"
+                                    title="حذف الفريق"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                )}
+                                
+                                <div className="mb-4">
+                                  <h5 className="text-lg font-black text-slate-800">{(t as any).stage_name || t.choirLevel || t.activityType}</h5>
+                                  {(t as any).team_name && (t as any).team_name !== ((t as any).stage_name || t.choirLevel) && (
+                                    <p className="text-xs font-bold text-primary mt-1">{(t as any).team_name}</p>
+                                  )}
+                                  {t.performanceType && <p className="text-xs font-bold text-emerald-600 mt-1">{t.performanceType}</p>}
+                                  {t.instrumentType && <p className="text-xs font-bold text-primary mt-1">{t.instrumentType}</p>}
+                                </div>
+
+                                 <div className="space-y-3">
+                                  {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || t.activityType === 'ألحان' ? null : (
+                                    <>
+                                      <p className="text-[10px] font-black text-slate-400 uppercase">المشترك</p>
+                                      <div className="flex flex-wrap gap-2">
+                                        {(t.members || []).map((m, i) => (
+                                          <div key={i} className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold text-slate-600">
+                                            {m.name} <span className="text-slate-300 mx-1">|</span> {m.stage}
+                                          </div>
                                         ))}
                                       </div>
-                                    )}
-                                    {linkedParticipantMessage && (
-                                      <p className="text-xs text-green-600 font-bold mt-2 text-right">
-                                        {linkedParticipantMessage}
-                                      </p>
-                                    )}
-                                  </div>
+                                    </>
+                                  )}
                                 </div>
-                                <div className="space-y-2">
-                                  <label className="text-[11px] font-black text-slate-900 block mb-1">نوع الآلة الموسيقية (Instrument Type)</label>
-                                  <input 
-                                    type="text"
-                                    placeholder="أدخل نوع الآلة (أورج، كمان، جيتار...)"
-                                    value={newTeam.instrumentType || ''}
-                                    onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
-                                    className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                    required
-                                  />
+
+                                <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
+                                  {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || t.activityType === 'ألحان' ? (
+                                    <div className="flex gap-4">
+                                      <span className="text-[10px] font-black text-primary">ذكور: {t.maleCount || 0}</span>
+                                      <span className="text-[10px] font-black text-primary">إناث: {t.femaleCount || 0}</span>
+                                      <span className="text-[10px] font-black text-slate-500">إجمالي: {t.members_number || (t.maleCount || 0) + (t.femaleCount || 0)}</span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex gap-4">
+                                      <span className="text-[10px] font-black text-primary">النوع: {t.members[0]?.gender || '-'}</span>
+                                    </div>
+                                  )}
+                                  <span className="text-[10px] font-bold text-slate-400">{new Date(t.timestamp).toLocaleDateString('ar-EG')}</span>
                                 </div>
                               </div>
-                            );
-                          }
-                          return null;
-                        })()}
-
-                        <button 
-                          type="submit" 
-                          disabled={isSubmittingTeam}
-                          className={`w-full py-4 text-white rounded-lg font-black text-base shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-3 ${isSubmittingTeam ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary'}`}
-                        >
-                          {isSubmittingTeam ? <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Users size={20} />}
-                          {isSubmittingTeam ? 'جاري التسجيل...' : 'تسجيل الفريق'}
-                        </button>
-                      </form>
+                            ))}
+                            
+                            {filteredTeamsList.length === 0 && (
+                              <div className="text-center py-20 bg-white rounded-xl border border-dashed border-slate-200">
+                                <Users size={48} className="text-slate-200 mx-auto mb-4" />
+                                <p className="text-slate-400 font-bold">لا يوجد فرق مسجلة حالياً</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
+                      <button 
+                         onClick={() => setViewMode('edit')}
+                         className="flex items-center gap-3 px-8 py-4 bg-purple-600 text-white rounded-2xl font-black text-base shadow-lg shadow-purple-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all w-fit"
+                      >
+                        <ChevronRight size={24} />
+                        العودة لصفحة التسجيل
+                      </button>
+                      <div className="text-right">
+                        <div className="flex items-center justify-end gap-3 mb-1">
+                          <Users size={24} className="text-primary" />
+                          <h3 className="text-2xl font-black text-slate-800">سجل المشتركين المسجلين</h3>
+                        </div>
+                        <p className="text-sm font-bold text-slate-400">تحكم وإدارة جميع بيانات مخدومين كنيسة {churchName} • {totalParticipantsCount} مخدوم</p>
                       </div>
                     </div>
 
                     <div className="space-y-6">
-                      <div className="flex items-center gap-3">
-                        <Users size={24} className="text-primary" />
-                        <h4 className="font-black text-xl text-slate-800">الفرق المسجلة</h4>
-                      </div>
-                      <div className="max-h-[800px] overflow-y-auto space-y-6 pr-2 custom-scrollbar">
-                        {filteredTeamsList
-                          .map(t => (
-                          <div key={t.id} className="p-6 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-md transition-all relative group overflow-hidden">
-                            <div className="absolute top-0 right-0 w-1 h-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                            {(userRole === 'admin' || userRole === 'church') && (
-                              <button 
-                                onClick={() => handleDeleteTeam(t.id)}
-                                className="absolute left-4 top-4 p-2.5 text-rose-500 bg-rose-50/70 hover:bg-rose-100 sm:text-slate-300 sm:bg-transparent sm:hover:bg-rose-50 sm:hover:text-rose-600 rounded-lg transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-10"
-                                title="حذف الفريق"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            )}
-                            
-                            <div className="mb-4">
-                              <h5 className="text-lg font-black text-slate-800">{(t as any).stage_name || t.choirLevel || t.activityType}</h5>
-                              {(t as any).team_name && (t as any).team_name !== ((t as any).stage_name || t.choirLevel) && (
-                                <p className="text-xs font-bold text-primary mt-1">{(t as any).team_name}</p>
-                              )}
-                              {t.performanceType && <p className="text-xs font-bold text-emerald-600 mt-1">{t.performanceType}</p>}
-                              {t.instrumentType && <p className="text-xs font-bold text-primary mt-1">{t.instrumentType}</p>}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {participants
+                          .filter(p => p.churchName === churchName)
+                          .map(p => (
+                          <div key={p.id} className="p-5 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between group hover:bg-white hover:shadow-md transition-all">
+                            <div className="flex items-center gap-4">
+                              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-primary font-black shadow-sm">
+                                {p.name.charAt(0)}
+                              </div>
+                              <div>
+                                <h5 className="font-black text-slate-800 text-sm">{p.name}</h5>
+                                <p className="text-[10px] font-bold text-slate-400">{p.stage}</p>
+                              </div>
                             </div>
-
-                             <div className="space-y-3">
-                              {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || t.activityType === 'ألحان' ? null : (
-                                <>
-                                  <p className="text-[10px] font-black text-slate-400 uppercase">المشترك</p>
-                                  <div className="flex flex-wrap gap-2">
-                                    {(t.members || []).map((m, i) => (
-                                      <div key={i} className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold text-slate-600">
-                                        {m.name} <span className="text-slate-300 mx-1">|</span> {m.stage}
-                                      </div>
-                                    ))}
+                            <div className="flex items-center gap-2">
+                              <div className="flex -space-x-1">
+                                {(p.competitions || []).filter(Boolean).map((c, i) => (
+                                  <div key={i} className="w-6 h-6 rounded-full bg-primary/10 border-2 border-white flex items-center justify-center text-[8px] font-black text-primary" title={c}>
+                                    {c.charAt(0)}
                                   </div>
-                                </>
-                              )}
-                            </div>
-
-                            <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
-                              {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || t.activityType === 'ألحان' ? (
-                                <div className="flex gap-4">
-                                  <span className="text-[10px] font-black text-primary">ذكور: {t.maleCount || 0}</span>
-                                  <span className="text-[10px] font-black text-primary">إناث: {t.femaleCount || 0}</span>
-                                  <span className="text-[10px] font-black text-slate-500">إجمالي: {t.members_number || (t.maleCount || 0) + (t.femaleCount || 0)}</span>
-                                </div>
-                              ) : (
-                                <div className="flex gap-4">
-                                  <span className="text-[10px] font-black text-primary">النوع: {t.members[0]?.gender || '-'}</span>
-                                </div>
-                              )}
-                              <span className="text-[10px] font-bold text-slate-400">{new Date(t.timestamp).toLocaleDateString('ar-EG')}</span>
+                                ))}
+                              </div>
+                              <div className="flex gap-1 items-center">
+                                <button 
+                                  onClick={() => {
+                                    setViewMode('edit');
+                                    handleEditParticipant(p);
+                                  }}
+                                  className="p-2 text-slate-400 hover:text-primary transition-colors"
+                                  title="تعديل (تحرير)"
+                                >
+                                  <Pencil size={18} />
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    confirmAndDeleteParticipant(p.id);
+                                  }}
+                                  className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                                  title="حذف"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}
-                        
-                        {filteredTeamsList.length === 0 && (
-                          <div className="text-center py-20 bg-white rounded-xl border border-dashed border-slate-200">
-                            <Users size={48} className="text-slate-200 mx-auto mb-4" />
-                            <p className="text-slate-400 font-bold">لا يوجد فرق مسجلة حالياً</p>
+                        {totalParticipantsCount === 0 && (
+                          <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                            <p className="text-slate-400 font-bold">لا يوجد مشتركين مسجلين بعد</p>
                           </div>
                         )}
                       </div>
                     </div>
-                  </div>
-                </div>
+                  </>
+                )}
               </div>
             </div>
           </motion.div>
