@@ -72,6 +72,7 @@ export interface ActivityTeam {
   team_name?: string;
   stage_name?: string;
   church_name?: string;
+  activity_type?: string;
 }
 
 export interface Result {
@@ -92,6 +93,7 @@ export interface Result {
   data?: Record<string, any>;
   timestamp: string;
   year?: string;
+  submissionType?: string;
 }
 
 export interface Question {

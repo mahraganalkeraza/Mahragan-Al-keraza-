@@ -396,8 +396,7 @@ const ALL_ADMIN_TABS = [
   { id: 'news', label: 'الأخبار والسلايدر', icon: Newspaper },
   { id: 'participants', label: 'إدارة المشتركين', icon: Users },
   { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
-  { id: 'results', label: 'السجل العام', icon: Award },
-  { id: 'online_results', label: 'قسم النتائج', icon: Award },
+  { id: 'results', label: 'نتائج التصفية المحلية', icon: Award },
   { id: 'omr', label: 'البابل شيت والكيو أر', icon: FileScan },
   { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
   { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
@@ -1292,6 +1291,7 @@ function AppComponent() {
   const [isUploadingBatch, setIsUploadingBatch] = useState(false);
 
   const [registrationStep, setRegistrationStep] = useState(1);
+  const [activity_type, setActivity_type] = useState('');
   const [newTeam, setNewTeam] = useState<Partial<ActivityTeam>>({
     activityType: '',
     members: [{ name: '', gender: 'ذكر', stage: '' }],
@@ -3620,7 +3620,7 @@ function AppComponent() {
     }
 
     try {
-      let queryBuilder = supabase.from('activity_teams').select('id, team_name, stage_name, church_name, created_at, members_number', { count: 'exact' });
+      let queryBuilder = supabase.from('activity_teams').select('id, team_name, stage_name, church_name, created_at, members_number, activity_type', { count: 'exact' });
       
       if (userRole === 'admin') {
         if (globalChurchFilter !== 'الكل') {
@@ -3657,7 +3657,8 @@ function AppComponent() {
           maleCount: 0,
           femaleCount: 0,
           members_number: row.members_number || 0,
-          timestamp: row.created_at || new Date().toISOString()
+          timestamp: row.created_at || new Date().toISOString(),
+          activity_type: row.activity_type
         } as ActivityTeam;
       });
 
@@ -4143,7 +4144,8 @@ function AppComponent() {
       team_name: currentTeamName,
       stage_name: selectedStageName,
       church_name: churchName,
-      members_number: totalMembersCount
+      members_number: totalMembersCount,
+      activity_type: activity_type
     };
 
     try {
@@ -4169,7 +4171,8 @@ function AppComponent() {
           maleCount: isGroupActivity ? (Number(newTeam.maleCount) || 0) : 0,
           femaleCount: isGroupActivity ? (Number(newTeam.femaleCount) || 0) : 0,
           members_number: totalMembersCount,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          activity_type: activity_type
         } as any;
         setActivityTeams(prev => prev.map(t => t.id === editingTeam.id ? updatedTeam : t));
 
@@ -4200,7 +4203,8 @@ function AppComponent() {
             maleCount: isIndividual ? 0 : (Number(newTeam.maleCount) || 0),
             femaleCount: isIndividual ? 0 : (Number(newTeam.femaleCount) || 0),
             members_number: row.members_number || totalMembersCount,
-            timestamp: row.created_at || new Date().toISOString()
+            timestamp: row.created_at || new Date().toISOString(),
+            activity_type: row.activity_type
           } as any;
           setActivityTeams(prev => [createdTeam, ...prev]);
           setTotalTeamsCount(prev => prev + 1);
@@ -4237,6 +4241,7 @@ function AppComponent() {
         femaleCount: 0,
         team_name: ''
       });
+      setActivity_type('');
       setActivitySearchTerm('');
       setIndividualParticipantName('');
       setLinkedParticipantId(null);
@@ -4277,6 +4282,7 @@ function AppComponent() {
       femaleCount: team.femaleCount || 0,
       team_name: team.team_name || ''
     });
+    setActivity_type(team.activity_type || '');
     
     if (isIndiv) {
       setIndividualParticipantName(team.team_name || '');
@@ -5542,44 +5548,7 @@ function AppComponent() {
                 </div>
               ) : (
                 <>
-                  {/* Universal Filter Engine - Results View */}
-                  <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 mb-8">
-                    <div className="flex items-center gap-2 mb-4">
-                      <Search size={20} className="text-primary" />
-                      <h4 className="font-black text-slate-800 text-sm italic uppercase">محرك البحث الشامل</h4>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="relative">
-                        <input 
-                          type="text"
-                          placeholder="ابحث بالاسم..."
-                          value={globalNameFilter}
-                          onChange={(e) => setGlobalNameFilter(e.target.value)}
-                          className="w-full pr-4 pl-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
-                        />
-                      </div>
-                      <select 
-                        value={globalStageFilter}
-                        onChange={(e) => setGlobalStageFilter(e.target.value)}
-                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
-                      >
-                        <option value="الكل">كل المراحل</option>
-                        {dynamicLevels.sort((a,b)=>sortStages(a.name, b.name)).map(l => <option key={l.id || l.name} value={l.name}>{l.name}</option>)}
-                      </select>
-                      <select 
-                        value={resultsFilterGrade}
-                        onChange={(e) => setResultsFilterGrade(e.target.value)}
-                        className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold shadow-sm"
-                      >
-                        <option value="الكل">كل التقديرات</option>
-                        {['ممتاز', 'جيد جداً', 'جيد', 'مقبول'].map(g => (
-                          <option key={g} value={g}>{g}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <ResultsViewer results={filteredResultsList} isAdmin={userRole === 'admin'} />
+                  <ResultsViewer isAdmin={userRole === 'admin'} />
                 </>
               )}
             </div>
@@ -6676,7 +6645,7 @@ function AppComponent() {
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                    <Award className="text-indigo-600" /> السجل العام
+                    <Award className="text-indigo-600" /> نتائج التصفية المحلية
                   </h4>
                   <div className="flex flex-wrap items-center gap-3">
                     <div className="relative group">
@@ -6724,109 +6693,7 @@ function AppComponent() {
               </section>
             )}
 
-            {adminActiveTab === 'online_results' && (
-              <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
-                <div className="flex items-center justify-between mb-8">
-                  <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                    <Award className="text-emerald-600" /> قسم النتائج (أونلاين)
-                  </h4>
-                  <div className="flex items-center gap-4">
-                    <button 
-                      onClick={() => fetchOnlineResultsPage(true, true)}
-                      disabled={isOnlineResultsLoading}
-                      className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition flex items-center gap-2"
-                    >
-                      <RotateCw size={18} className={isOnlineResultsLoading ? 'animate-spin' : ''} /> تحديث
-                    </button>
-                    <button
-                      onClick={() => { exportOnlineResultsExcel(onlineResults); }}
-                      className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 transition shadow flex items-center gap-2"
-                    >
-                      <Download size={18} /> استخراج Excel الحالي
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right border-collapse bg-white rounded-xl shadow-sm overflow-hidden">
-                    <thead>
-                      <tr className="bg-slate-100 text-[10px] font-black text-slate-500 uppercase">
-                        <th className="p-4 border-b border-slate-200">الكود</th>
-                        <th className="p-4 border-b border-slate-200">الاسم</th>
-                        <th className="p-4 border-b border-slate-200">الكنيسة</th>
-                        <th className="p-4 border-b border-slate-200">المرحلة</th>
-                        <th className="p-4 border-b border-slate-200">د</th>
-                        <th className="p-4 border-b border-slate-200">م</th>
-                        <th className="p-4 border-b border-slate-200">ق1</th>
-                        <th className="p-4 border-b border-slate-200">ق2</th>
-                        <th className="p-4 border-b border-slate-200">الإجمالي</th>
-                        <th className="p-4 border-b border-slate-200">التاريخ</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {Object.values((onlineResults || []).reduce((acc: any, r: any) => {
-                        const id = r.studentID || r.studentId;
-                        if (!id) return acc;
-                        if (!acc[id]) acc[id] = { ...r };
-                        else {
-                           Object.keys(r).forEach(k => { if (r[k] !== undefined && r[k] !== null) acc[id][k] = r[k]; });
-                        }
-                        return acc;
-                      }, {}))
-                      .slice((onlineResultPageCount - 1) * 20, onlineResultPageCount * 20)
-                      .map((r: any, i: number) => {
-                        let drasy = r['مسابقة دراسي'] ?? (r.competition === 'دراسي' ? r.finalScore : '-');
-                        let mahfozat = r['مسابقة محفوظات'] ?? (r.competition === 'محفوظات' ? r.finalScore : '-');
-                        let coptic1 = r['مسابقة قبطي مستوى أول'] ?? (r.competition === 'قبطي مستوى أول' ? r.finalScore : '-');
-                        let coptic2 = r['مسابقة قبطي مستوى ثاني'] ?? (r.competition === 'قبطي مستوى ثاني' ? r.finalScore : '-');
-                        let total = 0;
-                        if (typeof drasy === 'number') total += drasy;
-                        if (typeof mahfozat === 'number') total += mahfozat;
-                        if (typeof coptic1 === 'number') total += coptic1;
-                        if (typeof coptic2 === 'number') total += coptic2;
 
-                        return (
-                        <tr key={r.id || i} className="hover:bg-slate-50 transition-colors">
-                          <td className="p-4 font-mono text-xs text-slate-500">{r.studentID || r.studentId || '-'}</td>
-                          <td className="p-4 font-bold text-slate-800 text-sm whitespace-nowrap">{r.studentName || '-'}</td>
-                          <td className="p-4 text-slate-600 text-xs">{r.churchName || '-'}</td>
-                          <td className="p-4 text-slate-600 text-xs">{r.stage || '-'}</td>
-                          <td className="p-4 font-black text-indigo-600">{drasy}</td>
-                          <td className="p-4 font-black text-indigo-600">{mahfozat}</td>
-                          <td className="p-4 font-black text-indigo-600">{coptic1}</td>
-                          <td className="p-4 font-black text-indigo-600">{coptic2}</td>
-                          <td className="p-4 font-black text-slate-800 bg-slate-50">{total || '-'}</td>
-                          <td className="p-4 text-xs text-slate-400 text-left" dir="ltr">
-                            {r.submissionTimestamp ? new Date(r.submissionTimestamp).toLocaleString('ar-EG') : '-'}
-                          </td>
-                        </tr>
-                        );
-                      })}
-                      {onlineResults.length === 0 && (
-                        <tr>
-                          <td colSpan={10} className="p-8 text-center text-slate-400 font-bold">لا يوجد نتائج أونلاين مسجلة بعد.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
-                  <PaginationComponent 
-                    currentPage={onlineResultPageCount}
-                    totalItems={onlineResults.length}
-                    itemsPerPage={20}
-                    onPageChange={setOnlineResultPageCount}
-                  />
-                  {isOnlineResultsLoading && (
-                    <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
-                       <Loader2 className="animate-spin" size={14} /> جاري التحميل...
-                    </div>
-                  )}
-                  {!isOnlineResultsLoading && <span className="text-[10px]">عرض ٢٠ نتيجة في الصفحة</span>}
-                </div>
-              </section>
-            )}
 
             {adminActiveTab === 'orders' && (
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
@@ -9418,6 +9285,7 @@ function AppComponent() {
                                   maleCount: 0,
                                   femaleCount: 0
                                 });
+                                setActivity_type('');
                               }}
                               className="text-xs font-black text-blue-500 hover:underline"
                             >
@@ -9426,17 +9294,39 @@ function AppComponent() {
                           </div>
                         )}
                         <div className="space-y-2">
-                          <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">نوع النشاط</label>
+                          <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">المجال (نوع النشاط الرئيسي)</label>
                           <select 
                             value={newTeam.activityType || ''}
                             onChange={e => handleActivityTypeChange(e.target.value)}
                             className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
                             required
                           >
-                            <option value="">-- اختر النشاط --</option>
+                            <option value="">-- اختر النشاط الرئيسي --</option>
                             {activities.map((activity: string) => (
                               <option key={activity} value={activity}>{activity}</option>
                             ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">نوع النشاط *</label>
+                          <select 
+                            value={activity_type}
+                            onChange={e => setActivity_type(e.target.value)}
+                            className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
+                            required
+                          >
+                            <option value="">-- اختر نوع النشاط --</option>
+                            <option value="كورال">كورال</option>
+                            <option value="ألحان فردي">ألحان فردي</option>
+                            <option value="ألحان جماعي">ألحان جماعي</option>
+                            <option value="ترنيم فردي">ترنيم فردي</option>
+                            <option value="عزف فردي">عزف فردي</option>
+                            <option value="عزف جماعي">عزف جماعي</option>
+                            <option value="كمبيوتر">كمبيوتر</option>
+                            <option value="أدبية">أدبية</option>
+                            <option value="ثقافية">ثقافية</option>
+                            <option value="فنون تشكيلية">فنون تشكيلية</option>
                           </select>
                         </div>
 
