@@ -6,7 +6,7 @@ import { sortStages } from '../constants';
 import PaginationComponent from './Pagination';
 import ActivityStagesManager from './ActivityStagesManager';
 import PlatformManagement from './PlatformManagement';
-
+import SmartCommitteePlanner from './SmartCommitteePlanner';
 
 const getChurchCode = (churchName: string, databaseChurches?: any[]): string => {
   const cleanName = (churchName || '').trim();
@@ -904,8 +904,11 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
   if (isLoading) return <div className="p-8">جاري التحميل...</div>;
 
   return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden mt-8">
-      <div className="bg-slate-900 text-white p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+    <div className="space-y-8">
+      <SmartCommitteePlanner allStudents={allStudents || []} />
+      
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden mt-8">
+        <div className="bg-slate-900 text-white p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
         <div className="flex items-center gap-4">
           <ShieldCheck size={32} className="text-emerald-400" />
           <div>
@@ -1583,6 +1586,7 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
