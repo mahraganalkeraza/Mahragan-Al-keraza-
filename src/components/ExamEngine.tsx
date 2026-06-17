@@ -820,16 +820,29 @@ export const LiveExamGateway: React.FC = () => {
           enrolled_subjects: (studentObj.competitions || studentObj.enrolled_subjects) ?? null
         };
       } else {
-        // Fallback for demo/manual admin bypass
-        if (confirm(`لم يتم العثور على مشترك بالكود "${studentId}". هل تريد إنشاء جلسة يدية؟`)) {
-          studentData = {
+      // Fallback for demo/manual admin bypass
+if (confirm(`لم يتم العثور على مشترك بالكود "${studentId}". هل تريد إنشاء جلسة يدوية وإدخال بياناته الآن؟`)) {
+    
+    // إظهار نوافذ منبثقة لطلب البيانات يدوياً
+    const manualName = prompt("برجاء إدخال اسم الطالب (مثال: مينا كمال):", "");
+    const manualChurch = prompt("برجاء إدخال البلد / الكنيسة:", "");
+    const manualStage = prompt("برجاء إدخال المرحلة (مثال: إبتدائي، إعدادي):", "");
+
+    // التأكد إن المستخدم أدخل الثلاث بيانات وما عملش (إلغاء)
+    if (manualName && manualChurch && manualStage) {
+        studentData = {
             id: studentId,
-            studentName: 'طالب يدوي - ' + studentId,
-            churchName: 'إدخال يدوي',
-            stage: 'عام',
+            studentName: manualName,
+            churchName: manualChurch,
+            stage: manualStage,
             isManual: true
-          };
-        }
+        };
+    } else {
+        // لو الخادم ساب خانة فاضية أو داس إلغاء
+        alert("تم إلغاء الدخول. يجب إدخال الاسم والبلد والمرحلة بالكامل لبدء الجلسة اليدوية.");
+        return; // عشان يوقف الدخول وميبعتش بيانات ناقصة للسوبابيز
+    }
+}
       }
 
       if (!studentData) {

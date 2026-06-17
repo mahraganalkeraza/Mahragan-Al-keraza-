@@ -280,7 +280,7 @@ export const ResultsViewer: React.FC<{
         const submissionsToInsert = json.map((row: any) => {
           const studentName = row.student_name || row['الاسم'] || row['اسم الطالب'] || '';
           const churchName = row.church_name || row['الكنيسة'] || row['الكنيسة/البلد'] || '';
-          const stage = row.stage || row['المرحلة'] || 'عام';
+          const stage = row.stage || row.stage_name || row['المرحلة'] || 'عام';
           const gender = row.gender || row['النوع'] || 'ذكر';
           const derasy = row.derasy_score !== undefined ? Number(row.derasy_score) : null;
           const mahfouzat = row.mahfouzat_score !== undefined ? Number(row.mahfouzat_score) : null;
@@ -308,6 +308,8 @@ export const ResultsViewer: React.FC<{
           alert('لم يتم العثور على أي صفوف صالحة. تأكد من وجود أعمدة (student_name) و(church_name) و(stage).');
           return;
         }
+
+        console.log("Payload to Supabase (bubble sheet):", submissionsToInsert);
 
         const { error } = await supabase
           .from('exam_submissions')
@@ -350,6 +352,8 @@ export const ResultsViewer: React.FC<{
         submission_type: 'paper',
         submitted_at: new Date().toISOString()
       };
+
+      console.log("Payload to Supabase (manual):", payload);
 
       const { error } = await supabase
         .from('exam_submissions')
@@ -542,7 +546,7 @@ export const ResultsViewer: React.FC<{
                     'وقت التسليم': row.timestamp ? new Date(row.timestamp).toLocaleString('ar-EG') : '',
                     'الاسم': row.studentName,
                     'الكنيسة/البلد': row.churchName,
-                    'المرحلة': row.stage,
+                    'المرحلة': row.stage || (row as any).stage_name,
                     'نوع الامتحان': row.submissionType || 'online',
                     'النوع': (row as any).gender || row.data?.['النوع'] || '',
                     'دراسي': row.academicScore ?? row.data?.['دراسي'] ?? row.data?.['التحصيل الدراسي'] ?? '',
@@ -586,7 +590,7 @@ export const ResultsViewer: React.FC<{
                         if (header === 'المرحلة') {
                           return (
                             <td key={idx} className="p-4 font-bold whitespace-nowrap border-l border-slate-50 text-slate-700 text-right">
-                              {row.stage}
+                              {row.stage || (row as any).stage_name}
                             </td>
                           );
                         }
