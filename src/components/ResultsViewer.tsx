@@ -11,7 +11,8 @@ import {
   ShoppingCart, 
   Activity, 
   FileSpreadsheet, 
-  BookOpen
+  BookOpen,
+  Megaphone
 } from 'lucide-react';
 import { AdminHonorsEngine } from './AdminHonorsEngine';
 import { supabase } from '../utils/supabaseClient';
@@ -91,14 +92,14 @@ export const ResultsViewer: React.FC<{
         .from('exam_submissions')
         .select('*');
 
-      // Data Isolation: Strict filter at query level for non-admins matching their church name
+      // Data Isolation: Strict filter at query level for non-admins matching their church name (only published results)
       if (!isAdmin) {
         if (!activeUserChurch) {
           setSupabaseSubmissions([]);
           setIsLoading(false);
           return;
         }
-        query = query.eq('church_name', activeUserChurch);
+        query = query.eq('church_name', activeUserChurch).eq('is_published', true);
       }
 
       const { data, error } = await query.order('submitted_at', { ascending: false });
@@ -374,6 +375,27 @@ export const ResultsViewer: React.FC<{
     }
   };
 
+  const handlePublishResults = async () => {
+    if (!confirm('هل أنت متأكد من مراجعة كافة الدرجات ونشرها رسميًا للكنائس؟')) return;
+    try {
+      setIsLoading(true);
+      const { error } = await supabase
+        .from('exam_submissions')
+        .update({ is_published: true })
+        .neq('student_id', '');
+
+      if (error) throw error;
+
+      alert('تم إعلان ونشر كافة نتائج الامتحانات للكنائس بنجاح! 🚀');
+      fetchSubmissionsFromSupabase();
+    } catch (err: any) {
+      console.error('Error publishing results:', err);
+      alert('حدث خطأ أثناء نشر النتائج للكنائس: ' + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Honors Engine (Admin Only) */}
@@ -389,7 +411,7 @@ export const ResultsViewer: React.FC<{
             </h5>
             <p className="text-xs text-slate-500 font-bold">رصد نتائج امتحانات المهرجان بمختلف التقنيات (تصحيح ورقي، بابل شيت، أونلاين)</p>
           </div>
-          <div className="flex flex-wrap gap-2 w-full md:w-auto shrink-0">
+          <div className="flex flex-wrap gap-2 w-full md:w-auto shrink-0 animate-fade-in">
             {/* File upload input hidden */}
             <label className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black cursor-pointer transition-all shadow-sm">
               <Upload size={14} />
@@ -407,6 +429,14 @@ export const ResultsViewer: React.FC<{
             >
               <Plus size={14} />
               إضافة نتيجة يدوي (ورقي)
+            </button>
+            <button 
+              onClick={handlePublishResults}
+              disabled={isLoading}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all shadow-sm disabled:opacity-50"
+            >
+              <Megaphone size={14} />
+              إعلان النتائج للكنائس
             </button>
           </div>
         </div>

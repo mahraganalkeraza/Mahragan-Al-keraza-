@@ -2565,24 +2565,41 @@ function AppComponent() {
           
           // Filter out rows without student name
           const validData = data
-            .map((row: any) => ({
-              serial: String(row['الرقم التعريفي'] || ''),
-              churchName: String(row['الكنيسة/البلد'] || ''),
-              church_name: String(row['الكنيسة/البلد'] || ''),
-              studentName: String(row['الاسم'] || ''),
-              student_name: String(row['الاسم'] || ''),
-              stage: '',
-              score: 0,
-              grade: '',
-              data: row,
-              timestamp: row['توقيت التسجيل'] ? String(row['توقيت التسجيل']) : new Date().toISOString(),
-              year: String(activeYear)
-            }))
+            .map((row: any) => {
+              const studentId = String(row['الرقم التعريفي'] || '') || `excel-${Math.random().toString(36).substring(2, 11)}`;
+              
+              const derasy = row['دراسي'] !== undefined && row['دراسي'] !== '' ? Number(row['دراسي']) : null;
+              const mahfouzat = row['محفوظات'] !== undefined && row['محفوظات'] !== '' ? Number(row['محفوظات']) : null;
+              const qebtyL1 = (row['قبطي مستوى 1'] !== undefined && row['قبطي مستوى 1'] !== '') 
+                ? Number(row['قبطي مستوى 1']) 
+                : ((row['قبطي مستوى أول'] !== undefined && row['قبطي مستوى أول'] !== '') ? Number(row['قبطي مستوى أول']) : null);
+              const qebtyL2 = (row['قبطي مستوى 2'] !== undefined && row['قبطي مستوى 2'] !== '') 
+                ? Number(row['قبطي مستوى 2']) 
+                : ((row['قبطي مستوى ثاني'] !== undefined && row['قبطي مستوى ثاني'] !== '') ? Number(row['قبطي مستوى ثاني']) : null);
+
+              const stage = row['المرحلة'] || row['stage'] || '';
+              const gender = row['النوع'] || row['gender'] || 'ذكر';
+
+              return {
+                student_id: studentId,
+                student_name: String(row['الاسم'] || ''),
+                church_name: String(row['الكنيسة/البلد'] || ''),
+                stage: stage,
+                gender: gender,
+                derasy_score: derasy,
+                mahfouzat_score: mahfouzat,
+                qebty_lvl1_score: qebtyL1,
+                qebty_lvl2_score: qebtyL2,
+                submitted_at: row['توقيت التسجيل'] ? new Date(row['توقيت التسجيل']).toISOString() : new Date().toISOString(),
+                submission_type: 'excel_upload',
+                is_published: true
+              };
+            })
             .filter(r => r.student_name.trim() !== '');
 
           const { error: sbErr } = await supabase
-            .from('results')
-            .upsert(validData);
+            .from('exam_submissions')
+            .upsert(validData, { onConflict: 'student_id' });
             
           if (sbErr) throw sbErr;
           alert('تم رفع النتائج بنجاح!');
@@ -3559,21 +3576,18 @@ function AppComponent() {
     }
 
     try {
-      let queryBuilder = supabase.from('results').select('*', { count: 'exact' });
+      let queryBuilder = supabase.from('exam_submissions').select('*', { count: 'exact' });
       
       if (userRole === 'admin') {
         if (globalChurchFilter !== 'الكل') {
           queryBuilder = queryBuilder.eq('church_name', globalChurchFilter);
         }
       } else {
-        queryBuilder = queryBuilder.eq('church_name', churchName);
+        queryBuilder = queryBuilder.eq('church_name', churchName).eq('is_published', true);
       }
 
       if (globalStageFilter !== 'الكل') {
         queryBuilder = queryBuilder.eq('stage', globalStageFilter);
-      }
-      if (resultsFilterGrade !== 'الكل') {
-        queryBuilder = queryBuilder.eq('grade', resultsFilterGrade);
       }
 
       if (search) {
@@ -3581,15 +3595,24 @@ function AppComponent() {
       }
 
       const { data, count, error } = await queryBuilder
-        .order('timestamp', { ascending: false })
+        .order('submitted_at', { ascending: false })
         .range(offset, offset + 49);
 
       if (error) throw error;
 
       const mappedData = (data || []).map((row: any) => ({
-        ...row,
-        churchName: row.churchName || row.church_name,
-        studentName: row.studentName || row.student_name,
+        id: row.student_id || row.id,
+        studentName: row.student_name,
+        churchName: row.church_name,
+        stage: row.stage,
+        academicScore: row.derasy_score ?? null,
+        memorizationScore: row.mahfouzat_score ?? row.mahfozat_score ?? null,
+        copticL1Score: row.qebty_lvl1_score ?? null,
+        copticL2Score: row.qebty_lvl2_score ?? null,
+        timestamp: row.submitted_at || null,
+        gender: row.gender || '',
+        submissionType: row.submission_type || 'online',
+        grade: row.grade || (row.derasy_score !== null && row.derasy_score !== undefined ? (row.derasy_score >= 90 ? 'ممتاز' : row.derasy_score >= 80 ? 'جيد جداً' : row.derasy_score >= 65 ? 'جيد' : 'مقبول') : '')
       }));
 
       if (isFirst) {
@@ -3818,7 +3841,7 @@ function AppComponent() {
   const handleDeleteResult = async (id: string) => {
     confirmAction('تأكيد الحذف', 'هل أنت متأكد من حذف هذه النتيجة؟', async () => {
       try {
-        await supabase.from('results').delete().eq('id', id);
+        await supabase.from('exam_submissions').delete().or(`student_id.eq.${id},id.eq.${id}`);
       } catch (error) {
         console.error("Supabase delete result failed:", error);
       }
@@ -3832,8 +3855,8 @@ function AppComponent() {
       stage: result.stage,
       academicScore: result.academicScore || 0,
       memorizationScore: result.memorizationScore || 0,
-      q1Score: result.q1Score || 0,
-      qScore: result.qScore || 0,
+      q1Score: result.q1Score || result.copticL1Score || 0,
+      qScore: result.qScore || result.copticL2Score || 0,
       score: result.score,
       grade: result.grade
     });
@@ -3849,23 +3872,30 @@ function AppComponent() {
     setIsSubmittingResult(true);
     try {
       const payload = {
-        ...newResult,
-        church_name: newResult.churchName,
+        student_id: editingResult ? editingResult.id : `manual-${Math.random().toString(36).substring(2, 11)}`,
         student_name: newResult.studentName,
-        timestamp: new Date().toISOString(),
-        year: activeYear
+        church_name: newResult.churchName,
+        stage: newResult.stage || 'عام',
+        gender: 'ذكر',
+        derasy_score: newResult.academicScore !== undefined ? Number(newResult.academicScore) : null,
+        mahfouzat_score: newResult.memorizationScore !== undefined ? Number(newResult.memorizationScore) : null,
+        qebty_lvl1_score: newResult.q1Score !== undefined ? Number(newResult.q1Score) : null,
+        qebty_lvl2_score: newResult.qScore !== undefined ? Number(newResult.qScore) : null,
+        submitted_at: new Date().toISOString(),
+        submission_type: 'paper',
+        is_published: true
       };
 
       if (editingResult) {
         await supabase
-          .from('results')
+          .from('exam_submissions')
           .update(payload)
-          .eq('id', editingResult.id);
+          .eq('student_id', editingResult.id);
         setEditingResult(null);
         alert('تم تحديث النتيجة بنجاح');
       } else {
         await supabase
-          .from('results')
+          .from('exam_submissions')
           .insert([payload]);
         alert('تم إضافة النتيجة بنجاح');
       }
@@ -3907,7 +3937,7 @@ function AppComponent() {
   const handleClearResults = async () => {
     confirmAction('تأكيد مسح النتائج', 'هل أنت متأكد من مسح جميع نتائج هذا العام؟ لا يمكن التراجع عن هذه الخطوة.', async () => {
       try {
-        await supabase.from('results').delete().eq('year', activeYear);
+        await supabase.from('exam_submissions').delete().neq('student_id', '');
         setResults([]);
         setTotalResultsCount(0);
         alert('تم مسح النتائج بنجاح');
@@ -4452,9 +4482,9 @@ function AppComponent() {
     setIsLoading(true);
     try {
       const { data: resData, error: fetchErr } = await supabase
-        .from('results')
+        .from('exam_submissions')
         .select('*')
-        .eq('id', studentId)
+        .eq('student_id', studentId)
         .maybeSingle();
       
       if (resData) {
@@ -4466,17 +4496,15 @@ function AppComponent() {
            archivedBy: (user as any)?.email || 'admin'
         }]);
         
-        // 2. Clear primary fields in results
-        await supabase.from('results').update({
-          academicScore: null,
-          memorizationScore: null,
-          copticL1Score: null,
-          copticL2Score: null,
-          score: null,
-          data: null,
-          submissionInfo: null,
-          isSubmitted: false
-        }).eq('id', studentId);
+        // 2. Clear primary fields in exam_submissions
+        await supabase.from('exam_submissions').update({
+          derasy_score: null,
+          mahfouzat_score: null,
+          qebty_lvl1_score: null,
+          qebty_lvl2_score: null,
+          detailed_answers: null,
+          is_published: false
+        }).eq('student_id', studentId);
       }
       
       // 3. Unlock Gateway / Reset Session
