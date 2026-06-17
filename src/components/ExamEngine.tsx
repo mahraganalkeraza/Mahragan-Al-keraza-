@@ -688,15 +688,7 @@ export const LiveExamGateway: React.FC = () => {
       const cached = localStorage.getItem(`student_profile_${activeStudentId}`);
       if (cached) {
         try {
-          const parsed = JSON.parse(cached);
-          if (parsed) {
-            let stageClean = parsed.stage || parsed.level || parsed.stage_name || 'عام';
-            if (!stageClean || String(stageClean).toLowerCase() === 'null' || String(stageClean).toLowerCase() === 'undefined' || String(stageClean).trim() === '') {
-              stageClean = 'عام';
-            }
-            parsed.stage = stageClean;
-          }
-          setActiveStudent(parsed);
+          setActiveStudent(JSON.parse(cached));
         } catch (e) {
           console.error('Error parsing cached active student:', e);
         }
@@ -818,15 +810,11 @@ export const LiveExamGateway: React.FC = () => {
       let studentData: any = null;
 
       if (studentObj) {
-        let detectedStage = studentObj.stage || studentObj.level || studentObj.stage_name || 'عام';
-        if (!detectedStage || String(detectedStage).toLowerCase() === 'null' || String(detectedStage).toLowerCase() === 'undefined' || String(detectedStage).trim() === '') {
-          detectedStage = 'عام';
-        }
         studentData = {
           id: studentObj.id,
           studentName: studentObj.name || studentObj.student_name || studentNameFromPayload || 'طالب',
           churchName: studentObj.churchName || studentObj.church || studentObj.church_name || 'غير محدد',
-          stage: detectedStage,
+          stage: studentObj.stage || 'عام',
           gender: studentObj.gender || '',
           coptic_level: studentObj.coptic_level ?? null,
           enrolled_subjects: (studentObj.competitions || studentObj.enrolled_subjects) ?? null
@@ -1271,35 +1259,12 @@ export const LiveExamGateway: React.FC = () => {
         });
       });
 
-      let currentStage = activeStudent.stage || activeStudent.level || activeStudent.stage_name;
-      
-      // If still missing or string representation of null/undefined
-      if (!currentStage || 
-          String(currentStage).trim() === '' || 
-          String(currentStage).toLowerCase() === 'null' || 
-          String(currentStage).toLowerCase() === 'undefined') {
-        if (cachedExams && cachedExams.length > 0) {
-          const firstExam = cachedExams.find((e: any) => e.stage);
-          if (firstExam && firstExam.stage) {
-            currentStage = firstExam.stage;
-          }
-        }
-      }
-      
-      // Ultimate absolute fallback
-      if (!currentStage || 
-          String(currentStage).trim() === '' || 
-          String(currentStage).toLowerCase() === 'null' || 
-          String(currentStage).toLowerCase() === 'undefined') {
-        currentStage = 'ثالثة ورابعة';
-      }
-
       const finalPayload = {
         student_id: activeStudent.id,
         exam_id: primaryExamId || 'UNKNOWN',
         student_name: activeStudent.studentName || activeStudent.name || 'بدون اسم',
         church_name: activeStudent.churchName || 'غير مكتمل',
-        stage: currentStage,
+        stage: activeStudent.stage || 'ثالثة ورابعة',
         gender: activeStudent.gender || '',
         derasy_score: derasyTotal || completedSubjects.derasy || 0,
         mahfouzat_score: mahfozatTotal || completedSubjects.mahfozat || 0,
