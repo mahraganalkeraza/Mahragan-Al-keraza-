@@ -55,6 +55,7 @@ export const ResultsViewer: React.FC<{
       'وقت التسليم',
       ...(hideNames ? [] : ['الاسم']),
       'الكنيسة/البلد',
+      'المرحلة',
       'نوع الامتحان',
       'النوع',
       'دراسي',
@@ -525,35 +526,41 @@ export const ResultsViewer: React.FC<{
                 <tr className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase whitespace-nowrap">
                   <th className="p-4 border-b border-slate-100">م</th>
                   {isAdmin && <th className="p-4 border-b border-slate-100">تحكم</th>}
-                  {allHeaders.map((header, idx) => (
-                    <th key={idx} className="p-4 border-b border-slate-100">{header}</th>
-                  ))}
+                  {allHeaders.map((header, idx) => {
+                    if (header === 'المرحلة') {
+                      return <th key={idx} className="p-4 border-b border-slate-100 text-slate-500 font-black">المرحلة</th>;
+                    }
+                    return (
+                      <th key={idx} className="p-4 border-b border-slate-100">{header}</th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {results.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE).map((r, index) => {
+                {results.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE).map((row, index) => {
                   const rowData: Record<string, any> = {
-                    'وقت التسليم': r.timestamp ? new Date(r.timestamp).toLocaleString('ar-EG') : '',
-                    'الاسم': r.studentName,
-                    'الكنيسة/البلد': r.churchName,
-                    'نوع الامتحان': r.submissionType || 'online',
-                    'النوع': (r as any).gender || r.data?.['النوع'] || '',
-                    'دراسي': r.academicScore ?? r.data?.['دراسي'] ?? r.data?.['التحصيل الدراسي'] ?? '',
-                    'محفوظات': r.memorizationScore ?? r.data?.['محفوظات'] ?? '',
-                    'قبطي مستوى أول': r.copticL1Score ?? r.data?.['قبطي مستوى أول'] ?? '',
-                    'قبطي مستوى ثانٍ': r.copticL2Score ?? r.data?.['قبطي مستوى ثاني'] ?? r.data?.['قبطي مستوى ثانٍ'] ?? '',
-                    ...r.data
+                    'وقت التسليم': row.timestamp ? new Date(row.timestamp).toLocaleString('ar-EG') : '',
+                    'الاسم': row.studentName,
+                    'الكنيسة/البلد': row.churchName,
+                    'المرحلة': row.stage,
+                    'نوع الامتحان': row.submissionType || 'online',
+                    'النوع': (row as any).gender || row.data?.['النوع'] || '',
+                    'دراسي': row.academicScore ?? row.data?.['دراسي'] ?? row.data?.['التحصيل الدراسي'] ?? '',
+                    'محفوظات': row.memorizationScore ?? row.data?.['محفوظات'] ?? '',
+                    'قبطي مستوى أول': row.copticL1Score ?? row.data?.['قبطي مستوى أول'] ?? '',
+                    'قبطي مستوى ثانٍ': row.copticL2Score ?? row.data?.['قبطي مستوى ثاني'] ?? row.data?.['قبطي مستوى ثانٍ'] ?? '',
+                    ...row.data
                   };
                   
-                  const hasScore = (r.academicScore !== undefined && r.academicScore !== null) ||
-                                   (r.memorizationScore !== undefined && r.memorizationScore !== null) ||
-                                   (r.copticL1Score !== undefined && r.copticL1Score !== null) ||
-                                   (r.copticL2Score !== undefined && r.copticL2Score !== null);
-                  const honorData = r.id ? honorsRanks[r.id] : null;
+                  const hasScore = (row.academicScore !== undefined && row.academicScore !== null) ||
+                                   (row.memorizationScore !== undefined && row.memorizationScore !== null) ||
+                                   (row.copticL1Score !== undefined && row.copticL1Score !== null) ||
+                                   (row.copticL2Score !== undefined && row.copticL2Score !== null);
+                  const honorData = row.id ? honorsRanks[row.id] : null;
                   const rowClass = honorData ? honorData.colorClass : 'hover:bg-slate-50 transition-colors';
 
                   return (
-                    <tr key={r.id || index} className={rowClass}>
+                    <tr key={row.id || index} className={rowClass}>
                       <td className="p-4 font-bold text-slate-400 text-sm whitespace-nowrap border-l border-slate-50 relative">
                         {honorData && (
                           <div className="absolute top-1 right-2 text-[9px] font-black bg-white/50 px-1 py-0.5 rounded text-slate-700 border border-black/10">
@@ -566,7 +573,7 @@ export const ResultsViewer: React.FC<{
                         <td className="p-4 border-l border-slate-50">
                           {hasScore && (
                             <button 
-                              onClick={() => handleResetRow(r.id!)}
+                              onClick={() => handleResetRow(row.id!)}
                               title="إعادة الامتحان وتصفير محتواه"
                               className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-all border border-rose-100"
                             >
@@ -576,6 +583,13 @@ export const ResultsViewer: React.FC<{
                         </td>
                       )}
                       {allHeaders.map((header, idx) => {
+                        if (header === 'المرحلة') {
+                          return (
+                            <td key={idx} className="p-4 font-bold whitespace-nowrap border-l border-slate-50 text-slate-700 text-right">
+                              {row.stage}
+                            </td>
+                          );
+                        }
                         const isDerasi = header === 'دراسي' || header === 'التحصيل الدراسي';
                         const isExamType = header === 'نوع الامتحان';
                         
