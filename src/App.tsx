@@ -5062,17 +5062,16 @@ function AppComponent() {
   
 
   useEffect(() => {
-    if (activeSection === 'exam-login' && userRole !== 'admin' && userRole !== 'super_admin') {
-      setActiveSection('home');
-    }
+    // Shared exam-login portal is accessible to all users directly without admin role check
   }, [activeSection, userRole]);
 
-  if (activeSection === 'exam-login' && (userRole === 'admin' || userRole === 'super_admin')) {
+  if (activeSection === 'exam-login') {
     return (
       <ExamLoginPortal 
-        onSuccess={(student) => {
-          console.log('Exam login success:', student);
-          setNotification(`تم محاكاة الدخول بنجاح للمشترك: ${student.name}`);
+        onClose={() => setActiveSection('home')}
+        onSuccess={(student, examData) => {
+          console.log('Exam login success:', student, examData);
+          setNotification(`تم محاكاة الدخول بنجاح للمشترك: ${student.name} - الامتحان: ${examData.exam_title}`);
           setActiveSection('home');
         }}
       />
