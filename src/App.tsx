@@ -5044,7 +5044,7 @@ function AppComponent() {
     // Shared exam-login portal is accessible to all users directly without admin role check
   }, [activeSection, userRole]);
 
-  if (activeSection === 'exam-login' || isPortalOpen) {
+  if (activeSection === 'exam-login' || activeSection === 'student-exam' || isPortalOpen) {
     return (
       <ExamLoginPortal 
         onClose={() => {
@@ -5483,7 +5483,15 @@ function AppComponent() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
             <BackButton />
             <div className="max-w-4xl mx-auto">
-              <LiveExamGateway />
+              <LiveExamGateway 
+                setCurrentScreen={(screen) => {
+                  if (screen === 'student-exam') {
+                    setActiveSection('exam-login');
+                  }
+                }}
+                setCurrentStudent={() => {}}
+                setActiveExam={() => {}}
+              />
             </div>
           </motion.div>
         )}
@@ -9786,7 +9794,17 @@ function AppComponent() {
             <div className="flex-1 bg-slate-50 overflow-hidden relative">
               <div className="absolute inset-0 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-start">
                  <div className="w-full max-w-4xl mt-auto mb-auto">
-                   <LiveExamGateway />
+                   <LiveExamGateway 
+                     setCurrentScreen={(screen) => {
+                       if (screen === 'student-exam') {
+                         setShowExamGateway(false);
+                         setIsPortalOpen(true);
+                         setActiveSection('exam-login');
+                       }
+                     }}
+                     setCurrentStudent={() => {}}
+                     setActiveExam={() => {}}
+                   />
                  </div>
               </div>
             </div>

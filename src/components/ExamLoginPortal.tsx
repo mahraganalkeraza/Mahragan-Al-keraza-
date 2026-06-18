@@ -141,7 +141,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           .from('registrations')
           .select('id, name, stage, churchName, gender, competitions')
           .ilike('name', `%${searchQuery.trim()}%`)
-          .range(0, 15);
+          .limit(10);
 
         if (error) throw error;
         setSearchResults(data || []);
@@ -268,7 +268,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         .from('registrations')
         .select('id, name, stage, churchName, gender, competitions')
         .eq('id', academicCode.trim())
-        .maybeSingle();
+        .single();
 
       if (dbErr || !studentObj) {
         setErrors("لم نتمكن من العثور على الكود المسحوب، يرجى الاستعانة بمسؤول اللجنة للتأكد.");

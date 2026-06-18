@@ -885,9 +885,15 @@ QuestionCard.displayName = "QuestionCard";
 
 export interface LiveExamGatewayProps {
   setCurrentScreen?: (screen: string) => void;
+  setCurrentStudent?: (student: any) => void;
+  setActiveExam?: (exam: any) => void;
 }
 
-export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScreen }) => {
+export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ 
+  setCurrentScreen,
+  setCurrentStudent,
+  setActiveExam: setParentActiveExam
+}) => {
   const [isScanning, setIsScanning] = useState(false);
   const [activeStudent, setActiveStudent] = useState<any>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<string | null>(
@@ -1813,8 +1819,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
       alert("تم حفظ وإرسال إجابات المسابقة بنجاح! 🎉");
 
       // Clear current exam states and redirect back to the student grid view
-      if (typeof setActiveExam === 'function') setActiveExam(null);
-      if (typeof setActiveStudent === 'function') setActiveStudent(null);
+      if (typeof setParentActiveExam === 'function') setParentActiveExam(null);
+      if (typeof setCurrentStudent === 'function') setCurrentStudent(null);
       if (typeof setSelectedCompetition === 'function') setSelectedCompetition(null);
       if (typeof setCurrentScreen === 'function') {
         setCurrentScreen('student-exam');
@@ -1878,6 +1884,10 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
                 qebty_lvl2: null,
               });
               setIsTerminated(false);
+
+              if (typeof setParentActiveExam === 'function') setParentActiveExam(null);
+              if (typeof setCurrentStudent === 'function') setCurrentStudent(null);
+              if (typeof setCurrentScreen === 'function') setCurrentScreen('student-exam');
             }}
             className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all font-sans"
           >
@@ -1934,6 +1944,10 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
                 qebty_lvl2: null,
               });
               setIsExamCompleted(false);
+
+              if (typeof setParentActiveExam === 'function') setParentActiveExam(null);
+              if (typeof setCurrentStudent === 'function') setCurrentStudent(null);
+              if (typeof setCurrentScreen === 'function') setCurrentScreen('student-exam');
             }}
             className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
           >
@@ -2220,6 +2234,10 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
               onClick={() => {
                 localStorage.removeItem("active_student_id");
                 setActiveStudent(null);
+
+                if (typeof setParentActiveExam === 'function') setParentActiveExam(null);
+                if (typeof setCurrentStudent === 'function') setCurrentStudent(null);
+                if (typeof setCurrentScreen === 'function') setCurrentScreen('student-exam');
               }}
               className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all font-sans"
             >
