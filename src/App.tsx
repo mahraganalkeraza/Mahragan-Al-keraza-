@@ -584,6 +584,7 @@ function AppComponent() {
   const [churchName, setChurchName] = useState(initialProfile?.churchName || '');
   const [location, setLocation] = useState(initialProfile?.country || '');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isPortalOpen, setIsPortalOpen] = useState(false);
   const [activeSection, setActiveSection] = useState(() => {
     if (typeof window !== 'undefined' && window.location.pathname === '/exam-login') {
       return 'exam-login';
@@ -4368,31 +4369,8 @@ function AppComponent() {
   const [pendingDeviceIp, setPendingDeviceIp] = useState('');
   const [isCheckingDevice, setIsCheckingDevice] = useState(false);
 
-  const handleOpenExams = async () => {
-    try {
-      setIsCheckingDevice(true);
-      const res = await fetch('https://api.ipify.org?format=json');
-      const data = await res.json();
-      const ip = data.ip;
-      
-      const sessionStr = localStorage.getItem('exam_session');
-      if (sessionStr) {
-        const session = JSON.parse(sessionStr);
-        if (session.deviceApproved && session.savedIp === ip) {
-          setShowExamGateway(true);
-          setIsCheckingDevice(false);
-          return;
-        }
-      }
-      
-      setPendingDeviceIp(ip);
-      setShowDevicePermissionModal(true);
-      setIsCheckingDevice(false);
-    } catch (e) {
-      console.error('Failed to get IP:', e);
-      setIsCheckingDevice(false);
-      setShowExamGateway(true); // Fallback to allow access if IP check fails entirely
-    }
+  const handleOpenExams = () => {
+    setIsPortalOpen(true);
   };
 
   const handleDeleteSchedule = async (id: string) => {
@@ -4799,8 +4777,8 @@ function AppComponent() {
   const NavItem = ({ id, icon: Icon, label }: { id: string, icon: any, label: string }) => (
     <button
       onClick={() => { 
-        if (id === 'exams_portal') {
-          handleOpenExams();
+        if (id === 'exams_portal' || id === 'exam-login') {
+          setIsPortalOpen(true);
         } else {
           setActiveSection(id); 
         }
@@ -5065,13 +5043,60 @@ function AppComponent() {
     // Shared exam-login portal is accessible to all users directly without admin role check
   }, [activeSection, userRole]);
 
-  if (activeSection === 'exam-login') {
+  if (activeSection === 'exam-login' || isPortalOpen) {
     return (
       <ExamLoginPortal 
-        onClose={() => setActiveSection('home')}
+        onClose={() => {
+          setIsPortalOpen(false);
+          setActiveSection('home');
+        }}
         onSuccess={(student, examData) => {
-          console.log('Exam login success:', student, examData);
-          setNotification(`تم محاكاة الدخول بنجاح للمشترك: ${student.name} - الامتحان: ${examData.exam_title}`);
+          // 1. Build student profile matching LiveExamGateway properties
+          let copticLevel: number | null = null;
+          const comps = student.competitions;
+          if (comps) {
+            let compsArr: any[] = [];
+            if (Array.isArray(comps)) {
+              compsArr = comps;
+            } else if (typeof comps === 'string') {
+              try {
+                compsArr = JSON.parse(comps);
+              } catch (e) {
+                compsArr = [comps];
+              }
+            }
+            compsArr.forEach((item: any) => {
+              const nameStr = typeof item === 'string' ? item : (item.activity || item.competition || item.name || '');
+              const lvlStr = typeof item === 'object' ? (item.level || '') : '';
+              if (nameStr.includes('ثاني') || lvlStr.includes('ثاني') || lvlStr.includes('2')) {
+                copticLevel = 2;
+              } else if (nameStr.includes('أول') || nameStr.includes('اول') || lvlStr.includes('أول') || lvlStr.includes('اول') || lvlStr.includes('1')) {
+                copticLevel = 1;
+              }
+            });
+          }
+
+          const studentProfile = {
+            id: student.id,
+            studentName: student.name,
+            churchName: student.churchName,
+            stage: student.stage,
+            gender: student.gender,
+            coptic_level: copticLevel,
+            enrolled_subjects: student.competitions
+          };
+
+          // 2. Put it in localStorage so the LiveExamGateway component can instantly restore the user session
+          localStorage.setItem('active_student_id', student.id);
+          localStorage.setItem(`student_profile_${student.id}`, JSON.stringify(studentProfile));
+
+          // 3. Clear transient scores or cached values from any expired session
+          localStorage.removeItem(`completed_subjects_${student.id}`);
+          localStorage.removeItem(`all_answers_${student.id}`);
+
+          // 4. Open the live exam gateway instantly
+          setIsPortalOpen(false);
+          setShowExamGateway(true);
           setActiveSection('home');
         }}
       />
@@ -5131,7 +5156,6 @@ function AppComponent() {
                 {userRole === 'church' && <NavItem id="church_dashboard" icon={LayoutDashboard} label="صفحة الكنيسة" />}
                 <NavItem id="calculator" icon={Calculator} label="حاسبة الكتب" />
                 <NavItem id="inquiries" icon={MessageSquare} label="الاستفسارات والشكاوي" />
-                <NavItem id="exams_portal" icon={BookOpen} label="امتحانات الأونلاين" />
                 <NavItem id="exam-login" icon={QrCode} label="بوابة دخول الامتحانات" />
                 <NavItem id="info" icon={Info} label="عن المهرجان" />
                 {isLoggedIn && (

@@ -26,6 +26,7 @@ interface ExamLoginPortalProps {
       stage: string;
       churchName: string;
       gender: string;
+      competitions?: any;
     },
     examData: {
       id: string;
@@ -138,7 +139,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       try {
         const { data, error } = await supabase
           .from('registrations')
-          .select('id, name, stage, churchName, gender')
+          .select('id, name, stage, churchName, gender, competitions')
           .ilike('name', `%${searchQuery.trim()}%`)
           .range(0, 15);
 
@@ -226,7 +227,8 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           name: studentObj.name,
           stage: studentObj.stage,
           churchName: studentObj.churchName || 'غير محدد',
-          gender: studentObj.gender || 'ذكر'
+          gender: studentObj.gender || 'ذكر',
+          competitions: studentObj.competitions
         },
         {
           id: examRow.id,
@@ -264,7 +266,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     try {
       const { data: studentObj, error: dbErr } = await supabase
         .from('registrations')
-        .select('id, name, stage, churchName, gender')
+        .select('id, name, stage, churchName, gender, competitions')
         .eq('id', academicCode.trim())
         .maybeSingle();
 
