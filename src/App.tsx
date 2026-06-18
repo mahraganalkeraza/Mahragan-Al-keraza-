@@ -1642,6 +1642,8 @@ function AppComponent() {
 
     let compsCount: any = { "مادة واحدة": 0, "مادتين": 0, "٣ مواد أو أكثر": 0 };
     const compTypesMap: Record<string, number> = {};
+    let maleCount = 0;
+    let femaleCount = 0;
     
     activeParticipants.forEach(p => {
        const parsedComps = parseCompetitionsSafely(p.competitions);
@@ -1653,6 +1655,14 @@ function AppComponent() {
        parsedComps.forEach((c: string) => {
            compTypesMap[c] = (compTypesMap[c] || 0) + 1;
        });
+
+       // Gender tracking
+       const g = String(p.gender || '').trim();
+       if (g === 'ذكر' || g.toLowerCase() === 'male' || g.toLowerCase() === 'm' || g === 'بنين') {
+         maleCount++;
+       } else if (g === 'أنثى' || g.toLowerCase() === 'female' || g.toLowerCase() === 'f' || g === 'بنات') {
+         femaleCount++;
+       }
     });
 
     const engagementData = [
@@ -1660,6 +1670,11 @@ function AppComponent() {
        { name: 'مادتين', value: compsCount["مادتين"] },
        { name: '٣ مواد أو أكثر', value: compsCount["٣ مواد أو أكثر"] }
      ].filter(d => d.value > 0);
+
+    const genderData = [
+       { name: 'ذكور', value: maleCount },
+       { name: 'إناث', value: femaleCount }
+    ].filter(d => d.value > 0);
 
     const competitionTypesData = Object.keys(compTypesMap).map(k => ({
        name: k,
@@ -1724,7 +1739,8 @@ function AppComponent() {
       totalParticipants,
       totalOrders,
       totalTeams: activeTeamsCount,
-      growthTrendData
+      growthTrendData,
+      genderData
     };
   }, [allChurchParticipants, orders, activityTeams, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
 
@@ -5925,6 +5941,14 @@ function AppComponent() {
 
               {/* Main Content Area */}
               <div className="flex-1 p-6 md:p-10 min-w-0 bg-white overflow-y-auto">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={adminActiveTab}
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -15 }}
+                    transition={{ duration: 0.3, ease: 'easeOut' }}
+                  >
 
               {adminActiveTab === 'dashboard' && (
                 <>
@@ -7402,7 +7426,7 @@ function AppComponent() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
                     <h3 className="font-black text-slate-800 mb-6 text-lg">منحنى توزيع المشتركين (كثافة المراحل)</h3>
                     <div className="h-64">
@@ -7438,7 +7462,43 @@ function AppComponent() {
                     </div>
                   </div>
 
-                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-2">
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                    <h3 className="font-black text-slate-800 mb-6 text-lg">توزيع المشتركين حسب الجنس</h3>
+                    <div className="h-64">
+                      {(!analyticsData.genderData || analyticsData.genderData.length === 0) ? (
+                        <div className="h-full flex items-center justify-center text-slate-400 font-bold text-sm">
+                          لا توجد بيانات جنس متوفرة
+                        </div>
+                      ) : (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie 
+                              data={analyticsData.genderData} 
+                              dataKey="value" 
+                              nameKey="name" 
+                              cx="50%" 
+                              cy="50%" 
+                              innerRadius={60} 
+                              outerRadius={80} 
+                              paddingAngle={5} 
+                              label={({name, percent}) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                            >
+                              {analyticsData.genderData.map((entry, index) => (
+                                <Cell 
+                                  key={`cell-${index}`} 
+                                  fill={entry.name === 'ذكور' ? '#2563eb' : '#ec4899'} 
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontFamily: 'Tajawal' }} />
+                            <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontFamily: 'Tajawal', fontWeight: 'bold', fontSize: '11px' }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3">
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                       <div>
                         <h3 className="font-black text-slate-800 text-lg flex items-center gap-2">
@@ -7532,7 +7592,7 @@ function AppComponent() {
                     )}
                   </div>
 
-                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-2">
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3">
                     <h3 className="font-black text-slate-800 mb-6 text-lg">الطلب الحقيقي للكتب (الكتب المطلوبة vs مسابقات المشتركين)</h3>
                     <div className="h-80 mb-8">
                       <ResponsiveContainer width="100%" height="100%">
@@ -8149,6 +8209,8 @@ function AppComponent() {
                 </section>
               </div>
             )}
+                  </motion.div>
+                </AnimatePresence>
             </div>
           </div>
 
