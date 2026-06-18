@@ -1,729 +1,427 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabaseClient';
 import { 
-  QrCode, Search, Smartphone, Sparkles, CheckCircle2, 
-  AlertTriangle, ArrowRight, Settings, Link2, UserCheck, 
-  RefreshCw, Sliders, List, X, Loader, HelpCircle, Check, ChevronRight
+  Key, 
+  Search, 
+  User, 
+  BookOpen, 
+  CheckCircle, 
+  AlertCircle, 
+  Sparkles,
+  School,
+  Lock,
+  Compass,
+  QrCode
 } from 'lucide-react';
-import { supabase } from '../utils/supabaseClient';
 import { motion, AnimatePresence } from 'motion/react';
-import { QRScanner } from './QRScanner';
 
-interface Participant {
-  id: string;
-  name: string;
-  stage: string;
-  churchName: string;
-  serial?: string;
-  year?: string;
+interface ExamLoginPortalProps {
+  onSuccess: (student: {
+    id: string;
+    name: string;
+    stage: string;
+    churchName: string;
+    gender: string;
+    competitions: any;
+  }) => void;
+  systemSetting?: {
+    allowRegistrationLogin?: boolean;
+    requireValidation?: boolean;
+    examOpen?: boolean;
+    portalAnnouncement?: string;
+  };
 }
 
-interface ExamLink {
-  stage: string;
-  url: string;
-}
-
-export const ExamLoginPortal: React.FC = () => {
-  // State
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [examLinks, setExamLinks] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
-  const [totalCount, setTotalCount] = useState(0);
-
-  // Active view
-  const [activeTab, setActiveTab] = useState<'qr' | 'search'>('qr');
+export function ExamLoginPortal({ onSuccess, systemSetting }: ExamLoginPortalProps) {
+  // Authentication Method (Strictly default to 'code' for QR Scanning safety)
+  const [loginMethod, setLoginMethod] = useState<'code' | 'name'>('code');
+  const [academicCode, setAcademicCode] = useState('');
   
-  // Settings & Configuration
-  const [showSettings, setShowSettings] = useState(false);
-  const [passcode, setPasscode] = useState('');
-  const [isUnlocked, setIsUnlocked] = useState(false);
-  
-  // Form Entry IDs Config
-  const [idEntryId, setIdEntryId] = useState(() => localStorage.getItem('form_entry_id') || 'entry.1000001');
-  const [nameEntryId, setNameEntryId] = useState(() => localStorage.getItem('form_entry_name') || 'entry.1000002');
-  const [stageEntryId, setStageEntryId] = useState(() => localStorage.getItem('form_entry_stage') || 'entry.1000003');
-  const [churchEntryId, setChurchEntryId] = useState(() => localStorage.getItem('form_entry_church') || 'entry.1000004');
+  // Emergency Mode State (Hidden Tab for Authorized Servants Only)
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [secretClickCount, setSecretClickCount] = useState(0);
 
-  // Cache for search
-  const participantsRef = useRef<Participant[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStageFilter, setSelectedStageFilter] = useState('الكل');
-  const [searchResults, setSearchResults] = useState<Participant[]>([]);
+  // Search with Dropdown States
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<any | null>(null);
+  const [showDropdown, setShowDropdown] = useState(false);
 
-  // Scan state
-  const [scannedResult, setScannedResult] = useState<Participant | null>(null);
-  const [scanResultSource, setScanResultSource] = useState<'mode_a' | 'mode_b' | 'manual'>('mode_a');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [cooldown, setCooldown] = useState(false);
+  // General Portal Settings & Configurations
+  const [errors, setErrors] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Load Exam Links and Participants from Supabase
-  const loadData = async () => {
-    setIsLoading(true);
-    setSyncStatus('syncing');
-    try {
-      // 1. Fetch Google Form Links from Supabase (or use default ones as safety)
-      const { data: linksData, error: linksError } = await supabase
-        .from('exam_links')
-        .select('*');
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-      const links: Record<string, string> = {
-        'دراسي': 'https://docs.google.com/forms/d/e/1FAIpQLSfD_g0q2O_exam1/viewform',
-        'محفوظات': 'https://docs.google.com/forms/d/e/1FAIpQLSfD_g0q2O_exam2/viewform',
-        'قبطي مستوى أول': 'https://docs.google.com/forms/d/e/1FAIpQLSfD_g0q2O_exam3/viewform',
-        'قبطي مستوى ثاني': 'https://docs.google.com/forms/d/e/1FAIpQLSfD_g0q2O_exam4/viewform'
-      };
-
-      if (linksData && !linksError) {
-        linksData.forEach((d: any) => {
-          if (d.stage && d.url) {
-            links[d.stage] = d.url;
-          }
-        });
+  // Detect clicks outside to close dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
       }
-      setExamLinks(links);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
-      // 2. Fetch Student Registrations from Supabase
-      const { data: sbSubmissions, error: sbSubmissionsError } = await supabase
+  // Secret Unlocking Feature (Clicking the Compass icon 5 times prompts for Admin OTP)
+  const handleSecretIconClick = () => {
+    if (isAdminUnlocked) return;
+    
+    const newCount = secretClickCount + 1;
+    setSecretClickCount(newCount);
+    
+    if (newCount >= 5) {
+      setSecretClickCount(0); // Reset
+      const password = prompt("برجاء إدخال الرقم السري :");
+      if (password === "2026") { // الرقم السري الخاص بـ كريم هندسة
+        setIsAdminUnlocked(true);
+        setLoginMethod('name'); // Switch immediately
+        alert("تم تفعيل وضع الطوارئ والبحث بالاسم بنجاح.");
+      } else if (password !== null) {
+        alert("الرقم السري خاطئ! يرجى استخدام الـ QR كود.");
+      }
+    }
+  };
+
+  // Live search debounced matching exact DB columns
+  useEffect(() => {
+    if (loginMethod !== 'name' || searchQuery.trim().length < 3) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    const delayDebounce = setTimeout(async () => {
+      setIsSearching(true);
+      setErrors(null);
+      try {
+        // Querying exactly from your 'registrations' table structure
+        const { data, error } = await supabase
+          .from('registrations')
+          .select('id, name, stage, churchName, gender, competitions')
+          .ilike('name', `%${searchQuery.trim()}%`)
+          .range(0, 15);
+
+        if (error) throw error;
+        setSearchResults(data || []);
+        setShowDropdown(true);
+      } catch (err: any) {
+        console.error("Error fetching students:", err.message);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(delayDebounce);
+  }, [searchQuery, loginMethod]);
+
+  const handleSelectStudent = (student: any) => {
+    setSelectedStudent(student);
+    setSearchQuery(student.name);
+    setShowDropdown(false);
+    setErrors(null);
+  };
+
+  // Submit Handler: Name-based Portal Login (Emergency Case)
+  const handleNameLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudent) {
+      setErrors("الرجاء اختيار الاسم بالكامل من قائمة البحث المنسدلة.");
+      return;
+    }
+
+    setIsLoading(true);
+    setErrors(null);
+
+    try {
+      const { data: studentObj, error: fetchErr } = await supabase
         .from('registrations')
-        .select('id, name, stage, churchName, gender')
-        .range(0, 4999);
+        .select('*')
+        .eq('id', selectedStudent.id)
+        .maybeSingle();
 
-      if (sbSubmissionsError) throw sbSubmissionsError;
+      if (fetchErr || !studentObj) {
+        setErrors("فشل العثور على ملف المشترك بالخادم، راجع مسؤول اللجان.");
+        setIsLoading(false);
+        return;
+      }
 
-      const mappedParticipants: Participant[] = (sbSubmissions || []).map((sbRow: any) => ({
-        id: sbRow.id,
-        name: sbRow.name || '',
-        stage: sbRow.stage || '',
-        churchName: sbRow.churchName || '',
-        serial: sbRow.id,
-        country: 'مصر',
-        competitions: sbRow.competitions || [],
-        timestamp: sbRow.timestamp || new Date().toISOString()
-      }));
-
-      // 3. Fast count exact total live registered count
-      const { count, error: countError } = await supabase
-        .from('registrations')
-        .select('*', { count: 'exact', head: true });
-
-      participantsRef.current = mappedParticipants;
-      setParticipants(mappedParticipants);
-      setTotalCount(count || mappedParticipants.length);
-      setSyncStatus('success');
+      // Success Payload mapped perfectly to registrations table columns
+      onSuccess({
+        id: String(studentObj.id),
+        name: studentObj.name,
+        stage: studentObj.stage || 'دراسي',
+        churchName: studentObj.churchName || 'مارمينا والبابا كيرلس',
+        gender: studentObj.gender || 'ذكر',
+        competitions: studentObj.competitions || null
+      });
     } catch (err: any) {
-      console.error("Failed to load data for Exam Portal from Supabase:", err);
-      // Fallback fallback to empty or cached state
-      setSyncStatus('error');
+      setErrors("حدث خطأ تقني غير متوقع أثناء تسجيل الدخول.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  // Mode A parser helper
-  const parseModeAPayload = (text: string): Participant | null => {
-    if (text.includes('|')) {
-      const parts = text.split('|');
-      const payload: Record<string, string> = {};
-      for (const part of parts) {
-        const idx = part.indexOf(':');
-        if (idx !== -1) {
-          const key = part.substring(0, idx).trim().toLowerCase();
-          const value = part.substring(idx + 1).trim();
-          payload[key] = value;
-        }
-      }
-      const id = payload['id'] || payload['serial'] || '';
-      const name = payload['name'] || '';
-      const stage = payload['stage'] || payload['level'] || '';
-      const church = payload['church'] || payload['churchname'] || '';
-      
-      if (id && name) {
-        return {
-          id,
-          name,
-          stage,
-          churchName: church,
-          serial: id
-        };
-      }
-    }
-    return null;
-  };
-
-  // QR Scan Success logic
-  const handleQRScanSuccess = async (decodedText: string) => {
-    if (cooldown || isSubmitting || submitSuccess) return;
-
-    // Throttle / Cooldown for scanner input
-    setCooldown(true);
-    setTimeout(() => setCooldown(false), 2000);
-
-    setErrorMessage('');
-    const modeAPayload = parseModeAPayload(decodedText);
-
-    if (modeAPayload) {
-      // MODE A: Payload extracted offline. 
-      setScannedResult(modeAPayload);
-      setScanResultSource('mode_a');
-    } else {
-      // MODE B: Scanned Text is a Student ID/Serial. Resolve using local cache.
-      const searchId = decodedText.trim();
-      const match = participantsRef.current.find(
-        p => p.id === searchId || p.serial === searchId
-      );
-
-      if (match) {
-        setScannedResult(match);
-        setScanResultSource('mode_b');
-      } else {
-        setErrorMessage(`لم يتم العثور على مشترك بالرقم: "${searchId}". يرجى استخدام البحث اليدوي.`);
-        setScannedResult(null);
-      }
-    }
-  };
-
-  // Optimized Client-Side Search
-  useEffect(() => {
-    if (!searchTerm.trim()) {
-      setSearchResults([]);
+  // Submit Handler: Core QR Code / Numeric ID Entry Login
+  const handleCodeLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!academicCode.trim()) {
+      setErrors("يرجى مسح كود الـ QR الصحيح لبدء الامتحان.");
       return;
     }
 
-    const term = searchTerm.toLowerCase();
-    const results = participantsRef.current.filter(p => {
-      const matchName = p.name.toLowerCase().includes(term);
-      const matchCode = p.id.toLowerCase().includes(term) || (p.serial && p.serial.toLowerCase().includes(term));
-      const matchStage = selectedStageFilter === 'الكل' || p.stage === selectedStageFilter;
-      return (matchName || matchCode) && matchStage;
-    });
-
-    // Limit to top 15 results to prevent React UI rendering lag
-    setSearchResults(results.slice(0, 15));
-  }, [searchTerm, selectedStageFilter]);
-
-  // Handle Enter Exam & Record Attendance in Supabase
-  const handleEnterExam = async (student: Participant) => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
-    setErrorMessage('');
+    setIsLoading(true);
+    setErrors(null);
 
     try {
-      const customId = `attendance-${student.id}-${Date.now()}`;
-      
-      // 1. Log direct attendance in Supabase
-      const { error: attendanceError } = await supabase
-        .from('exam_attendance')
-        .insert({
-          id: customId,
-          studentId: student.id,
-          name: student.name,
-          stage: student.stage,
-          church: student.churchName,
-          timestamp: new Date().toISOString(),
-          method: scanResultSource === 'mode_a' ? 'QR_Direct' : 'Search',
-          year: '2026'
-        });
+      // Clean and query by exact registration ID field
+      const targetId = academicCode.trim().toLowerCase();
 
-      // 2. Stream dynamic status / enrollment in live proctor proctor monitoring
-      await supabase
-        .from('live_monitoring')
-        .upsert({
-          student_id: student.id,
-          student_name: student.name,
-          church_name: student.churchName,
-          stage: student.stage,
-          status: 'active',
-          ip_address: '127.0.0.1',
-          updated_at: new Date().toISOString()
-        });
+      const { data: studentObj, error: dbErr } = await supabase
+        .from('registrations')
+        .select('*')
+        .eq('id', targetId)
+        .maybeSingle();
 
-      setSubmitSuccess(true);
-
-      // Generate pre-filled Google Forms URL
-      const baseUrl = examLinks[student.stage] || examLinks['الكل'] || '';
-      
-      if (!baseUrl) {
-        setErrorMessage(`مكتمل الحضور! ولكن لم يتم العثور على رابط لـ "${student.stage}". يرجى مراجعة المسؤول.`);
-        setIsSubmitting(false);
+      if (dbErr || !studentObj) {
+        setErrors("كود غير مسجل، يرجى التأكد من مسح كارت الـ QR المعتمد للمشترك.");
+        setIsLoading(false);
         return;
       }
 
-      // Build url with prefilled fields
-      const urlObj = new URL(baseUrl);
-      urlObj.searchParams.set(idEntryId, student.id);
-      urlObj.searchParams.set(nameEntryId, student.name);
-      urlObj.searchParams.set(stageEntryId, student.stage);
-      urlObj.searchParams.set(churchEntryId, student.churchName);
-
-      const finalPrefilledUrl = urlObj.toString();
-
-      // Smooth redirect
-      setTimeout(() => {
-        window.location.href = finalPrefilledUrl;
-      }, 1500);
-
+      // Fire success payload aligned exactly with DB constraints
+      onSuccess({
+        id: String(studentObj.id),
+        name: studentObj.name,
+        stage: studentObj.stage || 'دراسي',
+        churchName: studentObj.churchName || 'مارمينا والبابا كيرلس',
+        gender: studentObj.gender || 'ذكر',
+        competitions: studentObj.competitions || null
+      });
     } catch (err: any) {
-      console.error("Supabase attendance write failed:", err);
-      // Fallback
-      const baseUrl = examLinks[student.stage] || '';
-      if (baseUrl) {
-        window.location.href = baseUrl;
-      } else {
-        setErrorMessage('حدث خطأ أثناء تسجيل حضور الطالب بـ Supabase.');
-      }
+      setErrors("خطأ تقني أثناء الاتصال بقاعدة البيانات.");
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
   };
-
-  // Reset current scan / search selection
-  const handleReset = () => {
-    setScannedResult(null);
-    setSubmitSuccess(false);
-    setErrorMessage('');
-  };
-
-  // Settings helpers
-  const handleSaveSettings = () => {
-    localStorage.setItem('form_entry_id', idEntryId);
-    localStorage.setItem('form_entry_name', nameEntryId);
-    localStorage.setItem('form_entry_stage', stageEntryId);
-    localStorage.setItem('form_entry_church', churchEntryId);
-    setShowSettings(false);
-  };
-
-  const handleUnlockSettings = () => {
-    if (passcode === '2026') {
-      setIsUnlocked(true);
-      setPasscode('');
-    } else {
-      alert('الرمز السري غير صحيح!');
-    }
-  };
-
-  // Stages computed for dropdown
-  const stagesList = useMemo(() => {
-    const list = new Set<string>();
-    participants.forEach(p => { if (p.stage) list.add(p.stage); });
-    return ['الكل', ...Array.from(list)];
-  }, [participants]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased">
-      {/* Upper Brand / Stats Header */}
-      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-slate-800 rounded-xl flex items-center justify-center border border-slate-700">
-            <Smartphone className="text-amber-400" size={20} />
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 md:p-8 font-arabic antialiased" dir="rtl">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-10 left-10 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-10 right-10 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl" />
+      </div>
+
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.4 }}
+        className="w-full max-w-xl bg-white border border-slate-200 rounded-3xl shadow-xl overflow-hidden relative z-10"
+      >
+        {/* Upper Brand Header */}
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-8 text-white relative text-center">
+          {/* Secret Compass Unlocker */}
+          <div 
+            onClick={handleSecretIconClick}
+            className="absolute top-4 right-4 bg-white/10 p-2 rounded-xl backdrop-blur-md cursor-pointer hover:bg-white/20 transition-all select-none"
+            title="إدارة اللجان"
+          >
+            <Compass className={`${isAdminUnlocked ? 'text-emerald-400' : 'text-amber-500'} animate-spin-slow`} size={24} />
           </div>
-          <div>
-            <span className="font-sans font-black text-amber-400 text-lg block tracking-tight">بوابة اختبار الكرازة 2026 (Supabase)</span>
-            <span className="text-[10px] text-slate-400">بوابة الدخول الفوري للامتحانات وبدء رصد الحضور</span>
+          
+          <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/20 shadow-inner">
+            <QrCode className="text-amber-400" size={32} />
           </div>
+
+          <h1 className="text-2xl md:text-3xl font-black tracking-tight leading-tight mb-2">الاختبارات الإلكترونية</h1>
+          <p className="text-slate-400 text-xs md:text-sm font-semibold max-w-sm mx-auto">
+            مهرجان الكرازة المرقسية - امسح كارت الـ QR المخصص لك لبدء لجان الاختبارات فوراً.
+          </p>
+
+          {systemSetting?.portalAnnouncement && (
+            <div className="mt-4 p-3 bg-white/5 border border-white/10 rounded-xl text-xs text-amber-300 font-bold flex items-center justify-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              تنويه: {systemSetting.portalAnnouncement}
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 bg-slate-800 border border-slate-700 px-3 py-1.5 rounded-xl">
-            <div className={`w-2.5 h-2.5 rounded-full ${syncStatus === 'success' ? 'bg-emerald-500 animate-pulse' : syncStatus === 'syncing' ? 'bg-amber-500 animate-pulse' : 'bg-rose-500'}`} />
-            <span className="text-[11px] font-bold text-slate-300">
-              {syncStatus === 'success' ? `متصل بالكامل (${totalCount.toLocaleString('ar-EG')} مشترك)` : syncStatus === 'syncing' ? 'جاري التحضير...' : 'عدم استقرار'}
-            </span>
-          </div>
+        <div className="p-6 md:p-8">
+          
+          {/* Hidden Tabs: Appears only when secret trigger is active */}
+          {isAdminUnlocked && (
+            <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-8">
+              <button
+                type="button"
+                onClick={() => setLoginMethod('code')}
+                className={`flex-1 py-3 px-4 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition-all ${
+                  loginMethod === 'code' ? 'bg-white shadow text-slate-950' : 'text-slate-500'
+                }`}
+              >
+                <Key size={16} />
+                الدخول بالـ QR / الكود
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginMethod('name')}
+                className={`flex-1 py-3 px-4 rounded-xl text-sm font-black flex items-center justify-center gap-2 transition-all ${
+                  loginMethod === 'name' ? 'bg-white shadow text-red-600' : 'text-slate-500'
+                }`}
+              >
+                <User size={16} />
+                طوارئ: البحث بالاسم
+              </button>
+            </div>
+          )}
 
-          <button 
-            onClick={() => loadData()}
-            className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-all border border-transparent hover:border-slate-750"
-            title="تحديث البيانات"
-          >
-            <RefreshCw size={16} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
-          </button>
+          {/* Error Alert Display */}
+          <AnimatePresence mode="wait">
+            {errors && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="mb-6 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-3"
+              >
+                <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
+                <div className="text-sm font-bold text-red-600 leading-relaxed">{errors}</div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          <button 
-            onClick={() => setShowSettings(true)}
-            className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-all border border-transparent hover:border-slate-750"
-            title="الإعدادات المتقدمة"
-          >
-            <Settings size={16} />
-          </button>
+          {/* Form UI Switching logic */}
+          {loginMethod === 'code' ? (
+            <form onSubmit={handleCodeLoginSubmit} className="space-y-6">
+              <div>
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">ضع كارت الـ QR أمام القارئ أو اكتب الكود</label>
+                <div className="relative">
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
+                    <QrCode size={18} />
+                  </span>
+                  <input
+                    type="text"
+                    value={academicCode}
+                    onChange={(e) => setAcademicCode(e.target.value)}
+                    placeholder="وجه قارئ الـ QR الخاص بالموبايل..."
+                    className="w-full pr-12 pl-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm font-black tracking-widest text-center text-slate-950 shadow-inner placeholder:text-slate-400 placeholder:tracking-normal"
+                    required
+                    autoFocus
+                  />
+                </div>
+              </div>
 
-          <button 
-            onClick={() => window.location.href = '/'}
-            className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-xl transition-all"
-          >
-            الرجوع للرئيسية
-          </button>
-        </div>
-      </header>
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex gap-3 text-xs text-slate-500 font-bold leading-relaxed">
+                <Lock size={16} className="text-slate-400 shrink-0 mt-0.5" />
+                تنبيه أمني: يُحظر تماماً مشاركة أكواد الامتحانات أو الدخول بأسماء غير مطابقة لكشوف اللجنة الرسمية.
+              </div>
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-8 flex flex-col justify-center">
-        <AnimatePresence mode="wait">
-          {isLoading ? (
-            <motion.div 
-              key="loading"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex flex-col items-center justify-center py-20"
-            >
-              <Loader className="animate-spin text-amber-500 mb-4" size={40} />
-              <p className="text-slate-400 text-sm font-bold">جاري تحميل المشتركين من Supabase...</p>
-              <p className="text-slate-500 text-xs mt-1">يتم تحضير المزامنة الثنائية الفورية للحد من التكلفة والضغط</p>
-            </motion.div>
-          ) : scannedResult ? (
-            /* VERIFY / ATTENDANCE TRIGGER PANEL */
-            <motion.div
-              key="verification"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-slate-900 border border-slate-800 p-8 rounded-3xl shadow-2xl relative overflow-hidden"
-            >
-              <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-500 via-yellow-400 to-emerald-500" />
-              
-              <div className="flex flex-col items-center text-center">
-                {submitSuccess ? (
-                  <div className="w-20 h-20 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center justify-center mb-6 border border-emerald-500/20">
-                    <CheckCircle2 size={44} className="animate-bounce" />
-                  </div>
+              <button
+                type="submit"
+                disabled={isLoading || !academicCode.trim()}
+                className="w-full py-4 px-6 bg-primary text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-opacity-95 transition-all shadow-md disabled:opacity-50"
+              >
+                {isLoading ? (
+                  <>
+                    <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
+                    جاري سحب بيانات الكارت...
+                  </>
                 ) : (
-                  <div className="w-20 h-20 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center mb-6 border border-amber-500/20">
-                    <UserCheck size={44} />
-                  </div>
+                  <>
+                    <BookOpen size={18} />
+                    تحقق وبدء اللجنة
+                  </>
                 )}
-
-                <span className="text-xs text-slate-400 tracking-widest uppercase font-bold mb-1">تأكيد هوية المشترك</span>
-                <h3 className="text-2xl font-black text-white mb-6 leading-tight">{scannedResult.name}</h3>
-
-                {/* Details grid layout */}
-                <div className="grid grid-cols-2 gap-4 w-full max-w-md bg-slate-950 p-5 rounded-2xl border border-slate-800 mb-8">
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-550 block">رقم المشترك (ID)</span>
-                    <span className="font-mono text-sm text-yellow-500 font-bold">{scannedResult.id}</span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[10px] text-slate-550 block">المرحلة الدراسية</span>
-                    <span className="text-sm text-slate-200 font-bold">{scannedResult.stage}</span>
-                  </div>
-                  <div className="text-right col-span-2 border-t border-slate-850 pt-3">
-                    <span className="text-[10px] text-slate-550 block">الكنيسة</span>
-                    <span className="text-sm text-slate-200 font-bold">{scannedResult.churchName}</span>
-                  </div>
-                </div>
-
-                {errorMessage && (
-                  <div className="w-full max-w-md bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-rose-400 text-xs flex items-center gap-3 mb-6">
-                    <AlertTriangle size={18} className="shrink-0" />
-                    <span>{errorMessage}</span>
-                  </div>
-                )}
-
-                <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
-                  <button
-                    onClick={handleReset}
-                    disabled={isSubmitting}
-                    className="flex-1 py-3.5 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold rounded-2xl transition-all border border-slate-755 disabled:opacity-50"
-                  >
-                    إلغاء وإعادة المسح
-                  </button>
-
-                  <button
-                    onClick={() => handleEnterExam(scannedResult)}
-                    disabled={isSubmitting}
-                    className="flex-1 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl shadow-lg hover:shadow-emerald-900/40 transition-all flex items-center justify-center gap-2"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader size={18} className="animate-spin" />
-                        <span>جاري التحقق...</span>
-                      </>
-                    ) : submitSuccess ? (
-                      <>
-                        <Check size={18} />
-                        <span>جاري التحويل التلقائي...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={18} />
-                        <span>تسجيل الحضور وبدء الاختبار</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            </motion.div>
+              </button>
+            </form>
           ) : (
-            /* SELECTION TABS */
-            <motion.div key="tabs" className="space-y-6">
-              
-              {/* Dual Selector header */}
-              <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 max-w-md mx-auto">
-                <button
-                  onClick={() => { setActiveTab('qr'); setErrorMessage(''); }}
-                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${activeTab === 'qr' ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-white'}`}
-                >
-                  <QrCode size={16} />
-                  <span>ماسح الكاميرا الفوري (Supabase)</span>
-                </button>
-                <button
-                  onClick={() => { setActiveTab('search'); setErrorMessage(''); }}
-                  className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${activeTab === 'search' ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20' : 'text-slate-400 hover:text-white'}`}
-                >
-                  <Search size={16} />
-                  <span>البحث بالاسم الكودي</span>
-                </button>
-              </div>
-
-              {/* TAB PANELS CONTAINER */}
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
-                <AnimatePresence mode="wait">
-                  {errorMessage && (
-                    <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl text-rose-400 text-xs flex items-center gap-3 mb-6">
-                      <AlertTriangle size={18} className="shrink-0" />
-                      <span>{errorMessage}</span>
-                    </div>
+            <form onSubmit={handleNameLoginSubmit} className="space-y-6">
+              <div className="relative" ref={dropdownRef}>
+                <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">إدخل استثنائي: اسم المشترك المسجل</label>
+                <div className="relative">
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
+                    <Search size={18} />
+                  </span>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setSelectedStudent(null);
+                    }}
+                    placeholder="اكتب 3 أحرف من اسم الطالب للضرورة القصوى..."
+                    className="w-full pr-12 pl-10 py-3.5 bg-red-50/30 border border-red-200 rounded-2xl focus:bg-white focus:ring-2 focus:ring-red-500/10 focus:border-red-500 outline-none transition-all text-sm font-black text-slate-950 shadow-inner"
+                  />
+                  {isSearching && (
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 animate-spin h-5 w-5 border-2 border-primary border-t-transparent rounded-full" />
                   )}
+                </div>
 
-                  {activeTab === 'qr' ? (
-                    <motion.div
-                      key="qr-panel"
+                <AnimatePresence>
+                  {showDropdown && searchResults.length > 0 && (
+                    <motion.div 
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="space-y-6 flex flex-col items-center"
+                      exit={{ opacity: 0, y: 10 }}
+                      className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto divide-y divide-slate-100"
                     >
-                      <div className="text-center max-w-md mx-auto">
-                        <h4 className="text-lg font-black text-slate-100 flex items-center justify-center gap-2 mb-2">
-                           وجه باركود الـ QR الخاص بك نحو الكاميرا
-                        </h4>
-                        <p className="text-slate-400 text-xs">
-                          يتم فك تشفير البيانات من الباركود فورياً للمطابقة والتأكيد دون أي زمن تأخر.
-                        </p>
-                      </div>
-
-                      {/* Frame containing the scanning widget */}
-                      <div className="w-full max-w-sm rounded-2xl overflow-hidden border-2 border-slate-800 relative shadow-inner">
-                        <QRScanner onScanSuccess={handleQRScanSuccess} />
-                      </div>
-
-                      <div className="text-slate-500 text-[10px] text-center flex items-center gap-1.5 max-w-sm">
-                        <HelpCircle size={12} />
-                        <span>إذا واجهتك مشاكل في فك الرمز، يرجى الاستعانة بالبحث اليدوي.</span>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="search-panel"
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="space-y-6"
-                    >
-                      <div className="text-center max-w-md mx-auto mb-6">
-                        <h4 className="text-lg font-black text-slate-100 flex items-center justify-center gap-2 mb-2">
-                          البحث الفوري بالاسم
-                        </h4>
-                        <p className="text-slate-400 text-xs">
-                          تتم التصفية على الذاكرة المحلية لضمان استقرار كامل وموثوقية في الدخول.
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="sm:col-span-2 relative">
-                          <span className="absolute inset-y-0 right-3 flex items-center text-slate-500">
-                            <Search size={16} />
+                      {searchResults.map((student) => (
+                        <button
+                          key={student.id}
+                          type="button"
+                          onClick={() => handleSelectStudent(student)}
+                          className="w-full text-right px-4 py-3 hover:bg-slate-50 transition-colors flex flex-col md:flex-row md:items-center md:justify-between gap-1 md:gap-4 font-black"
+                        >
+                          <div>
+                            <p className="text-sm text-slate-950 font-black">{student.name}</p>
+                            <p className="text-xs text-slate-400 font-semibold">{student.churchName}</p>
+                          </div>
+                          <span className="self-start md:self-center px-2.5 py-1 bg-primary/10 text-primary text-[10px] font-black rounded-lg">
+                            {student.stage}
                           </span>
-                          <input
-                            type="text"
-                            placeholder="اكتب الاسم أو كود المشترك..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-4 pr-10 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-100 outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all font-bold placeholder-slate-650"
-                          />
-                        </div>
-
-                        <div>
-                          <select
-                            value={selectedStageFilter}
-                            onChange={(e) => setSelectedStageFilter(e.target.value)}
-                            className="w-full px-3 py-3 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-300 outline-none focus:border-amber-500 transition-all font-bold"
-                          >
-                            {stagesList.map(st => (
-                              <option key={st} value={st}>{st === 'الكل' ? 'كل المراحل' : st}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      {/* Display Search results with virtualization limits */}
-                      <div className="space-y-2 mt-4 max-h-[350px] overflow-y-auto pr-1.5 custom-scrollbar">
-                        {searchResults.map(p => (
-                          <div
-                            key={p.id}
-                            onClick={() => {
-                              setScannedResult(p);
-                              setScanResultSource('manual');
-                            }}
-                            className="p-4 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-amber-500/40 rounded-xl transition-all flex items-center justify-between cursor-pointer group"
-                          >
-                            <div className="text-right">
-                              <p className="text-sm font-black text-white group-hover:text-amber-400 transition-colors">{p.name}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-[10px] text-slate-550 font-bold bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-md">{p.stage}</span>
-                                <span className="text-[10px] text-slate-400">{p.churchName}</span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-3">
-                              <span className="font-mono text-xs text-yellow-500/80 bg-slate-900 px-2 py-1 rounded border border-slate-800">{p.id}</span>
-                              <ChevronRight className="text-slate-600 group-hover:text-amber-400 group-hover:translate-x-1 transition-all" size={16} />
-                            </div>
-                          </div>
-                        ))}
-
-                        {searchTerm && searchResults.length === 0 && (
-                          <div className="text-center py-8 text-slate-500 text-xs">
-                             لا يوجد مشتركين يطابقون مدخلات البحث.
-                          </div>
-                        )}
-
-                        {!searchTerm && (
-                          <div className="text-center py-12 text-slate-500 text-xs flex flex-col items-center justify-center gap-2">
-                            <List className="text-slate-700 hover:scale-110 transition-transform" size={24} />
-                            <span>تفضل بالبحث بالاسم لاسترداد تفاصيله كاملة</span>
-                          </div>
-                        )}
-                      </div>
+                        </button>
+                      ))}
                     </motion.div>
                   )}
                 </AnimatePresence>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
 
-      {/* FOOTER */}
-      <footer className="py-4 border-t border-slate-805 bg-slate-900/40 text-center text-slate-550 text-[10px] select-none flex items-center justify-between px-6">
-        <span>قاعدة البيانات النشطة: Supabase Engine Only</span>
-        <span>جميع الحقوق محفوظة لمهرجان الكرازة 2026</span>
-      </footer>
+              {selectedStudent && (
+                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-emerald-600 font-bold">تم المطابقة الاستثنائية بنجاح</p>
+                    <p className="text-sm font-black text-slate-900">{selectedStudent.name}</p>
+                    <p className="text-xs text-slate-500 font-semibold">{selectedStudent.churchName} ({selectedStudent.stage})</p>
+                  </div>
+                  <CheckCircle className="text-emerald-500 shrink-0" size={24} />
+                </div>
+              )}
 
-      {/* CONFIG MODAL */}
-      <AnimatePresence>
-        {showSettings && (
-          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-slate-900 border border-slate-800 p-6 rounded-3xl max-w-md w-full relative"
-            >
-              <button 
-                onClick={() => setShowSettings(false)}
-                className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-colors"
+              <button
+                type="submit"
+                disabled={isLoading || !selectedStudent}
+                className="w-full py-4 px-6 bg-red-600 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-red-700 transition-all shadow-md disabled:opacity-50"
               >
-                <X size={20} />
+                <BookOpen size={18} />
+                تأكيد الدخول الاستثنائي وبدء اللجنة
               </button>
+            </form>
+          )}
 
-              <div className="space-y-4">
-                <h3 className="text-lg font-black text-white flex items-center gap-2">
-                  <Sliders className="text-amber-400" size={20} /> إعدادات البوابة المتقدمة
-                </h3>
-
-                {!isUnlocked ? (
-                  <div className="p-4 bg-slate-950 rounded-2xl border border-slate-850 space-y-3">
-                    <p className="text-xs text-slate-400">يرجى إدخال رمز التحقق الخاص باللجنة الكرازية:</p>
-                    <input
-                      type="password"
-                      placeholder="****"
-                      value={passcode}
-                      onChange={(e) => setPasscode(e.target.value)}
-                      className="w-full text-center tracking-widest py-2 bg-slate-900 border border-slate-800 rounded-xl outline-none text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-sm font-bold"
-                    />
-                    <button
-                      onClick={handleUnlockSettings}
-                      className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs transition-colors"
-                    >
-                      فك قفل الإعدادات
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-xl text-emerald-400 text-[10px] flex items-center gap-2">
-                      <CheckCircle2 size={12} />
-                      <span>تم فك قفل إعدادات الربط التلقائي!</span>
-                    </div>
-
-                    <p className="text-xs text-slate-400">
-                      تعديل معلمات prefilled الخاصة بنماذج Google Forms:
-                    </p>
-
-                    <div className="space-y-3 bg-slate-950 p-4 rounded-xl border border-slate-800">
-                      <div>
-                        <label className="text-[10px] text-slate-550 block mb-1">اسم معلمة ID رقم المشترك (ID)</label>
-                        <input
-                          type="text"
-                          value={idEntryId}
-                          onChange={(e) => setIdEntryId(e.target.value)}
-                          placeholder="entry.1000001"
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs outline-none text-white focus:border-amber-500 font-mono"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] text-slate-550 block mb-1">اسم معلمة الاسم (Name)</label>
-                        <input
-                          type="text"
-                          value={nameEntryId}
-                          onChange={(e) => setNameEntryId(e.target.value)}
-                          placeholder="entry.1000002"
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs outline-none text-white focus:border-amber-500 font-mono"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] text-slate-550 block mb-1">اسم معلمة المرحلة (Stage)</label>
-                        <input
-                          type="text"
-                          value={stageEntryId}
-                          onChange={(e) => setStageEntryId(e.target.value)}
-                          placeholder="entry.1000003"
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs outline-none text-white focus:border-amber-500 font-mono"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] text-slate-550 block mb-1">اسم معلمة الكنيسة (Church)</label>
-                        <input
-                          type="text"
-                          value={churchEntryId}
-                          onChange={(e) => setChurchEntryId(e.target.value)}
-                          placeholder="entry.1000004"
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs outline-none text-white focus:border-amber-500 font-mono"
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={handleSaveSettings}
-                      className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs transition-colors"
-                    >
-                      حفظ التغييرات
-                    </button>
-                  </div>
-                )}
-              </div>
-            </motion.div>
+          {/* Footer Copyrights */}
+          <div className="mt-8 border-t border-slate-100 pt-6 text-center text-[11px] font-black text-slate-400 flex items-center justify-center gap-4">
+            <span className="flex items-center gap-1">
+              <School size={12} className="text-slate-400" />
+              لجنة إيبارشية مغاغة والعدوة(المنطقة 18)
+            </span>
+            <span className="text-slate-200">|</span>
+            <span className="text-slate-400">©{new Date().getFullYear()} جميع الحقوق محفوظة</span>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      </motion.div>
     </div>
   );
-};
+}

@@ -5069,7 +5069,13 @@ function AppComponent() {
 
   if (activeSection === 'exam-login' && (userRole === 'admin' || userRole === 'super_admin')) {
     return (
-      <ExamLoginPortal />
+      <ExamLoginPortal 
+        onSuccess={(student) => {
+          console.log('Exam login success:', student);
+          setNotification(`تم محاكاة الدخول بنجاح للمشترك: ${student.name}`);
+          setActiveSection('home');
+        }}
+      />
     );
   }
 
