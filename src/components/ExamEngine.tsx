@@ -907,6 +907,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
     null,
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [hasSubmissionFailed, setHasSubmissionFailed] = useState(false);
   const [isTerminated, setIsTerminated] = useState(false);
   const [completedSubjects, setCompletedSubjects] = useState<
     Record<string, number | null>
@@ -1543,9 +1544,43 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
 
   const handleFinalSubmission = async (e?: React.FormEvent) => {
     if (e) e.preventDefault(); // 👈 CRITICAL: Prevents HTML form locking/reloading behavior
-    if (!activeStudent) return;
 
-    const anySaved = Object.values(completedSubjects).some(
+    let currentStudentObj = activeStudent;
+    let currentCompletedSubjects = completedSubjects;
+    let currentAllAnswers = allAnswers;
+
+    if (!currentStudentObj) {
+      const activeStudentId = localStorage.getItem("active_student_id");
+      if (activeStudentId) {
+        const cached = localStorage.getItem(`student_profile_${activeStudentId}`);
+        if (cached) {
+          try {
+            currentStudentObj = JSON.parse(cached);
+            setActiveStudent(currentStudentObj);
+
+            const savedCompleted = localStorage.getItem(`completed_subjects_${activeStudentId}`);
+            if (savedCompleted) {
+              currentCompletedSubjects = JSON.parse(savedCompleted);
+              setCompletedSubjects(currentCompletedSubjects);
+            }
+            const savedAllAnswers = localStorage.getItem(`all_answers_${activeStudentId}`);
+            if (savedAllAnswers) {
+              currentAllAnswers = JSON.parse(savedAllAnswers);
+              setAllAnswers(currentAllAnswers);
+            }
+          } catch (e) {
+            console.error("Error restoring student profile from localStorage for submission retry:", e);
+          }
+        }
+      }
+    }
+
+    if (!currentStudentObj) {
+      alert("عذراً، لم يتم العثور على بيانات الطالب النشط.");
+      return;
+    }
+
+    const anySaved = Object.values(currentCompletedSubjects).some(
       (score) => score !== null,
     );
     if (!anySaved) {
@@ -1574,7 +1609,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
       let qebtyLvl2Total = 0;
       let primaryExamId = "";
 
-      const allCollectedAnswersArray = Object.entries(allAnswers).flatMap(
+      const allCollectedAnswersArray = Object.entries(currentAllAnswers).flatMap(
         ([subj, ansObj]) => {
           const keyMapObj: Record<string, string> = {
             دراسي: "derasy",
@@ -1585,7 +1620,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
           const compactSub = keyMapObj[subj] || subj;
           const examSchema = cachedExams.find(
             (e: any) =>
-              String(e.stage).trim() === String(activeStudent.stage).trim() &&
+              String(e.stage).trim() === String(currentStudentObj.stage).trim() &&
               (e.competitionType === subj ||
                 (e.subject || e.competition_type) === subj),
           );
@@ -1667,34 +1702,34 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
       );
 
       // Exact schema mapping for the 'exam_submissions' table
-      const currentStudent = activeStudent ? {
-        id: activeStudent.id,
-        name: activeStudent.studentName || activeStudent.name || "بدون اسم",
-        church_name: activeStudent.churchName || activeStudent.church_name || "غير مكتمل",
-        gender: activeStudent.gender || "",
-        stage: activeStudent.stage || "ثالثة ورابعة"
+      const currentStudentPayload = currentStudentObj ? {
+        id: currentStudentObj.id,
+        name: currentStudentObj.studentName || currentStudentObj.name || "بدون اسم",
+        church_name: currentStudentObj.churchName || currentStudentObj.church_name || "غير مكتمل",
+        gender: currentStudentObj.gender || "",
+        stage: currentStudentObj.stage || "ثالثة ورابعة"
       } : null;
 
-      const finalDerasyScore = derasyTotal || completedSubjects.derasy || 0;
-      const finalMahfouzatScore = mahfozatTotal || completedSubjects.mahfozat || 0;
-      const finalQebtyLvl1Score = qebtyLvl1Total || completedSubjects.qebty_lvl1 || 0;
-      const finalQebtyLvl2Score = qebtyLvl2Total || completedSubjects.qebty_lvl2 || 0;
+      const finalDerasyScore = derasyTotal || currentCompletedSubjects.derasy || 0;
+      const finalMahfouzatScore = mahfozatTotal || currentCompletedSubjects.mahfozat || 0;
+      const finalQebtyLvl1Score = qebtyLvl1Total || currentCompletedSubjects.qebty_lvl1 || 0;
+      const finalQebtyLvl2Score = qebtyLvl2Total || currentCompletedSubjects.qebty_lvl2 || 0;
       const selectedAnswers = JSON.stringify(allCollectedAnswersArray);
 
       const submissionPayload = {
-        student_id: currentStudent?.id,               // Student ID from authentication/QR
-        student_name: currentStudent?.name,           // Student full name
-        church_name: currentStudent?.church_name,     // Church name/affiliation
-        gender: currentStudent?.gender,               // Student gender
-        derasy_score: finalDerasyScore || 0,          // Calculated or default study score
-        mahfouzat_score: finalMahfouzatScore || 0,    // Memorization score
-        qebty_lvl1_score: finalQebtyLvl1Score || 0,   // Coptic Level 1 score
-        qebty_lvl2_score: finalQebtyLvl2Score || 0,   // Coptic Level 2 score
-        detailed_answers: selectedAnswers,            // Object/Array containing full question-by-question choices
-        exam_id: activeExam?.id || primaryExamId || "UNKNOWN", // ID of the active exam/quiz
-        is_published: false,                          // Default status before teacher review (boolean)
-        stage: currentStudent?.stage,                 // Educational stage/grade level
-        submitted_at: new Date().toISOString()         // Timestamp of submission
+        student_id: currentStudentPayload?.id,
+        student_name: currentStudentPayload?.name,
+        church_name: currentStudentPayload?.church_name,
+        gender: currentStudentPayload?.gender,
+        derasy_score: finalDerasyScore || 0,
+        mahfouzat_score: finalMahfouzatScore || 0,
+        qebty_lvl1_score: finalQebtyLvl1Score || 0,
+        qebty_lvl2_score: finalQebtyLvl2Score || 0,
+        detailed_answers: selectedAnswers,
+        exam_id: activeExam?.id || primaryExamId || "UNKNOWN",
+        is_published: false,
+        stage: currentStudentPayload?.stage,
+        submitted_at: new Date().toISOString()
       };
 
       // Push record directly to Supabase
@@ -1702,31 +1737,46 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
         .from('exam_submissions')
         .insert([submissionPayload]);
 
-      if (subErr) throw subErr;
+      if (subErr) {
+        console.error("Supabase rejected insertion:", subErr.message);
+        alert(`فشل إرسال الإجابات لقاعدة البيانات: ${subErr.message}`);
+        setHasSubmissionFailed(true);
+        setIsLoading(false);
+        return; // Stop execution if database fails
+      }
 
       // Clean up local storage trace for this specific student
-      localStorage.removeItem("exam_progress_" + activeStudent.id);
+      localStorage.removeItem("exam_progress_" + currentStudentObj.id);
 
-      await supabase
-        .from("live_monitoring")
-        .update({
-          status: "completed",
-          device_type: "أنهى الامتحان بالكامل",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("student_id", activeStudent.id);
+      // Gracefully log status updates without letting secondary updates hijack success flow
+      try {
+        await supabase
+          .from("live_monitoring")
+          .update({
+            status: "completed",
+            device_type: "أنهى الامتحان بالكامل",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("student_id", currentStudentObj.id);
+      } catch (monErr) {
+        console.warn("Silent check: live_monitoring table update failed", monErr);
+      }
 
-      await supabase
-        .from("exam_device_logs")
-        .update({
-          status: "تم التسليم بنجاح",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("student_id", activeStudent.id);
+      try {
+        await supabase
+          .from("exam_device_logs")
+          .update({
+            status: "تم التسليم بنجاح",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("student_id", currentStudentObj.id);
+      } catch (devErr) {
+        console.warn("Silent check: exam_device_logs table update failed", devErr);
+      }
 
       // Local update in cache
       const updatedProfile = {
-        ...activeStudent,
+        ...currentStudentObj,
         academicScore: finalDerasyScore,
         memorizationScore: finalMahfouzatScore,
         copticL1Score: finalQebtyLvl1Score,
@@ -1734,17 +1784,17 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
       };
 
       localStorage.setItem(
-        `student_profile_${activeStudent.id}`,
+        `student_profile_${currentStudentObj.id}`,
         JSON.stringify(updatedProfile),
       );
 
       // Cleanup localStorage details
       localStorage.removeItem("active_student_id");
-      localStorage.removeItem(`student_profile_${activeStudent.id}`);
-      localStorage.removeItem(`completed_subjects_${activeStudent.id}`);
-      localStorage.removeItem(`all_answers_${activeStudent.id}`);
+      localStorage.removeItem(`student_profile_${currentStudentObj.id}`);
+      localStorage.removeItem(`completed_subjects_${currentStudentObj.id}`);
+      localStorage.removeItem(`all_answers_${currentStudentObj.id}`);
       for (const type of COMPETITION_TYPES) {
-        localStorage.removeItem(`exam_${activeStudent.id}_${type}`);
+        localStorage.removeItem(`exam_${currentStudentObj.id}_${type}`);
       }
 
       // Purge all intermediate component states tracking answer indexes before success screen
@@ -1758,22 +1808,23 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
       });
 
       setScore(0);
+      setHasSubmissionFailed(false);
       setIsExamCompleted(true);
-      alert("تم إرسال وتسليم الامتحان بنجاح وظهوره في السجل العام! 🎉");
+      alert("تم حفظ وإرسال إجابات المسابقة بنجاح! 🎉");
 
       // Clear current exam states and redirect back to the student grid view
       if (typeof setActiveExam === 'function') setActiveExam(null);
+      if (typeof setActiveStudent === 'function') setActiveStudent(null);
+      if (typeof setSelectedCompetition === 'function') setSelectedCompetition(null);
       if (typeof setCurrentScreen === 'function') {
         setCurrentScreen('student-exam');
-      } else {
-        setActiveStudent(null);
-        setSelectedCompetition(null);
       }
       setIsLoading(false);
     } catch (e: any) {
+      console.error("Critical crash during submission handler:", e);
+      setHasSubmissionFailed(true);
       setIsLoading(false);
-      console.error("Supabase Database Insert Error:", e);
-      alert("حدث خطأ أثناء تسليم الامتحان لجدول السجل العام، برجاء المحاولة مرة أخرى.");
+      alert("حدث خطأ غير متوقع، برجاء مراجعة اتصال الشبكة والمحاولة مرة أخرى.");
     }
   };
 
@@ -2135,14 +2186,33 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScre
             className="flex flex-col max-w-xl mx-auto gap-4"
             id="portal-actions-block"
           >
+            {hasSubmissionFailed && (
+              <div 
+                className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-2xl text-center text-xs font-black leading-relaxed" 
+                id="submission-fail-retry-alert"
+              >
+                ⚠️ يبدو أن هناك مشكلة في الاتصال بالشبكة ولم نتمكن من تسليم الإجابات برمجياً. 
+                <br />
+                لكن لا تقلق، إجاباتك محفوظة بأمان تام في ذاكرة جهازك المحلية.
+                <br />
+                يرجى الضغط على زر "إعادة المحاولة" أدناه لتسليم الإجابات مجدداً.
+              </div>
+            )}
+
             <button
               type="button"
               id="final-exam-submit-btn"
               onClick={handleFinalSubmission}
               disabled={isLoading}
-              className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-emerald-900/40 transition-all font-sans flex items-center justify-center gap-2"
+              className={`w-full py-4 text-white rounded-2xl font-black text-lg shadow-xl transition-all font-sans flex items-center justify-center gap-2 ${
+                hasSubmissionFailed 
+                  ? "bg-amber-600 hover:bg-amber-700 hover:shadow-amber-950/40" 
+                  : "bg-emerald-600 hover:bg-emerald-700 hover:shadow-emerald-900/40"
+              }`}
             >
-              إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام
+              {isLoading 
+                ? (hasSubmissionFailed ? "جاري إعادة محاولة إرسال الإجابات... ⏳" : "جاري إرسال الإجابات... ⏳") 
+                : (hasSubmissionFailed ? "إعادة تسليم الامتحان بالكامل 🔄" : "إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام")}
             </button>
 
             <button
