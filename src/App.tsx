@@ -3029,12 +3029,33 @@ function AppComponent() {
     setIsScanningDuplicates(true);
     setDetectedDuplicates(null);
     try {
-      const { data, error } = await supabase.from('registrations').select('*').range(0, 4999);
-      if (error) {
-        console.error("Error fetching students for deduplication:", error);
-        setNotification('حدث خطأ أثناء فحص البيانات.');
-        return;
+      let allData: any[] = [];
+      let from = 0;
+      const PAGE_SIZE = 4000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase.from('registrations').select('*').range(from, from + PAGE_SIZE - 1);
+        if (error) {
+          console.error("Error fetching students for deduplication:", error);
+          setNotification('حدث خطأ أثناء فحص البيانات.');
+          setIsScanningDuplicates(false);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          from += PAGE_SIZE;
+
+          if (data.length < PAGE_SIZE) {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
       }
+
+      const data = allData;
 
       if (!data || data.length === 0) {
         setDetectedDuplicates([]);
@@ -3137,14 +3158,33 @@ function AppComponent() {
 
   const fetchSupabaseParticipants = async () => {
     try {
-      let query = supabase.from('registrations').select('*').range(0, 4999);
-      if (userRole !== 'admin' && churchName) {
-        query = query.eq('churchName', churchName);
+      let allData: any[] = [];
+      let from = 0;
+      const PAGE_SIZE = 4000;
+      let hasMore = true;
+
+      while (hasMore) {
+        let query = supabase.from('registrations').select('*').range(from, from + PAGE_SIZE - 1);
+        if (userRole !== 'admin' && churchName) {
+          query = query.eq('churchName', churchName);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          from += PAGE_SIZE;
+
+          if (data.length < PAGE_SIZE) {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
       }
-      const { data, error } = await query;
-      if (error) throw error;
       
-      const mapped: Participant[] = (data || []).map((p: any) => ({
+      const mapped: Participant[] = allData.map((p: any) => ({
         id: p.id,
         serial: p.id,
         name: p.name || '',
@@ -3258,141 +3298,41 @@ function AppComponent() {
   const fetchAllChurchParticipants = async () => {
     if (!isLoggedIn) return;
     try {
-      // 1. Fetch only 'id' and 'timestamp' for checking differences (Super lightweight query)
-      let headQuery = supabase.from('registrations').select('id, timestamp').range(0, 4999);
-      if (userRole !== 'admin' && churchName) {
-        headQuery = headQuery.eq('churchName', churchName);
-      }
-      
-      const { data: headData, error: headError } = await headQuery;
-      if (headError) throw headError;
-      
-      const headList = headData || [];
-      const headMap = new Map<string, string>(); // id -> timestamp
-      headList.forEach((h: any) => {
-        headMap.set(h.id, h.timestamp || '');
-      });
-      
-      // 2. Map current local participants
-      const currentMap = new Map<string, Participant>();
-      allChurchParticipants.forEach(p => {
-        currentMap.set(p.id, p);
-      });
-      
-      // 3. Find deleted IDs
-      const idsToDelete: string[] = [];
-      allChurchParticipants.forEach(p => {
-        if (!headMap.has(p.id)) {
-          idsToDelete.push(p.id);
-        }
-      });
-      
-      // 4. Find new or changed IDs that need full fetching
-      const idsToFetch: string[] = [];
-      headList.forEach((h: any) => {
-        const local = currentMap.get(h.id);
-        if (!local || local.timestamp !== h.timestamp) {
-          idsToFetch.push(h.id);
-        }
-      });
-      
-      let updatedList = [...allChurchParticipants];
-      
-      // Remove deleted ones
-      if (idsToDelete.length > 0) {
-        const deleteSet = new Set(idsToDelete);
-        updatedList = updatedList.filter(p => !deleteSet.has(p.id));
-      }
-      
-      // 5. Fetch only the delta rows
-      if (idsToFetch.length > 0) {
-        console.log(`Delta-Fetching ${idsToFetch.length} records from Supabase registrations to save API quota...`);
-        
-        // Split into chunks of 100 to avoid query parameter limit issues
-        const chunkSize = 100;
-        const fetchedParticipants: Participant[] = [];
-        
-        for (let i = 0; i < idsToFetch.length; i += chunkSize) {
-          const chunk = idsToFetch.slice(i, i + chunkSize);
-          const { data: chunkData, error: chunkError } = await supabase
-            .from('registrations')
-            .select('*')
-            .in('id', chunk);
-            
-          if (chunkError) throw chunkError;
-          
-          if (chunkData) {
-            chunkData.forEach((p: any) => {
-              // Parse competitions safely
-              let competitionsArr: string[] = [];
-              if (Array.isArray(p.competitions)) {
-                competitionsArr = p.competitions;
-              } else if (typeof p.competitions === 'string') {
-                try {
-                  const parsed = JSON.parse(p.competitions);
-                  if (Array.isArray(parsed)) {
-                    competitionsArr = parsed;
-                  } else {
-                    competitionsArr = [p.competitions];
-                  }
-                } catch (e) {
-                  competitionsArr = p.competitions ? [p.competitions] : [];
-                }
-              }
-              
-              fetchedParticipants.push({
-                id: p.id,
-                serial: p.id,
-                name: p.name || '',
-                churchName: p.churchName || '',
-                stage: p.stage || '',
-                gender: p.gender || '',
-                competitions: competitionsArr,
-                timestamp: p.timestamp || new Date().toISOString(),
-                country: p.country || 'مصر',
-                year: p.year || activeYear || '2026'
-              });
-            });
-          }
-        }
-        
-        // Merge fetched participants back with replacement
-        const fetchedMap = new Map<string, Participant>();
-        fetchedParticipants.forEach(p => fetchedMap.set(p.id, p));
-        
-        // Update updatedList with newly fetched records
-        updatedList = updatedList.map(p => fetchedMap.has(p.id) ? fetchedMap.get(p.id)! : p);
-        
-        // Add completely new ones
-        fetchedParticipants.forEach(p => {
-          if (!currentMap.has(p.id)) {
-            updatedList.push(p);
-          }
-        });
-      }
-      
-      // Sort final data by timestamp descending
-      const sortedData = updatedList.sort((a, b) => {
-        const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
-        const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-        return tB - tA;
-      });
-      
-      setAllChurchParticipants(sortedData);
-      setTotalParticipantsCount(sortedData.length);
-      setParticipants(sortedData);
-      
-    } catch (err: any) {
-      console.error("Supabase Analytics Dashboard fetch error, running full table load fallback: ", err);
-      try {
-        let fallbackQuery = supabase.from('registrations').select('*').range(0, 4999);
+      let allData: any[] = [];
+      let errorOccurred = false;
+      let from = 0;
+      const PAGE_SIZE = 4000; // نسحب 4000 بـ 4000 عشان نتفادى ليميت السيرفر
+      let hasMore = true;
+
+      while (hasMore) {
+        let query = supabase.from('registrations').select('*').range(from, from + PAGE_SIZE - 1);
         if (userRole !== 'admin' && churchName) {
-          fallbackQuery = fallbackQuery.eq('churchName', churchName);
+          query = query.eq('churchName', churchName);
         }
-        const { data, error } = await fallbackQuery;
-        if (error) throw error;
-        
-        const mapped: Participant[] = (data || []).map((p: any) => {
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.error(error);
+          errorOccurred = true;
+          break;
+        }
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          from += PAGE_SIZE;
+          
+          // لو السطور اللي رجعت أقل من الحجم المطلوب، يبقى كدة البيانات خلصت
+          if (data.length < PAGE_SIZE) {
+            hasMore = false;
+          }
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (!errorOccurred) {
+        const mapped: Participant[] = allData.map((p: any) => {
           let competitionsArr: string[] = [];
           if (Array.isArray(p.competitions)) {
             competitionsArr = p.competitions;
@@ -3421,13 +3361,21 @@ function AppComponent() {
             year: p.year || activeYear || '2026'
           };
         });
-        
-        setAllChurchParticipants(mapped);
-        setTotalParticipantsCount(mapped.length);
-        setParticipants(mapped);
-      } catch (fallbackErr) {
-        console.error("Supabase fallback fetch failed completely:", fallbackErr);
+
+        // Sort final data by timestamp descending
+        const sortedData = mapped.sort((a, b) => {
+          const tA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+          const tB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+          return tB - tA;
+        });
+
+        setAllChurchParticipants(sortedData);
+        setTotalParticipantsCount(sortedData.length);
+        setParticipants(sortedData);
+        console.log("إجمالي البيانات المسحوبة فعلياً:", allData.length);
       }
+    } catch (err: any) {
+      console.error("Supabase fetch all participants error: ", err);
     }
   };
 
