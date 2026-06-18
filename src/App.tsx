@@ -72,6 +72,7 @@ import {
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
 import { LiveExamMonitoring } from './components/LiveExamMonitoring';
+import AdminLiveMonitoring from './components/AdminLiveMonitoring';
 import { ResultsViewer } from './components/ResultsViewer';
 import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
@@ -6977,12 +6978,7 @@ function AppComponent() {
 
             {adminActiveTab === 'exams_live' && (
               <section>
-                <h4 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-2">
-                  <Activity className="text-primary" /> المتابعة المباشرة للامتحانات
-                </h4>
-                <LiveExamMonitoring 
-                  results={results} 
-                  onlineResults={onlineResults}
+                <AdminLiveMonitoring 
                   globalChurchFilter={globalChurchFilter} 
                   onResetExam={handleResetExam}
                 />
