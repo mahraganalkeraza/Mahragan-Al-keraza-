@@ -1,75 +1,103 @@
-import { UAParser } from 'ua-parser-js';
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../utils/supabaseClient';
-import { Plus, Trash2, Save, Loader2, Play, CheckCircle2, ShieldX, HelpCircle, ArrowRight } from 'lucide-react';
-import { QRScanner } from './QRScanner';
-import { getDeviceFingerprint, DeviceFingerprint } from '../lib/deviceTracking';
+import { UAParser } from "ua-parser-js";
+import React, { useState, useEffect, useCallback } from "react";
+import { supabase } from "../utils/supabaseClient";
+import {
+  Plus,
+  Trash2,
+  Save,
+  Loader2,
+  Play,
+  CheckCircle2,
+  ShieldX,
+  HelpCircle,
+  ArrowRight,
+} from "lucide-react";
+import { QRScanner } from "./QRScanner";
+import { getDeviceFingerprint, DeviceFingerprint } from "../lib/deviceTracking";
 
-const CURRENT_YEAR = '2026';
+const CURRENT_YEAR = "2026";
 
 const normalizeArabic = (text: any): string => {
-  if (!text || typeof text !== 'string') return '';
+  if (!text || typeof text !== "string") return "";
   return text
     .trim()
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/ة/g, 'ه')
-    .replace(/ى/g, 'ي')
-    .replace(/[ًٌٍَُِّْـ]/g, '')
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '')
-    .replace(/\s+/g, ' ');
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/[ًٌٍَُِّْـ]/g, "")
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "")
+    .replace(/\s+/g, " ");
 };
 
 const restoreFullAnswers = (compactAnswers: any[]): Record<string, any> => {
   const restored: Record<string, any> = {};
-  const cachedExams = JSON.parse(localStorage.getItem('exams_pool_cache') || '[]');
-  
+  const cachedExams = JSON.parse(
+    localStorage.getItem("exams_pool_cache") || "[]",
+  );
+
   compactAnswers.forEach((item: any) => {
     const qId = item.qId || item.question_id || item.questionId;
-    const ansVal = item.ans !== undefined ? item.ans : item.student_answer || item.answer;
+    const ansVal =
+      item.ans !== undefined ? item.ans : item.student_answer || item.answer;
     const rawSub = item.sub || item.subject;
-    
+
     if (!rawSub) return;
 
     // Map rawSub to official competition name if compact
     const keyMapReverse: Record<string, string> = {
-      'derasy': 'دراسي',
-      'mahfozat': 'محفوظات',
-      'qebty_lvl1': 'قبطي مستوى أول',
-      'qebty_lvl2': 'قبطي مستوى ثاني',
-      'دراسي': 'دراسي',
-      'محفوظات': 'محفوظات',
-      'قبطي مستوى أول': 'قبطي مستوى أول',
-      'قبطي مستوى ثاني': 'قبطي مستوى ثاني'
+      derasy: "دراسي",
+      mahfozat: "محفوظات",
+      qebty_lvl1: "قبطي مستوى أول",
+      qebty_lvl2: "قبطي مستوى ثاني",
+      دراسي: "دراسي",
+      محفوظات: "محفوظات",
+      "قبطي مستوى أول": "قبطي مستوى أول",
+      "قبطي مستوى ثاني": "قبطي مستوى ثاني",
     };
     const officialSub = keyMapReverse[rawSub] || rawSub;
     if (!restored[officialSub]) restored[officialSub] = {};
-    
+
     let actualValue = ansVal;
-    if (typeof ansVal === 'number') {
-      const examSchema = cachedExams.find((e: any) => e.competitionType === officialSub || (e.subject || e.competition_type) === officialSub);
-      const questionsList = examSchema?.questions || examSchema?.questions_data || [];
+    if (typeof ansVal === "number") {
+      const examSchema = cachedExams.find(
+        (e: any) =>
+          e.competitionType === officialSub ||
+          (e.subject || e.competition_type) === officialSub,
+      );
+      const questionsList =
+        examSchema?.questions || examSchema?.questions_data || [];
       const question = questionsList.find((qu: any) => qu.id === qId);
       if (question) {
-        if (question.type === 'mcq' || question.type === 'boolean') {
+        if (question.type === "mcq" || question.type === "boolean") {
           if (question.options?.[ansVal] !== undefined) {
             actualValue = question.options[ansVal];
           }
         }
       }
-    } else if (typeof ansVal === 'object' && ansVal !== null) {
-      const examSchema = cachedExams.find((e: any) => e.competitionType === officialSub || (e.subject || e.competition_type) === officialSub);
-      const questionsList = examSchema?.questions || examSchema?.questions_data || [];
+    } else if (typeof ansVal === "object" && ansVal !== null) {
+      const examSchema = cachedExams.find(
+        (e: any) =>
+          e.competitionType === officialSub ||
+          (e.subject || e.competition_type) === officialSub,
+      );
+      const questionsList =
+        examSchema?.questions || examSchema?.questions_data || [];
       const question = questionsList.find((qu: any) => qu.id === qId);
       if (question) {
-        if (question.type === 'matching') {
+        if (question.type === "matching") {
           const resolvedMatches: Record<number, string> = {};
-          const shuffledRights = (question as any).shuffledRights || question.matchingPairs?.map((p: any) => p.right);
+          const shuffledRights =
+            (question as any).shuffledRights ||
+            question.matchingPairs?.map((p: any) => p.right);
           Object.entries(ansVal).forEach(([idxKey, valIndex]) => {
             const pIdx = Number(idxKey);
             if (shuffledRights?.[valIndex as number] !== undefined) {
               resolvedMatches[pIdx] = shuffledRights[valIndex as number];
-            } else if (question.matchingPairs?.[valIndex as number] !== undefined) {
-              resolvedMatches[pIdx] = question.matchingPairs[valIndex as number].right;
+            } else if (
+              question.matchingPairs?.[valIndex as number] !== undefined
+            ) {
+              resolvedMatches[pIdx] =
+                question.matchingPairs[valIndex as number].right;
             } else {
               resolvedMatches[pIdx] = String(valIndex);
             }
@@ -78,19 +106,19 @@ const restoreFullAnswers = (compactAnswers: any[]): Record<string, any> => {
         }
       }
     }
-    
+
     restored[officialSub][qId] = actualValue;
   });
-  
+
   return restored;
 };
 
 const fetchAllExamsAndCache = async (): Promise<any[]> => {
-  const cacheKey = 'exams_pool_cache';
-  const cacheTimeKey = 'exams_pool_cache_time';
+  const cacheKey = "exams_pool_cache";
+  const cacheTimeKey = "exams_pool_cache_time";
   const cachedTime = localStorage.getItem(cacheTimeKey);
   const now = Date.now();
-  
+
   if (cachedTime && now - Number(cachedTime) < 24 * 60 * 60 * 1000) {
     const cachedData = localStorage.getItem(cacheKey);
     if (cachedData) {
@@ -101,13 +129,11 @@ const fetchAllExamsAndCache = async (): Promise<any[]> => {
       }
     }
   }
-  
+
   // Cache missing or expired: fetch all exams from Supabase
   try {
-    const { data, error } = await supabase
-      .from('exams_pool')
-      .select('*');
-      
+    const { data, error } = await supabase.from("exams_pool").select("*");
+
     if (error) throw error;
     if (data) {
       localStorage.setItem(cacheKey, JSON.stringify(data));
@@ -129,10 +155,10 @@ const fetchAllExamsAndCache = async (): Promise<any[]> => {
 
 interface Question {
   id: string;
-  type: 'mcq' | 'boolean' | 'matching' | 'fill';
+  type: "mcq" | "boolean" | "matching" | "fill";
   text: string;
   options: string[];
-  matchingPairs?: { left: string, right: string }[];
+  matchingPairs?: { left: string; right: string }[];
   correctAnswers: string[];
   points: number;
 }
@@ -148,17 +174,17 @@ interface Exam {
 }
 
 const COMPETITION_TYPES = [
-  'دراسي',
-  'محفوظات',
-  'قبطي مستوى أول',
-  'قبطي مستوى ثاني'
+  "دراسي",
+  "محفوظات",
+  "قبطي مستوى أول",
+  "قبطي مستوى ثاني",
 ];
 
 const SCORE_FIELD_MAP: Record<string, string> = {
-  'دراسي': 'academicScore',
-  'محفوظات': 'memorizationScore',
-  'قبطي مستوى أول': 'copticL1Score',
-  'قبطي مستوى ثاني': 'copticL2Score'
+  دراسي: "academicScore",
+  محفوظات: "memorizationScore",
+  "قبطي مستوى أول": "copticL1Score",
+  "قبطي مستوى ثاني": "copticL2Score",
 };
 
 interface ExamEngineProps {
@@ -167,41 +193,41 @@ interface ExamEngineProps {
 
 export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
   const [exams, setExams] = useState<Exam[]>([]);
-  const [selectedStage, setSelectedStage] = useState('');
-  const [selectedCompetition, setSelectedCompetition] = useState('دراسي');
-  const [selectedModel, setSelectedModel] = useState('A');
+  const [selectedStage, setSelectedStage] = useState("");
+  const [selectedCompetition, setSelectedCompetition] = useState("دراسي");
+  const [selectedModel, setSelectedModel] = useState("A");
   const [currentQuestions, setCurrentQuestions] = useState<Question[]>([]);
   const [isDirty, setIsDirty] = useState(false);
 
   const fetchExamsPool = async () => {
     try {
       const { data, error } = await supabase
-        .from('exams_pool')
-        .select('id, stage, subject, model_type, is_active, updated_at');
+        .from("exams_pool")
+        .select("id, stage, subject, model_type, is_active, updated_at");
       if (error) {
         console.error("Error fetching exams pool:", error);
       } else if (data) {
         const loaded: Exam[] = data.map((row: any) => ({
           id: row.id,
           stage: row.stage,
-          competitionType: row.subject || row.competition_type || '',
-          model: row.model || row.model_type || 'A',
+          competitionType: row.subject || row.competition_type || "",
+          model: row.model || row.model_type || "A",
           questions: [], // Excluded initially for efficiency
           isActive: row.is_active ?? true,
-          updatedAt: row.updated_at
+          updatedAt: row.updated_at,
         }));
         setExams(loaded);
 
         // Populate metadata form selectors automatically if data exists
         if (loaded.length > 0) {
           const firstExam = loaded[0];
-          setSelectedStage(firstExam.stage || '');
-          setSelectedCompetition(firstExam.competitionType || 'دراسي');
-          setSelectedModel(firstExam.model || 'A');
+          setSelectedStage(firstExam.stage || "");
+          setSelectedCompetition(firstExam.competitionType || "دراسي");
+          setSelectedModel(firstExam.model || "A");
         }
       }
     } catch (e) {
-      console.error('Error loading exams metadata from Supabase:', e);
+      console.error("Error loading exams metadata from Supabase:", e);
     }
   };
 
@@ -218,11 +244,11 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
         const examId = `${selectedStage}_${selectedCompetition}_${selectedModel}`;
         try {
           const { data, error } = await supabase
-            .from('exams_pool')
-            .select('questions_data')
-            .eq('id', examId)
+            .from("exams_pool")
+            .select("questions_data")
+            .eq("id", examId)
             .maybeSingle();
-            
+
           if (error) {
             console.error("Error fetching active exam questions:", error);
             setCurrentQuestions([]);
@@ -254,15 +280,15 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
 
   const handleAddQuestion = () => {
     setCurrentQuestions([
-      ...currentQuestions, 
+      ...currentQuestions,
       {
         id: Date.now().toString(),
-        type: 'mcq',
-        text: '',
-        options: [''],
+        type: "mcq",
+        text: "",
+        options: [""],
         correctAnswers: [],
-        points: 1
-      }
+        points: 1,
+      },
     ]);
     setIsDirty(true);
   };
@@ -271,30 +297,30 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
     try {
       if (!selectedStage || !selectedCompetition || !selectedModel) return;
       const examId = `${selectedStage}_${selectedCompetition}_${selectedModel}`;
-      
+
       const cleanPayload = {
         id: examId,
         exam_title: `${selectedStage} - ${selectedCompetition} - نموذج ${selectedModel}`,
         stage: selectedStage,
         subject: selectedCompetition,
         model_type: selectedModel,
-        questions_data: currentQuestions
+        questions_data: currentQuestions,
       };
 
-      const exists = exams.some(e => e.id === examId);
+      const exists = exams.some((e) => e.id === examId);
       let saveErr;
 
       if (exists) {
         // performs an .update() on that specific row
         const { error } = await supabase
-          .from('exams_pool')
+          .from("exams_pool")
           .update(cleanPayload)
-          .eq('id', examId);
+          .eq("id", examId);
         saveErr = error;
       } else {
         // falls back to .upsert()
         const { error } = await supabase
-          .from('exams_pool')
+          .from("exams_pool")
           .upsert(cleanPayload);
         saveErr = error;
       }
@@ -302,58 +328,99 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
       if (saveErr) throw saveErr;
 
       setIsDirty(false);
-      
+
       // Update local set of exams as well
-      setExams(prev => {
-        const otherExams = prev.filter(e => e.id !== examId);
-        return [...otherExams, {
-          id: examId,
-          stage: selectedStage,
-          competitionType: selectedCompetition,
-          model: selectedModel,
-          questions: currentQuestions,
-          isActive: true,
-          updatedAt: new Date().toISOString()
-        }];
+      setExams((prev) => {
+        const otherExams = prev.filter((e) => e.id !== examId);
+        return [
+          ...otherExams,
+          {
+            id: examId,
+            stage: selectedStage,
+            competitionType: selectedCompetition,
+            model: selectedModel,
+            questions: currentQuestions,
+            isActive: true,
+            updatedAt: new Date().toISOString(),
+          },
+        ];
       });
 
-      if (!isAuto) alert('تم الحفظ في Supabase بنجاح');
+      if (!isAuto) alert("تم الحفظ بنجاح");
     } catch (error: any) {
-      console.error('Error saving exam in Supabase:', error);
-      if (!isAuto) alert('حدث خطأ أثناء الحفظ في Supabase: ' + error.message);
+      console.error("Error saving exam :", error);
+      if (!isAuto) alert("حدث خطأ أثناء الحفظ  : " + error.message);
     }
   };
 
   return (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
       <div className="flex flex-wrap items-center gap-4 mb-6 sticky top-0 bg-white py-2 z-10 border-b">
-        <select className="px-4 py-2 border rounded-xl font-bold text-sm" value={selectedStage} onChange={e => setSelectedStage(e.target.value)}>
+        <select
+          className="px-4 py-2 border rounded-xl font-bold text-sm"
+          value={selectedStage}
+          onChange={(e) => setSelectedStage(e.target.value)}
+        >
           <option value="">اختر المرحلة</option>
-          {stages.map(s => <option key={typeof s === 'string' ? s : s.name} value={typeof s === 'string' ? s : s.name}>{typeof s === 'string' ? s : s.name}</option>)}
+          {stages.map((s) => (
+            <option
+              key={typeof s === "string" ? s : s.name}
+              value={typeof s === "string" ? s : s.name}
+            >
+              {typeof s === "string" ? s : s.name}
+            </option>
+          ))}
         </select>
-        <select className="px-4 py-2 border rounded-xl font-bold text-sm" value={selectedCompetition} onChange={e => setSelectedCompetition(e.target.value)}>
-          {COMPETITION_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+        <select
+          className="px-4 py-2 border rounded-xl font-bold text-sm"
+          value={selectedCompetition}
+          onChange={(e) => setSelectedCompetition(e.target.value)}
+        >
+          {COMPETITION_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {type}
+            </option>
+          ))}
         </select>
-        <select className="px-4 py-2 border rounded-xl font-bold text-sm" value={selectedModel} onChange={e => setSelectedModel(e.target.value)}>
+        <select
+          className="px-4 py-2 border rounded-xl font-bold text-sm"
+          value={selectedModel}
+          onChange={(e) => setSelectedModel(e.target.value)}
+        >
           <option value="A">نموذج A</option>
           <option value="B">نموذج B</option>
           <option value="C">نموذج C</option>
         </select>
-        <button onClick={handleAddQuestion} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-2 text-sm font-bold transition-all">
+        <button
+          onClick={handleAddQuestion}
+          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-2 text-sm font-bold transition-all"
+        >
           <Plus size={16} /> إضافة سؤال
         </button>
-        <button onClick={() => handleSaveExam()} className={`px-4 py-2 text-white rounded-xl flex items-center gap-2 text-sm font-bold transition-all ${isDirty ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-400'}`}>
-          <Save size={16} /> {isDirty ? 'حفظ التغييرات' : 'تم الحفظ'}
+        <button
+          onClick={() => handleSaveExam()}
+          className={`px-4 py-2 text-white rounded-xl flex items-center gap-2 text-sm font-bold transition-all ${isDirty ? "bg-emerald-600 hover:bg-emerald-700" : "bg-slate-400"}`}
+        >
+          <Save size={16} /> {isDirty ? "حفظ التغييرات" : "تم الحفظ"}
         </button>
-        {isDirty && <span className="text-xs text-amber-605 font-bold animate-pulse">يوجد تغييرات غير محفوظة...</span>}
+        {isDirty && (
+          <span className="text-xs text-amber-605 font-bold animate-pulse">
+            يوجد تغييرات غير محفوظة...
+          </span>
+        )}
       </div>
 
       <div className="space-y-6">
         {currentQuestions.map((q, qIndex) => (
-          <div key={q.id} className="p-6 border rounded-2xl bg-slate-50 relative group">
-            <button 
+          <div
+            key={q.id}
+            className="p-6 border rounded-2xl bg-slate-50 relative group"
+          >
+            <button
               onClick={() => {
-                setCurrentQuestions(currentQuestions.filter((_, i) => i !== qIndex));
+                setCurrentQuestions(
+                  currentQuestions.filter((_, i) => i !== qIndex),
+                );
                 setIsDirty(true);
               }}
               className="absolute top-4 left-4 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"
@@ -363,12 +430,14 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="md:col-span-2">
-                <label className="text-xs font-black mb-1 block">رأس السؤال</label>
-                <input 
-                  type="text" 
-                  value={q.text} 
+                <label className="text-xs font-black mb-1 block">
+                  رأس السؤال
+                </label>
+                <input
+                  type="text"
+                  value={q.text}
                   placeholder="اكتب السؤال هنا..."
-                  onChange={e => {
+                  onChange={(e) => {
                     const newQ = [...currentQuestions];
                     newQ[qIndex].text = e.target.value;
                     setCurrentQuestions(newQ);
@@ -380,21 +449,21 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
               <div className="flex gap-4">
                 <div className="flex-1">
                   <label className="text-xs font-black mb-1 block">النوع</label>
-                  <select 
-                    value={q.type} 
-                    onChange={e => {
+                  <select
+                    value={q.type}
+                    onChange={(e) => {
                       const newQ = [...currentQuestions];
                       newQ[qIndex].type = e.target.value as any;
-                      if (e.target.value === 'boolean') {
-                        newQ[qIndex].options = ['صح', 'خطأ'];
-                        newQ[qIndex].correctAnswers = ['صح'];
-                      } else if (e.target.value === 'matching') {
-                        newQ[qIndex].matchingPairs = [{ left: '', right: '' }];
+                      if (e.target.value === "boolean") {
+                        newQ[qIndex].options = ["صح", "خطأ"];
+                        newQ[qIndex].correctAnswers = ["صح"];
+                      } else if (e.target.value === "matching") {
+                        newQ[qIndex].matchingPairs = [{ left: "", right: "" }];
                         newQ[qIndex].options = [];
                         newQ[qIndex].correctAnswers = [];
-                      } else if (e.target.value === 'fill') {
+                      } else if (e.target.value === "fill") {
                         newQ[qIndex].options = [];
-                        newQ[qIndex].correctAnswers = [''];
+                        newQ[qIndex].correctAnswers = [""];
                       }
                       setCurrentQuestions(newQ);
                       setIsDirty(true);
@@ -408,11 +477,13 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
                   </select>
                 </div>
                 <div className="w-20">
-                  <label className="text-xs font-black mb-1 block">الدرجة</label>
-                  <input 
-                    type="number" 
-                    value={q.points} 
-                    onChange={e => {
+                  <label className="text-xs font-black mb-1 block">
+                    الدرجة
+                  </label>
+                  <input
+                    type="number"
+                    value={q.points}
+                    onChange={(e) => {
                       const newQ = [...currentQuestions];
                       newQ[qIndex].points = Number(e.target.value);
                       setCurrentQuestions(newQ);
@@ -424,12 +495,14 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
               </div>
             </div>
 
-            {(q.type === 'mcq' || q.type === 'boolean') && (
+            {(q.type === "mcq" || q.type === "boolean") && (
               <div className="space-y-3">
-                <label className="text-xs font-black mb-2 block text-slate-400">الخيارات (حدد الإجابة الصحيحة)</label>
+                <label className="text-xs font-black mb-2 block text-slate-400">
+                  الخيارات (حدد الإجابة الصحيحة)
+                </label>
                 {q.options?.map((opt, optIndex) => (
                   <div key={optIndex} className="flex gap-3 items-center">
-                    <input 
+                    <input
                       type="radio"
                       name={`correct_${q.id}`}
                       checked={q.correctAnswers.includes(opt)}
@@ -441,27 +514,29 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
                       }}
                       className="w-5 h-5 accent-indigo-600"
                     />
-                    <input 
-                      type="text" 
-                      value={opt} 
-                      onChange={e => {
+                    <input
+                      type="text"
+                      value={opt}
+                      onChange={(e) => {
                         const newQ = [...currentQuestions];
                         const oldVal = newQ[qIndex].options[optIndex];
                         newQ[qIndex].options[optIndex] = e.target.value;
                         if (newQ[qIndex].correctAnswers.includes(oldVal)) {
-                           newQ[qIndex].correctAnswers = [e.target.value];
+                          newQ[qIndex].correctAnswers = [e.target.value];
                         }
                         setCurrentQuestions(newQ);
                         setIsDirty(true);
                       }}
-                      disabled={q.type === 'boolean'}
+                      disabled={q.type === "boolean"}
                       className="flex-1 px-4 py-2 border rounded-xl bg-white"
                     />
-                    {q.type === 'mcq' && q.options.length > 1 && (
-                      <button 
+                    {q.type === "mcq" && q.options.length > 1 && (
+                      <button
                         onClick={() => {
                           const newQ = [...currentQuestions];
-                          newQ[qIndex].options = newQ[qIndex].options.filter((_, i) => i !== optIndex);
+                          newQ[qIndex].options = newQ[qIndex].options.filter(
+                            (_, i) => i !== optIndex,
+                          );
                           setCurrentQuestions(newQ);
                           setIsDirty(true);
                         }}
@@ -472,11 +547,11 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
                     )}
                   </div>
                 ))}
-                {q.type === 'mcq' && (
-                  <button 
+                {q.type === "mcq" && (
+                  <button
                     onClick={() => {
                       const newQ = [...currentQuestions];
-                      newQ[qIndex].options.push('');
+                      newQ[qIndex].options.push("");
                       setCurrentQuestions(newQ);
                       setIsDirty(true);
                     }}
@@ -488,17 +563,21 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
               </div>
             )}
 
-            {q.type === 'matching' && (
+            {q.type === "matching" && (
               <div className="space-y-4">
-                <label className="text-xs font-black mb-2 block text-slate-400">أزواج التوصيل (العمود أ - العمود ب)</label>
+                <label className="text-xs font-black mb-2 block text-slate-400">
+                  أزواج التوصيل (العمود أ - العمود ب)
+                </label>
                 {q.matchingPairs?.map((pair, pIdx) => (
                   <div key={pIdx} className="flex gap-4 items-center">
-                    <span className="text-xs font-bold text-slate-300 w-4">{pIdx+1}.</span>
-                    <input 
+                    <span className="text-xs font-bold text-slate-300 w-4">
+                      {pIdx + 1}.
+                    </span>
+                    <input
                       type="text"
                       placeholder="العنصر (أ)"
                       value={pair.left}
-                      onChange={e => {
+                      onChange={(e) => {
                         const newQ = [...currentQuestions];
                         newQ[qIndex].matchingPairs![pIdx].left = e.target.value;
                         setCurrentQuestions(newQ);
@@ -507,22 +586,25 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
                       className="flex-1 px-4 py-2 border rounded-xl bg-white"
                     />
                     <div className="text-slate-300 font-bold">↔</div>
-                    <input 
+                    <input
                       type="text"
                       placeholder="العنصر (ب)"
                       value={pair.right}
-                      onChange={e => {
+                      onChange={(e) => {
                         const newQ = [...currentQuestions];
-                        newQ[qIndex].matchingPairs![pIdx].right = e.target.value;
+                        newQ[qIndex].matchingPairs![pIdx].right =
+                          e.target.value;
                         setCurrentQuestions(newQ);
                         setIsDirty(true);
                       }}
                       className="flex-1 px-4 py-2 border rounded-xl bg-white"
                     />
-                    <button 
+                    <button
                       onClick={() => {
                         const newQ = [...currentQuestions];
-                        newQ[qIndex].matchingPairs = newQ[qIndex].matchingPairs?.filter((_, i) => i !== pIdx);
+                        newQ[qIndex].matchingPairs = newQ[
+                          qIndex
+                        ].matchingPairs?.filter((_, i) => i !== pIdx);
                         setCurrentQuestions(newQ);
                         setIsDirty(true);
                       }}
@@ -532,10 +614,10 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
                     </button>
                   </div>
                 ))}
-                <button 
+                <button
                   onClick={() => {
                     const newQ = [...currentQuestions];
-                    newQ[qIndex].matchingPairs?.push({ left: '', right: '' });
+                    newQ[qIndex].matchingPairs?.push({ left: "", right: "" });
                     setCurrentQuestions(newQ);
                     setIsDirty(true);
                   }}
@@ -546,13 +628,15 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
               </div>
             )}
 
-            {q.type === 'fill' && (
+            {q.type === "fill" && (
               <div className="space-y-3">
-                <label className="text-xs font-black mb-1 block text-slate-400">الإجابة الصحيحة (سيقوم الطالب بكتابتها)</label>
-                <input 
-                  type="text" 
-                  value={q.correctAnswers[0] || ''} 
-                  onChange={e => {
+                <label className="text-xs font-black mb-1 block text-slate-400">
+                  الإجابة الصحيحة (سيقوم الطالب بكتابتها)
+                </label>
+                <input
+                  type="text"
+                  value={q.correctAnswers[0] || ""}
+                  onChange={(e) => {
                     const newQ = [...currentQuestions];
                     newQ[qIndex].correctAnswers = [e.target.value];
                     setCurrentQuestions(newQ);
@@ -575,7 +659,10 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
   );
 };
 
-export const isStudentEnrolledInCompetition = (student: any, examType: string): boolean => {
+export const isStudentEnrolledInCompetition = (
+  student: any,
+  examType: string,
+): boolean => {
   if (!student) return false;
   if (student.isManual) return true;
 
@@ -585,7 +672,7 @@ export const isStudentEnrolledInCompetition = (student: any, examType: string): 
   let arr: any[] = [];
   if (Array.isArray(enrolled)) {
     arr = enrolled;
-  } else if (typeof enrolled === 'string') {
+  } else if (typeof enrolled === "string") {
     try {
       arr = JSON.parse(enrolled);
     } catch (e) {
@@ -597,36 +684,58 @@ export const isStudentEnrolledInCompetition = (student: any, examType: string): 
 
   return arr.some((item: any) => {
     if (!item) return false;
-    
-    if (typeof item === 'string') {
+
+    if (typeof item === "string") {
       const normalizedItem = item.trim();
-      if (examType === 'قبطي مستوى أول') {
-        return normalizedItem === 'قبطي مستوى أول' || normalizedItem === 'قبطي مستوى 1';
+      if (examType === "قبطي مستوى أول") {
+        return (
+          normalizedItem === "قبطي مستوى أول" ||
+          normalizedItem === "قبطي مستوى 1"
+        );
       }
-      if (examType === 'قبطي مستوى ثاني') {
-        return normalizedItem === 'قبطي مستوى ثاني' || normalizedItem === 'قبطي مستوى ثانٍ' || normalizedItem === 'قبطي مستوى 2';
+      if (examType === "قبطي مستوى ثاني") {
+        return (
+          normalizedItem === "قبطي مستوى ثاني" ||
+          normalizedItem === "قبطي مستوى ثانٍ" ||
+          normalizedItem === "قبطي مستوى 2"
+        );
       }
       return normalizedItem === examType;
     }
 
-    if (typeof item === 'object') {
-      const activity = item.activity || item.competition || item.name || '';
-      const level = item.level || '';
+    if (typeof item === "object") {
+      const activity = item.activity || item.competition || item.name || "";
+      const level = item.level || "";
 
       const actNorm = activity.trim();
       const lvlNorm = level.trim();
 
-      if (examType === 'دراسي') {
-        return actNorm === 'دراسي';
+      if (examType === "دراسي") {
+        return actNorm === "دراسي";
       }
-      if (examType === 'محفوظات') {
-        return actNorm === 'محفوظات';
+      if (examType === "محفوظات") {
+        return actNorm === "محفوظات";
       }
-      if (examType === 'قبطي مستوى أول') {
-        return actNorm === 'قبطي' && (lvlNorm === 'مستوى أول' || lvlNorm === 'مستوى اول' || lvlNorm === '1' || lvlNorm === 'الأول' || lvlNorm === 'الأولى');
+      if (examType === "قبطي مستوى أول") {
+        return (
+          actNorm === "قبطي" &&
+          (lvlNorm === "مستوى أول" ||
+            lvlNorm === "مستوى اول" ||
+            lvlNorm === "1" ||
+            lvlNorm === "الأول" ||
+            lvlNorm === "الأولى")
+        );
       }
-      if (examType === 'قبطي مستوى ثاني') {
-        return actNorm === 'قبطي' && (lvlNorm === 'مستوى ثاني' || lvlNorm === 'مستوى ثانٍ' || lvlNorm === 'ثاني' || lvlNorm === '2' || lvlNorm === 'الثاني' || lvlNorm === 'الثانية');
+      if (examType === "قبطي مستوى ثاني") {
+        return (
+          actNorm === "قبطي" &&
+          (lvlNorm === "مستوى ثاني" ||
+            lvlNorm === "مستوى ثانٍ" ||
+            lvlNorm === "ثاني" ||
+            lvlNorm === "2" ||
+            lvlNorm === "الثاني" ||
+            lvlNorm === "الثانية")
+        );
       }
     }
 
@@ -634,44 +743,202 @@ export const isStudentEnrolledInCompetition = (student: any, examType: string): 
   });
 };
 
-export const LiveExamGateway: React.FC = () => {
+interface QuestionCardProps {
+  q: any;
+  qIdx: number;
+  totalQuestions: number;
+  currentAnswer: any;
+  onAnswer: (qid: string, val: any) => void;
+}
+
+const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAnswer }: QuestionCardProps) => {
+  return (
+    <div
+      className="max-w-3xl mx-auto p-6 bg-white rounded-2xl shadow-sm border border-slate-100 space-y-4"
+      id={`question-block-${q.id}`}
+    >
+      {/* Question Header */}
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">
+          السؤال {qIdx + 1} من {totalQuestions}
+        </span>
+        {q.type === "mcq" && (
+          <span className="text-xs text-slate-400 font-medium font-sans">
+            اختيار من متعدد
+          </span>
+        )}
+        {q.type === "boolean" && (
+          <span className="text-xs text-slate-400 font-medium font-sans">
+            صح وخطأ
+          </span>
+        )}
+        {q.type === "fill" && (
+          <span className="text-xs text-slate-400 font-medium font-sans">
+            أكمل الفراغ
+          </span>
+        )}
+        {q.type === "matching" && (
+          <span className="text-xs text-slate-400 font-medium font-sans">
+            توصيل
+          </span>
+        )}
+      </div>
+
+      <h2 className="text-xl font-bold text-slate-800 mt-4 mb-6 leading-relaxed">
+        {q.text}
+      </h2>
+
+      {(q.type === "mcq" || q.type === "boolean") && (
+        <div className="space-y-3" id={`answers-grp-${q.id}`}>
+          {q.options.map((opt: string, oIndex: number) => {
+            const isSelected = currentAnswer === opt;
+            return (
+              <button
+                type="button"
+                key={oIndex}
+                onClick={() => onAnswer(q.id, opt)}
+                className={`w-full text-right p-4 rounded-xl border-2 transition-all duration-200 ease-in-out flex items-center justify-between ${
+                  isSelected
+                    ? "border-emerald-500 bg-emerald-50/30 text-emerald-900 font-medium"
+                    : "border-slate-100 bg-slate-50/50 hover:bg-slate-50 text-slate-700"
+                }`}
+                id={`label-${q.id}-${oIndex}`}
+              >
+                <span>{opt}</span>
+                {isSelected && (
+                  <span className="text-emerald-600 font-bold">✓</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {q.type === "fill" && (
+        <input
+          type="text"
+          id={`input-fill-${q.id}`}
+          placeholder="اكتب إجابتك هنا..."
+          value={currentAnswer || ""}
+          onChange={(e) => onAnswer(q.id, e.target.value)}
+          className="w-full px-4 py-3 border-2 border-slate-100 focus:border-indigo-500 rounded-xl bg-slate-50/50 hover:bg-slate-50 focus:bg-white outline-none font-medium text-slate-800 transition-all font-sans"
+        />
+      )}
+
+      {q.type === "matching" && q.matchingPairs && (
+        <div className="space-y-3" id={`matching-grp-${q.id}`}>
+          <p className="text-xs text-slate-400 mb-2 font-sans">
+            اختر الإقران الصحيح لكل عنصر من القائمة اليسرى:
+          </p>
+          {q.matchingPairs.map((pair: any, pIdx: number) => {
+            const currentListAnswers = currentAnswer || {};
+            return (
+              <div
+                key={pIdx}
+                className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center p-4 bg-slate-50/50 border border-slate-100 rounded-xl"
+                id={`matching-pair-${q.id}-${pIdx}`}
+              >
+                <span className="font-bold text-slate-700 text-sm">
+                  {pair.left}
+                </span>
+                <span className="text-slate-300 text-center hidden sm:block">
+                  ↔
+                </span>
+                <select
+                  id={`select-match-${q.id}-${pIdx}`}
+                  value={currentListAnswers[pIdx] || ""}
+                  onChange={(e) => {
+                    const nextList = {
+                      ...currentListAnswers,
+                      [pIdx]: e.target.value,
+                    };
+                    onAnswer(q.id, nextList);
+                  }}
+                  className="px-3 py-2 border-2 border-slate-200 focus:border-indigo-500 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all font-sans"
+                >
+                  <option value="">اختر المطابقة الصحيحة...</option>
+                  {(q as any).shuffledRights?.map(
+                    (rItem: string, rIdx: number) => (
+                      <option key={rIdx} value={rItem}>
+                        {rItem}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.currentAnswer === nextProps.currentAnswer &&
+    prevProps.qIdx === nextProps.qIdx &&
+    prevProps.totalQuestions === nextProps.totalQuestions &&
+    prevProps.q?.id === nextProps.q?.id &&
+    prevProps.q?.text === nextProps.q?.text
+  );
+});
+QuestionCard.displayName = "QuestionCard";
+
+export interface LiveExamGatewayProps {
+  setCurrentScreen?: (screen: string) => void;
+}
+
+export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({ setCurrentScreen }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [activeStudent, setActiveStudent] = useState<any>(null);
-  const [selectedCompetition, setSelectedCompetition] = useState<string | null>(null);
+  const [selectedCompetition, setSelectedCompetition] = useState<string | null>(
+    null,
+  );
   const [activeExam, setActiveExam] = useState<Exam | null>(null);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [isExamCompleted, setIsExamCompleted] = useState(false);
   const [isAlreadyExamined, setIsAlreadyExamined] = useState(false);
   const [score, setScore] = useState(0);
-  const [deviceInfo, setDeviceInfo] = useState({ ip: 'جاري التحميل...', type: 'غير معروف', count: 0 });
-  const [fingerprint, setFingerprint] = useState<DeviceFingerprint | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState({
+    ip: "جاري التحميل...",
+    type: "غير معروف",
+    count: 0,
+  });
+  const [fingerprint, setFingerprint] = useState<DeviceFingerprint | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isTerminated, setIsTerminated] = useState(false);
-  const [completedSubjects, setCompletedSubjects] = useState<Record<string, number | null>>({
+  const [completedSubjects, setCompletedSubjects] = useState<
+    Record<string, number | null>
+  >({
     derasy: null,
     mahfozat: null,
     qebty_lvl1: null,
-    qebty_lvl2: null
+    qebty_lvl2: null,
   });
   const [allAnswers, setAllAnswers] = useState<Record<string, any>>({});
   const [examConfig, setExamConfig] = useState<any>({
     isExamLive: true,
     autoCloseTime: null,
     churchOverrides: {},
-    stageOverrides: {}
+    stageOverrides: {},
   });
 
   // Load configuration from Supabase once on mount
   useEffect(() => {
     const fetchConfig = async () => {
       try {
-        const { data, error } = await supabase.from('exam_config').select('*').maybeSingle();
+        const { data, error } = await supabase
+          .from("exam_config")
+          .select("*")
+          .maybeSingle();
         if (data && !error) {
           setExamConfig({
             isExamLive: data.is_exam_live ?? data.isExamLive ?? true,
             autoCloseTime: data.auto_close_time ?? data.autoCloseTime ?? null,
-            churchOverrides: data.church_overrides ?? data.churchOverrides ?? {},
-            stageOverrides: data.stage_overrides ?? data.stageOverrides ?? {}
+            churchOverrides:
+              data.church_overrides ?? data.churchOverrides ?? {},
+            stageOverrides: data.stage_overrides ?? data.stageOverrides ?? {},
           });
         }
       } catch (e) {
@@ -683,14 +950,14 @@ export const LiveExamGateway: React.FC = () => {
 
   // Sync state with active student on localstorage
   useEffect(() => {
-    const activeStudentId = localStorage.getItem('active_student_id');
+    const activeStudentId = localStorage.getItem("active_student_id");
     if (activeStudentId) {
       const cached = localStorage.getItem(`student_profile_${activeStudentId}`);
       if (cached) {
         try {
           setActiveStudent(JSON.parse(cached));
         } catch (e) {
-          console.error('Error parsing cached active student:', e);
+          console.error("Error parsing cached active student:", e);
         }
       }
     }
@@ -700,9 +967,13 @@ export const LiveExamGateway: React.FC = () => {
   useEffect(() => {
     if (activeStudent?.id) {
       // Load completed subjects and answers from localStorage if present
-      const savedCompleted = localStorage.getItem(`completed_subjects_${activeStudent.id}`);
-      const savedAllAnswers = localStorage.getItem(`all_answers_${activeStudent.id}`);
-      
+      const savedCompleted = localStorage.getItem(
+        `completed_subjects_${activeStudent.id}`,
+      );
+      const savedAllAnswers = localStorage.getItem(
+        `all_answers_${activeStudent.id}`,
+      );
+
       if (savedCompleted) {
         try {
           setCompletedSubjects(JSON.parse(savedCompleted));
@@ -713,7 +984,7 @@ export const LiveExamGateway: React.FC = () => {
           derasy: activeStudent.academicScore ?? null,
           mahfozat: activeStudent.memorizationScore ?? null,
           qebty_lvl1: activeStudent.copticL1Score ?? null,
-          qebty_lvl2: activeStudent.copticL2Score ?? null
+          qebty_lvl2: activeStudent.copticL2Score ?? null,
         });
       }
 
@@ -722,25 +993,29 @@ export const LiveExamGateway: React.FC = () => {
           setAllAnswers(JSON.parse(savedAllAnswers));
         } catch (e) {}
       } else if (activeStudent.detailed_answers) {
-         try {
-           const parsedAnswers = typeof activeStudent.detailed_answers === 'string' 
-             ? JSON.parse(activeStudent.detailed_answers) 
-             : activeStudent.detailed_answers;
-           
-           if (Array.isArray(parsedAnswers)) {
-             const restored = restoreFullAnswers(parsedAnswers);
-             setAllAnswers(restored);
-           } else if (typeof parsedAnswers === 'object' && parsedAnswers !== null) {
-             setAllAnswers(parsedAnswers);
-           }
-         } catch (e) {}
+        try {
+          const parsedAnswers =
+            typeof activeStudent.detailed_answers === "string"
+              ? JSON.parse(activeStudent.detailed_answers)
+              : activeStudent.detailed_answers;
+
+          if (Array.isArray(parsedAnswers)) {
+            const restored = restoreFullAnswers(parsedAnswers);
+            setAllAnswers(restored);
+          } else if (
+            typeof parsedAnswers === "object" &&
+            parsedAnswers !== null
+          ) {
+            setAllAnswers(parsedAnswers);
+          }
+        } catch (e) {}
       }
     } else {
       setCompletedSubjects({
         derasy: null,
         mahfozat: null,
         qebty_lvl1: null,
-        qebty_lvl2: null
+        qebty_lvl2: null,
       });
       setAllAnswers({});
     }
@@ -749,13 +1024,19 @@ export const LiveExamGateway: React.FC = () => {
   // Sync to localStorage
   useEffect(() => {
     if (activeStudent?.id) {
-      localStorage.setItem(`completed_subjects_${activeStudent.id}`, JSON.stringify(completedSubjects));
+      localStorage.setItem(
+        `completed_subjects_${activeStudent.id}`,
+        JSON.stringify(completedSubjects),
+      );
     }
   }, [completedSubjects, activeStudent?.id]);
 
   useEffect(() => {
     if (activeStudent?.id) {
-      localStorage.setItem(`all_answers_${activeStudent.id}`, JSON.stringify(allAnswers));
+      localStorage.setItem(
+        `all_answers_${activeStudent.id}`,
+        JSON.stringify(allAnswers),
+      );
     }
   }, [allAnswers, activeStudent?.id]);
 
@@ -766,18 +1047,18 @@ export const LiveExamGateway: React.FC = () => {
     const fp = getDeviceFingerprint();
     setFingerprint(fp);
 
-    fetch('https://api.ipify.org?format=json')
-      .then(res => res.json())
-      .then(data => {
-        setDeviceInfo(prev => ({ ...prev, ip: data.ip }));
+    fetch("https://api.ipify.org?format=json")
+      .then((res) => res.json())
+      .then((data) => {
+        setDeviceInfo((prev) => ({ ...prev, ip: data.ip }));
       })
-      .catch(() => setDeviceInfo(prev => ({ ...prev, ip: 'مخفي/غير متاح' })));
+      .catch(() => setDeviceInfo((prev) => ({ ...prev, ip: "مخفي/غير متاح" })));
 
     const ua = navigator.userAgent;
-    let type = 'Desktop';
-    if (/android/i.test(ua)) type = 'Android';
-    else if (/iPad|iPhone|iPod/.test(ua)) type = 'iPhone/iOS';
-    setDeviceInfo(prev => ({ ...prev, type }));
+    let type = "Desktop";
+    if (/android/i.test(ua)) type = "Android";
+    else if (/iPad|iPhone|iPod/.test(ua)) type = "iPhone/iOS";
+    setDeviceInfo((prev) => ({ ...prev, type }));
   }, []);
 
   const fetchStudentAndExam = async (input: string) => {
@@ -786,13 +1067,15 @@ export const LiveExamGateway: React.FC = () => {
       setIsScanning(false);
       setIsLoading(true);
       let studentId = input.trim();
-      let studentNameFromPayload = '';
-      
+      let studentNameFromPayload = "";
+
       try {
-        if (input.includes('{')) {
+        if (input.includes("{")) {
           const payload = JSON.parse(input);
-          studentId = (payload.studentID || payload.id || input).toString().trim();
-          studentNameFromPayload = payload.fullName || '';
+          studentId = (payload.studentID || payload.id || input)
+            .toString()
+            .trim();
+          studentNameFromPayload = payload.fullName || "";
         }
       } catch (e) {}
 
@@ -800,9 +1083,9 @@ export const LiveExamGateway: React.FC = () => {
 
       // Query standard Supabase registrations table first
       const { data: studentObj, error: fetchErr } = await supabase
-        .from('registrations')
-        .select('*')
-        .eq('id', normalizedId)
+        .from("registrations")
+        .select("*")
+        .eq("id", normalizedId)
         .maybeSingle();
 
       if (fetchErr) throw fetchErr;
@@ -812,54 +1095,77 @@ export const LiveExamGateway: React.FC = () => {
       if (studentObj) {
         studentData = {
           id: studentObj.id,
-          studentName: studentObj.name || studentObj.student_name || studentNameFromPayload || 'طالب',
-          churchName: studentObj.churchName || studentObj.church || studentObj.church_name || 'غير محدد',
-          stage: studentObj.stage || 'عام',
-          gender: studentObj.gender || '',
+          studentName:
+            studentObj.name ||
+            studentObj.student_name ||
+            studentNameFromPayload ||
+            "طالب",
+          churchName:
+            studentObj.churchName ||
+            studentObj.church ||
+            studentObj.church_name ||
+            "غير محدد",
+          stage: studentObj.stage || "عام",
+          gender: studentObj.gender || "",
           coptic_level: studentObj.coptic_level ?? null,
-          enrolled_subjects: (studentObj.competitions || studentObj.enrolled_subjects) ?? null
+          enrolled_subjects:
+            (studentObj.competitions || studentObj.enrolled_subjects) ?? null,
         };
       } else {
-      // Fallback for demo/manual admin bypass
-if (confirm(`لم يتم العثور على مشترك بالكود "${studentId}". هل تريد إنشاء جلسة يدوية وإدخال بياناته الآن؟`)) {
-    
-    // إظهار نوافذ منبثقة لطلب البيانات يدوياً
-    const manualName = prompt("برجاء إدخال اسم الطالب (مثال: مينا كمال):", "");
-    const manualChurch = prompt("برجاء إدخال البلد / الكنيسة:", "");
-    const manualStage = prompt("برجاء إدخال المرحلة (مثال: إبتدائي، إعدادي):", "");
+        // Fallback for demo/manual admin bypass
+        if (
+          confirm(
+            `لم يتم العثور على مشترك بالكود "${studentId}". هل تريد إنشاء جلسة يدوية وإدخال بياناته الآن؟`,
+          )
+        ) {
+          // إظهار نوافذ منبثقة لطلب البيانات يدوياً
+          const manualName = prompt(
+            "برجاء إدخال اسم الطالب (مثال: مينا كمال):",
+            "",
+          );
+          const manualChurch = prompt("برجاء إدخال البلد / الكنيسة:", "");
+          const manualStage = prompt(
+            "برجاء إدخال المرحلة (مثال: إبتدائي، إعدادي):",
+            "",
+          );
 
-    // التأكد إن المستخدم أدخل الثلاث بيانات وما عملش (إلغاء)
-    if (manualName && manualChurch && manualStage) {
-        studentData = {
-            id: studentId,
-            studentName: manualName,
-            churchName: manualChurch,
-            stage: manualStage,
-            isManual: true
-        };
-    } else {
-        // لو الخادم ساب خانة فاضية أو داس إلغاء
-        alert("تم إلغاء الدخول. يجب إدخال الاسم والبلد والمرحلة بالكامل لبدء الجلسة اليدوية.");
-        return; // عشان يوقف الدخول وميبعتش بيانات ناقصة للسوبابيز
-    }
-}
+          // التأكد إن المستخدم أدخل الثلاث بيانات وما عملش (إلغاء)
+          if (manualName && manualChurch && manualStage) {
+            studentData = {
+              id: studentId,
+              studentName: manualName,
+              churchName: manualChurch,
+              stage: manualStage,
+              isManual: true,
+            };
+          } else {
+            // لو الخادم ساب خانة فاضية أو داس إلغاء
+            alert(
+              "تم إلغاء الدخول. يجب إدخال الاسم والبلد والمرحلة بالكامل لبدء الجلسة اليدوية.",
+            );
+            return; // عشان يوقف الدخول وميبعتش بيانات ناقصة للسوبابيز
+          }
+        }
       }
 
       if (!studentData) {
         setIsLoading(false);
-        return alert(`عذراً، هذا الكود غير مسجل: ${studentId}\nيرجى التأكد من الكود أو مراجعة المشرف.`);
+        return alert(
+          `عذراً، هذا الكود غير مسجل: ${studentId}\nيرجى التأكد من الكود أو مراجعة المشرف.`,
+        );
       }
 
       // Check existing submission scores on Supabase
       const { data: existingSub } = await supabase
-        .from('exam_submissions')
-        .select('*')
-        .eq('student_id', studentData.id)
+        .from("exam_submissions")
+        .select("*")
+        .eq("student_id", studentData.id)
         .maybeSingle();
 
       if (existingSub) {
         studentData.academicScore = existingSub.derasy_score;
-        studentData.memorizationScore = existingSub.mahfouzat_score ?? existingSub.mahfozat_score;
+        studentData.memorizationScore =
+          existingSub.mahfouzat_score ?? existingSub.mahfozat_score;
         studentData.copticL1Score = existingSub.qebty_lvl1_score;
         studentData.copticL2Score = existingSub.qebty_lvl2_score;
         studentData.detailed_answers = existingSub.detailed_answers;
@@ -867,35 +1173,33 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
 
       // Log action to exam_logs in database gracefully
       try {
-        await supabase.from('exam_logs').insert({
+        await supabase.from("exam_logs").insert({
           student_id: studentData.id,
           student_name: studentData.studentName,
           church_name: studentData.churchName,
           device_id: fingerprint?.uuid,
           device_type: deviceInfo.type,
           ip_address: deviceInfo.ip,
-          action: 'IDENTIFIED',
-          created_at: new Date().toISOString()
+          action: "IDENTIFIED",
+          created_at: new Date().toISOString(),
         });
       } catch (e) {
         console.error("Failed to insert log row", e);
       }
 
       // Upsert student state as active in live_monitoring table
-      const { error: liveErr } = await supabase
-        .from('live_monitoring')
-        .upsert({
-          student_id: studentData.id,
-          student_name: studentData.studentName,
-          church_name: studentData.churchName,
-          stage: studentData.stage,
-          status: 'active',
-          device_type: deviceInfo.type,
-          ip_address: deviceInfo.ip,
-          fingerprint: fingerprint,
-          updated_at: new Date().toISOString(),
-          attempts_count: 1
-        });
+      const { error: liveErr } = await supabase.from("live_monitoring").upsert({
+        student_id: studentData.id,
+        student_name: studentData.studentName,
+        church_name: studentData.churchName,
+        stage: studentData.stage,
+        status: "active",
+        device_type: deviceInfo.type,
+        ip_address: deviceInfo.ip,
+        fingerprint: fingerprint,
+        updated_at: new Date().toISOString(),
+        attempts_count: 1,
+      });
 
       if (liveErr) console.error("Live Monitoring Upsert Error:", liveErr);
 
@@ -907,23 +1211,27 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
       setIsTerminated(false);
       setAnswers({});
       setActiveStudent(studentData);
-      
-      localStorage.setItem('active_student_id', studentData.id);
-      localStorage.setItem(`student_profile_${studentData.id}`, JSON.stringify(studentData));
+
+      localStorage.setItem("active_student_id", studentData.id);
+      localStorage.setItem(
+        `student_profile_${studentData.id}`,
+        JSON.stringify(studentData),
+      );
 
       setIsScanning(false);
       setIsLoading(false);
 
       // Try playing sensory beep and trigger vibration logic
       try {
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        const AudioContext =
+          window.AudioContext || (window as any).webkitAudioContext;
         if (AudioContext) {
           const ctx = new AudioContext();
           const osc = ctx.createOscillator();
           const gainNode = ctx.createGain();
           osc.connect(gainNode);
           gainNode.connect(ctx.destination);
-          osc.type = 'sine';
+          osc.type = "sine";
           osc.frequency.setValueAtTime(880, ctx.currentTime);
           gainNode.gain.setValueAtTime(0.1, ctx.currentTime);
           osc.start();
@@ -933,10 +1241,9 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
           navigator.vibrate([100, 50, 100]);
         }
       } catch (err) {}
-
     } catch (e: any) {
       setIsLoading(false);
-      alert('حدث خطأ غير متوقع: ' + (e.message || 'Error occurred'));
+      alert("حدث خطأ غير متوقع: " + (e.message || "Error occurred"));
     }
   };
 
@@ -944,29 +1251,35 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
     try {
       if (!activeStudent) return;
       setIsLoading(true);
-      
-      const stage = activeStudent.stage || 'عام';
+
+      const stage = activeStudent.stage || "عام";
 
       if (examConfig) {
         if (!examConfig.isExamLive) {
           setIsLoading(false);
-          return alert('عذراً، الامتحانات مغلقة الآن بقرار من اللجنة المركزية');
+          return alert("عذراً، الامتحانات مغلقة الآن بقرار من اللجنة المركزية");
         }
 
         if (examConfig.autoCloseTime) {
           const now = new Date();
-          const [hours, minutes] = examConfig.autoCloseTime.split(':').map(Number);
+          const [hours, minutes] = examConfig.autoCloseTime
+            .split(":")
+            .map(Number);
           const closeTime = new Date();
           closeTime.setHours(hours, minutes, 0, 0);
-          
+
           if (now > closeTime) {
             setIsLoading(false);
-            return alert(`عذراً، انتهى الوقت المحدد للامتحانات اليوم (${examConfig.autoCloseTime})`);
+            return alert(
+              `عذراً، انتهى الوقت المحدد للامتحانات اليوم (${examConfig.autoCloseTime})`,
+            );
           }
         }
         if (examConfig.churchOverrides?.[activeStudent.churchName] === false) {
           setIsLoading(false);
-          return alert(`عذراً، الامتحانات مغلقة حالياً لكنيسة ${activeStudent.churchName}`);
+          return alert(
+            `عذراً، الامتحانات مغلقة حالياً لكنيسة ${activeStudent.churchName}`,
+          );
         }
         if (examConfig.stageOverrides?.[stage] === false) {
           setIsLoading(false);
@@ -976,38 +1289,54 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
 
       if (!isStudentEnrolledInCompetition(activeStudent, competitionType)) {
         setIsLoading(false);
-        return alert("عذراً، أنت غير مسجل في هذه المسابقة. يرجى مراجعة اللجنة التنظيمية.");
+        return alert(
+          "عذراً، أنت غير مسجل في هذه المسابقة. يرجى مراجعة اللجنة التنظيمية.",
+        );
       }
 
-      if (competitionType === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) {
+      if (
+        competitionType === "قبطي مستوى أول" &&
+        Number(activeStudent.coptic_level) === 2
+      ) {
         setIsLoading(false);
         return alert("غير مسموح لك بدخول مستوى قبطي مخالف لمستواك المسجل.");
       }
-      if (competitionType === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) {
+      if (
+        competitionType === "قبطي مستوى ثاني" &&
+        Number(activeStudent.coptic_level) === 1
+      ) {
         setIsLoading(false);
         return alert("غير مسموح لك بدخول مستوى قبطي مخالف لمستواك المسجل.");
       }
-      
+
       const scoreField = SCORE_FIELD_MAP[competitionType];
       const fieldMap: Record<string, string> = {
-        'academicScore': 'academicScore',
-        'memorizationScore': 'memorizationScore',
-        'copticL1Score': 'copticL1Score',
-        'copticL2Score': 'copticL2Score'
+        academicScore: "academicScore",
+        memorizationScore: "memorizationScore",
+        copticL1Score: "copticL1Score",
+        copticL2Score: "copticL2Score",
       };
       const studentField = fieldMap[scoreField];
-      
+
       const keyMapObj: Record<string, string> = {
-        'دراسي': 'derasy',
-        'محفوظات': 'mahfozat',
-        'قبطي مستوى أول': 'qebty_lvl1',
-        'قبطي مستوى ثاني': 'qebty_lvl2'
+        دراسي: "derasy",
+        محفوظات: "mahfozat",
+        "قبطي مستوى أول": "qebty_lvl1",
+        "قبطي مستوى ثاني": "qebty_lvl2",
       };
       const subKey = keyMapObj[competitionType];
-      
-      if ((subKey && completedSubjects[subKey] !== null) || (activeStudent[studentField] !== undefined && activeStudent[studentField] !== null)) {
+
+      if (
+        (subKey && completedSubjects[subKey] !== null) ||
+        (activeStudent[studentField] !== undefined &&
+          activeStudent[studentField] !== null)
+      ) {
         setIsLoading(false);
-        setScore(subKey && completedSubjects[subKey] !== null ? completedSubjects[subKey]! : activeStudent[studentField]);
+        setScore(
+          subKey && completedSubjects[subKey] !== null
+            ? completedSubjects[subKey]!
+            : activeStudent[studentField],
+        );
         setIsAlreadyExamined(true);
         setIsExamCompleted(true);
         setSelectedCompetition(competitionType);
@@ -1022,61 +1351,74 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
 
       // Read exams from cache or fetch all exams pool once per day (Zero-Egress Strategy)
       const allCachedPool = await fetchAllExamsAndCache();
-      const matchedExams = allCachedPool.filter((row: any) => 
-        String(row.stage).trim() === String(stage).trim() &&
-        normalizeArabic(row.subject || row.competition_type) === normalizeArabic(competitionType)
+      const matchedExams = allCachedPool.filter(
+        (row: any) =>
+          String(row.stage).trim() === String(stage).trim() &&
+          normalizeArabic(row.subject || row.competition_type) ===
+            normalizeArabic(competitionType),
       );
 
-      const availableExams: Exam[] = matchedExams.map((row: any) => ({
-        id: row.id,
-        stage: row.stage,
-        competitionType: row.subject || row.competition_type || '',
-        model: row.model || row.model_type || 'A',
-        questions: row.questions_data || [],
-        isActive: row.is_active ?? true,
-        updatedAt: row.updated_at || ''
-      })).filter(exam => exam.isActive !== false);
-      
+      const availableExams: Exam[] = matchedExams
+        .map((row: any) => ({
+          id: row.id,
+          stage: row.stage,
+          competitionType: row.subject || row.competition_type || "",
+          model: row.model || row.model_type || "A",
+          questions: row.questions_data || [],
+          isActive: row.is_active ?? true,
+          updatedAt: row.updated_at || "",
+        }))
+        .filter((exam) => exam.isActive !== false);
+
       if (availableExams.length === 0) {
         setIsLoading(false);
-        return alert(`لا يوجد امتحان متاح لمرحلة ${stage} في مسابقة ${competitionType}`);
+        return alert(
+          `لا يوجد امتحان متاح لمرحلة ${stage} في مسابقة ${competitionType}`,
+        );
       }
-      
-      const randomModel = availableExams[Math.floor(Math.random() * availableExams.length)];
-      
-      const shuffledQuestions = [...randomModel.questions].sort(() => 0.5 - Math.random());
-      shuffledQuestions.forEach(q => {
-        if (q.type === 'mcq') q.options.sort(() => 0.5 - Math.random());
-        if (q.type === 'matching' && q.matchingPairs) {
-          (q as any).shuffledRights = q.matchingPairs.map((p: any) => p.right).sort(() => 0.5 - Math.random());
+
+      const randomModel =
+        availableExams[Math.floor(Math.random() * availableExams.length)];
+
+      const shuffledQuestions = [...randomModel.questions].sort(
+        () => 0.5 - Math.random(),
+      );
+      shuffledQuestions.forEach((q) => {
+        if (q.type === "mcq") q.options.sort(() => 0.5 - Math.random());
+        if (q.type === "matching" && q.matchingPairs) {
+          (q as any).shuffledRights = q.matchingPairs
+            .map((p: any) => p.right)
+            .sort(() => 0.5 - Math.random());
         }
       });
 
       randomModel.questions = shuffledQuestions;
-      
+
       setSelectedCompetition(competitionType);
       setActiveExam(randomModel);
-      
+
       // DEVICE METADATA EXTRACTION & DB LOGGING
       try {
         const parser = new UAParser();
         const result = parser.getResult();
-        const osName = result.os.name || 'Unknown OS';
-        const deviceType = result.device.type || 'Desktop';
-        const deviceModel = result.device.model || result.browser.name || 'Unknown Device';
-        
-        await supabase.from('exam_device_logs').insert({
+        const osName = result.os.name || "Unknown OS";
+        const deviceType = result.device.type || "Desktop";
+        const deviceModel =
+          result.device.model || result.browser.name || "Unknown Device";
+
+        await supabase.from("exam_device_logs").insert({
           student_id: activeStudent.id,
-          student_name: activeStudent.studentName || activeStudent.name || 'بدون اسم',
-          church_name: activeStudent.churchName || 'غير مكتمل',
+          student_name:
+            activeStudent.studentName || activeStudent.name || "بدون اسم",
+          church_name: activeStudent.churchName || "غير مكتمل",
           stage: stage,
           device_type: deviceType,
           device_os: osName,
           device_model: deviceModel,
-          ip_address: deviceInfo?.ip || '127.0.0.1',
-          status: 'جاري الامتحان',
+          ip_address: deviceInfo?.ip || "127.0.0.1",
+          status: "جاري الامتحان",
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         });
       } catch (logErr) {
         console.error("Failed to insert into exam_device_logs:", logErr);
@@ -1084,248 +1426,320 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
 
       // Update monitoring with chosen exam
       await supabase
-        .from('live_monitoring')
+        .from("live_monitoring")
         .update({
           device_type: `يجري امتحان: ${competitionType}`,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
-        .eq('student_id', activeStudent.id);
+        .eq("student_id", activeStudent.id);
 
       setIsLoading(false);
     } catch (e: any) {
       console.error(e);
       setIsLoading(false);
-      alert('حدث خطأ في بدء الامتحان: ' + e.message);
+      alert("حدث خطأ في بدء الامتحان: " + e.message);
     }
   };
 
-  const handleAnswer = (qid: string, val: any) => {
-    setAnswers(prev => {
+  const handleAnswer = useCallback((qid: string, val: any) => {
+    setAnswers((prev) => {
       const next = { ...prev, [qid]: val };
       if (activeStudent && selectedCompetition) {
-        localStorage.setItem(`exam_${activeStudent.id}_${selectedCompetition}`, JSON.stringify(next));
+        localStorage.setItem(
+          `exam_${activeStudent.id}_${selectedCompetition}`,
+          JSON.stringify(next),
+        );
       }
       return next;
     });
-  };
+  }, [activeStudent, selectedCompetition]);
 
-  const handleSubmit = async () => {
+  const handleConfirmAndReturn = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault(); // 👈 CRITICAL: Prevents HTML form side-effects/freezing
+
     if (!activeExam || !activeStudent || !selectedCompetition) return;
-    if (!confirm('هل أنت متأكد من حفظ إجابات هذه المادة والعودة إلى الشاشة الرئيسية لمتابعة الامتحان؟')) return;
     setIsLoading(true);
 
     let totalScore = 0;
 
     activeExam.questions.forEach((q) => {
-       const stdAns = answers[q.id];
-       const correctAns = q.correctAnswers?.[0];
-       
-       if (!stdAns) return;
+      const stdAns = answers[q.id];
+      const correctAns = q.correctAnswers?.[0];
 
-       if (q.type === 'mcq' || q.type === 'boolean' || q.type === 'fill') {
-         if (normalizeArabic(String(stdAns)) === normalizeArabic(String(correctAns))) {
-           totalScore += q.points;
-         }
-       } else if (q.type === 'matching') {
-          let correctMatches = 0;
-          const matchingPairs = q.matchingPairs || [];
-          matchingPairs.forEach((pair, pIdx) => {
-             const sMatch = stdAns[pIdx];
-             const rMatch = pair.right;
-             if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
-               correctMatches++;
-             }
-          });
-          if (correctMatches === matchingPairs.length) totalScore += q.points;
-       }
+      if (!stdAns) return;
+
+      if (q.type === "mcq" || q.type === "boolean" || q.type === "fill") {
+        if (
+          normalizeArabic(String(stdAns)) ===
+          normalizeArabic(String(correctAns))
+        ) {
+          totalScore += q.points;
+        }
+      } else if (q.type === "matching") {
+        let correctMatches = 0;
+        const matchingPairs = q.matchingPairs || [];
+        matchingPairs.forEach((pair, pIdx) => {
+          const sMatch = stdAns[pIdx];
+          const rMatch = pair.right;
+          if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
+            correctMatches++;
+          }
+        });
+        if (correctMatches === matchingPairs.length) totalScore += q.points;
+      }
     });
 
     const keyMapObj: Record<string, string> = {
-      'دراسي': 'derasy',
-      'محفوظات': 'mahfozat',
-      'قبطي مستوى أول': 'qebty_lvl1',
-      'قبطي مستوى ثاني': 'qebty_lvl2'
+      دراسي: "derasy",
+      محفوظات: "mahfozat",
+      "قبطي مستوى أول": "qebty_lvl1",
+      "قبطي مستوى ثاني": "qebty_lvl2",
     };
     const key = keyMapObj[selectedCompetition];
 
     if (key) {
-      setCompletedSubjects(prev => {
+      setCompletedSubjects((prev) => {
         const next = { ...prev, [key]: totalScore };
-        localStorage.setItem(`completed_subjects_${activeStudent.id}`, JSON.stringify(next));
+        localStorage.setItem(
+          `completed_subjects_${activeStudent.id}`,
+          JSON.stringify(next),
+        );
         return next;
       });
 
-      setAllAnswers(prev => {
+      setAllAnswers((prev) => {
         const next = { ...prev, [selectedCompetition]: answers };
-        localStorage.setItem(`all_answers_${activeStudent.id}`, JSON.stringify(next));
+        localStorage.setItem(
+          `all_answers_${activeStudent.id}`,
+          JSON.stringify(next),
+        );
         return next;
       });
     }
 
     try {
       await supabase
-        .from('live_monitoring')
+        .from("live_monitoring")
         .update({
           device_type: `حفظ مادة: ${selectedCompetition}`,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         })
-        .eq('student_id', activeStudent.id);
+        .eq("student_id", activeStudent.id);
     } catch (e) {
       console.error("Failed to update status monitor:", e);
     }
 
-    setActiveExam(null);
-    setSelectedCompetition(null);
+    try {
+      alert("تم حفظ وإرسال إجابات المسابقة بنجاح! 🎉");
+    } catch (_) {}
+
+    // 2. Clear current exam state and route back to the student exams grid view
+    if (typeof setActiveExam === "function") setActiveExam(null);
+    if (typeof setSelectedCompetition === "function")
+      setSelectedCompetition(null);
+
     setIsLoading(false);
   };
 
-  const handleFinalSubmit = async () => {
+  const handleFinalSubmission = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault(); // 👈 CRITICAL: Prevents HTML form locking/reloading behavior
     if (!activeStudent) return;
 
-    const anySaved = Object.values(completedSubjects).some(score => score !== null);
+    const anySaved = Object.values(completedSubjects).some(
+      (score) => score !== null,
+    );
     if (!anySaved) {
-      alert("عذراً، يجب إتمام وحفظ مادة واحدة على الأقل قبل تسليم الامتحان بالكامل.");
+      alert(
+        "عذراً، يجب إتمام وحفظ مادة واحدة على الأقل قبل تسليم الامتحان بالكامل.",
+      );
       return;
     }
 
-    if (!confirm('هل أنت متأكد من تسليم وإرسال كافة المواد المكتملة كمسودة للامتحان النهائي؟ لن تتمكن من تعديل الإجابات بعد التسليم.')) return;
+    if (
+      !confirm(
+        "هل أنت متأكد من تسليم وإرسال كافة المواد المكتملة كمسودة للامتحان النهائي؟ لن تتمكن من تعديل الإجابات بعد التسليم.",
+      )
+    )
+      return;
     setIsLoading(true);
 
     try {
-      const cachedExams = JSON.parse(localStorage.getItem('exams_pool_cache') || '[]');
+      const cachedExams = JSON.parse(
+        localStorage.getItem("exams_pool_cache") || "[]",
+      );
 
       let derasyTotal = 0;
       let mahfozatTotal = 0;
       let qebtyLvl1Total = 0;
       let qebtyLvl2Total = 0;
-      let primaryExamId = '';
+      let primaryExamId = "";
 
-      const allCollectedAnswersArray = Object.entries(allAnswers).flatMap(([subj, ansObj]) => {
-        const keyMapObj: Record<string, string> = {
-          'دراسي': 'derasy',
-          'محفوظات': 'mahfozat',
-          'قبطي مستوى أول': 'qebty_lvl1',
-          'قبطي مستوى ثاني': 'qebty_lvl2'
-        };
-        const compactSub = keyMapObj[subj] || subj;
-        const examSchema = cachedExams.find((e: any) => 
-          String(e.stage).trim() === String(activeStudent.stage).trim() &&
-          (e.competitionType === subj || (e.subject || e.competition_type) === subj)
-        );
-        
-        if (examSchema && !primaryExamId) {
-          primaryExamId = examSchema.id;
-        }
-
-        return Object.entries(ansObj as Record<string, any>).map(([qid, val]) => {
-          let compactAns: any = val;
-          let calculatedPts = 0;
-          
-          if (examSchema) {
-            const questionsList = examSchema.questions || examSchema.questions_data || [];
-            const question = questionsList.find((qu: any) => qu.id === qid);
-            if (question) {
-              const correctAns = question.correctAnswers?.[0];
-              if (question.type === 'mcq' || question.type === 'boolean') {
-                compactAns = question.options?.indexOf(val) !== -1 ? question.options?.indexOf(val) : val;
-                if (normalizeArabic(String(val)) === normalizeArabic(String(correctAns))) {
-                  calculatedPts = question.points || 0;
-                }
-              } else if (question.type === 'fill') {
-                compactAns = val;
-                if (normalizeArabic(String(val)) === normalizeArabic(String(correctAns))) {
-                  calculatedPts = question.points || 0;
-                }
-              } else if (question.type === 'matching') {
-                calculatedPts = 0;
-                const matchingPairs = question.matchingPairs || [];
-                const matchedIndIndices: Record<number, number> = {};
-                
-                let correctMatches = 0;
-                matchingPairs.forEach((pair: any, pIdx: number) => {
-                  const sMatch = val && typeof val === 'object' ? val[pIdx] : '';
-                  const rMatch = pair.right;
-                  const rightList = (question as any).shuffledRights || matchingPairs.map((p: any) => p.right);
-                  matchedIndIndices[pIdx] = rightList.indexOf(sMatch);
-                  
-                  if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
-                    correctMatches++;
-                  }
-                });
-                compactAns = matchedIndIndices;
-                if (correctMatches === matchingPairs.length) calculatedPts = question.points || 0;
-              }
-            }
-          }
-          
-          if (compactSub === 'derasy') derasyTotal += calculatedPts;
-          if (compactSub === 'mahfozat') mahfozatTotal += calculatedPts;
-          if (compactSub === 'qebty_lvl1') qebtyLvl1Total += calculatedPts;
-          if (compactSub === 'qebty_lvl2') qebtyLvl2Total += calculatedPts;
-
-          return {
-            qId: qid,
-            ans: compactAns,
-            pts: calculatedPts,
-            sub: compactSub
+      const allCollectedAnswersArray = Object.entries(allAnswers).flatMap(
+        ([subj, ansObj]) => {
+          const keyMapObj: Record<string, string> = {
+            دراسي: "derasy",
+            محفوظات: "mahfozat",
+            "قبطي مستوى أول": "qebty_lvl1",
+            "قبطي مستوى ثاني": "qebty_lvl2",
           };
-        });
-      });
+          const compactSub = keyMapObj[subj] || subj;
+          const examSchema = cachedExams.find(
+            (e: any) =>
+              String(e.stage).trim() === String(activeStudent.stage).trim() &&
+              (e.competitionType === subj ||
+                (e.subject || e.competition_type) === subj),
+          );
 
-      const finalPayload = {
-        student_id: activeStudent.id,
-        exam_id: primaryExamId || 'UNKNOWN',
-        student_name: activeStudent.studentName || activeStudent.name || 'بدون اسم',
-        church_name: activeStudent.churchName || 'غير مكتمل',
-        stage: activeStudent.stage || 'ثالثة ورابعة',
-        gender: activeStudent.gender || '',
-        derasy_score: derasyTotal || completedSubjects.derasy || 0,
-        mahfouzat_score: mahfozatTotal || completedSubjects.mahfozat || 0,
-        qebty_lvl1_score: qebtyLvl1Total || completedSubjects.qebty_lvl1 || 0,
-        qebty_lvl2_score: qebtyLvl2Total || completedSubjects.qebty_lvl2 || 0,
-        detailed_answers: JSON.stringify(allCollectedAnswersArray),
-        submitted_at: new Date().toISOString()
+          if (examSchema && !primaryExamId) {
+            primaryExamId = examSchema.id;
+          }
+
+          return Object.entries(ansObj as Record<string, any>).map(
+            ([qid, val]) => {
+              let compactAns: any = val;
+              let calculatedPts = 0;
+
+              if (examSchema) {
+                const questionsList =
+                  examSchema.questions || examSchema.questions_data || [];
+                const question = questionsList.find((qu: any) => qu.id === qid);
+                if (question) {
+                  const correctAns = question.correctAnswers?.[0];
+                  if (question.type === "mcq" || question.type === "boolean") {
+                    compactAns =
+                      question.options?.indexOf(val) !== -1
+                        ? question.options?.indexOf(val)
+                        : val;
+                    if (
+                      normalizeArabic(String(val)) ===
+                      normalizeArabic(String(correctAns))
+                    ) {
+                      calculatedPts = question.points || 0;
+                    }
+                  } else if (question.type === "fill") {
+                    compactAns = val;
+                    if (
+                      normalizeArabic(String(val)) ===
+                      normalizeArabic(String(correctAns))
+                    ) {
+                      calculatedPts = question.points || 0;
+                    }
+                  } else if (question.type === "matching") {
+                    calculatedPts = 0;
+                    const matchingPairs = question.matchingPairs || [];
+                    const matchedIndIndices: Record<number, number> = {};
+
+                    let correctMatches = 0;
+                    matchingPairs.forEach((pair: any, pIdx: number) => {
+                      const sMatch =
+                        val && typeof val === "object" ? val[pIdx] : "";
+                      const rMatch = pair.right;
+                      const rightList =
+                        (question as any).shuffledRights ||
+                        matchingPairs.map((p: any) => p.right);
+                      matchedIndIndices[pIdx] = rightList.indexOf(sMatch);
+
+                      if (normalizeArabic(sMatch) === normalizeArabic(rMatch)) {
+                        correctMatches++;
+                      }
+                    });
+                    compactAns = matchedIndIndices;
+                    if (correctMatches === matchingPairs.length)
+                      calculatedPts = question.points || 0;
+                  }
+                }
+              }
+
+              if (compactSub === "derasy") derasyTotal += calculatedPts;
+              if (compactSub === "mahfozat") mahfozatTotal += calculatedPts;
+              if (compactSub === "qebty_lvl1") qebtyLvl1Total += calculatedPts;
+              if (compactSub === "qebty_lvl2") qebtyLvl2Total += calculatedPts;
+
+              return {
+                qId: qid,
+                ans: compactAns,
+                pts: calculatedPts,
+                sub: compactSub,
+              };
+            },
+          );
+        },
+      );
+
+      // Exact schema mapping for the 'exam_submissions' table
+      const currentStudent = activeStudent ? {
+        id: activeStudent.id,
+        name: activeStudent.studentName || activeStudent.name || "بدون اسم",
+        church_name: activeStudent.churchName || activeStudent.church_name || "غير مكتمل",
+        gender: activeStudent.gender || "",
+        stage: activeStudent.stage || "ثالثة ورابعة"
+      } : null;
+
+      const finalDerasyScore = derasyTotal || completedSubjects.derasy || 0;
+      const finalMahfouzatScore = mahfozatTotal || completedSubjects.mahfozat || 0;
+      const finalQebtyLvl1Score = qebtyLvl1Total || completedSubjects.qebty_lvl1 || 0;
+      const finalQebtyLvl2Score = qebtyLvl2Total || completedSubjects.qebty_lvl2 || 0;
+      const selectedAnswers = JSON.stringify(allCollectedAnswersArray);
+
+      const submissionPayload = {
+        student_id: currentStudent?.id,               // Student ID from authentication/QR
+        student_name: currentStudent?.name,           // Student full name
+        church_name: currentStudent?.church_name,     // Church name/affiliation
+        gender: currentStudent?.gender,               // Student gender
+        derasy_score: finalDerasyScore || 0,          // Calculated or default study score
+        mahfouzat_score: finalMahfouzatScore || 0,    // Memorization score
+        qebty_lvl1_score: finalQebtyLvl1Score || 0,   // Coptic Level 1 score
+        qebty_lvl2_score: finalQebtyLvl2Score || 0,   // Coptic Level 2 score
+        detailed_answers: selectedAnswers,            // Object/Array containing full question-by-question choices
+        exam_id: activeExam?.id || primaryExamId || "UNKNOWN", // ID of the active exam/quiz
+        is_published: false,                          // Default status before teacher review (boolean)
+        stage: currentStudent?.stage,                 // Educational stage/grade level
+        submitted_at: new Date().toISOString()         // Timestamp of submission
       };
 
+      // Push record directly to Supabase
       const { error: subErr } = await supabase
         .from('exam_submissions')
-        .insert(finalPayload);
+        .insert([submissionPayload]);
 
       if (subErr) throw subErr;
 
       // Clean up local storage trace for this specific student
-      localStorage.removeItem('exam_progress_' + activeStudent.id);
+      localStorage.removeItem("exam_progress_" + activeStudent.id);
 
       await supabase
-        .from('live_monitoring')
+        .from("live_monitoring")
         .update({
-          status: 'completed',
-          device_type: 'أنهى الامتحان بالكامل',
-          updated_at: new Date().toISOString()
+          status: "completed",
+          device_type: "أنهى الامتحان بالكامل",
+          updated_at: new Date().toISOString(),
         })
-        .eq('student_id', activeStudent.id);
+        .eq("student_id", activeStudent.id);
 
       await supabase
-        .from('exam_device_logs')
+        .from("exam_device_logs")
         .update({
-          status: 'تم التسليم بنجاح',
-          updated_at: new Date().toISOString()
+          status: "تم التسليم بنجاح",
+          updated_at: new Date().toISOString(),
         })
-        .eq('student_id', activeStudent.id);
+        .eq("student_id", activeStudent.id);
 
       // Local update in cache
-      const updatedProfile = { 
-        ...activeStudent, 
-        academicScore: derasyTotal || completedSubjects.derasy || 0,
-        memorizationScore: mahfozatTotal || completedSubjects.mahfozat || 0,
-        copticL1Score: qebtyLvl1Total || completedSubjects.qebty_lvl1 || 0,
-        copticL2Score: qebtyLvl2Total || completedSubjects.qebty_lvl2 || 0
+      const updatedProfile = {
+        ...activeStudent,
+        academicScore: finalDerasyScore,
+        memorizationScore: finalMahfouzatScore,
+        copticL1Score: finalQebtyLvl1Score,
+        copticL2Score: finalQebtyLvl2Score,
       };
-      
-      localStorage.setItem(`student_profile_${activeStudent.id}`, JSON.stringify(updatedProfile));
+
+      localStorage.setItem(
+        `student_profile_${activeStudent.id}`,
+        JSON.stringify(updatedProfile),
+      );
 
       // Cleanup localStorage details
-      localStorage.removeItem('active_student_id');
+      localStorage.removeItem("active_student_id");
       localStorage.removeItem(`student_profile_${activeStudent.id}`);
       localStorage.removeItem(`completed_subjects_${activeStudent.id}`);
       localStorage.removeItem(`all_answers_${activeStudent.id}`);
@@ -1340,54 +1754,80 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
         derasy: null,
         mahfozat: null,
         qebty_lvl1: null,
-        qebty_lvl2: null
+        qebty_lvl2: null,
       });
 
       setScore(0);
       setIsExamCompleted(true);
-      setActiveStudent(null);
-      setActiveExam(null);
-      setSelectedCompetition(null);
+      alert("تم إرسال وتسليم الامتحان بنجاح وظهوره في السجل العام! 🎉");
+
+      // Clear current exam states and redirect back to the student grid view
+      if (typeof setActiveExam === 'function') setActiveExam(null);
+      if (typeof setCurrentScreen === 'function') {
+        setCurrentScreen('student-exam');
+      } else {
+        setActiveStudent(null);
+        setSelectedCompetition(null);
+      }
       setIsLoading(false);
     } catch (e: any) {
       setIsLoading(false);
-      alert('فشل في حفظ درجة الامتحان بالخادم: ' + (e.message || 'Error occurred'));
+      console.error("Supabase Database Insert Error:", e);
+      alert("حدث خطأ أثناء تسليم الامتحان لجدول السجل العام، برجاء المحاولة مرة أخرى.");
     }
   };
 
   if (isExamCompleted) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6" id="exam-completed-outer-container">
-        <div className="text-center p-12 bg-white border border-emerald-250 rounded-3xl shadow-xl overflow-hidden relative" id="exam-completed-card">
+      <div
+        className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6"
+        id="exam-completed-outer-container"
+      >
+        <div
+          className="text-center p-12 bg-white border border-emerald-250 rounded-3xl shadow-xl overflow-hidden relative"
+          id="exam-completed-card"
+        >
           <div className="absolute top-0 inset-x-0 h-2 bg-emerald-500" />
-          <h2 className="text-3xl font-black mb-4 text-emerald-600" id="completed-header">
-            {isAlreadyExamined ? 'لقد قمت بتسليم هذا الامتحان مسبقاً!' : 'تم استلام إجاباتك بنجاح!'}
+          <h2
+            className="text-3xl font-black mb-4 text-emerald-600"
+            id="completed-header"
+          >
+            {isAlreadyExamined
+              ? "لقد قمت بتسليم هذا الامتحان مسبقاً!"
+              : "تم استلام إجاباتك بنجاح!"}
           </h2>
           {score >= 0 && (
-            <div className="mb-6 mx-auto inline-block bg-emerald-50 px-6 py-2 rounded-xl border border-emerald-100" id="score-display">
-              <span className="font-bold text-emerald-800">الدرجة المسجلة: {score}</span>
+            <div
+              className="mb-6 mx-auto inline-block bg-emerald-50 px-6 py-2 rounded-xl border border-emerald-100"
+              id="score-display"
+            >
+              <span className="font-bold text-emerald-800">
+                الدرجة المسجلة: {score}
+              </span>
             </div>
           )}
-          <p className="text-slate-600 font-bold mb-6" id="completion-text-sub">نتمنى لك التوفيق دائمًا.</p>
-          <button 
+          <p className="text-slate-600 font-bold mb-6" id="completion-text-sub">
+            نتمنى لك التوفيق دائمًا.
+          </p>
+          <button
             id="exit-completion-btn"
-            onClick={() => { 
-              localStorage.removeItem('active_student_id'); 
-              setIsExamCompleted(false); 
-              setIsAlreadyExamined(false); 
-              setActiveStudent(null); 
-              setActiveExam(null); 
-              setSelectedCompetition(null); 
+            onClick={() => {
+              localStorage.removeItem("active_student_id");
+              setIsExamCompleted(false);
+              setIsAlreadyExamined(false);
+              setActiveStudent(null);
+              setActiveExam(null);
+              setSelectedCompetition(null);
               setAnswers({});
               setAllAnswers({});
               setCompletedSubjects({
                 derasy: null,
                 mahfozat: null,
                 qebty_lvl1: null,
-                qebty_lvl2: null
+                qebty_lvl2: null,
               });
               setIsTerminated(false);
-            }} 
+            }}
             className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all font-sans"
           >
             خروج البوابة
@@ -1399,32 +1839,51 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
 
   if (isTerminated) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6" id="exam-terminated-outer-container">
-        <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl overflow-hidden relative" id="exam-terminated-card">
+      <div
+        className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6"
+        id="exam-terminated-outer-container"
+      >
+        <div
+          className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl overflow-hidden relative"
+          id="exam-terminated-card"
+        >
           <div className="absolute top-0 inset-x-0 h-2 bg-rose-500" />
-          <div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm" id="terminated-shield-container">
+          <div
+            className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm"
+            id="terminated-shield-container"
+          >
             <ShieldX size={48} />
           </div>
-          <h2 className="text-3xl font-black mb-4 text-slate-800" id="terminated-header">تم إنهاء وتجميد الجلسة</h2>
-          <p className="text-slate-450 font-medium mb-6 text-sm" id="terminated-subtext">تم قطع الاتصال وحظر هذا الجهاز من اللجان المركزية.</p>
-          <button 
+          <h2
+            className="text-3xl font-black mb-4 text-slate-800"
+            id="terminated-header"
+          >
+            تم إنهاء وتجميد الجلسة
+          </h2>
+          <p
+            className="text-slate-450 font-medium mb-6 text-sm"
+            id="terminated-subtext"
+          >
+            تم قطع الاتصال وحظر هذا الجهاز من اللجان المركزية.
+          </p>
+          <button
             id="terminated-exit-btn"
-            onClick={() => { 
-              localStorage.removeItem('active_student_id'); 
-              setIsTerminated(false); 
-              setActiveStudent(null); 
-              setActiveExam(null); 
-              setSelectedCompetition(null); 
+            onClick={() => {
+              localStorage.removeItem("active_student_id");
+              setIsTerminated(false);
+              setActiveStudent(null);
+              setActiveExam(null);
+              setSelectedCompetition(null);
               setAnswers({});
               setAllAnswers({});
               setCompletedSubjects({
                 derasy: null,
                 mahfozat: null,
                 qebty_lvl1: null,
-                qebty_lvl2: null
+                qebty_lvl2: null,
               });
               setIsExamCompleted(false);
-            }} 
+            }}
             className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
           >
             خروج
@@ -1436,34 +1895,53 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
 
   if (!activeStudent && !isScanning) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6 animate-fade-in" id="gate-login-outer-container">
-        <div className="text-center p-10 bg-white border border-slate-200 rounded-3xl shadow-xl" id="gate-login-card">
-          <h3 className="text-2xl font-black mb-2 text-slate-800" id="gate-main-heading">بوابة الامتحان الإلكتروني المحمية</h3>
-          <p className="text-xs text-slate-400 mb-6" id="gate-sub-heading">بوابة رصد الأداء الفوري لشهادة الكرازة ٢٠٢٦</p>
-          
-          <div className="max-w-xs mx-auto space-y-4" id="login-interactive-block">
-            <button 
+      <div
+        className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6 animate-fade-in"
+        id="gate-login-outer-container"
+      >
+        <div
+          className="text-center p-10 bg-white border border-slate-200 rounded-3xl shadow-xl"
+          id="gate-login-card"
+        >
+          <h3
+            className="text-2xl font-black mb-2 text-slate-800"
+            id="gate-main-heading"
+          >
+            بوابة الامتحان الإلكتروني المحمية
+          </h3>
+          <p className="text-xs text-slate-400 mb-6" id="gate-sub-heading">
+            بوابة رصد الأداء الفوري لشهادة الكرازة ٢٠٢٦
+          </p>
+
+          <div
+            className="max-w-xs mx-auto space-y-4"
+            id="login-interactive-block"
+          >
+            <button
               id="start-camera-scan-btn"
-              onClick={() => setIsScanning(true)} 
+              onClick={() => setIsScanning(true)}
               className="w-full px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black shadow-lg transition-all"
             >
               مسح QR كود المشترك
             </button>
-            
+
             <div className="flex gap-2" id="manual-login-input-row">
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="اكتب رقمك الكودي يدويًا..."
                 className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none text-center font-bold text-sm text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:bg-white"
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') fetchStudentAndExam((e.target as HTMLInputElement).value);
+                  if (e.key === "Enter")
+                    fetchStudentAndExam((e.target as HTMLInputElement).value);
                 }}
                 id="manual-student-id"
               />
-              <button 
+              <button
                 id="manual-student-submit-btn"
                 onClick={() => {
-                  const input = document.getElementById('manual-student-id') as HTMLInputElement;
+                  const input = document.getElementById(
+                    "manual-student-id",
+                  ) as HTMLInputElement;
                   if (input?.value) fetchStudentAndExam(input.value);
                 }}
                 className="px-4 py-3 bg-indigo-100 text-indigo-600 rounded-xl font-black font-sans text-sm hover:bg-indigo-200 transition-colors"
@@ -1479,13 +1957,27 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
 
   if (!activeStudent && isScanning) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6" id="gate-scanning-outer-container">
-        <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center" id="gate-scanning-card">
-          <h3 className="text-2xl font-black mb-6 text-slate-800" id="scanning-heading">توجيه الكاميرا نحو باركود الطالب</h3>
-          <div className="max-w-md mx-auto aspect-square rounded-2xl overflow-hidden bg-slate-900 border-4 border-slate-100 shadow-inner mb-6 relative" id="qr-camera-frame">
+      <div
+        className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6"
+        id="gate-scanning-outer-container"
+      >
+        <div
+          className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center"
+          id="gate-scanning-card"
+        >
+          <h3
+            className="text-2xl font-black mb-6 text-slate-800"
+            id="scanning-heading"
+          >
+            توجيه الكاميرا نحو باركود الطالب
+          </h3>
+          <div
+            className="max-w-md mx-auto aspect-square rounded-2xl overflow-hidden bg-slate-900 border-4 border-slate-100 shadow-inner mb-6 relative"
+            id="qr-camera-frame"
+          >
             <QRScanner onScanSuccess={(id) => fetchStudentAndExam(id)} />
           </div>
-          <button 
+          <button
             id="cancel-scanner-btn"
             onClick={() => setIsScanning(false)}
             className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
@@ -1498,145 +1990,224 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
   }
 
   if (activeStudent && !selectedCompetition) {
-     return (
-       <div className="w-full max-w-2xl mx-auto pt-28 sm:pt-32 mt-8 pb-12 px-4 sm:px-6 safe-top safe-bottom overflow-y-auto" id="student-selection-outer-container">
-         <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl border border-slate-200 text-center" id="student-selection-card">
-           
-           {/* Section 2: METADATA STYLING UPGRADE - prominent and centered */}
-           <div className="w-full text-center py-4 px-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-600 mb-6 shadow-sm flex flex-col items-center justify-center gap-1.5 animate-fade-in" id="live-exam-metadata-upgrade">
-             <div className="flex flex-wrap items-center justify-center gap-2">
-               <span className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full border border-indigo-150" id="badge-stage">
-                 {activeStudent.stage}
-               </span>
-               <span className="text-emerald-700 text-xs font-black bg-emerald-50 px-3 py-1 rounded-full border border-emerald-150" id="badge-church">
-                 كنيسة {activeStudent.churchName}
-               </span>
-             </div>
-             <h3 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight mt-2 break-words max-w-full" id="student-name-text">
-               المشترك: <span className="text-indigo-600 block sm:inline">{activeStudent.studentName}</span>
-             </h3>
-             <p className="text-[10px] sm:text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1" id="student-meta-details-sub">
-               المشترك النشط بالبوابة الرقمية • كود خاص: <span className="font-mono text-indigo-500 font-black">{activeStudent.id}</span>
-             </p>
-           </div>
-           
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto mb-8" id="competition-choices-grid">
-             {COMPETITION_TYPES.map(type => {
-               // Basic criteria validation
-               if (type === 'قبطي مستوى أول' && Number(activeStudent.coptic_level) === 2) return null;
-               if (type === 'قبطي مستوى ثاني' && Number(activeStudent.coptic_level) === 1) return null;
-               
-               const keyMapObj: Record<string, string> = {
-                 'دراسي': 'derasy',
-                 'محفوظات': 'mahfozat',
-                 'قبطي مستوى أول': 'qebty_lvl1',
-                 'قبطي مستوى ثاني': 'qebty_lvl2'
-               };
-               const subKey = keyMapObj[type];
-               const scoreField = SCORE_FIELD_MAP[type];
-               const fieldMap: Record<string, string> = {
-                 'academicScore': 'academicScore',
-                 'memorizationScore': 'memorizationScore',
-                 'copticL1Score': 'copticL1Score',
-                 'copticL2Score': 'copticL2Score'
-               };
-               const studentField = fieldMap[scoreField];
-               const isSaved = (subKey && completedSubjects[subKey] !== null) || (activeStudent[studentField] !== undefined && activeStudent[studentField] !== null);
-                const isEnrolled = isStudentEnrolledInCompetition(activeStudent, type);
-                 if (!isEnrolled) {
-                   return (
-                     <div
-                       key={type}
-                       id={`competition-btn-${subKey}-locked`}
-                       className="p-6 border border-slate-200 bg-slate-100 opacity-60 rounded-2xl select-none flex flex-col justify-between"
-                     >
-                       <div>
-                         <div className="flex items-center gap-2 justify-between">
-                           <h5 className="font-black text-lg text-slate-400">{type}</h5>
-                           <span className="text-lg">🔒</span>
-                         </div>
-                         <span className="text-xs text-rose-500 font-bold block mt-3 bg-rose-50 border border-rose-150 px-3 py-1.5 rounded-xl text-center">
-                           عذرًا، أنت غير مسجل في هذه المسابقة
-                         </span>
-                       </div>
-                     </div>
-                   );
-                 }
-               
-               return (
-                 <button
-                   key={type}
-                   id={`competition-btn-${subKey}`}
-                   onClick={() => startExam(type)}
-                   disabled={isLoading || isSaved}
-                   className={`p-6 border rounded-2xl transition-all ${
-                     isSaved 
-                       ? 'bg-emerald-50 border-emerald-300 opacity-80 cursor-not-allowed'
-                       : 'bg-slate-50 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 hover:shadow-md'
-                   }`}
-                 >
-                   <h5 className={`font-black text-lg mb-1 ${isSaved ? 'text-emerald-800' : 'text-slate-800'}`}>{type}</h5>
-                   {isSaved ? (
-                     <span className="text-xs text-emerald-600 font-bold block">
-                       تم الحفظ بنجاح ✅
-                     </span>
-                   ) : (
-                     <span className="text-xs text-indigo-500 font-bold block">اضغط لبدء رصد الامتحان</span>
-                   )}
-                 </button>
-               );
-             })}
-           </div>
-
-           <div className="flex flex-col max-w-xl mx-auto gap-4" id="portal-actions-block">
-             <button 
-               id="final-exam-submit-btn"
-               onClick={handleFinalSubmit}
-               disabled={isLoading}
-               className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-emerald-900/40 transition-all font-sans flex items-center justify-center gap-2"
-             >
-               إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام
-             </button>
-             
-             <button 
-               id="cancel-exam-exit-btn"
-               onClick={() => { 
-                 localStorage.removeItem('active_student_id'); 
-                 setActiveStudent(null); 
-               }} 
-               className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all font-sans"
-             >
-               إلغاء وخروج
-             </button>
-           </div>
-         </div>
-       </div>
-     );
-  }
-
-  if (isLoading) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6" id="live-loader-outer-container">
-        <div className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl" id="loader-card">
-          <Loader2 className="animate-spin text-indigo-600 mx-auto" size={48} id="loader-spin-icon" />
-          <p className="mt-4 text-slate-500 font-bold" id="loader-text-status">جاري تحميل أسئلة وتهيئة امتحان {selectedCompetition}...</p>
+      <div
+        className="w-full max-w-2xl mx-auto pt-28 sm:pt-32 mt-8 pb-12 px-4 sm:px-6 safe-top safe-bottom overflow-y-auto"
+        id="student-selection-outer-container"
+      >
+        <div
+          className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl border border-slate-200 text-center"
+          id="student-selection-card"
+        >
+          {/* Section 2: METADATA STYLING UPGRADE - prominent and centered */}
+          <div
+            className="w-full text-center py-4 px-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-600 mb-6 shadow-sm flex flex-col items-center justify-center gap-1.5 animate-fade-in"
+            id="live-exam-metadata-upgrade"
+          >
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <span
+                className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full border border-indigo-150"
+                id="badge-stage"
+              >
+                {activeStudent.stage}
+              </span>
+              <span
+                className="text-emerald-700 text-xs font-black bg-emerald-50 px-3 py-1 rounded-full border border-emerald-150"
+                id="badge-church"
+              >
+                كنيسة {activeStudent.churchName}
+              </span>
+            </div>
+            <h3
+              className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight mt-2 break-words max-w-full"
+              id="student-name-text"
+            >
+              المشترك:{" "}
+              <span className="text-indigo-600 block sm:inline">
+                {activeStudent.studentName}
+              </span>
+            </h3>
+            <p
+              className="text-[10px] sm:text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1"
+              id="student-meta-details-sub"
+            >
+              المشترك النشط بالبوابة الرقمية • كود خاص:{" "}
+              <span className="font-mono text-indigo-500 font-black">
+                {activeStudent.id}
+              </span>
+            </p>
+          </div>
+
+          <div
+            className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto mb-8"
+            id="competition-choices-grid"
+          >
+            {COMPETITION_TYPES.map((type) => {
+              // Basic criteria validation
+              if (
+                type === "قبطي مستوى أول" &&
+                Number(activeStudent.coptic_level) === 2
+              )
+                return null;
+              if (
+                type === "قبطي مستوى ثاني" &&
+                Number(activeStudent.coptic_level) === 1
+              )
+                return null;
+
+              const keyMapObj: Record<string, string> = {
+                دراسي: "derasy",
+                محفوظات: "mahfozat",
+                "قبطي مستوى أول": "qebty_lvl1",
+                "قبطي مستوى ثاني": "qebty_lvl2",
+              };
+              const subKey = keyMapObj[type];
+              const scoreField = SCORE_FIELD_MAP[type];
+              const fieldMap: Record<string, string> = {
+                academicScore: "academicScore",
+                memorizationScore: "memorizationScore",
+                copticL1Score: "copticL1Score",
+                copticL2Score: "copticL2Score",
+              };
+              const studentField = fieldMap[scoreField];
+              const isSaved =
+                (subKey && completedSubjects[subKey] !== null) ||
+                (activeStudent[studentField] !== undefined &&
+                  activeStudent[studentField] !== null);
+              const isEnrolled = isStudentEnrolledInCompetition(
+                activeStudent,
+                type,
+              );
+              if (!isEnrolled) {
+                return (
+                  <div
+                    key={type}
+                    id={`competition-btn-${subKey}-locked`}
+                    className="p-6 border border-slate-200 bg-slate-100 opacity-60 rounded-2xl select-none flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 justify-between">
+                        <h5 className="font-black text-lg text-slate-400">
+                          {type}
+                        </h5>
+                        <span className="text-lg">🔒</span>
+                      </div>
+                      <span className="text-xs text-rose-500 font-bold block mt-3 bg-rose-50 border border-rose-150 px-3 py-1.5 rounded-xl text-center">
+                        عذرًا، أنت غير مسجل في هذه المسابقة
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <button
+                  key={type}
+                  id={`competition-btn-${subKey}`}
+                  onClick={() => startExam(type)}
+                  disabled={isLoading || isSaved}
+                  className={`p-6 border rounded-2xl transition-all ${
+                    isSaved
+                      ? "bg-emerald-50 border-emerald-300 opacity-80 cursor-not-allowed"
+                      : "bg-slate-50 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 hover:shadow-md"
+                  }`}
+                >
+                  <h5
+                    className={`font-black text-lg mb-1 ${isSaved ? "text-emerald-800" : "text-slate-800"}`}
+                  >
+                    {type}
+                  </h5>
+                  {isSaved ? (
+                    <span className="text-xs text-emerald-600 font-bold block">
+                      تم الحفظ بنجاح ✅
+                    </span>
+                  ) : (
+                    <span className="text-xs text-indigo-500 font-bold block">
+                      اضغط لبدء رصد الامتحان
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div
+            className="flex flex-col max-w-xl mx-auto gap-4"
+            id="portal-actions-block"
+          >
+            <button
+              type="button"
+              id="final-exam-submit-btn"
+              onClick={handleFinalSubmission}
+              disabled={isLoading}
+              className="w-full py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black text-lg shadow-xl hover:shadow-emerald-900/40 transition-all font-sans flex items-center justify-center gap-2"
+            >
+              إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام
+            </button>
+
+            <button
+              id="cancel-exam-exit-btn"
+              onClick={() => {
+                localStorage.removeItem("active_student_id");
+                setActiveStudent(null);
+              }}
+              className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all font-sans"
+            >
+              إلغاء وخروج
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!activeExam || !activeExam.questions || activeExam.questions.length === 0) {
+  if (isLoading) {
     return (
-      <div className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6" id="no-exam-questions-outer-container">
-        <div className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl" id="no-exam-card">
+      <div
+        className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6"
+        id="live-loader-outer-container"
+      >
+        <div
+          className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl"
+          id="loader-card"
+        >
+          <Loader2
+            className="animate-spin text-indigo-600 mx-auto"
+            size={48}
+            id="loader-spin-icon"
+          />
+          <p className="mt-4 text-slate-500 font-bold" id="loader-text-status">
+            جاري تحميل أسئلة وتهيئة امتحان {selectedCompetition}...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (
+    !activeExam ||
+    !activeExam.questions ||
+    activeExam.questions.length === 0
+  ) {
+    return (
+      <div
+        className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6"
+        id="no-exam-questions-outer-container"
+      >
+        <div
+          className="text-center p-12 bg-white border border-rose-200 rounded-3xl shadow-xl"
+          id="no-exam-card"
+        >
           <ShieldX className="text-rose-500 mx-auto mb-4" size={48} />
-          <p className="text-slate-700 font-bold" id="no-exam-text-msg">عذراً، لم تضع اللجنة أي أسئلة مسبقة لهذا النموذج حاليًا.</p>
-          <button 
+          <p className="text-slate-700 font-bold" id="no-exam-text-msg">
+            عذراً، لم تضع اللجنة أي أسئلة مسبقة لهذا النموذج حاليًا.
+          </p>
+          <button
             id="return-selector-btn"
-            onClick={() => { 
-              setActiveExam(null); 
-              setSelectedCompetition(null); 
-            }} 
+            onClick={() => {
+              setActiveExam(null);
+              setSelectedCompetition(null);
+            }}
             className="mt-6 px-6 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-colors font-sans"
           >
             عودة للاختيار
@@ -1647,81 +2218,48 @@ if (confirm(`لم يتم العثور على مشترك بالكود "${studentI
   }
 
   return (
-    <div className="w-full max-w-3xl mx-auto pt-28 sm:pt-32 mt-4 sm:mt-12 pb-12 px-2 sm:px-6 safe-top safe-bottom animate-fade-in flex flex-col min-h-[90vh]" id="active-exam-questions-outer-container">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col flex-1" id="active-exam-questions-card">
-        <div className="p-5 sm:p-8 space-y-6 sm:space-y-8 flex-1 overflow-y-auto" id="active-exam-scroll-area">
+    <div
+      className="w-full max-w-3xl mx-auto pt-28 sm:pt-32 mt-4 sm:mt-12 pb-12 px-2 sm:px-6 safe-top safe-bottom animate-fade-in flex flex-col min-h-[90vh]"
+      id="active-exam-questions-outer-container"
+    >
+      <div
+        className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col flex-1"
+        id="active-exam-questions-card"
+      >
+        <div
+          className="p-5 sm:p-8 space-y-6 sm:space-y-8 flex-1 overflow-y-auto"
+          id="active-exam-scroll-area"
+        >
           <div className="border-b pb-4" id="active-exam-card-header">
-            <span className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full" id="active-exam-badge">امتحان {selectedCompetition}</span>
-            <h4 className="text-xl font-black mt-2 text-slate-850" id="active-exam-card-title">أجب عن كافة الأسئلة بدقة بالغة</h4>
+            <span
+              className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full"
+              id="active-exam-badge"
+            >
+              امتحان {selectedCompetition}
+            </span>
+            <h4
+              className="text-xl font-black mt-2 text-slate-850"
+              id="active-exam-card-title"
+            >
+              أجب عن كافة الأسئلة بدقة بالغة
+            </h4>
           </div>
-          
+
           {activeExam.questions.map((q, qIdx) => (
-            <div key={q.id} className="p-6 bg-slate-50 rounded-2xl border border-slate-100" id={`question-block-${q.id}`}>
-              <h4 className="text-lg font-black mb-4 text-slate-800">{qIdx + 1}. {q.text}</h4>
-              
-              {(q.type === 'mcq' || q.type === 'boolean') && (
-                <div className="space-y-3" id={`answers-grp-${q.id}`}>
-                  {q.options.map((opt, oIndex) => (
-                      <label key={oIndex} className="flex items-center gap-3 p-4 rounded-xl border border-slate-205 cursor-pointer hover:bg-white transition-all bg-slate-100" id={`label-${q.id}-${oIndex}`}>
-                        <input 
-                          type="radio"
-                          name={`q_ans_${q.id}`}
-                          id={`radio-${q.id}-${oIndex}`}
-                          checked={answers[q.id] === opt}
-                          onChange={() => handleAnswer(q.id, opt)}
-                          className="w-5 h-5 accent-indigo-600"
-                        />
-                        <span className="font-bold text-slate-700">{opt}</span>
-                      </label>
-                  ))}
-                </div>
-              )}
-
-              {q.type === 'fill' && (
-                <input 
-                  type="text"
-                  id={`input-fill-${q.id}`}
-                  placeholder="اكتب إجابتك هنا..."
-                  value={answers[q.id] || ''}
-                  onChange={(e) => handleAnswer(q.id, e.target.value)}
-                  className="w-full px-4 py-3 border rounded-xl bg-white focus:ring-1 focus:ring-indigo-500 font-bold outline-none text-slate-850"
-                />
-              )}
-
-              {q.type === 'matching' && q.matchingPairs && (
-                <div className="space-y-3" id={`matching-grp-${q.id}`}>
-                  <p className="text-xs text-slate-400 mb-2">اختر الإقران الصحيح لكل عنصر من القائمة اليسرى:</p>
-                  {q.matchingPairs.map((pair, pIdx) => {
-                    const currentListAnswers = answers[q.id] || {};
-                    return (
-                      <div key={pIdx} className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl" id={`matching-pair-${q.id}-${pIdx}`}>
-                        <span className="font-bold text-slate-700 text-sm">{pair.left}</span>
-                        <span className="text-slate-300 text-center hidden sm:block">↔</span>
-                        <select 
-                          id={`select-match-${q.id}-${pIdx}`}
-                          value={currentListAnswers[pIdx] || ''}
-                          onChange={(e) => {
-                            const nextList = { ...currentListAnswers, [pIdx]: e.target.value };
-                            handleAnswer(q.id, nextList);
-                          }}
-                          className="px-3 py-2 border rounded-lg bg-white font-bold text-xs text-slate-700"
-                        >
-                          <option value="">اختر المطابقة الصحيحة...</option>
-                          {(q as any).shuffledRights?.map((rItem: string, rIdx: number) => (
-                            <option key={rIdx} value={rItem}>{rItem}</option>
-                          ))}
-                        </select>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <QuestionCard
+              key={q.id}
+              q={q}
+              qIdx={qIdx}
+              totalQuestions={activeExam.questions.length}
+              currentAnswer={answers[q.id]}
+              onAnswer={handleAnswer}
+            />
           ))}
-          
-          <button 
+
+          <button
+            type="button"
             id="submit-exam-section-btn"
-            onClick={handleSubmit} 
+            onClick={handleConfirmAndReturn}
             className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-lg shadow-xl transition-all font-sans"
           >
             تأكيد وحفظ المادة والعودة للرئيسية
