@@ -431,8 +431,7 @@ const createQRCardPageElement = async (students: Participant[], rawChurches?: an
 
     // Church (Small)
     const churchLabel = document.createElement('div');
-    const chCode = getChurchCode(s.churchName, rawChurches);
-    churchLabel.innerText = `${s.churchName} (${chCode})`;
+    churchLabel.innerText = s.churchName;
     churchLabel.style.fontSize = '8px';
     churchLabel.style.fontWeight = '600';
     churchLabel.style.color = '#94a3b8';
