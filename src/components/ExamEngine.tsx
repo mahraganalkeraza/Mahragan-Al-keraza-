@@ -1927,16 +1927,6 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
               ? "لقد قمت بتسليم هذا الامتحان مسبقاً!"
               : "تم استلام إجاباتك بنجاح!"}
           </h2>
-          {score >= 0 && (
-            <div
-              className="mb-6 mx-auto inline-block bg-emerald-50 px-6 py-2 rounded-xl border border-emerald-100"
-              id="score-display"
-            >
-              <span className="font-bold text-emerald-800">
-                الدرجة المسجلة: {score}
-              </span>
-            </div>
-          )}
           <p className="text-slate-600 font-bold mb-6" id="completion-text-sub">
             نتمنى لك التوفيق دائمًا.
           </p>
