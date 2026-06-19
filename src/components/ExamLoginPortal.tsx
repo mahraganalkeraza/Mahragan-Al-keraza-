@@ -15,7 +15,7 @@ import {
   Compass
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 interface ExamLoginPortalProps {
   onClose: () => void; // زر الرجوع / إغلاق البوابة
@@ -58,7 +58,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const qrScannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const qrScannerRef = useRef<Html5Qrcode | null>(null);
 
   // 1. تشغيل الكاميرا فورياً عند فتح واجهة الـ QR كود
   useEffect(() => {
@@ -67,29 +67,45 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         try {
           if (!document.getElementById('qr-reader')) return;
           
-          qrScannerRef.current = new Html5QrcodeScanner(
-            "qr-reader", 
-            { fps: 10, qrbox: { width: 250, height: 250 } },
-            /* verbose= */ false
-          );
+          const html5Qrcode = new Html5Qrcode("qr-reader");
+          qrScannerRef.current = html5Qrcode;
           
-          qrScannerRef.current.render((decodedText) => {
+          const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+          const qrCodeSuccessCallback = (decodedText: string) => {
             setAcademicCode(decodedText);
             if (qrScannerRef.current) {
-              qrScannerRef.current.clear().catch(console.error);
+              qrScannerRef.current.stop().then(() => {
+                qrScannerRef.current?.clear();
+              }).catch(console.error);
             }
-          }, (error) => {
-            // صامت لمنع إزعاج الكونسول أثناء مسح الكاميرا
+          };
+
+          html5Qrcode.start(
+            { facingMode: "environment" }, // 👈 CRITICAL: Enforces rear camera by default
+            config,
+            qrCodeSuccessCallback,
+            () => { /* silent error log */ }
+          ).catch((err) => {
+            console.error("Camera Init Error, trying fallback:", err);
+            // Fallback to front camera if environment is unavailable
+            html5Qrcode.start(
+              { facingMode: "user" },
+              config,
+              qrCodeSuccessCallback,
+              () => {}
+            ).catch(console.error);
           });
         } catch (err) {
-          console.error("Camera Init Error:", err);
+          console.error("Camera Init Exception:", err);
         }
       }, 300);
     }
 
     return () => {
-      if (qrScannerRef.current) {
-        qrScannerRef.current.clear().catch(console.error);
+      if (qrScannerRef.current && qrScannerRef.current.isScanning) {
+        qrScannerRef.current.stop().then(() => {
+          qrScannerRef.current?.clear();
+        }).catch(console.error);
       }
     };
   }, [loginMethod]);

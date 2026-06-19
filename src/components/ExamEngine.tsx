@@ -1834,6 +1834,22 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     }
   };
 
+  const handleBackToPortal = () => {
+    if (typeof setParentActiveExam === 'function') setParentActiveExam(null);
+    if (typeof setCurrentStudent === 'function') setCurrentStudent(null);
+    if (typeof setCurrentScreen === 'function') setCurrentScreen('student-exam');
+  };
+
+  if (!activeStudent) {
+    const activeStudentId = localStorage.getItem("active_student_id");
+    if (!activeStudentId) {
+      // If there's no active student and no local session, immediately return to portal.
+      // This WIPE OUTs the old manual UI block.
+      handleBackToPortal();
+      return null;
+    }
+  }
+
   if (isExamCompleted) {
     return (
       <div
@@ -1885,9 +1901,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
               });
               setIsTerminated(false);
 
-              if (typeof setParentActiveExam === 'function') setParentActiveExam(null);
-              if (typeof setCurrentStudent === 'function') setCurrentStudent(null);
-              if (typeof setCurrentScreen === 'function') setCurrentScreen('student-exam');
+              handleBackToPortal();
             }}
             className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all font-sans"
           >
@@ -1945,9 +1959,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
               });
               setIsExamCompleted(false);
 
-              if (typeof setParentActiveExam === 'function') setParentActiveExam(null);
-              if (typeof setCurrentStudent === 'function') setCurrentStudent(null);
-              if (typeof setCurrentScreen === 'function') setCurrentScreen('student-exam');
+              handleBackToPortal();
             }}
             className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
           >
@@ -1958,101 +1970,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     );
   }
 
-  if (!activeStudent && !isScanning) {
-    return (
-      <div
-        className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6 animate-fade-in"
-        id="gate-login-outer-container"
-      >
-        <div
-          className="text-center p-10 bg-white border border-slate-200 rounded-3xl shadow-xl"
-          id="gate-login-card"
-        >
-          <h3
-            className="text-2xl font-black mb-2 text-slate-800"
-            id="gate-main-heading"
-          >
-            بوابة الامتحان الإلكتروني المحمية
-          </h3>
-          <p className="text-xs text-slate-400 mb-6" id="gate-sub-heading">
-            بوابة رصد الأداء الفوري لشهادة الكرازة ٢٠٢٦
-          </p>
 
-          <div
-            className="max-w-xs mx-auto space-y-4"
-            id="login-interactive-block"
-          >
-            <button
-              id="start-camera-scan-btn"
-              onClick={() => setIsScanning(true)}
-              className="w-full px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black shadow-lg transition-all"
-            >
-              مسح QR كود المشترك
-            </button>
-
-            <div className="flex gap-2" id="manual-login-input-row">
-              <input
-                type="text"
-                placeholder="اكتب رقمك الكودي يدويًا..."
-                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none text-center font-bold text-sm text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:bg-white"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter")
-                    fetchStudentAndExam((e.target as HTMLInputElement).value);
-                }}
-                id="manual-student-id"
-              />
-              <button
-                id="manual-student-submit-btn"
-                onClick={() => {
-                  const input = document.getElementById(
-                    "manual-student-id",
-                  ) as HTMLInputElement;
-                  if (input?.value) fetchStudentAndExam(input.value);
-                }}
-                className="px-4 py-3 bg-indigo-100 text-indigo-600 rounded-xl font-black font-sans text-sm hover:bg-indigo-200 transition-colors"
-              >
-                دخول
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!activeStudent && isScanning) {
-    return (
-      <div
-        className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6"
-        id="gate-scanning-outer-container"
-      >
-        <div
-          className="bg-white p-8 rounded-3xl shadow-xl border border-slate-200 text-center"
-          id="gate-scanning-card"
-        >
-          <h3
-            className="text-2xl font-black mb-6 text-slate-800"
-            id="scanning-heading"
-          >
-            توجيه الكاميرا نحو باركود الطالب
-          </h3>
-          <div
-            className="max-w-md mx-auto aspect-square rounded-2xl overflow-hidden bg-slate-900 border-4 border-slate-100 shadow-inner mb-6 relative"
-            id="qr-camera-frame"
-          >
-            <QRScanner onScanSuccess={(id) => fetchStudentAndExam(id)} />
-          </div>
-          <button
-            id="cancel-scanner-btn"
-            onClick={() => setIsScanning(false)}
-            className="px-8 py-3 bg-slate-100 text-slate-600 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
-          >
-            إلغاء وتراجع
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   if (activeStudent && !selectedCompetition) {
     return (
@@ -2235,9 +2153,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 localStorage.removeItem("active_student_id");
                 setActiveStudent(null);
 
-                if (typeof setParentActiveExam === 'function') setParentActiveExam(null);
-                if (typeof setCurrentStudent === 'function') setCurrentStudent(null);
-                if (typeof setCurrentScreen === 'function') setCurrentScreen('student-exam');
+                handleBackToPortal();
               }}
               className="px-8 py-3 bg-rose-50 text-rose-600 rounded-xl font-black hover:bg-rose-100 transition-all font-sans"
             >
