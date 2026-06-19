@@ -69,10 +69,42 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     setErrors(null);
 
     try {
+      const finalId = codeStr.trim().toLowerCase();
+
+      // 1️⃣ Step 1: Check for Prior Submission
+      const { data: submittedData, error: subError } = await supabase
+        .from('view_central_filtered_results')
+        .select('student_id, submission_status')
+        .eq('student_id', finalId)
+        .eq('submission_status', 'submitted')
+        .maybeSingle();
+
+      if (subError) throw subError;
+      if (submittedData) {
+        setErrors("عفواً، لقد قمت بتسليم هذا الامتحان بالفعل!");
+        setIsLoading(false);
+        return;
+      }
+
+      // 2️⃣ Step 2: Check for Concurrent Active Sessions
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('active_sessions')
+        .select('student_id, status')
+        .eq('student_id', finalId)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (sessionError) throw sessionError;
+      if (sessionData) {
+        setErrors("عفواً، الامتحان مفتوح بالفعل على جهاز آخر! برجاء مراجعة الكنترول.");
+        setIsLoading(false);
+        return;
+      }
+
       const { data: studentObj, error: dbErr } = await supabase
         .from('registrations')
         .select('id, name, stage, churchName, gender, competitions')
-        .eq('id', codeStr.trim())
+        .eq('id', finalId)
         .single();
 
       if (dbErr || !studentObj) {
@@ -81,9 +113,19 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         return;
       }
 
+      // 3️⃣ Step 3: Authorization & Session Creation
+      await supabase
+        .from('active_sessions')
+        .insert({
+          student_id: finalId,
+          status: 'active',
+          allowReentry: true,
+          lastUpdate: new Date().toISOString()
+        });
+
       await triggerActiveExamLaunch(studentObj);
     } catch (err: any) {
-      setErrors("فشل الاتصال بقاعدة البيانات.");
+      setErrors("فشل الاتصال بقاعدة البيانات: " + err.message);
       setIsLoading(false);
     }
   };
