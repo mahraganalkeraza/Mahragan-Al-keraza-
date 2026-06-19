@@ -1722,7 +1722,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const finalQebtyLvl2Score = qebtyLvl2Total || currentCompletedSubjects.qebty_lvl2 || 0;
       const selectedAnswers = JSON.stringify(allCollectedAnswersArray);
 
-      const submissionPayload = {
+      const databasePayload = {
         student_id: currentStudentPayload?.id,
         student_name: currentStudentPayload?.name,
         church_name: currentStudentPayload?.church_name,
@@ -1738,10 +1738,15 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         submitted_at: new Date().toISOString()
       };
 
+      const localUIState = {
+        ...databasePayload,
+        stage_name: currentStudentPayload?.stage
+      };
+
       // Push record directly to Supabase
       const { error: subErr } = await supabase
         .from('exam_submissions')
-        .insert([submissionPayload]);
+        .insert([databasePayload]);
 
       if (subErr) {
         console.error("Supabase rejected insertion:", subErr.message);
