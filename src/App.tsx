@@ -2451,7 +2451,7 @@ function AppComponent() {
     const { error } = await supabase
       .from('system_settings')
       .update({ [field]: newValue })
-      .eq('id', 1); // Updates the single master configuration row
+      .eq('id', '1'); // Updates the single master configuration row
       
     if (error) {
       // rollback state
