@@ -174,9 +174,16 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
       return;
     }
     const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "المكرمين");
-    XLSX.writeFile(wb, `Honors_Leaderboard_${new Date().toISOString().split('T')[0]}.xlsx`);
+    const csvContent = XLSX.utils.sheet_to_csv(ws);
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], {
+      type: "text/csv;charset=utf-8;"
+    });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute("download", `Honors_Leaderboard_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   // If enabled is false (e.g., church user), don't render.

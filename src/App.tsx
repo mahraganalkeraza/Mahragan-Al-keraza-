@@ -2691,9 +2691,16 @@ function AppComponent() {
       saveAs(new Blob([buffer]), `${fileName}_${new Date().getTime()}.xlsx`);
     } else {
       const worksheet = XLSX.utils.json_to_sheet(data);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
-      XLSX.writeFile(workbook, `${fileName}.xlsx`);
+      const csvContent = XLSX.utils.sheet_to_csv(worksheet);
+      const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], {
+        type: "text/csv;charset=utf-8;"
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.setAttribute("download", `${fileName}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
 
@@ -3173,9 +3180,16 @@ function AppComponent() {
     });
 
     const worksheet = XLSX.utils.json_to_sheet(flattenedData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "طلبات الكتب مفصلة");
-    XLSX.writeFile(workbook, `detailed_orders_${new Date().toLocaleDateString('en-CA')}.xlsx`);
+    const csvContent = XLSX.utils.sheet_to_csv(worksheet);
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], {
+      type: "text/csv;charset=utf-8;"
+    });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute("download", `detailed_orders_${new Date().toLocaleDateString('en-CA')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
       const handleUndoDuplicates = async () => {
