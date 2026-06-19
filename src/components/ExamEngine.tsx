@@ -923,6 +923,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   setCurrentStudent,
   setActiveExam: setParentActiveExam
 }) => {
+  const [isExamCardHovered, setIsExamCardHovered] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [activeStudent, setActiveStudent] = useState<any>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<string | null>(
@@ -2351,8 +2352,6 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     const secs = seconds % 60;
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
-
-  const [isExamCardHovered, setIsExamCardHovered] = useState(false);
 
   const floatingCardStyle = {
     backgroundColor: '#ffffff',
