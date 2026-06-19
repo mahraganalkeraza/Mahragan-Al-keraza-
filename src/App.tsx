@@ -67,7 +67,8 @@ import {
   Layers,
   Printer,
   AlertTriangle,
-  Bell
+  Bell,
+  ShieldAlert
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
@@ -761,6 +762,46 @@ function AppComponent() {
         });
       }
 
+      // Load master global settings
+      try {
+        const { data: globalRow } = await supabase.from('system_settings').select('*').eq('id', '1').maybeSingle();
+        if (globalRow) {
+          setGlobalSettings({
+            is_exam_locked: !!globalRow.is_exam_locked,
+            is_registration_locked: !!globalRow.is_registration_locked,
+            is_book_orders_locked: !!globalRow.is_book_orders_locked,
+            is_site_disabled: !!globalRow.is_site_disabled,
+          });
+        } else {
+          const defaultGlobal = {
+            id: '1',
+            is_exam_locked: false,
+            is_registration_locked: false,
+            is_book_orders_locked: false,
+            is_site_disabled: false
+          };
+          await supabase.from('system_settings').upsert(defaultGlobal);
+          setGlobalSettings({
+            is_exam_locked: false,
+            is_registration_locked: false,
+            is_book_orders_locked: false,
+            is_site_disabled: false
+          });
+        }
+      } catch (e) {
+        console.error("Failed to fetch global system settings:", e);
+      }
+
+      // Load granular exceptions controls
+      try {
+        const { data: granularData } = await supabase.from('granular_controls').select('*');
+        if (granularData) {
+          setGranularControls(granularData);
+        }
+      } catch (e) {
+        console.error("Failed to fetch granular controls:", e);
+      }
+
       // Check System Lock in registrations table
       const { data: lockRow } = await supabase.from('registrations').select('name').eq('name', 'SYSTEM_LOCK').maybeSingle();
       const isCurrentlyLocked = !!lockRow;
@@ -1193,6 +1234,24 @@ function AppComponent() {
     churchOverrides: {},
     stageOverrides: {}
   });
+
+  const [globalSettings, setGlobalSettings] = useState<{
+    is_exam_locked: boolean;
+    is_registration_locked: boolean;
+    is_book_orders_locked: boolean;
+    is_site_disabled: boolean;
+  }>({
+    is_exam_locked: false,
+    is_registration_locked: false,
+    is_book_orders_locked: false,
+    is_site_disabled: false
+  });
+
+  const [granularControls, setGranularControls] = useState<any[]>([]);
+  const [granularTargetType, setGranularTargetType] = useState<'church' | 'stage'>('church');
+  const [granularTargetName, setGranularTargetName] = useState<string>('');
+  const [granularIsExamDisabled, setGranularIsExamDisabled] = useState<boolean>(false);
+  const [granularIsRegistrationDisabled, setGranularIsRegistrationDisabled] = useState<boolean>(false);
 
   const [systemControls, setSystemControls] = useState<{
     isRegistrationOpen: boolean;
@@ -2354,6 +2413,76 @@ function AppComponent() {
     } catch (e: any) {
       console.error(e);
       setNotification('خطأ في التحديث عبر Supabase');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGlobalToggle = async (field: string, newValue: boolean) => {
+    // Optimistic UI state update
+    setGlobalSettings(prev => ({ ...prev, [field]: newValue }));
+    
+    // As required by the spec: trigger an .update() on the master row with id 1
+    const { error } = await supabase
+      .from('system_settings')
+      .update({ [field]: newValue })
+      .eq('id', 1); // Updates the single master configuration row
+      
+    if (error) {
+      // rollback state
+      setGlobalSettings(prev => ({ ...prev, [field]: !newValue }));
+      alert(`Failed to update system state: ${error.message}`);
+    } else {
+      setNotification('تم تحديث إعدادات النظام بنجاح');
+    }
+  };
+
+  const handleSaveGranularControl = async (targetType: 'church' | 'stage', targetName: string, config: { is_exam_disabled: boolean; is_registration_disabled: boolean }) => {
+    setIsLoading(true);
+    try {
+      const existing = granularControls.find(c => c.target_type === targetType && c.target_name === targetName);
+      let res;
+      if (existing) {
+        res = await supabase
+          .from('granular_controls')
+          .update(config)
+          .eq('id', existing.id);
+      } else {
+        res = await supabase
+          .from('granular_controls')
+          .insert([{
+            target_type: targetType,
+            target_name: targetName,
+            is_exam_disabled: config.is_exam_disabled,
+            is_registration_disabled: config.is_registration_disabled
+          }]);
+      }
+      if (res.error) throw res.error;
+
+      // Refresh state
+      const { data } = await supabase.from('granular_controls').select('*');
+      if (data) {
+        setGranularControls(data);
+      }
+      setNotification('تم حفظ الإستثناء بنجاح');
+    } catch (e: any) {
+      console.error(e);
+      alert(`فشل تحديث إستثناءات التحكم: ${e.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteGranularControl = async (id: any) => {
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.from('granular_controls').delete().eq('id', id);
+      if (error) throw error;
+      setGranularControls(prev => prev.filter(c => c.id !== id));
+      setNotification('تم حذف الإستثناء بنجاح');
+    } catch (e: any) {
+      console.error(e);
+      alert(`فشل حذف الإستثناء: ${e.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -7184,142 +7313,210 @@ function AppComponent() {
 
             {adminActiveTab === 'system_settings' && (
               <div className="space-y-12">
-                {/* Control Hub Section */}
+                {/* 1. Global Sovereign Controls Card */}
                 <section className="p-8 bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden relative">
-                  <div className="absolute top-0 inset-x-0 h-2 bg-primary" />
+                  <div className="absolute top-0 inset-x-0 h-2 bg-rose-600" />
                   <h4 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8">
-                    <Sliders className="text-primary" /> لوحة التحكم المركزية للطوارئ
+                    <ShieldAlert className="text-rose-600" /> لوحة التحكم السيادية العامة (قاعدة البيانات والاتصال المباشر)
                   </h4>
 
-                  {/* System Core Switches */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Site Disabled */}
                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between">
                       <div className="mb-4">
-                        <h5 className="text-lg font-black text-slate-800 flex items-center gap-2"><UserPlus size={20} className="text-coptic-blue"/> التسجيل الموحد</h5>
-                        <p className="text-sm text-slate-500 font-bold mt-1">فتح أو غلق استمارات التسجيل في الكنائس لمنع إضافة مشتركين جدد</p>
+                        <h5 className="text-lg font-black text-slate-800 flex items-center gap-2">🛠️ قفل الموقع بالكامل</h5>
+                        <p className="text-sm text-slate-500 font-bold mt-1">يقوم بتحويل كافة صفحات المشتركين والطلاب والخدام فوراً إلى صفحة الصيانة والقفل العام</p>
                       </div>
                       <button 
-                        onClick={() => handleUpdateSystemControls({...systemControls, isRegistrationOpen: !systemControls.isRegistrationOpen})}
-                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${systemControls.isRegistrationOpen ? 'bg-rose-500 hover:bg-rose-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+                        onClick={() => handleGlobalToggle('is_site_disabled', !globalSettings.is_site_disabled)}
+                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${globalSettings.is_site_disabled ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-500 hover:bg-emerald-600'}`}
                       >
-                        {systemControls.isRegistrationOpen ? (
-                          <>
-                            <X size={18}/>
-                            إغلاق التسجيل 🔒
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle2 size={18}/>
-                            فتح التسجيل 🔓
-                          </>
-                        )}
+                        {globalSettings.is_site_disabled ? 'الموقع مغلق بالكامل 🔒' : 'الموقع مفتوح ومستقر للجميع 🔓'}
                       </button>
                     </div>
 
+                    {/* Registration Locked */}
                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between">
                       <div className="mb-4">
-                        <h5 className="text-lg font-black text-slate-800 flex items-center gap-2"><Calculator size={20} className="text-primary"/> طلبات الكتب</h5>
-                        <p className="text-sm text-slate-500 font-bold mt-1">السماح للكنائس بإضافة أو تعديل طلبات الكتب والحاسبة</p>
+                        <h5 className="text-lg font-black text-slate-800 flex items-center gap-2">📝 قفل تسجيل المشتركين</h5>
+                        <p className="text-sm text-slate-500 font-bold mt-1">يمنع بشكل جداري إدخال أو تعديل استمارات التسجيل على مستوى كافة الكنائس والمراحل</p>
                       </div>
                       <button 
-                        onClick={() => handleUpdateSystemControls({...systemControls, isBookCalculatorOpen: !systemControls.isBookCalculatorOpen})}
-                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${systemControls.isBookCalculatorOpen ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}
+                        onClick={() => handleGlobalToggle('is_registration_locked', !globalSettings.is_registration_locked)}
+                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${globalSettings.is_registration_locked ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-500 hover:bg-emerald-600'}`}
                       >
-                        {systemControls.isBookCalculatorOpen ? <CheckCircle2 size={18}/> : <X size={18}/>}
-                        {systemControls.isBookCalculatorOpen ? 'حاسبة الكتب مفتوحة' : 'مغلقة الآن'}
+                        {globalSettings.is_registration_locked ? 'التسجيل مغلق بالكامل 🔒' : 'التسجيل مفتوح للجميع 🔓'}
+                      </button>
+                    </div>
+
+                    {/* Exam Locked */}
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between">
+                      <div className="mb-4">
+                        <h5 className="text-lg font-black text-slate-800 flex items-center gap-2">📝 قفل الامتحانات الإلكترونية</h5>
+                        <p className="text-sm text-slate-500 font-bold mt-1">يغلق ويحظر تقديم أو إرسال أي إجابة امتحان جديدة لكافة الطلاب بقرار مركزي سيادي</p>
+                      </div>
+                      <button 
+                        onClick={() => handleGlobalToggle('is_exam_locked', !globalSettings.is_exam_locked)}
+                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${globalSettings.is_exam_locked ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+                      >
+                        {globalSettings.is_exam_locked ? 'الامتحانات مغلقة بالكامل 🔒' : 'الامتحانات مفتوحة للجميع 🔓'}
+                      </button>
+                    </div>
+
+                    {/* Book Orders Locked */}
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between">
+                      <div className="mb-4">
+                        <h5 className="text-lg font-black text-slate-800 flex items-center gap-2">📚 قفل طلبات وحاسبة الكتب</h5>
+                        <p className="text-sm text-slate-500 font-bold mt-1">يمنع إضافة أو إرسال أو تسليم أي طلبات كتب أو مبيعات مخصصة في حاسبة الإيبارشية</p>
+                      </div>
+                      <button 
+                        onClick={() => handleGlobalToggle('is_book_orders_locked', !globalSettings.is_book_orders_locked)}
+                        className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 ${globalSettings.is_book_orders_locked ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-500 hover:bg-emerald-600'}`}
+                      >
+                        {globalSettings.is_book_orders_locked ? 'طلبات الكتب مغلقة 🔒' : 'طلبات الكتب مفتوحة 🔓'}
                       </button>
                     </div>
                   </div>
+                </section>
 
-                  <h4 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8 mt-12 border-t pt-8 border-slate-100">
-                    <BookOpen className="text-primary" /> لوحة التحكم المركزية للامتحانات
+                {/* 2. Granular Controls Exceptions Settings Card */}
+                <section className="p-8 bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden relative">
+                  <div className="absolute top-0 inset-x-0 h-2 bg-indigo-600" />
+                  <h4 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8">
+                    <Sliders className="text-indigo-600" /> لوحة التحكم التفصيلية والاستثناءات الجغرافية والدراسية (Granular Controls)
                   </h4>
 
-                  {/* Global Switch */}
-                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between mb-8">
-                    <div>
-                      <h5 className="text-lg font-black text-slate-800">حالة الامتحانات (عام)</h5>
-                      <p className="text-sm text-slate-500 font-bold">فتح أو غلق بوابة الامتحانات الإلكترونية لجميع الطلاب بقرار مركزي</p>
-                    </div>
-                    <button 
-                      onClick={() => handleUpdateExamConfig({...examConfig, isExamLive: !examConfig.isExamLive})}
-                      className={`px-8 py-3 rounded-xl font-black text-white transition-all shadow-lg min-w-[140px] flex items-center justify-center gap-2 ${examConfig.isExamLive ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'}`}
-                    >
-                      {examConfig.isExamLive ? <CheckCircle2 size={18}/> : <X size={18}/>}
-                      {examConfig.isExamLive ? 'مفتوح الآن' : 'مغلق الآن'}
-                    </button>
-                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+                    {/* Exclusions Setup Form */}
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 space-y-4">
+                      <h5 className="text-lg font-black text-slate-800">إضافة أو تحديث إستثناء مخصص</h5>
 
-                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-6 mb-8">
-                    <div className="flex-1">
-                      <h5 className="text-sm font-black text-slate-800 mb-1">موعد الإغلاق التلقائي</h5>
-                      <p className="text-[10px] text-slate-400 font-bold">سيتم غلق الامتحانات لجميع الطلاب عند الوصول لهذا الوقت</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <input 
-                        type="time"
-                        value={examConfig.autoCloseTime || ''}
-                        onChange={(e) => handleUpdateExamConfig({...examConfig, autoCloseTime: e.target.value})}
-                        className="px-4 py-2 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary font-bold"
-                      />
-                      {examConfig.autoCloseTime && (
-                        <button 
-                          onClick={() => handleUpdateExamConfig({...examConfig, autoCloseTime: null as any})}
-                          className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="إزالة الموعد"
+                      {/* Target Type Selector */}
+                      <div>
+                        <label className="text-xs font-black text-slate-400 mb-2 block">نوع المستهدف</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGranularTargetType('church');
+                              setGranularTargetName('');
+                            }}
+                            className={`py-2 rounded-xl font-bold border transition-all ${granularTargetType === 'church' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                          >
+                            كنيسة بعينها
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGranularTargetType('stage');
+                              setGranularTargetName('');
+                            }}
+                            className={`py-2 rounded-xl font-bold border transition-all ${granularTargetType === 'stage' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+                          >
+                            مرحلة بعينها
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Target Name Selector */}
+                      <div>
+                        <label className="text-xs font-black text-slate-400 mb-2 block">اسم المستهدف المجدول</label>
+                        <select
+                          value={granularTargetName}
+                          onChange={(e) => setGranularTargetName(e.target.value)}
+                          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-600 font-bold"
                         >
-                          <X size={18} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Church Overrides */}
-                    <div className="space-y-4">
-                      <h5 className="font-black text-slate-700 flex items-center gap-2">
-                        <Church size={18} className="text-primary"/> تحكم حسب الكنيسة
-                      </h5>
-                      <div className="max-h-[300px] overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-2 no-scrollbar">
-                        {Object.keys(CHURCH_CREDENTIALS).sort().map(church => (
-                          <div key={church} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
-                            <span className="font-bold text-sm text-slate-700">{church}</span>
-                            <button 
-                              onClick={() => {
-                                const overrides = {...(examConfig.churchOverrides || {})};
-                                overrides[church] = overrides[church] === false ? true : false;
-                                handleUpdateExamConfig({...examConfig, churchOverrides: overrides});
-                              }}
-                              className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-colors ${examConfig.churchOverrides?.[church] === false ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}
-                            >
-                              {examConfig.churchOverrides?.[church] === false ? 'مغلق' : 'نمط العام'}
-                            </button>
-                          </div>
-                        ))}
+                          <option value="">-- اختر من القائمة --</option>
+                          {granularTargetType === 'church' ? (
+                            Object.keys(CHURCH_CREDENTIALS || {}).sort().map(church => (
+                              <option key={church} value={church}>{church}</option>
+                            ))
+                          ) : (
+                            (STAGE_ORDER || []).map(stage => (
+                              <option key={stage} value={stage}>{stage}</option>
+                            ))
+                          )}
+                        </select>
                       </div>
+
+                      {/* Exceptions Switches */}
+                      <div className="grid grid-cols-2 gap-4 pt-2">
+                        <div className="flex items-center gap-2 p-3 bg-white rounded-xl border border-slate-100">
+                          <input
+                            type="checkbox"
+                            id="exam_disabled_cb"
+                            checked={granularIsExamDisabled}
+                            onChange={(e) => setGranularIsExamDisabled(e.target.checked)}
+                            className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 rounded"
+                          />
+                          <label htmlFor="exam_disabled_cb" className="text-xs font-black text-slate-700 cursor-pointer">تعطيل الامتحان</label>
+                        </div>
+
+                        <div className="flex items-center gap-2 p-3 bg-white rounded-xl border border-slate-100">
+                          <input
+                            type="checkbox"
+                            id="reg_disabled_cb"
+                            checked={granularIsRegistrationDisabled}
+                            onChange={(e) => setGranularIsRegistrationDisabled(e.target.checked)}
+                            className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 border-slate-300 rounded"
+                          />
+                          <label htmlFor="reg_disabled_cb" className="text-xs font-black text-slate-700 cursor-pointer">تعطيل التسجيل</label>
+                        </div>
+                      </div>
+
+                      {/* Save Exclusions Button */}
+                      <button
+                        type="button"
+                        disabled={!granularTargetName}
+                        onClick={() => handleSaveGranularControl(granularTargetType, granularTargetName, {
+                          is_exam_disabled: granularIsExamDisabled,
+                          is_registration_disabled: granularIsRegistrationDisabled
+                        })}
+                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-black transition-all shadow-lg hover:shadow-indigo-100"
+                      >
+                        حفظ وتطبيق الاستثناء 💾
+                      </button>
                     </div>
 
-                    {/* Stage Overrides */}
-                    <div className="space-y-4">
-                       <h5 className="font-black text-slate-700 flex items-center gap-2">
-                        <Users size={18} className="text-primary"/> تحكم حسب المرحلة
-                      </h5>
-                      <div className="max-h-[300px] overflow-y-auto border border-slate-100 rounded-2xl p-4 bg-slate-50 space-y-2 no-scrollbar">
-                        {STAGE_ORDER.map(stage => (
-                          <div key={stage} className="flex items-center justify-between p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
-                            <span className="font-bold text-sm text-slate-700">{stage}</span>
-                            <button 
-                              onClick={() => {
-                                const overrides = {...(examConfig.stageOverrides || {})};
-                                overrides[stage] = overrides[stage] === false ? true : false;
-                                handleUpdateExamConfig({...examConfig, stageOverrides: overrides});
-                              }}
-                              className={`px-4 py-1.5 rounded-full text-[10px] font-black transition-colors ${examConfig.stageOverrides?.[stage] === false ? 'bg-rose-50 text-rose-600 border border-rose-100' : 'bg-emerald-50 text-emerald-600 border border-emerald-100'}`}
-                            >
-                              {examConfig.stageOverrides?.[stage] === false ? 'مغلق' : 'نمط العام'}
-                            </button>
-                          </div>
-                        ))}
+                    {/* Exclusions List */}
+                    <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between">
+                      <div>
+                        <h5 className="text-lg font-black text-slate-800 mb-4">الاستثناءات والقيود النشطة حالياً</h5>
+                        <div className="max-h-[300px] overflow-y-auto space-y-2 pr-1 no-scrollbar">
+                          {granularControls.length === 0 ? (
+                            <div className="p-8 text-center bg-white rounded-xl border border-dashed border-slate-200 text-slate-400 font-bold">
+                              لا توجد استثناءات أو قيود نشطة حالياً. جميع الكنائس والمراحل تعمل بنسبة 100% بنمطه الدراسي الافتراضي.
+                            </div>
+                          ) : (
+                            granularControls.map((ctrl) => (
+                              <div key={ctrl.id} className="p-3 bg-white rounded-xl border border-slate-100 flex items-center justify-between shadow-sm">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black ${ctrl.target_type === 'church' ? 'bg-sky-50 text-sky-700' : 'bg-amber-50 text-amber-700'}`}>
+                                      {ctrl.target_type === 'church' ? 'كنيسة' : 'مرحلة'}
+                                    </span>
+                                    <span className="font-extrabold text-sm text-slate-700">{ctrl.target_name}</span>
+                                  </div>
+                                  <div className="flex gap-3 mt-1.5">
+                                    <span className={`text-[10px] font-bold ${ctrl.is_exam_disabled ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                      الامتحان: {ctrl.is_exam_disabled ? '🔴 معطل' : '🟢 متاح'}
+                                    </span>
+                                    <span className={`text-[10px] font-bold ${ctrl.is_registration_disabled ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                      التسجيل: {ctrl.is_registration_disabled ? '🔴 معطل' : '🟢 متاح'}
+                                    </span>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteGranularControl(ctrl.id)}
+                                  className="p-1 px-3 bg-rose-50 text-rose-600 border border-rose-100 rounded-lg text-xs font-black hover:bg-rose-100 transition-colors"
+                                >
+                                  حذف 🗑️
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
