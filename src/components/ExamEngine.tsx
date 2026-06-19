@@ -1840,12 +1840,20 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     if (typeof setCurrentScreen === 'function') setCurrentScreen('student-exam');
   };
 
+  useEffect(() => {
+    if (!activeStudent) {
+      const activeStudentId = localStorage.getItem("active_student_id");
+      if (!activeStudentId) {
+        // If there's no active student and no local session, immediately return to portal.
+        // This WIPE OUTs the old manual UI block.
+        handleBackToPortal();
+      }
+    }
+  }, [activeStudent]);
+
   if (!activeStudent) {
     const activeStudentId = localStorage.getItem("active_student_id");
     if (!activeStudentId) {
-      // If there's no active student and no local session, immediately return to portal.
-      // This WIPE OUTs the old manual UI block.
-      handleBackToPortal();
       return null;
     }
   }
