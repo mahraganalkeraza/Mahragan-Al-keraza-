@@ -43,19 +43,19 @@ export const LiveExamMonitoring: React.FC<{
       if (monitors) {
         // Map Supabase rows to local variables
         const mappedRows = monitors.map((sbRow: any) => ({
-          id: sbRow.id,
-          studentId: sbRow.student_id,
-          studentName: sbRow.student_name,
-          churchName: sbRow.church_name,
-          stage: sbRow.stage,
-          status: sbRow.status,
-          deviceId: sbRow.student_id,
-          deviceType: sbRow.device_type || 'غير معروف',
-          deviceOs: sbRow.device_os || '',
-          deviceModel: sbRow.device_model || '',
-          ip: sbRow.ip_address || '127.0.0.1',
-          attempts: sbRow.status, // We use status for this column per instruction
-          timestamp: sbRow.updated_at || new Date().toISOString(),
+          id: sbRow?.id,
+          studentId: sbRow?.student_id,
+          studentName: sbRow?.student_name,
+          churchName: sbRow?.church_name,
+          stage: sbRow?.stage,
+          status: sbRow?.status,
+          deviceId: sbRow?.student_id,
+          deviceType: sbRow?.device_type || 'غير معروف',
+          deviceOs: sbRow?.device_os || '',
+          deviceModel: sbRow?.device_model || '',
+          ip: sbRow?.ip_address || '127.0.0.1',
+          attempts: sbRow?.status, // We use status for this column per instruction
+          timestamp: sbRow?.updated_at || new Date().toISOString(),
         }));
 
         setActiveSessionsData(mappedRows);

@@ -118,7 +118,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   // إغلاق قائمة البحث عند الضغط خارجها
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (dropdownRef?.current && !dropdownRef.current?.contains?.(event?.target as Node)) {
         setShowDropdown(false);
       }
     }
