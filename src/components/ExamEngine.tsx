@@ -2352,6 +2352,18 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+  const [isExamCardHovered, setIsExamCardHovered] = useState(false);
+
+  const floatingCardStyle = {
+    backgroundColor: '#ffffff',
+    borderRadius: '1.25rem',
+    // Customized Soft, wide golden shadow (Dynamic spread & high blur)
+    boxShadow: isExamCardHovered 
+      ? '0px 40px 80px -10px rgba(212, 175, 55, 0.48)' 
+      : '0px 30px 60px -15px rgba(212, 175, 55, 0.38)',
+    transition: 'all 0.5s ease-in-out',
+  };
+
   return (
     <div className="fixed inset-0 z-[150] overflow-y-auto bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6" id="active-exam-viewport">
       {/* Centered background container for the Festival Logo, with subtle blend/opacity */}
@@ -2368,8 +2380,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         id="active-exam-questions-outer-container"
       >
         <div
-          className="bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col"
+          className="overflow-hidden flex flex-col transition-all duration-500 ease-in-out hover:-translate-y-2"
           id="active-exam-questions-card"
+          style={floatingCardStyle}
+          onMouseEnter={() => setIsExamCardHovered(true)}
+          onMouseLeave={() => setIsExamCardHovered(false)}
         >
           {/* Sticky Header with micro progress bar and countdown timer */}
           <div 
