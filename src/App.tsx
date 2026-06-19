@@ -7679,7 +7679,12 @@ function AppComponent() {
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"
+                  >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">منحنى توزيع المشتركين (كثافة المراحل)</h3>
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
@@ -7696,9 +7701,14 @@ function AppComponent() {
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
-                  </div>
+                  </motion.div>
 
-                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, ease: "easeOut", delay: 0.2 }}
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"
+                  >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">معدل الانخراط والمشاركة (عدد المسابقات)</h3>
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
@@ -7712,9 +7722,14 @@ function AppComponent() {
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
-                  </div>
+                  </motion.div>
 
-                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"
+                  >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">توزيع المشتركين حسب الجنس</h3>
                     <div className="h-64">
                       {(!analyticsData.genderData || analyticsData.genderData.length === 0) ? (
@@ -7748,9 +7763,15 @@ function AppComponent() {
                         </ResponsiveContainer>
                       )}
                     </div>
-                  </div>
+                  </motion.div>
 
-                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3">
+                  <motion.div 
+                    initial={{ opacity: 0, y: 40 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3"
+                  >
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                       <div>
                         <h3 className="font-black text-slate-800 text-lg flex items-center gap-2">
@@ -7842,9 +7863,15 @@ function AppComponent() {
                         </ResponsiveContainer>
                       </div>
                     )}
-                  </div>
+                  </motion.div>
 
-                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3">
+                  <motion.div 
+                    initial={{ opacity: 0, y: 40 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3"
+                  >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">الطلب الحقيقي للكتب (الكتب المطلوبة vs مسابقات المشتركين)</h3>
                     <div className="h-80 mb-8">
                       <ResponsiveContainer width="100%" height="100%">
@@ -7897,7 +7924,7 @@ function AppComponent() {
                       itemsPerPage={20}
                       onPageChange={setAnalyticsPage}
                     />
-                  </div>
+                  </motion.div>
                 </div>
 
                 {/* Advanced Data Aggregation for Printing Statement */}

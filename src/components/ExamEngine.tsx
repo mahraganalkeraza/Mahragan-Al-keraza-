@@ -2096,51 +2096,55 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   if (activeStudent && !selectedCompetition) {
     return (
       <div
-        className="w-full max-w-2xl mx-auto pt-28 sm:pt-32 mt-8 pb-12 px-4 sm:px-6 safe-top safe-bottom overflow-y-auto"
+        className="fixed inset-0 z-[150] bg-gradient-to-b from-[#4a000b] to-[#2b0006] min-h-screen overflow-y-auto pt-12 sm:pt-16 pb-12 px-4 sm:px-6 flex flex-col items-center"
         id="student-selection-outer-container"
       >
-        <div
-          className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl border border-slate-200 text-center"
-          id="student-selection-card"
-        >
-          {/* Section 2: METADATA STYLING UPGRADE - prominent and centered */}
+        <h1 className="text-amber-400 font-extrabold text-3xl sm:text-4xl drop-shadow-md mb-8 text-center text-balance mt-4">
+          بوابة الامتحان الالكترونية
+        </h1>
+        <div className="w-full max-w-2xl">
           <div
-            className="w-full text-center py-4 px-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-600 mb-6 shadow-sm flex flex-col items-center justify-center gap-1.5 animate-fade-in"
-            id="live-exam-metadata-upgrade"
+            className="bg-white/95 text-gray-900 rounded-2xl p-6 sm:p-8 shadow-xl border border-amber-500/20 text-center"
+            id="student-selection-card"
           >
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <span
-                className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full border border-indigo-150"
-                id="badge-stage"
+            {/* Section 2: METADATA STYLING UPGRADE - prominent and centered */}
+            <div
+              className="w-full text-center py-4 px-4 bg-white border border-amber-200 rounded-2xl text-sm font-medium text-gray-900 mb-6 shadow-sm flex flex-col items-center justify-center gap-1.5 animate-fade-in"
+              id="live-exam-metadata-upgrade"
+            >
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <span
+                  className="text-[#4a000b] text-xs font-black bg-amber-100 px-3 py-1 rounded-full border border-amber-200"
+                  id="badge-stage"
+                >
+                  {activeStudent.stage}
+                </span>
+                <span
+                  className="text-[#4a000b] text-xs font-black bg-amber-100 px-3 py-1 rounded-full border border-amber-200"
+                  id="badge-church"
+                >
+                  كنيسة {activeStudent.churchName}
+                </span>
+              </div>
+              <h3
+                className="text-xl sm:text-2xl font-black text-[#4a000b] tracking-tight mt-2 break-words max-w-full"
+                id="student-name-text"
               >
-                {activeStudent.stage}
-              </span>
-              <span
-                className="text-emerald-700 text-xs font-black bg-emerald-50 px-3 py-1 rounded-full border border-emerald-150"
-                id="badge-church"
+                المشترك:{" "}
+                <span className="text-[#6b0311] block sm:inline">
+                  {activeStudent.studentName}
+                </span>
+              </h3>
+              <p
+                className="text-[10px] sm:text-[11px] text-gray-600 font-bold uppercase tracking-wider mt-1"
+                id="student-meta-details-sub"
               >
-                كنيسة {activeStudent.churchName}
-              </span>
+                المشترك النشط بالبوابة الرقمية • كود خاص:{" "}
+                <span className="font-mono text-[#6b0311] font-black">
+                  {activeStudent.id}
+                </span>
+              </p>
             </div>
-            <h3
-              className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight mt-2 break-words max-w-full"
-              id="student-name-text"
-            >
-              المشترك:{" "}
-              <span className="text-indigo-600 block sm:inline">
-                {activeStudent.studentName}
-              </span>
-            </h3>
-            <p
-              className="text-[10px] sm:text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-1"
-              id="student-meta-details-sub"
-            >
-              المشترك النشط بالبوابة الرقمية • كود خاص:{" "}
-              <span className="font-mono text-indigo-500 font-black">
-                {activeStudent.id}
-              </span>
-            </p>
-          </div>
 
           <div
             className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto mb-8"
@@ -2187,14 +2191,14 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                   <div
                     key={type}
                     id={`competition-btn-${subKey}-locked`}
-                    className="p-6 border border-slate-200 bg-slate-100 opacity-60 rounded-2xl select-none flex flex-col justify-between"
+                    className="p-5 border border-slate-200 bg-slate-100 opacity-60 rounded-xl select-none flex flex-col justify-between"
                   >
                     <div>
-                      <div className="flex items-center gap-2 justify-between">
-                        <h5 className="font-black text-lg text-slate-400">
+                      <div className="flex items-center gap-2 justify-between mb-1">
+                        <h5 className="font-black text-xl text-slate-400">
                           {type}
                         </h5>
-                        <span className="text-lg">🔒</span>
+                        <span className="text-lg grayscale">🔒</span>
                       </div>
                       <span className="text-xs text-rose-500 font-bold block mt-3 bg-rose-50 border border-rose-150 px-3 py-1.5 rounded-xl text-center">
                         عذرًا، أنت غير مسجل في هذه المسابقة
@@ -2210,24 +2214,26 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                   id={`competition-btn-${subKey}`}
                   onClick={() => startExam(type)}
                   disabled={isLoading || isSaved}
-                  className={`p-6 border rounded-2xl transition-all ${
+                  className={
                     isSaved
-                      ? "bg-emerald-50 border-emerald-300 opacity-80 cursor-not-allowed"
-                      : "bg-slate-50 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 hover:shadow-md"
-                  }`}
+                      ? "p-5 rounded-xl border border-emerald-300 bg-emerald-50 opacity-80 cursor-not-allowed transition-all"
+                      : "bg-gradient-to-br from-amber-400 to-yellow-500 rounded-xl p-5 shadow-lg transform hover:-translate-y-1 transition-all duration-300 cursor-pointer border border-amber-300"
+                  }
                 >
                   <h5
-                    className={`font-black text-lg mb-1 ${isSaved ? "text-emerald-800" : "text-slate-800"}`}
+                    className={
+                      isSaved ? "font-black text-xl mb-1 text-emerald-800" : "text-[#4a000b] font-black text-xl mb-1"
+                    }
                   >
                     {type}
                   </h5>
                   {isSaved ? (
-                    <span className="text-xs text-emerald-600 font-bold block">
+                    <span className="text-xs text-emerald-600 font-bold block mt-3 bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-center">
                       تم الحفظ بنجاح ✅
                     </span>
                   ) : (
-                    <span className="text-xs text-indigo-500 font-bold block">
-                      اضغط لبدء رصد الامتحان
+                    <span className="text-[#6b0311]/80 font-medium text-sm block">
+                      اضغط هنا لبدء الاختبار
                     </span>
                   )}
                 </button>
@@ -2257,10 +2263,10 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
               id="final-exam-submit-btn"
               onClick={handleFinalSubmission}
               disabled={isLoading}
-              className={`w-full py-4 text-white rounded-2xl font-black text-lg shadow-xl transition-all font-sans flex items-center justify-center gap-2 ${
+              className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl transition-all font-sans flex items-center justify-center gap-2 ${
                 hasSubmissionFailed 
-                  ? "bg-amber-600 hover:bg-amber-700 hover:shadow-amber-950/40" 
-                  : "bg-emerald-600 hover:bg-emerald-700 hover:shadow-emerald-900/40"
+                  ? "bg-amber-500 hover:bg-amber-600 hover:shadow-amber-950/40 text-[#4a000b]" 
+                  : "bg-[#4a000b] hover:bg-[#6b0311] hover:shadow-lg text-white"
               }`}
             >
               {isLoading 
@@ -2282,6 +2288,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             </button>
           </div>
         </div>
+        </div>
       </div>
     );
   }
@@ -2289,20 +2296,24 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   if (isLoading) {
     return (
       <div
-        className="w-full max-w-xl mx-auto pt-24 sm:pt-32 mt-12 pb-12 px-4 sm:px-6"
+        className="fixed inset-0 z-[200] bg-[#4a000b] flex flex-col items-center justify-center p-4 text-center"
         id="live-loader-outer-container"
       >
-        <div
-          className="text-center p-12 bg-white border border-slate-200 rounded-3xl shadow-xl"
-          id="loader-card"
-        >
-          <Loader2
-            className="animate-spin text-indigo-600 mx-auto"
-            size={48}
-            id="loader-spin-icon"
-          />
-          <p className="mt-4 text-slate-500 font-bold" id="loader-text-status">
+        <div className="w-full max-w-lg" id="loader-card">
+          <h2 className="text-3xl sm:text-4xl font-black text-amber-300 mb-8 drop-shadow-md">
+            أهلاً بك يا {activeStudent?.studentName || "طالب"}
+          </h2>
+          <div className="flex justify-center mb-8">
+            <div 
+              className="animate-spin rounded-full h-16 w-16 border-4 border-amber-100 border-t-amber-500 shadow-[0_0_15px_rgba(212,175,55,0.4)]" 
+              id="loader-spin-icon"
+            />
+          </div>
+          <p className="text-white font-bold text-2xl drop-shadow-md mb-3" id="loader-text-status">
             جاري تحميل أسئلة وتهيئة امتحان {selectedCompetition}...
+          </p>
+          <p className="text-white text-lg font-medium opacity-100 drop-shadow-md">
+            برجاء الانتظار قليلاً وعدم إغلاق الصفحة
           </p>
         </div>
       </div>
@@ -2473,7 +2484,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
               <button
                 type="button"
                 onClick={() => setCurrentQuestionIdx(prev => prev + 1)}
-                className="px-4 sm:px-5 py-3 cursor-pointer rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-blue-100"
+                className="px-4 sm:px-5 py-3 cursor-pointer rounded-xl font-bold bg-[#4a000b] hover:bg-[#6b0311] text-white flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-[#4a000b]/20"
               >
                 <span className="text-xs sm:text-sm">السؤال التالي</span>
                 <ChevronLeft size={18} />
@@ -2482,7 +2493,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
               <button
                 type="button"
                 onClick={handleSubmitExam}
-                className="px-5 sm:px-6 py-3 cursor-pointer rounded-xl font-black bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-emerald-100 text-xs sm:text-sm"
+                className="px-5 sm:px-6 py-3 cursor-pointer rounded-xl font-black bg-amber-500 hover:bg-amber-600 text-[#4a000b] flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-amber-500/20 text-xs sm:text-sm animate-pulse"
               >
                 <span>إرسال نهائي للاختبار</span>
                 <Check size={18} className="stroke-[3px]" />

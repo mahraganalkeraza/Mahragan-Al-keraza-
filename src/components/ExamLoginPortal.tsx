@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import logo from '../by-logo.jpeg';
 import { 
   Key, 
   Search, 
@@ -45,7 +46,6 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   
   // وضع الطوارئ الخاص بك (مغلق افتراضياً ولا يفتح إلا بـ 5 ضغطات والرقم السري 101096)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
-  const [secretClickCount, setSecretClickCount] = useState(0);
 
   // محرك البحث بالاسم لجدول الطلاب
   const [searchQuery, setSearchQuery] = useState('');
@@ -126,25 +126,8 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // دالة تفعيل السر الذكي لفتح البحث بالاسم (الضغط 5 مرات على أيقونة البوصلة)
-  const handleSecretIconClick = () => {
-    if (isAdminUnlocked) return;
-    
-    const newCount = secretClickCount + 1;
-    setSecretClickCount(newCount);
-    
-    if (newCount >= 5) {
-      setSecretClickCount(0); // إعادة تصفير العداد
-      const password = prompt("برجاء إدخال الرقم السري (البحث بالاسم):");
-      if (password === "101096") { 
-        setIsAdminUnlocked(true);
-        setLoginMethod('name'); // التحويل الفوري لواجهة الاسم بعد النجاح
-        alert("تم تفعيل وضع الطوارئ والبحث بالاسم بنجاح.");
-      } else if (password !== null) {
-        alert("الرقم السري خاطئ! يرجى استخدام الـ QR كود للطالب.");
-      }
-    }
-  };
+  // لا حاجة لعداد الضغط أو رمز سري، يتم التبديل فوراً من خلال onClick
+
 
   // البحث اللحظي بالاسم من جدول registrations
   useEffect(() => {
@@ -305,11 +288,12 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900/50 backdrop-blur-md flex items-center justify-center p-4 md:p-8 font-arabic antialiased fixed inset-0 z-50 overflow-y-auto" dir="rtl">
+    <div className="min-h-screen bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] backdrop-blur-xl flex items-center justify-center p-4 md:p-8 font-arabic antialiased fixed inset-0 z-[160] overflow-y-auto" dir="rtl">
+      <img src={logo} className="absolute inset-0 w-full h-full object-cover opacity-10 mix-blend-overlay pointer-events-none blur-md" alt="" />
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-xl bg-white border border-slate-200 rounded-3xl shadow-2xl overflow-hidden relative"
+        className="w-full max-w-xl bg-white/95 rounded-2xl shadow-[0_20px_50px_rgba(212,175,55,0.25)] border border-amber-500/20 overflow-hidden relative z-10"
       >
         {/* الهيدر العلوي */}
         <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white relative text-center">
@@ -324,9 +308,14 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
             رجوع
           </button>
 
-          {/* أيقونة البوصلة المخفية (الضغط 5 مرات يفتح طلب الباسورد 101096) */}
+          {/* أيقونة البوصلة المخفية (ضغطة واحدة تفتح الإعدادات) */}
           <div 
-            onClick={handleSecretIconClick}
+            onClick={() => setIsAdminUnlocked(prev => {
+              const newState = !prev;
+              if (newState) setLoginMethod('name');
+              else setLoginMethod('code');
+              return newState;
+            })}
             className="absolute top-4 right-4 bg-white/10 p-2 rounded-xl backdrop-blur-md cursor-pointer hover:bg-white/20 transition-all select-none"
             title="وضع الطوارئ للجان"
           >
@@ -408,7 +397,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                   value={academicCode}
                   onChange={(e) => setAcademicCode(e.target.value)}
                   placeholder="وجه الكارت للكاميرا ليتم السحب التلقائي هنا..."
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-center font-black text-sm text-slate-950 shadow-inner"
+                  className="w-full px-4 py-3 bg-white border-2 border-gray-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 rounded-xl transition-all duration-300 text-right font-black text-sm text-slate-950 shadow-inner"
                   required
                 />
               </div>
@@ -421,9 +410,9 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
               <button
                 type="submit"
                 disabled={isLoading || !academicCode.trim()}
-                className="w-full py-3.5 bg-primary text-white rounded-xl font-black text-sm flex items-center justify-center gap-2 shadow-md disabled:opacity-50"
+                className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#4a000b] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
               >
-                {isLoading ? "جاري سحب الأسئلة ومطابقة جهازك..." : "التحقق الفوري وبدء لجنة الحل"}
+                {isLoading ? "جاري سحب الأسئلة ومطابقة جهازك..." : "ابدأ الامتحان"}
               </button>
             </form>
           ) : (
@@ -439,7 +428,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                     value={searchQuery}
                     onChange={(e) => { setSearchQuery(e.target.value); setSelectedStudent(null); }}
                     placeholder="اكتب 3 أحرف من الاسم لمطابقة قاعدة البيانات..."
-                    className="w-full pr-11 pl-4 py-3 bg-red-50/20 border border-red-200 rounded-xl text-sm font-black text-slate-950"
+                    className="w-full pr-11 pl-4 py-3 bg-white text-right border-2 border-gray-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 rounded-xl transition-all duration-300 text-sm font-black text-slate-950"
                   />
                   {isSearching && (
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
@@ -481,9 +470,9 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
               <button
                 type="submit"
                 disabled={isLoading || !selectedStudent}
-                className="w-full py-3.5 bg-red-600 text-white rounded-xl font-black text-sm shadow-md disabled:opacity-50"
+                className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#4a000b] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
               >
-                {isLoading ? "جاري سحب الأسئلة المتوافقة..." : "تأكيد التخطي اليدوي وفتح ورقة الامتحان الإلكترونية"}
+                {isLoading ? "جاري سحب الأسئلة المتوافقة..." : "ابدأ الامتحان"}
               </button>
             </form>
           )}
