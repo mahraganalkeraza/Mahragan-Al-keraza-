@@ -11,6 +11,12 @@ import {
   ShieldX,
   HelpCircle,
   ArrowRight,
+  ChevronRight,
+  ChevronLeft,
+  Check,
+  Clock,
+  Sparkles,
+  BookOpen,
 } from "lucide-react";
 import { QRScanner } from "./QRScanner";
 import { getDeviceFingerprint, DeviceFingerprint } from "../lib/deviceTracking";
@@ -754,61 +760,78 @@ interface QuestionCardProps {
 const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAnswer }: QuestionCardProps) => {
   return (
     <div
-      className="max-w-3xl mx-auto p-6 bg-white rounded-2xl shadow-sm border border-slate-100 space-y-4"
+      className="max-w-3xl mx-auto p-6 bg-white rounded-2xl shadow-md border border-slate-100 space-y-6 select-none animate-question-fade"
       id={`question-block-${q.id}`}
+      key={`${q.id}-${qIdx}`}
     >
       {/* Question Header */}
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+        <span className="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full flex items-center gap-1">
+          <Sparkles size={13} className="animate-pulse" />
           السؤال {qIdx + 1} من {totalQuestions}
         </span>
         {q.type === "mcq" && (
-          <span className="text-xs text-slate-400 font-medium font-sans">
+          <span className="text-xs text-slate-400 font-bold bg-slate-100 px-3 py-1.5 rounded-full font-sans">
             اختيار من متعدد
           </span>
         )}
         {q.type === "boolean" && (
-          <span className="text-xs text-slate-400 font-medium font-sans">
+          <span className="text-xs text-slate-400 font-bold bg-slate-100 px-3 py-1.5 rounded-full font-sans">
             صح وخطأ
           </span>
         )}
         {q.type === "fill" && (
-          <span className="text-xs text-slate-400 font-medium font-sans">
+          <span className="text-xs text-slate-400 font-bold bg-slate-100 px-3 py-1.5 rounded-full font-sans">
             أكمل الفراغ
           </span>
         )}
         {q.type === "matching" && (
-          <span className="text-xs text-slate-400 font-medium font-sans">
+          <span className="text-xs text-slate-400 font-bold bg-slate-100 px-3 py-1.5 rounded-full font-sans">
             توصيل
           </span>
         )}
       </div>
 
-      <h2 className="text-xl font-bold text-slate-800 mt-4 mb-6 leading-relaxed">
+      <h2 className="text-xl font-bold text-slate-800 leading-relaxed font-sans">
         {q.text}
       </h2>
 
       {(q.type === "mcq" || q.type === "boolean") && (
-        <div className="space-y-3" id={`answers-grp-${q.id}`}>
+        <div className="space-y-3 mt-4" id={`answers-grp-${q.id}`}>
           {q.options.map((opt: string, oIndex: number) => {
             const isSelected = currentAnswer === opt;
             return (
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 key={oIndex}
                 onClick={() => onAnswer(q.id, opt)}
-                className={`w-full text-right p-4 rounded-xl border-2 transition-all duration-200 ease-in-out flex items-center justify-between ${
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    onAnswer(q.id, opt);
+                  }
+                }}
+                className={`w-full text-right p-4 rounded-xl border-2 cursor-pointer transition-all duration-150 ease-in-out flex items-center justify-between transform hover:scale-[1.01] active:scale-[0.99] outline-none ${
                   isSelected
-                    ? "border-emerald-500 bg-emerald-50/30 text-emerald-900 font-medium"
-                    : "border-slate-100 bg-slate-50/50 hover:bg-slate-50 text-slate-700"
+                    ? "border-blue-500 bg-blue-50 text-blue-900 font-bold shadow-sm"
+                    : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-normal"
                 }`}
                 id={`label-${q.id}-${oIndex}`}
               >
-                <span>{opt}</span>
-                {isSelected && (
-                  <span className="text-emerald-600 font-bold">✓</span>
-                )}
-              </button>
+                <div className="flex items-center gap-3">
+                  {/* Custom radio circular indicator */}
+                  <div
+                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-150 shrink-0 ${
+                      isSelected
+                        ? "border-blue-600 bg-blue-600 text-white"
+                        : "border-slate-300 bg-white"
+                    }`}
+                  >
+                    {isSelected && <Check size={12} className="stroke-[3px]" />}
+                  </div>
+                  <span className="text-sm sm:text-base leading-relaxed">{opt}</span>
+                </div>
+              </div>
             );
           })}
         </div>
@@ -818,31 +841,36 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
         <input
           type="text"
           id={`input-fill-${q.id}`}
-          placeholder="اكتب إجابتك هنا..."
+          placeholder="اكتب إجابتك هنا بوضوح ودقة..."
           value={currentAnswer || ""}
           onChange={(e) => onAnswer(q.id, e.target.value)}
-          className="w-full px-4 py-3 border-2 border-slate-100 focus:border-indigo-500 rounded-xl bg-slate-50/50 hover:bg-slate-50 focus:bg-white outline-none font-medium text-slate-800 transition-all font-sans"
+          className="w-full px-4 py-3.5 border-2 border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 rounded-xl bg-slate-50 hover:bg-slate-50/50 focus:bg-white outline-none font-bold text-slate-850 transition-all font-sans"
         />
       )}
 
       {q.type === "matching" && q.matchingPairs && (
-        <div className="space-y-3" id={`matching-grp-${q.id}`}>
-          <p className="text-xs text-slate-400 mb-2 font-sans">
+        <div className="space-y-3 mt-4" id={`matching-grp-${q.id}`}>
+          <p className="text-xs text-slate-400 mb-2 font-black font-sans bg-slate-50 px-3 py-1.5 rounded-lg inline-block">
             اختر الإقران الصحيح لكل عنصر من القائمة اليسرى:
           </p>
           {q.matchingPairs.map((pair: any, pIdx: number) => {
             const currentListAnswers = currentAnswer || {};
+            const isPairSelected = !!currentListAnswers[pIdx];
             return (
               <div
                 key={pIdx}
-                className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center p-4 bg-slate-50/50 border border-slate-100 rounded-xl"
+                className={`grid grid-cols-1 sm:grid-cols-3 gap-4 items-center p-4 border rounded-xl transition-all duration-150 ${
+                  isPairSelected
+                    ? "bg-blue-50/30 border-blue-200 shadow-sm"
+                    : "bg-white border-slate-200"
+                }`}
                 id={`matching-pair-${q.id}-${pIdx}`}
               >
                 <span className="font-bold text-slate-700 text-sm">
                   {pair.left}
                 </span>
-                <span className="text-slate-300 text-center hidden sm:block">
-                  ↔
+                <span className="text-slate-400 text-center hidden sm:block font-black">
+                  ←
                 </span>
                 <select
                   id={`select-match-${q.id}-${pIdx}`}
@@ -854,7 +882,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                     };
                     onAnswer(q.id, nextList);
                   }}
-                  className="px-3 py-2 border-2 border-slate-200 focus:border-indigo-500 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all font-sans"
+                  className="px-3 py-2 border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all font-sans"
                 >
                   <option value="">اختر المطابقة الصحيحة...</option>
                   {(q as any).shuffledRights?.map(
@@ -901,6 +929,9 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   );
   const [activeExam, setActiveExam] = useState<Exam | null>(null);
   const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
+  const [examSecondsLeft, setExamSecondsLeft] = useState(900); // 15 mins default timer
+
   const [isExamCompleted, setIsExamCompleted] = useState(false);
   const [isAlreadyExamined, setIsAlreadyExamined] = useState(false);
   const [score, setScore] = useState(0);
@@ -1074,6 +1105,33 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       );
     }
   }, [allAnswers, activeStudent?.id]);
+
+  // Reset active question index and default countdown timer when activeExam shifts
+  useEffect(() => {
+    if (activeExam) {
+      setCurrentQuestionIdx(0);
+      setExamSecondsLeft(900); // 15 mins default timer
+    }
+  }, [activeExam]);
+
+  // Handle countdown timer decrementing
+  useEffect(() => {
+    if (!activeExam || isExamCompleted || isTerminated) return;
+    
+    const interval = setInterval(() => {
+      setExamSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          // Auto submit the exam when time finishes!
+          handleConfirmAndReturn();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [activeExam, isExamCompleted, isTerminated, answers]);
 
   // Monitor student session realtime is disabled on shared terminal devices to enforce REST-only interaction and stay within free tier limits.
 
@@ -2269,53 +2327,147 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     );
   }
 
+  const currentQuestion = activeExam.questions[currentQuestionIdx];
+  const progressPercent = activeExam.questions.length > 0 
+    ? ((currentQuestionIdx + 1) / activeExam.questions.length) * 100 
+    : 0;
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
   return (
     <div
-      className="w-full max-w-3xl mx-auto pt-28 sm:pt-32 mt-4 sm:mt-12 pb-12 px-2 sm:px-6 safe-top safe-bottom animate-fade-in flex flex-col min-h-[90vh]"
+      className="w-full max-w-2xl mx-auto pt-24 sm:pt-28 mt-4 sm:mt-8 pb-12 px-3 sm:px-4 safe-top safe-bottom select-none flex flex-col min-h-[85vh] justify-center"
       id="active-exam-questions-outer-container"
     >
       <div
-        className="bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col flex-1"
+        className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden flex flex-col"
         id="active-exam-questions-card"
       >
-        <div
-          className="p-5 sm:p-8 space-y-6 sm:space-y-8 flex-1 overflow-y-auto"
-          id="active-exam-scroll-area"
+        {/* Sticky Header with micro progress bar and countdown timer */}
+        <div 
+          className="p-5 sm:p-6 border-b border-slate-200 bg-slate-50/90 backdrop-blur-md sticky top-0 z-10 flex flex-col gap-3 select-none"
+          id="active-exam-sticky-header"
         >
-          <div className="border-b pb-4" id="active-exam-card-header">
-            <span
-              className="text-indigo-600 text-xs font-black bg-indigo-50 px-3 py-1 rounded-full"
-              id="active-exam-badge"
-            >
-              امتحان {selectedCompetition}
-            </span>
-            <h4
-              className="text-xl font-black mt-2 text-slate-850"
-              id="active-exam-card-title"
-            >
-              أجب عن كافة الأسئلة بدقة بالغة
-            </h4>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 rounded-lg bg-blue-100 text-blue-700 shrink-0">
+                <BookOpen size={16} />
+              </span>
+              <div>
+                <h4 className="text-sm sm:text-base font-black text-slate-800 leading-none">
+                  امتحان {selectedCompetition}
+                </h4>
+                <p className="text-[11px] sm:text-xs text-slate-400 font-bold mt-1">
+                  المرحلة: {activeStudent?.stage || "غير معروفة"}
+                </p>
+              </div>
+            </div>
+
+            {/* Countdown timer */}
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-sans transition-all shrink-0 ${
+              examSecondsLeft < 120 
+                ? "bg-rose-100 text-rose-700 animate-pulse font-black" 
+                : "bg-slate-100 text-slate-700 font-bold"
+            }`}>
+              <Clock size={15} className={`${examSecondsLeft < 120 ? "text-rose-600" : "text-slate-500"}`} />
+              <span className="text-sm font-bold tracking-wider">{formatTime(examSecondsLeft)}</span>
+            </div>
           </div>
 
-          {activeExam.questions.map((q, qIdx) => (
+          {/* Micro Progress Bar & Remaining Counter */}
+          <div className="mt-2">
+            <div className="flex justify-between items-center text-[11px] sm:text-xs text-slate-400 font-bold mb-1">
+              <span>السؤال {currentQuestionIdx + 1} من {activeExam.questions.length}</span>
+              <span>المتبقي: {activeExam.questions.length - (currentQuestionIdx + 1)}</span>
+            </div>
+            
+            <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-gradient-to-l from-blue-500 to-indigo-600 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Question content wrapper */}
+        <div
+          className="p-5 sm:p-6 flex-1 bg-slate-55/30"
+          id="active-exam-scroll-area"
+        >
+          {currentQuestion && (
             <QuestionCard
-              key={q.id}
-              q={q}
-              qIdx={qIdx}
+              q={currentQuestion}
+              qIdx={currentQuestionIdx}
               totalQuestions={activeExam.questions.length}
-              currentAnswer={answers[q.id]}
+              currentAnswer={answers[currentQuestion.id]}
               onAnswer={handleAnswer}
             />
-          ))}
+          )}
 
-          <button
-            type="button"
-            id="submit-exam-section-btn"
-            onClick={handleConfirmAndReturn}
-            className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black text-lg shadow-xl transition-all font-sans"
-          >
-            تأكيد وحفظ المادة والعودة للرئيسية
-          </button>
+          {/* Navigation layout */}
+          <div className="flex items-center justify-between gap-4 pt-6 border-t border-slate-200 mt-6 select-none">
+            {/* Prev Question */}
+            <div
+              role="button"
+              tabIndex={currentQuestionIdx === 0 ? -1 : 0}
+              onClick={() => {
+                if (currentQuestionIdx > 0) {
+                  setCurrentQuestionIdx(prev => prev - 1);
+                }
+              }}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && currentQuestionIdx > 0) {
+                  setCurrentQuestionIdx(prev => prev - 1);
+                }
+              }}
+              className={`px-4 sm:px-5 py-3 rounded-xl font-bold flex items-center gap-1.5 transition-all outline-none ${
+                currentQuestionIdx === 0
+                  ? "opacity-30 pointer-events-none text-slate-400 bg-slate-100 border border-slate-200"
+                  : "cursor-pointer bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 active:scale-95 shadow-sm"
+              }`}
+            >
+              <ChevronRight size={18} />
+              <span className="text-xs sm:text-sm">السؤال السابق</span>
+            </div>
+
+            {/* Next or Submit */}
+            {currentQuestionIdx < activeExam.questions.length - 1 ? (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setCurrentQuestionIdx(prev => prev + 1)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    setCurrentQuestionIdx(prev => prev + 1);
+                  }
+                }}
+                className="px-4 sm:px-5 py-3 cursor-pointer rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-blue-100"
+              >
+                <span className="text-xs sm:text-sm">السؤال التالي</span>
+                <ChevronLeft size={18} />
+              </div>
+            ) : (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => handleConfirmAndReturn()}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    handleConfirmAndReturn();
+                  }
+                }}
+                className="px-5 sm:px-6 py-3 cursor-pointer rounded-xl font-black bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-emerald-100 text-xs sm:text-sm"
+              >
+                <span>إرسال نهائي للاختبار</span>
+                <Check size={18} className="stroke-[3px]" />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
