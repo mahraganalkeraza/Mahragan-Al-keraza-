@@ -211,10 +211,15 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
       if (logErr) throw logErr;
 
       // 2. Also update status in active_sessions to 'submitted'
+      await supabase
+        .from('active_sessions')
+        .delete()
+        .eq('student_id', studentId);
+
       const { error: activeErr } = await supabase
         .from('active_sessions')
-        .upsert({
-          id: studentId,
+        .insert({
+          student_id: studentId,
           status: 'submitted',
           allowReentry: false,
           lastUpdate: new Date().toISOString()
@@ -245,10 +250,15 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
       if (subErr) throw subErr;
 
       // 2. Set active_sessions details status to 'active' & allowing reentry
+      await supabase
+        .from('active_sessions')
+        .delete()
+        .eq('student_id', studentId);
+
       const { error: activeErr } = await supabase
         .from('active_sessions')
-        .upsert({
-          id: studentId,
+        .insert({
+          student_id: studentId,
           status: 'active',
           allowReentry: true,
           lastUpdate: new Date().toISOString()

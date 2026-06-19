@@ -4634,8 +4634,10 @@ function AppComponent() {
       }
       
       // 3. Unlock Gateway / Reset Session
-      await supabase.from('active_sessions').upsert({
-        id: studentId,
+      await supabase.from('active_sessions').delete().eq('student_id', studentId);
+
+      await supabase.from('active_sessions').insert({
+        student_id: studentId,
         allowReentry: true,
         status: 'active',
         lastUpdate: new Date().toISOString()
