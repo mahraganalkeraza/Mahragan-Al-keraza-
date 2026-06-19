@@ -12,7 +12,8 @@ import {
   Activity, 
   FileSpreadsheet, 
   BookOpen,
-  Megaphone
+  Megaphone,
+  Compass
 } from 'lucide-react';
 import { AdminHonorsEngine } from './AdminHonorsEngine';
 import { supabase } from '../utils/supabaseClient';
@@ -215,6 +216,10 @@ export const ResultsViewer: React.FC<{
   };
 
   // Upload bubble sheet results from Excel
+  const handleEmergencyToggle = () => {
+    console.log("Emergency path triggered by admin");
+  };
+
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -527,13 +532,23 @@ export const ResultsViewer: React.FC<{
                       {isAdmin && (
                         <td className="p-4 border-l border-slate-50">
                           {hasScore && (
-                            <button 
-                              onClick={() => handleResetRow(row.id!)}
-                              title="إعادة الامتحان وتصفير محتواه"
-                              className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-all border border-rose-100"
-                            >
-                              <RefreshCcw size={14} />
-                            </button>
+                            <div className="flex gap-2 items-center flex-wrap">
+                              <button 
+                                onClick={() => handleResetRow(row.id!)}
+                                title="إعادة الامتحان وتصفير محتواه"
+                                className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-all border border-rose-100"
+                              >
+                                <RefreshCcw size={14} />
+                              </button>
+                              
+                              <button onClick={handleEmergencyToggle} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all" title="أيقونة البوصلة">
+                                <Compass className="w-5 h-5 text-indigo-500" />
+                              </button>
+
+                              <button className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black transition-all">
+                                تعديل الدرجات
+                              </button>
+                            </div>
                           )}
                         </td>
                       )}
