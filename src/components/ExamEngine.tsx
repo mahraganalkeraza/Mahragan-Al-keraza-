@@ -931,6 +931,14 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     stageOverrides: {},
   });
 
+  const [globalSettings, setGlobalSettings] = useState<any>({
+    is_exam_locked: false,
+    is_registration_locked: false,
+    is_book_orders_locked: false,
+    is_site_disabled: false,
+  });
+  const [granularControls, setGranularControls] = useState<any[]>([]);
+
   // Load configuration from Supabase once on mount
   useEffect(() => {
     const fetchConfig = async () => {
@@ -949,7 +957,27 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           });
         }
       } catch (e) {
-        console.error("Failed to fetch exam_config from Supabase:", e);
+        console.warn("Failed to fetch exam_config from Supabase:", e);
+      }
+
+      try {
+        const [globalRes, granularRes] = await Promise.all([
+          supabase.from("system_settings").select("*").eq("id", "1").maybeSingle(),
+          supabase.from("granular_controls").select("*")
+        ]);
+        if (globalRes.data) {
+          setGlobalSettings({
+            is_exam_locked: !!globalRes.data.is_exam_locked,
+            is_registration_locked: !!globalRes.data.is_registration_locked,
+            is_book_orders_locked: !!globalRes.data.is_book_orders_locked,
+            is_site_disabled: !!globalRes.data.is_site_disabled,
+          });
+        }
+        if (granularRes.data) {
+          setGranularControls(granularRes.data);
+        }
+      } catch (e) {
+        console.warn("Failed to fetch system_settings or granular_controls:", e);
       }
     };
     fetchConfig();
@@ -1260,6 +1288,23 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       setIsLoading(true);
 
       const stage = activeStudent.stage || "عام";
+
+      if (globalSettings.is_exam_locked) {
+        setIsLoading(false);
+        return alert("عذراً، الامتحانات الإلكترونية مغلقة بالكامل بقرار سيادي من اللجنة المركزية 🔒");
+      }
+
+      const churchEx = (granularControls || []).find(c => c.target_type === 'church' && c.target_name === activeStudent.churchName);
+      if (churchEx?.is_exam_disabled) {
+        setIsLoading(false);
+        return alert(`عذراً، تم إيقاف الامتحانات الإلكترونية مؤقتاً لكنيسة ${activeStudent.churchName} بقرار من الكنترول 🔒`);
+      }
+
+      const stageEx = (granularControls || []).find(c => c.target_type === 'stage' && c.target_name === stage);
+      if (stageEx?.is_exam_disabled) {
+        setIsLoading(false);
+        return alert(`عذراً، تم إيقاف الامتحانات الإلكترونية مؤقتاً لمرحلة ${stage} بقرار من الكنترول 🔒`);
+      }
 
       if (examConfig) {
         if (!examConfig.isExamLive) {

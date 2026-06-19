@@ -1263,6 +1263,31 @@ function AppComponent() {
 
   const FORCE_OPEN_REGISTRATION = false; // Emergency Override disabled to allow dynamic toggle
 
+  const isRegistrationDisabledForCurrent = (tChurch: string, tStage: string) => {
+    if (userRole === 'admin') return false; // Admin bypasses global & granular blocks
+    if (globalSettings.is_registration_locked) return true;
+    if (!systemControls.isRegistrationOpen) return true;
+    const churchException = (granularControls || []).find(c => c.target_type === 'church' && c.target_name === tChurch);
+    if (churchException?.is_registration_disabled) return true;
+    if (tStage) {
+      const stageException = (granularControls || []).find(c => c.target_type === 'stage' && c.target_name === tStage);
+      if (stageException?.is_registration_disabled) return true;
+    }
+    return false;
+  };
+
+  const isExamDisabledForCurrent = (tChurch: string, tStage: string) => {
+    if (userRole === 'admin') return false; // Admin bypasses global & granular blocks
+    if (globalSettings.is_exam_locked) return true;
+    const churchException = (granularControls || []).find(c => c.target_type === 'church' && c.target_name === tChurch);
+    if (churchException?.is_exam_disabled) return true;
+    if (tStage) {
+      const stageException = (granularControls || []).find(c => c.target_type === 'stage' && c.target_name === tStage);
+      if (stageException?.is_exam_disabled) return true;
+    }
+    return false;
+  };
+
 
   const [siteSettings, setSiteSettings] = useState<SiteSettings>({
     phone: '',
@@ -4222,6 +4247,11 @@ function AppComponent() {
       : activityStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.stage_name) === String(selectedStageId));
     
     const selectedStageName = selectedStage?.stage_name || selectedStage?.name || selectedStageId;
+
+    if (isRegistrationDisabledForCurrent(churchName, selectedStageName)) {
+      alert('خطأ: التسجيل مغلق حالياً لهذه المرحلة الدراسية أو الكنيسة بقرار مركزي سيادي 🔒');
+      return;
+    }
     
     let formType = selectedStage?.form_type || '';
     if (newTeam.activityType === 'عزف') {
@@ -4650,6 +4680,11 @@ function AppComponent() {
     e.preventDefault();
     if (!newParticipant.name || !newParticipant.stage || !newParticipant.gender) {
       alert('يرجى ملء جميع الحقول المطلوبة (الاسم، المرحلة، النوع)');
+      return;
+    }
+
+    if (isRegistrationDisabledForCurrent(churchName, newParticipant.stage)) {
+      alert('خطأ: التسجيل مغلق حالياً لهذه المرحلة الدراسية أو الكنيسة بقرار مركزي سيادي 🔒');
       return;
     }
     
@@ -5177,6 +5212,30 @@ function AppComponent() {
   );
 
   
+  if (globalSettings.is_site_disabled && userRole !== 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 text-center select-none" dir="rtl">
+        <div className="max-w-md w-full p-8 bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl relative overflow-hidden space-y-6">
+          <div className="absolute top-0 inset-x-0 h-1.5 bg-rose-600" />
+          <div className="mx-auto w-20 h-20 bg-rose-950/50 text-rose-500 rounded-full flex items-center justify-center border border-rose-900/50 animate-pulse">
+            <ShieldAlert size={40} />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-black text-rose-500">عذراً، المنصة مغلقة مؤقتاً</h1>
+            <p className="text-slate-400 font-bold text-sm leading-relaxed">
+              لقد جرى إيقاف الموقع بالكامل للصيانة الإدارية وتحديث البيانات بقرار مركزي من الكنترول.
+            </p>
+          </div>
+          <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800/50 text-xs font-mono text-slate-500 max-w-xs mx-auto">
+            SYSTEM_STATUS: MAINTENANCE_LOCK
+          </div>
+          <div className="pt-2">
+            <p className="text-xs text-slate-400">يرجى المحاولة مرة أخرى لاحقاً بعد انتهاء فترة الصيانة.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     // Shared exam-login portal is accessible to all users directly without admin role check

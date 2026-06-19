@@ -41,6 +41,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   // طريقة الدخول الافتراضية والآمنة للكل هي الـ QR كود
   const [loginMethod, setLoginMethod] = useState<'code' | 'name'>('code');
   const [academicCode, setAcademicCode] = useState('');
+  const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
   
   // وضع الطوارئ الخاص بك (مغلق افتراضياً ولا يفتح إلا بـ 5 ضغطات والرقم السري 101096)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
@@ -76,7 +77,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
             if (qrScannerRef.current) {
               qrScannerRef.current.stop().then(() => {
                 qrScannerRef.current?.clear();
-              }).catch(console.error);
+              }).catch(() => {});
             }
           };
 
@@ -86,17 +87,21 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
             qrCodeSuccessCallback,
             () => { /* silent error log */ }
           ).catch((err) => {
-            console.error("Camera Init Error, trying fallback:", err);
+            console.warn("Camera environmental start blocked or unavailable, trying fallback:", err);
             // Fallback to front camera if environment is unavailable
             html5Qrcode.start(
               { facingMode: "user" },
               config,
               qrCodeSuccessCallback,
               () => {}
-            ).catch(console.error);
+            ).catch((err2) => {
+              console.warn("Camera fallback user start blocked, switching to manual code:", err2);
+              setCameraPermissionDenied(true);
+            });
           });
         } catch (err) {
-          console.error("Camera Init Exception:", err);
+          console.warn("Camera Init Exception:", err);
+          setCameraPermissionDenied(true);
         }
       }, 300);
     }
@@ -105,7 +110,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       if (qrScannerRef.current && qrScannerRef.current.isScanning) {
         qrScannerRef.current.stop().then(() => {
           qrScannerRef.current?.clear();
-        }).catch(console.error);
+        }).catch(() => {});
       }
     };
   }, [loginMethod]);
@@ -380,6 +385,13 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           {/* تبديل النماذج الذكية */}
           {loginMethod === 'code' ? (
             <form onSubmit={handleCodeLoginSubmit} className="space-y-5">
+              {cameraPermissionDenied && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-amber-800 text-xs font-bold leading-relaxed">
+                  <span className="shrink-0 text-amber-500 font-bold">⚠️</span>
+                  <span>تم حظر صلاحية الكاميرا. يرجى السماح بتشغيل الكاميرا من إعدادات المتصفح أو كتابة الكود يدوياً بالأسفل للحل فورا.</span>
+                </div>
+              )}
+
               {/* الكاميرا الحية لمسح الكيورآر */}
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2">
                 <div className="text-[11px] text-slate-500 font-bold mb-2 flex items-center gap-1 px-2">
