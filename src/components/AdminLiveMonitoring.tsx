@@ -73,7 +73,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   useEffect(() => {
     fetchLiveLogs();
 
-    // Set up realtime subscription for instantaneous live tracking
+    // Set up realtime subscription for instantaneous live tracking of device logs
     const logsSubscription = supabase
       .channel('exam_device_logs_changes_realtime')
       .on(
@@ -86,8 +86,22 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
       )
       .subscribe();
 
+    // Set up realtime subscription for exam submissions to enable instant sync on submit actions
+    const submissionsSubscription = supabase
+      .channel('live-submissions')
+      .on(
+        'postgres_changes', 
+        { event: '*', schema: 'public', table: 'exam_submissions' }, 
+        () => {
+          // Trigger fetch updated logs / active participant list dynamically
+          fetchLiveLogs(); 
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(logsSubscription);
+      supabase.removeChannel(submissionsSubscription);
     };
   }, []);
 
@@ -178,6 +192,97 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
       alert('حدث خطأ أثناء حذف كافة السجلات');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForceSubmit = async (studentId: string, studentName: string) => {
+    if (!confirm(`هل أنت متأكد من إنهاء الاختبار وسحب ورقة الطالب ${studentName || ''}؟`)) return;
+    setIsProcessing(studentId);
+    try {
+      // 1. Update status in exam_device_logs to 'submitted'
+      const { error: logErr } = await supabase
+        .from('exam_device_logs')
+        .update({
+          status: 'submitted',
+          created_at: new Date().toISOString()
+        })
+        .eq('student_id', studentId);
+
+      if (logErr) throw logErr;
+
+      // 2. Also update status in active_sessions to 'submitted'
+      const { error: activeErr } = await supabase
+        .from('active_sessions')
+        .upsert({
+          id: studentId,
+          status: 'submitted',
+          allowReentry: false,
+          lastUpdate: new Date().toISOString()
+        });
+
+      if (activeErr) throw activeErr;
+
+      alert('تم إنهاء الاختبار وسحب الورقة بنجاح 📄');
+      fetchLiveLogs();
+    } catch (e: any) {
+      console.error(e);
+      alert('فشل سحب الورقة: ' + e.message);
+    } finally {
+      setIsProcessing(null);
+    }
+  };
+
+  const handleResetOpenExam = async (studentId: string, studentName: string) => {
+    if (!confirm(`هل أنت متأكد من إعادة تعيين وفتح الامتحان للطالب ${studentName || ''}؟ سيؤدي هذا لتصفير محاولته والسماح له بالدخول مجدداً.`)) return;
+    setIsProcessing(studentId);
+    try {
+      // 1. Delete submission from exam_submissions to allow re-entry
+      const { error: subErr } = await supabase
+        .from('exam_submissions')
+        .delete()
+        .eq('student_id', studentId);
+
+      if (subErr) throw subErr;
+
+      // 2. Set active_sessions details status to 'active' & allowing reentry
+      const { error: activeErr } = await supabase
+        .from('active_sessions')
+        .upsert({
+          id: studentId,
+          status: 'active',
+          allowReentry: true,
+          lastUpdate: new Date().toISOString()
+        });
+
+      if (activeErr) throw activeErr;
+
+      // 3. Reset exam_device_logs row status back to 'active' or 'جاري الامتحان'
+      const { error: devErr } = await supabase
+        .from('exam_device_logs')
+        .update({
+          status: 'جاري الامتحان',
+          created_at: new Date().toISOString()
+        })
+        .eq('student_id', studentId);
+
+      if (devErr) throw devErr;
+
+      // 4. Trigger optional callback if passed
+      if (onResetExam) {
+        try {
+          await onResetExam(studentId, studentName);
+        } catch (err) {
+          console.warn("Prop callback list sync finished with warnings:", err);
+        }
+      }
+
+      alert('تم إعادة تعيين النتيجة وفتح الامتحان بنجاح! ✅');
+      fetchLiveLogs();
+    } catch (e: any) {
+      console.error(e);
+      alert('فشل إعادة فتح الامتحان: ' + e.message);
+    } finally {
+      setIsProcessing(null);
     }
   };
 
@@ -421,70 +526,61 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
                       })}
                     </td>
 
-                    {/* Controller Actions */}
-                    <td className="p-4">
-                      <div className="flex items-center justify-center gap-1.5" id={`actions-${log.id}`}>
-                        {/* Reset Single exam */}
-                        {onResetExam && (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              setIsProcessing(log.student_id);
-                              await onResetExam(log.student_id, log.student_name);
-                              // Reset state back to Active Exam
-                              await supabase
-                                .from('exam_device_logs')
-                                .update({ status: 'جاري الامتحان', created_at: new Date().toISOString() })
-                                .eq('student_id', log.student_id);
-                              setIsProcessing(null);
-                              fetchLiveLogs();
-                            }}
-                            disabled={isProcessing === log.student_id}
-                            className="p-2 text-warning hover:bg-amber-50 rounded-xl border border-transparent hover:border-amber-200 transition-colors"
-                            title="إعادة فتح الامتحان للطالب بالكامل"
-                          >
-                            <RotateCcw size={15} className={isProcessing === log.student_id ? 'animate-spin' : ''} />
-                          </button>
-                        )}
-
-                        {/* Ban / Terminate */}
-                        {isActive && (
-                          <button
-                            type="button"
-                            onClick={() => handleTerminateSession(log.student_id)}
-                            disabled={isProcessing === log.student_id}
-                            className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl border border-transparent hover:border-rose-200 transition-colors flex items-center justify-center"
-                            title="طرد الطالب وإنهاء جلسته"
-                          >
-                            <ShieldX size={15} />
-                          </button>
-                        )}
-
-                        {/* Unban */}
-                        {isTerminated && (
-                          <button
-                            type="button"
-                            onClick={() => handleClearBlacklist(log.student_id)}
-                            disabled={isProcessing === log.student_id}
-                            className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl border border-transparent hover:border-emerald-200 transition-colors flex items-center justify-center"
-                            title="فك حظر الجهاز"
-                          >
-                            <UserMinus size={15} />
-                          </button>
-                        )}
-
-                        {/* Delete Log Row */}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteLogRow(log.student_id)}
-                          disabled={isProcessing === log.student_id}
-                          className="p-2 text-slate-350 hover:text-rose-500 hover:bg-slate-50 rounded-xl border border-transparent hover:border-slate-200 transition-colors"
-                          title="حذف هذا السجل فقط"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
+                     {/* Controller Actions */}
+                     <td className="p-4">
+                       <div className="flex items-center justify-center gap-2" id={`actions-${log.id}`}>
+                         {/* Reset / Open Exam */}
+                         <button
+                           type="button"
+                           onClick={() => handleResetOpenExam(log.student_id, log.student_name)}
+                           disabled={isProcessing === log.student_id}
+                           className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-amber-500/25"
+                           title="إعادة تعيين / فتح الامتحان للطالب وتصفير السجل"
+                         >
+                           <RotateCcw size={12} className={isProcessing === log.student_id ? 'animate-spin' : ''} />
+                           إعادة تعيين / فتح الامتحان
+                         </button>
+ 
+                         {/* Force Submit / Terminate Sheet */}
+                         {isActive && (
+                           <button
+                             type="button"
+                             onClick={() => handleForceSubmit(log.student_id, log.student_name)}
+                             disabled={isProcessing === log.student_id}
+                             className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-rose-600/25"
+                             title="إنهاء الاختبار وسحب ورقة الطالب"
+                           >
+                             <ShieldX size={12} />
+                             إنهاء الاختبار / سحب الورقة
+                           </button>
+                         )}
+ 
+                         {/* Unban / Unblock */}
+                         {isTerminated && (
+                           <button
+                             type="button"
+                             onClick={() => handleClearBlacklist(log.student_id)}
+                             disabled={isProcessing === log.student_id}
+                             className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-750 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-emerald-500/25"
+                             title="فك حظر الجهاز"
+                           >
+                             <UserMinus size={12} />
+                             فك حظر الجهاز
+                           </button>
+                         )}
+ 
+                         {/* Delete Log Row */}
+                         <button
+                           type="button"
+                           onClick={() => handleDeleteLogRow(log.student_id)}
+                           disabled={isProcessing === log.student_id}
+                           className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 transition-colors cursor-pointer"
+                           title="حذف هذا السجل فقط"
+                         >
+                           <Trash2 size={14} />
+                         </button>
+                       </div>
+                     </td>
                   </tr>
                 );
               })}
