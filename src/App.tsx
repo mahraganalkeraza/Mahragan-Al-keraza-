@@ -2002,11 +2002,20 @@ function AppComponent() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const { data: schedulesData } = await supabase
-          .from('schedules')
-          .select('*')
-          .eq('year', activeYear);
-        if (schedulesData) setSchedules(schedulesData);
+        try {
+          const { data: schedulesData, error } = await supabase
+            .from('schedules')
+            .select('*')
+            .eq('year', activeYear);
+            
+          if (error) {
+            console.warn("Schedules table warning:", error.message);
+          } else if (schedulesData) {
+            setSchedules(schedulesData);
+          }
+        } catch (err) {
+          console.error("Non-blocking schedules fetch error caught:", err);
+        }
 
         const { data: linksData } = await supabase
           .from('examLinks')
