@@ -6873,53 +6873,7 @@ function AppComponent() {
 
             {adminActiveTab === 'results' && (
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                  <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                    <Award className="text-indigo-600" /> نتائج التصفية المحلية
-                  </h4>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="relative group">
-                      <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={18} />
-                      <input 
-                        type="text"
-                        placeholder="ابحث باسم الطالب..."
-                        value={resultSearch}
-                        onChange={(e) => setResultSearch(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && fetchResultsPage(true, true, resultSearch)}
-                        className="pr-12 pl-6 py-3 bg-white border border-slate-200 rounded-2xl text-slate-700 font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all w-72"
-                      />
-                    </div>
-                    <button 
-                      onClick={() => fetchResultsPage(true, true, resultSearch)}
-                      className="px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black hover:bg-indigo-700 transition shadow-lg shadow-indigo-600/20"
-                    >
-                      بحث
-                    </button>
-                    <button 
-                      onClick={() => fetchResultsPage(true, true, resultSearch)}
-                      disabled={isResultsLoading}
-                      className="px-4 py-3 bg-white text-slate-700 rounded-2xl font-bold border border-slate-200 hover:bg-slate-50 transition flex items-center gap-2"
-                    >
-                      <RotateCw size={18} className={isResultsLoading ? 'animate-spin' : ''} /> تحديث
-                    </button>
-                  </div>
-                </div>
-                <ResultsViewer results={results} isAdmin={userRole === 'admin'} onReset={(id) => handleResetExam(id)} />
-
-                <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
-                  <PaginationComponent 
-                    currentPage={resultPageCount}
-                    totalItems={results.length}
-                    itemsPerPage={20}
-                    onPageChange={setResultPageCount}
-                  />
-                  {isResultsLoading && (
-                    <div className="flex items-center gap-2 text-coptic-blue font-black animate-pulse text-xs">
-                       <Loader2 className="animate-spin" size={14} /> جاري التحميل...
-                    </div>
-                  )}
-                  {!isResultsLoading && <span className="text-[10px]">عرض ٢٠ نتيجة في الصفحة</span>}
-                </div>
+                <ResultsViewer isAdmin={userRole === 'admin'} onReset={(id) => handleResetExam(id)} />
               </section>
             )}
 

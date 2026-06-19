@@ -58,10 +58,8 @@ export const ResultsViewer: React.FC<{
       'المرحلة',
       'نوع الامتحان',
       'النوع',
-      'دراسي',
-      'محفوظات',
-      'قبطي مستوى أول',
-      'قبطي مستوى ثانٍ'
+      'الدرجة الكلية',
+      'حالة التسليم'
     ];
     return base;
   }, [hideNames]);
@@ -85,60 +83,41 @@ export const ResultsViewer: React.FC<{
     return '';
   }, [userChurch]);
 
-  // Fetch results dynamically from Supabase exam_submissions table
+  // Fetch results dynamically from database view 'view_central_filtered_results'
   const fetchSubmissionsFromSupabase = async () => {
     setIsLoading(true);
     try {
-      let query = supabase
-        .from('exam_submissions')
+      const { data, error } = await supabase
+        .from('view_central_filtered_results')
         .select('*');
-
-      // Data Isolation: Strict filter at query level for non-admins matching their church name (only published results)
-      if (!isAdmin) {
-        if (!activeUserChurch) {
-          setSupabaseSubmissions([]);
-          setIsLoading(false);
-          return;
-        }
-        query = query.eq('church_name', activeUserChurch).eq('is_published', true);
-      }
-
-      const { data, error } = await query.order('submitted_at', { ascending: false });
 
       if (error) throw error;
 
       if (data) {
         const mapped: Result[] = data.map((sbRow: any) => {
-          let parsedData = {};
-          if (sbRow.detailed_answers) {
-            try {
-              parsedData = typeof sbRow.detailed_answers === 'string' 
-                ? JSON.parse(sbRow.detailed_answers) 
-                : sbRow.detailed_answers;
-            } catch (e) {
-              console.warn('Error parsing detailed_answers:', e);
-            }
-          }
-
           return {
-            id: sbRow.student_id || sbRow.id,
-            studentName: sbRow.student_name,
-            churchName: sbRow.church_name,
-            stage: sbRow.stage,
-            academicScore: sbRow.derasy_score ?? null,
-            memorizationScore: sbRow.mahfouzat_score ?? sbRow.mahfozat_score ?? null,
-            copticL1Score: sbRow.qebty_lvl1_score ?? null,
-            copticL2Score: sbRow.qebty_lvl2_score ?? null,
-            timestamp: sbRow.submitted_at || null,
+            id: sbRow.student_id || sbRow.id || Math.random().toString(),
+            studentName: sbRow.student_name || sbRow.name || 'طالب',
+            churchName: sbRow.church || sbRow.church_name || '',
+            stage: sbRow.stage || '',
+            academicScore: sbRow.total_score !== undefined && sbRow.total_score !== null ? Number(sbRow.total_score) : null,
+            submissionStatus: sbRow.submission_status || '',
+            timestamp: sbRow.submitted_at || sbRow.created_at || null,
             gender: sbRow.gender || '',
             submissionType: sbRow.submission_type || 'online',
-            data: parsedData
           };
         });
-        setSupabaseSubmissions(mapped);
+
+        // Data Isolation: Strict filter at query level for non-admins matching their church name
+        let finalData = mapped;
+        if (!isAdmin && activeUserChurch) {
+          finalData = mapped.filter(r => r.churchName === activeUserChurch);
+        }
+
+        setSupabaseSubmissions(finalData);
       }
-    } catch (err) {
-      console.error('Error fetching submissions from Supabase:', err);
+    } catch (err: any) {
+      console.error('Error fetching submissions from view_central_filtered_results:', err.message);
     } finally {
       setIsLoading(false);
     }
@@ -171,19 +150,7 @@ export const ResultsViewer: React.FC<{
     // 3. Filter by Competition/Exam Category
     if (filterCompetition !== 'الكل') {
       list = list.filter(r => {
-        if (filterCompetition === 'دراسي') {
-          return r.academicScore !== null && r.academicScore !== undefined;
-        }
-        if (filterCompetition === 'محفوظات') {
-          return r.memorizationScore !== null && r.memorizationScore !== undefined;
-        }
-        if (filterCompetition === 'قبطي مستوى أول') {
-          return r.copticL1Score !== null && r.copticL1Score !== undefined;
-        }
-        if (filterCompetition === 'قبطي مستوى ثاني') {
-          return r.copticL2Score !== null && r.copticL2Score !== undefined;
-        }
-        return true;
+        return r.academicScore !== null && r.academicScore !== undefined;
       });
     }
 
@@ -203,25 +170,15 @@ export const ResultsViewer: React.FC<{
 
   // Discover dynamic headers
   const dynamicHeaders = useMemo(() => {
-    const dh = new Set<string>();
-    results.forEach(r => {
-      if (r.data) {
-         Object.keys(r.data).forEach(k => {
-           if (!MASTER_HEADERS.includes(k) && k !== 'serial' && k !== 'دراسي') {
-             dh.add(k);
-           }
-         });
-      }
-    });
-    return Array.from(dh);
-  }, [results, MASTER_HEADERS]);
+    return [] as string[];
+  }, []);
 
   const allHeaders = [...MASTER_HEADERS, ...dynamicHeaders];
 
   // Derive Church vs Stages Matrix
   const matrix = useMemo(() => {
     const churches = Array.from(new Set(results.map(r => r.churchName).filter(Boolean)));
-    const stages = Array.from(new Set(results.map(r => r.academicScore !== undefined && r.academicScore !== null ? r.stage : r.data?.['دراسي'] || r.stage).filter(Boolean))) as string[];
+    const stages = Array.from(new Set(results.map(r => r.stage).filter(Boolean))) as string[];
     
     return { churches, stages };
   }, [results]);
@@ -546,20 +503,14 @@ export const ResultsViewer: React.FC<{
                     'وقت التسليم': row.timestamp ? new Date(row.timestamp).toLocaleString('ar-EG') : '',
                     'الاسم': row.studentName,
                     'الكنيسة/البلد': row.churchName,
-                    'المرحلة': row.stage || (row as any).stage_name,
+                    'المرحلة': row.stage,
                     'نوع الامتحان': row.submissionType || 'online',
-                    'النوع': (row as any).gender || row.data?.['النوع'] || '',
-                    'دراسي': row.academicScore ?? row.data?.['دراسي'] ?? row.data?.['التحصيل الدراسي'] ?? '',
-                    'محفوظات': row.memorizationScore ?? row.data?.['محفوظات'] ?? '',
-                    'قبطي مستوى أول': row.copticL1Score ?? row.data?.['قبطي مستوى أول'] ?? '',
-                    'قبطي مستوى ثانٍ': row.copticL2Score ?? row.data?.['قبطي مستوى ثاني'] ?? row.data?.['قبطي مستوى ثانٍ'] ?? '',
-                    ...row.data
+                    'النوع': row.gender || '',
+                    'الدرجة الكلية': row.academicScore !== null && row.academicScore !== undefined ? row.academicScore : '-',
+                    'حالة التسليم': (row as any).submissionStatus || 'تم التسليم'
                   };
                   
-                  const hasScore = (row.academicScore !== undefined && row.academicScore !== null) ||
-                                   (row.memorizationScore !== undefined && row.memorizationScore !== null) ||
-                                   (row.copticL1Score !== undefined && row.copticL1Score !== null) ||
-                                   (row.copticL2Score !== undefined && row.copticL2Score !== null);
+                  const hasScore = row.academicScore !== undefined && row.academicScore !== null;
                   const honorData = row.id ? honorsRanks[row.id] : null;
                   const rowClass = honorData ? honorData.colorClass : 'hover:bg-slate-50 transition-colors';
 
@@ -590,11 +541,11 @@ export const ResultsViewer: React.FC<{
                         if (header === 'المرحلة') {
                           return (
                             <td key={idx} className="p-4 font-bold whitespace-nowrap border-l border-slate-50 text-slate-700 text-right">
-                              {row.stage || (row as any).stage_name}
+                              {row.stage}
                             </td>
                           );
                         }
-                        const isDerasi = header === 'دراسي' || header === 'التحصيل الدراسي';
+                        const isDerasi = header === 'الدرجة الكلية';
                         const isExamType = header === 'نوع الامتحان';
                         
                         if (isExamType) {
@@ -626,8 +577,22 @@ export const ResultsViewer: React.FC<{
                           );
                         }
 
+                        if (header === 'حالة التسليم') {
+                          const statusVal = rowData[header];
+                          const bgClass = statusVal === 'validated' || statusVal === 'تم التسليم' || statusVal === 'completed'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                            : 'bg-amber-50 text-amber-700 border-amber-100';
+                          return (
+                            <td key={idx} className="p-4 whitespace-nowrap border-l border-slate-50 text-right">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${bgClass}`}>
+                                {statusVal}
+                              </span>
+                            </td>
+                          );
+                        }
+
                         return (
-                          <td key={idx} className={`p-4 font-bold whitespace-nowrap border-l border-slate-50 ${isDerasi ? 'text-indigo-600 font-black' : 'text-slate-700'}`}>
+                          <td key={idx} className={`p-4 font-bold whitespace-nowrap border-l border-slate-50 ${isDerasi ? 'text-indigo-600 font-black text-lg' : 'text-slate-700'}`}>
                             {rowData[header] !== undefined && rowData[header] !== null ? rowData[header] : '-'}
                           </td>
                         );
