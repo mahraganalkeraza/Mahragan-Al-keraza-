@@ -181,13 +181,7 @@ const createOMRSheetElement = async (
   header.appendChild(logoImg);
 
   const qrImg = document.createElement('img');
-  const qrPayload = JSON.stringify({
-    id: student.id,
-    name: student.name,
-    church: student.churchName,
-    churchCode: getChurchCode(student.churchName, rawChurches),
-    stage: student.stage
-  });
+  const qrPayload = student.id.toString();
   
   // Use SVG for infinite resolution and optimized settings for scanning
   const svgString = await QRCode.toString(qrPayload, {
@@ -384,13 +378,7 @@ const createQRCardPageElement = async (students: Participant[], rawChurches?: an
     qrContainer.style.width = '100%';
 
     const qrImg = document.createElement('img');
-    const qrPayload = JSON.stringify({
-        id: s.id,
-        name: s.name,
-        church: s.churchName,
-        churchCode: getChurchCode(s.churchName, rawChurches),
-        stage: s.stage
-    });
+    const qrPayload = s.id.toString();
     // Optimized QR for scanability and print resolution
     const svgString = await QRCode.toString(qrPayload, {
         type: 'svg',

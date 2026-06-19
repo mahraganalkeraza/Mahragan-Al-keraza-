@@ -61,6 +61,33 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const qrScannerRef = useRef<Html5Qrcode | null>(null);
 
+  const processScannedCode = async (codeStr: string) => {
+    setAcademicCode(codeStr);
+    if (!codeStr.trim()) return;
+    
+    setIsLoading(true);
+    setErrors(null);
+
+    try {
+      const { data: studentObj, error: dbErr } = await supabase
+        .from('registrations')
+        .select('id, name, stage, churchName, gender, competitions')
+        .eq('id', codeStr.trim())
+        .single();
+
+      if (dbErr || !studentObj) {
+        setErrors("لم نتمكن من العثور على الكود المسحوب، يرجى الاستعانة بمسؤول اللجنة للتأكد.");
+        setIsLoading(false);
+        return;
+      }
+
+      await triggerActiveExamLaunch(studentObj);
+    } catch (err: any) {
+      setErrors("فشل الاتصال بقاعدة البيانات.");
+      setIsLoading(false);
+    }
+  };
+
   // 1. تشغيل الكاميرا فورياً عند فتح واجهة الـ QR كود
   useEffect(() => {
     if (loginMethod === 'code') {
@@ -72,13 +99,13 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           qrScannerRef.current = html5Qrcode;
           
           const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-          const qrCodeSuccessCallback = (decodedText: string) => {
-            setAcademicCode(decodedText);
+          const qrCodeSuccessCallback = async (decodedText: string) => {
             if (qrScannerRef.current) {
               qrScannerRef.current.stop().then(() => {
                 qrScannerRef.current?.clear();
               }).catch(() => {});
             }
+            await processScannedCode(decodedText);
           };
 
           html5Qrcode.start(
@@ -263,28 +290,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       setErrors("يرجى مسح كود الـ QR الصحيح لبدء الامتحان.");
       return;
     }
-
-    setIsLoading(true);
-    setErrors(null);
-
-    try {
-      const { data: studentObj, error: dbErr } = await supabase
-        .from('registrations')
-        .select('id, name, stage, churchName, gender, competitions')
-        .eq('id', academicCode.trim())
-        .single();
-
-      if (dbErr || !studentObj) {
-        setErrors("لم نتمكن من العثور على الكود المسحوب، يرجى الاستعانة بمسؤول اللجنة للتأكد.");
-        setIsLoading(false);
-        return;
-      }
-
-      await triggerActiveExamLaunch(studentObj);
-    } catch (err: any) {
-      setErrors("فشل الاتصال بقاعدة البيانات.");
-      setIsLoading(false);
-    }
+    await processScannedCode(academicCode);
   };
 
   return (
