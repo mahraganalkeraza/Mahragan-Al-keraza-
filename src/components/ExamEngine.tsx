@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { QRScanner } from "./QRScanner";
 import { getDeviceFingerprint, DeviceFingerprint } from "../lib/deviceTracking";
+import logo from "../by-logo.jpeg";
 
 const CURRENT_YEAR = "2026";
 
@@ -766,8 +767,8 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
     >
       {/* Question Header */}
       <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-        <span className="text-xs font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full flex items-center gap-1">
-          <Sparkles size={13} className="animate-pulse" />
+        <span className="text-xs font-black text-amber-800 bg-amber-50 px-3 py-1.5 rounded-full flex items-center gap-1 border border-amber-200/60 shadow-sm">
+          <Sparkles size={13} className="animate-pulse text-[#d4af37]" />
           السؤال {qIdx + 1} من {totalQuestions}
         </span>
         {q.type === "mcq" && (
@@ -813,7 +814,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                 }}
                 className={`w-full text-right p-4 rounded-xl border-2 cursor-pointer transition-all duration-150 ease-in-out flex items-center justify-between transform hover:scale-[1.01] active:scale-[0.99] outline-none ${
                   isSelected
-                    ? "border-blue-500 bg-blue-50 text-blue-900 font-bold shadow-sm"
+                    ? "bg-amber-50/80 border-[#d4af37] text-amber-950 font-medium shadow-sm"
                     : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-normal"
                 }`}
                 id={`label-${q.id}-${oIndex}`}
@@ -823,7 +824,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                   <div
                     className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-150 shrink-0 ${
                       isSelected
-                        ? "border-blue-600 bg-blue-600 text-white"
+                        ? "border-[#d4af37] bg-[#d4af37] text-white"
                         : "border-slate-300 bg-white"
                     }`}
                   >
@@ -844,7 +845,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
           placeholder="اكتب إجابتك هنا بوضوح ودقة..."
           value={currentAnswer || ""}
           onChange={(e) => onAnswer(q.id, e.target.value)}
-          className="w-full px-4 py-3.5 border-2 border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 rounded-xl bg-slate-50 hover:bg-slate-50/50 focus:bg-white outline-none font-bold text-slate-850 transition-all font-sans"
+          className="w-full px-4 py-3.5 border-2 border-slate-200 focus:border-[#d4af37] focus:ring-4 focus:ring-amber-100 rounded-xl bg-slate-50 hover:bg-slate-50/50 focus:bg-white outline-none font-bold text-slate-850 transition-all font-sans"
         />
       )}
 
@@ -861,7 +862,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                 key={pIdx}
                 className={`grid grid-cols-1 sm:grid-cols-3 gap-4 items-center p-4 border rounded-xl transition-all duration-150 ${
                   isPairSelected
-                    ? "bg-blue-50/30 border-blue-200 shadow-sm"
+                    ? "bg-amber-50/40 border-amber-200/80 shadow-sm"
                     : "bg-white border-slate-200"
                 }`}
                 id={`matching-pair-${q.id}-${pIdx}`}
@@ -882,7 +883,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                     };
                     onAnswer(q.id, nextList);
                   }}
-                  className="px-3 py-2 border border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all font-sans"
+                  className="px-3 py-2 border border-slate-300 focus:border-[#d4af37] focus:ring-2 focus:ring-amber-100 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all font-sans"
                 >
                   <option value="">اختر المطابقة الصحيحة...</option>
                   {(q as any).shuffledRights?.map(
@@ -1123,7 +1124,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         if (prev <= 1) {
           clearInterval(interval);
           // Auto submit the exam when time finishes!
-          handleConfirmAndReturn();
+          console.warn("Time expired. Force-submitting current student progress...");
+          handleSubmitExam();
           return 0;
         }
         return prev - 1;
@@ -1132,6 +1134,14 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     
     return () => clearInterval(interval);
   }, [activeExam, isExamCompleted, isTerminated, answers]);
+
+  // Auto submit when time hits 0 (explicit watcher)
+  useEffect(() => {
+    if (activeExam && !isExamCompleted && !isTerminated && examSecondsLeft === 0) {
+      console.warn("Time expired. Force-submitting current student progress...");
+      handleSubmitExam();
+    }
+  }, [examSecondsLeft, activeExam, isExamCompleted, isTerminated]);
 
   // Monitor student session realtime is disabled on shared terminal devices to enforce REST-only interaction and stay within free tier limits.
 
@@ -1649,6 +1659,10 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       setSelectedCompetition(null);
 
     setIsLoading(false);
+  };
+
+  const handleSubmitExam = async (e?: React.FormEvent) => {
+    await handleConfirmAndReturn(e);
   };
 
   const handleFinalSubmission = async (e?: React.FormEvent) => {
@@ -2339,66 +2353,76 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   };
 
   return (
-    <div
-      className="w-full max-w-2xl mx-auto pt-24 sm:pt-28 mt-4 sm:mt-8 pb-12 px-3 sm:px-4 safe-top safe-bottom select-none flex flex-col min-h-[85vh] justify-center"
-      id="active-exam-questions-outer-container"
-    >
+    <div className="fixed inset-0 z-[150] overflow-y-auto bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6" id="active-exam-viewport">
+      {/* Centered background container for the Festival Logo, with subtle blend/opacity */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+        <img
+          src={logo}
+          alt="Festival Logo"
+          className="w-80 h-80 sm:w-96 sm:h-96 object-contain opacity-10 blur-[6px] select-none mix-blend-overlay"
+        />
+      </div>
+
       <div
-        className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden flex flex-col"
-        id="active-exam-questions-card"
+        className="w-full max-w-2xl relative z-10 py-4"
+        id="active-exam-questions-outer-container"
       >
-        {/* Sticky Header with micro progress bar and countdown timer */}
-        <div 
-          className="p-5 sm:p-6 border-b border-slate-200 bg-slate-50/90 backdrop-blur-md sticky top-0 z-10 flex flex-col gap-3 select-none"
-          id="active-exam-sticky-header"
+        <div
+          className="bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col"
+          id="active-exam-questions-card"
         >
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="p-1.5 rounded-lg bg-blue-100 text-blue-700 shrink-0">
-                <BookOpen size={16} />
-              </span>
-              <div>
-                <h4 className="text-sm sm:text-base font-black text-slate-800 leading-none">
-                  امتحان {selectedCompetition}
-                </h4>
-                <p className="text-[11px] sm:text-xs text-slate-400 font-bold mt-1">
-                  المرحلة: {activeStudent?.stage || "غير معروفة"}
-                </p>
+          {/* Sticky Header with micro progress bar and countdown timer */}
+          <div 
+            className="p-5 sm:p-6 border-b border-rose-50/20 bg-slate-50/90 backdrop-blur-md sticky top-0 z-10 flex flex-col gap-3 select-none"
+            id="active-exam-sticky-header"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-amber-50 border border-amber-200/50 text-amber-800 shrink-0">
+                  <BookOpen size={16} className="text-[#aa7c11]" />
+                </span>
+                <div>
+                  <h4 className="text-sm sm:text-base font-black text-slate-800 leading-none">
+                    امتحان {selectedCompetition}
+                  </h4>
+                  <p className="text-[11px] sm:text-xs text-slate-400 font-bold mt-1">
+                    المرحلة: {activeStudent?.stage || "غير معروفة"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Countdown timer */}
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-sans transition-all shrink-0 ${
+                examSecondsLeft < 120 
+                  ? "bg-[#ffebed] text-rose-700 animate-pulse font-black border border-rose-200" 
+                  : "bg-amber-50 text-amber-900 border border-amber-200/50 font-black shadow-sm"
+              }`}>
+                <Clock size={15} className={`${examSecondsLeft < 120 ? "text-rose-600 animate-spin" : "text-amber-600"}`} />
+                <span className="text-sm font-bold tracking-wider">{formatTime(examSecondsLeft)}</span>
               </div>
             </div>
 
-            {/* Countdown timer */}
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-sans transition-all shrink-0 ${
-              examSecondsLeft < 120 
-                ? "bg-rose-100 text-rose-700 animate-pulse font-black" 
-                : "bg-slate-100 text-slate-700 font-bold"
-            }`}>
-              <Clock size={15} className={`${examSecondsLeft < 120 ? "text-rose-600" : "text-slate-500"}`} />
-              <span className="text-sm font-bold tracking-wider">{formatTime(examSecondsLeft)}</span>
+            {/* Micro Progress Bar & Remaining Counter */}
+            <div className="mt-2">
+              <div className="flex justify-between items-center text-[11px] sm:text-xs text-slate-400 font-bold mb-1">
+                <span>السؤال {currentQuestionIdx + 1} من {activeExam.questions.length}</span>
+                <span>المتبقي: {activeExam.questions.length - (currentQuestionIdx + 1)}</span>
+              </div>
+              
+              <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-[#d4af37] via-[#f3e5ab] to-[#aa7c11] rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Micro Progress Bar & Remaining Counter */}
-          <div className="mt-2">
-            <div className="flex justify-between items-center text-[11px] sm:text-xs text-slate-400 font-bold mb-1">
-              <span>السؤال {currentQuestionIdx + 1} من {activeExam.questions.length}</span>
-              <span>المتبقي: {activeExam.questions.length - (currentQuestionIdx + 1)}</span>
-            </div>
-            
-            <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-l from-blue-500 to-indigo-600 rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Question content wrapper */}
-        <div
-          className="p-5 sm:p-6 flex-1 bg-slate-55/30"
-          id="active-exam-scroll-area"
-        >
+          {/* Question content wrapper */}
+          <div
+            className="p-5 sm:p-6 flex-1 bg-slate-55/30"
+            id="active-exam-scroll-area"
+          >
           {currentQuestion && (
             <QuestionCard
               q={currentQuestion}
@@ -2412,16 +2436,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           {/* Navigation layout */}
           <div className="flex items-center justify-between gap-4 pt-6 border-t border-slate-200 mt-6 select-none">
             {/* Prev Question */}
-            <div
-              role="button"
-              tabIndex={currentQuestionIdx === 0 ? -1 : 0}
+            <button
+              type="button"
+              disabled={currentQuestionIdx === 0}
               onClick={() => {
                 if (currentQuestionIdx > 0) {
-                  setCurrentQuestionIdx(prev => prev - 1);
-                }
-              }}
-              onKeyDown={(e) => {
-                if ((e.key === "Enter" || e.key === " ") && currentQuestionIdx > 0) {
                   setCurrentQuestionIdx(prev => prev - 1);
                 }
               }}
@@ -2433,43 +2452,32 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             >
               <ChevronRight size={18} />
               <span className="text-xs sm:text-sm">السؤال السابق</span>
-            </div>
+            </button>
 
             {/* Next or Submit */}
             {currentQuestionIdx < activeExam.questions.length - 1 ? (
-              <div
-                role="button"
-                tabIndex={0}
+              <button
+                type="button"
                 onClick={() => setCurrentQuestionIdx(prev => prev + 1)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    setCurrentQuestionIdx(prev => prev + 1);
-                  }
-                }}
                 className="px-4 sm:px-5 py-3 cursor-pointer rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-blue-100"
               >
                 <span className="text-xs sm:text-sm">السؤال التالي</span>
                 <ChevronLeft size={18} />
-              </div>
+              </button>
             ) : (
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => handleConfirmAndReturn()}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    handleConfirmAndReturn();
-                  }
-                }}
+              <button
+                type="button"
+                onClick={handleSubmitExam}
                 className="px-5 sm:px-6 py-3 cursor-pointer rounded-xl font-black bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-emerald-100 text-xs sm:text-sm"
               >
                 <span>إرسال نهائي للاختبار</span>
                 <Check size={18} className="stroke-[3px]" />
-              </div>
+              </button>
             )}
           </div>
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 };
