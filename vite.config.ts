@@ -4,13 +4,13 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  base: './',
+  base: '/',
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['./favicon.ico', './apple-touch-icon.png', './mask-able-icon.png'],
+      includeAssets: ['/favicon.ico', '/apple-touch-icon.png', '/mask-able-icon.png'],
       workbox: {
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6MB
       },
@@ -22,15 +22,15 @@ export default defineConfig({
         background_color: '#ffffff',          // لون شاشة الترحيب عند فتح الأبلكيشن
         display: 'standalone',               // يخليه يفتح كبرنامج مستقل بدون شريط المتصفح
         orientation: 'portrait',             // إجبار التطبيق يفتح بالطول
-        start_url: './',
+        start_url: '/',
         icons: [
           {
-            src: './pwa-192x192.png',           // أيقونة بحجم 192
+            src: '/pwa-192x192.png',           // أيقونة بحجم 192
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: './pwa-512x512.png',           // أيقونة بحجم 512
+            src: '/pwa-512x512.png',           // أيقونة بحجم 512
             sizes: '512x512',
             type: 'image/png'
           }
