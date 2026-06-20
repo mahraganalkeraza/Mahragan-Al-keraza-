@@ -1341,7 +1341,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           stage: studentData.stage,
           device_name: userAgent,
           device_type: deviceInfo.type,
-          os_version: deviceInfo.os,
+          os_version: (deviceInfo as any).os || "غير معروف",
           ip_address: deviceInfo.ip,
           last_known_ip: deviceInfo.ip,
           status: "Identification Success",

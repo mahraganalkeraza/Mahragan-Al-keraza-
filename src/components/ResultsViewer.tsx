@@ -13,7 +13,9 @@ import {
   FileSpreadsheet, 
   BookOpen,
   Megaphone,
-  Compass
+  Compass,
+  Send,
+  Users
 } from 'lucide-react';
 import { AdminHonorsEngine } from './AdminHonorsEngine';
 import { supabase } from '../utils/supabaseClient';
@@ -33,6 +35,20 @@ export const ResultsViewer: React.FC<{
   const [currentPage, setCurrentPage] = useState(1);
   const [activeTab, setActiveTab] = useState<'all' | 'online' | 'bubble_sheet' | 'paper'>('all');
   const [showManualModal, setShowManualModal] = useState(false);
+
+  // Bulk Score Entry States
+  const [showBulkScoreDashboard, setShowBulkScoreDashboard] = useState(false);
+  const [bulkStage, setBulkStage] = useState('الكل');
+  const [bulkChurch, setBulkChurch] = useState('الكل');
+  const [bulkStudents, setBulkStudents] = useState<any[]>([]);
+  const [isBulkStudentsLoading, setIsBulkStudentsLoading] = useState(false);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [selectedColumn, setSelectedColumn] = useState('qebty_lvl1_score');
+  const [bulkScoreValue, setBulkScoreValue] = useState('');
+  const [existingScores, setExistingScores] = useState<Record<string, any>>({});
+  const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
+  const [stageOptions, setStageOptions] = useState<string[]>([]);
+  const [churchOptions, setChurchOptions] = useState<string[]>([]);
   
   const [manualForm, setManualForm] = useState({
     student_name: '',
@@ -148,6 +164,143 @@ export const ResultsViewer: React.FC<{
     fetchSubmissionsFromSupabase();
   }, [activeUserChurch, isAdmin]);
 
+  // Load distinct options for bulk score filters
+  useEffect(() => {
+    const loadFilterOptions = async () => {
+      try {
+        const { data: churchesData } = await supabase.from('churches').select('name');
+        if (churchesData) {
+          setChurchOptions(Array.from(new Set(churchesData.map((c: any) => c.name).filter(Boolean))).sort() as string[]);
+        }
+        
+        const { data: stagesData } = await supabase.from('registrations').select('stage');
+        if (stagesData) {
+          setStageOptions(Array.from(new Set(stagesData.map((r: any) => r.stage).filter(Boolean))).sort() as string[]);
+        }
+      } catch (err) {
+        console.error('Error loading filter options:', err);
+      }
+    };
+    if (isAdmin) {
+      loadFilterOptions();
+    }
+  }, [isAdmin]);
+
+  // Fetch student list in bulk for local state (Fetch Once scenario)
+  const fetchBulkStudents = async () => {
+    setIsBulkStudentsLoading(true);
+    try {
+      let query = supabase.from('registrations').select('id, name, churchName, stage, gender');
+      
+      if (bulkChurch !== 'الكل') {
+        query = query.eq('churchName', bulkChurch);
+      }
+      if (bulkStage !== 'الكل') {
+        query = query.eq('stage', bulkStage);
+      }
+      
+      const { data, error } = await query.order('name');
+      if (error) throw error;
+      setBulkStudents(data || []);
+      setSelectedStudentIds([]); // Reset selected checkboxes
+      
+      if (data && data.length > 0) {
+        const studentIds = data.map(s => s.id);
+        const { data: scoresData, error: scoresErr } = await supabase
+          .from('online_results')
+          .select('student_id, student_name, church_name, stage, gender, qebty_lvl1_score, qebty_lvl2_score, derasy_score, mahfouzat_score')
+          .in('student_id', studentIds);
+        
+        if (!scoresErr && scoresData) {
+          const scoresMap: Record<string, any> = {};
+          scoresData.forEach(item => {
+            scoresMap[item.student_id] = item;
+          });
+          setExistingScores(scoresMap);
+        }
+      } else {
+        setExistingScores({});
+      }
+    } catch (err: any) {
+      console.error('Error fetching bulk students:', err.message);
+    } finally {
+      setIsBulkStudentsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showBulkScoreDashboard && isAdmin) {
+      fetchBulkStudents();
+    }
+  }, [bulkStage, bulkChurch, showBulkScoreDashboard]);
+
+  const getColumnArabicName = (col: string) => {
+    switch (col) {
+      case 'qebty_lvl1_score': return 'قبطي مستوى أول';
+      case 'qebty_lvl2_score': return 'قبطي مستوى ثاني';
+      case 'derasy_score': return 'التحصيل الدراسي (أونلاين)';
+      case 'mahfouzat_score': return 'المحفوظات';
+      default: return col;
+    }
+  };
+
+  const handleBulkSubmit = async () => {
+    if (selectedStudentIds.length === 0) {
+      alert('الرجاء تحديد طالب واحد على الأقل من الجدول للرصد.');
+      return;
+    }
+    if (!bulkScoreValue || isNaN(Number(bulkScoreValue))) {
+      alert('الرجاء إدخال درجة مناسبة.');
+      return;
+    }
+    const scoreVal = parseFloat(bulkScoreValue);
+    if (scoreVal < 0 || scoreVal > 100) {
+      alert('الرجاء إدخال درجة بين 0 و 100.');
+      return;
+    }
+
+    const columnArabic = getColumnArabicName(selectedColumn);
+    const confirmMessage = `هل أنت متأكد من رصد درجة [${scoreVal}] لعدد [${selectedStudentIds.length}] من الطلاب في المسابقة المحددة؟`;
+    
+    if (!window.confirm(confirmMessage)) return;
+
+    setIsBulkSubmitting(true);
+    try {
+      const bulkPayload = selectedStudentIds.map(id => {
+        const student = bulkStudents.find(s => s.id === id);
+        const existing = existingScores[id] || {};
+        return {
+          student_id: id,
+          student_name: student?.name || existing.student_name || '',
+          church_name: student?.churchName || existing.church_name || '',
+          stage: student?.stage || existing.stage || '',
+          gender: student?.gender || existing.gender || 'ذكر',
+          // Safe preservation of other score columns
+          derasy_score: selectedColumn === 'derasy_score' ? scoreVal : (existing.derasy_score !== undefined ? existing.derasy_score : null),
+          mahfouzat_score: selectedColumn === 'mahfouzat_score' ? scoreVal : (existing.mahfouzat_score !== undefined ? existing.mahfouzat_score : null),
+          qebty_lvl1_score: selectedColumn === 'qebty_lvl1_score' ? scoreVal : (existing.qebty_lvl1_score !== undefined ? existing.qebty_lvl1_score : null),
+          qebty_lvl2_score: selectedColumn === 'qebty_lvl2_score' ? scoreVal : (existing.qebty_lvl2_score !== undefined ? existing.qebty_lvl2_score : null),
+        };
+      });
+
+      const { error } = await supabase
+        .from('online_results')
+        .upsert(bulkPayload, { onConflict: 'student_id' });
+
+      if (error) throw error;
+
+      alert(`تم بنجاح رصد درجة [${scoreVal}] في [${columnArabic}] لعدد [${selectedStudentIds.length}] من الطلاب! 🎉`);
+      
+      await fetchBulkStudents();
+      fetchSubmissionsFromSupabase();
+    } catch (err: any) {
+      console.error('Error submitting bulk scores:', err.message);
+      alert('حدث خطأ أثناء رصد الدرجات: ' + err.message);
+    } finally {
+      setIsBulkSubmitting(false);
+    }
+  };
+
   // Combined client-side filtering utilizing useMemo for live updates
   const filteredResults = useMemo(() => {
     let list = supabaseSubmissions;
@@ -188,6 +341,16 @@ export const ResultsViewer: React.FC<{
   const uniqueStagesList = useMemo(() => {
     return Array.from(new Set(supabaseSubmissions.map(r => r.stage).filter(Boolean)));
   }, [supabaseSubmissions]);
+
+  const finalChurchOptions = useMemo(() => {
+    const set = new Set([...churchOptions, ...uniqueChurches]);
+    return Array.from(set).filter(Boolean).sort();
+  }, [churchOptions, uniqueChurches]);
+
+  const finalStageOptions = useMemo(() => {
+    const set = new Set([...stageOptions, ...uniqueStagesList, 'حضونة', 'أولى ابتدائي', 'ثانية ابتدائي', 'ثالثة ابتدائي', 'رابعة ابتدائي', 'خامسة ابتدائي', 'سادسة ابتدائي', 'إعدادي', 'ثانوي', 'جامعة', 'خدام']);
+    return Array.from(set).filter(Boolean).sort();
+  }, [stageOptions, uniqueStagesList]);
 
   // Discover dynamic headers
   const dynamicHeaders = useMemo(() => {
@@ -439,6 +602,17 @@ export const ResultsViewer: React.FC<{
               إضافة نتيجة يدوي (ورقي)
             </button>
             <button 
+              onClick={() => setShowBulkScoreDashboard(!showBulkScoreDashboard)}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all shadow-sm border ${
+                showBulkScoreDashboard 
+                  ? "bg-slate-800 border-slate-700 hover:bg-slate-900 text-white animate-pulse" 
+                  : "bg-indigo-600 border-indigo-500 hover:bg-indigo-700 text-white"
+              }`}
+            >
+              <Award size={14} />
+              {showBulkScoreDashboard ? "العودة لجدول النتائج 📋" : "رصد الدرجات الجماعي ⚡"}
+            </button>
+            <button 
               onClick={handlePublishResults}
               disabled={isLoading}
               className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all shadow-sm disabled:opacity-50"
@@ -450,8 +624,8 @@ export const ResultsViewer: React.FC<{
         </div>
       )}
 
-      {/* Real-time Master Table */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm overflow-hidden font-arabic" id="results-table-main-wrapper">
+      {!showBulkScoreDashboard ? (
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm overflow-hidden font-arabic" id="results-table-main-wrapper">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-100 pb-4" dir="rtl">
           <h4 className="text-lg font-black text-slate-800">
             نتائج التصفية المحلية {(!isAdmin && activeUserChurch) ? `(كنيسة ${activeUserChurch})` : ''}
@@ -682,6 +856,231 @@ export const ResultsViewer: React.FC<{
           </div>
         )}
       </div>
+      ) : (
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm overflow-hidden font-arabic" id="bulk-score-dashboard-wrapper">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-100 pb-4" dir="rtl">
+            <div>
+              <h4 className="text-xl font-black text-indigo-900">
+                ⚡ لوحة رصد الدرجات الجماعية والاستثنائية (Bulk Score Entry)
+              </h4>
+              <p className="text-xs text-slate-500 font-bold mt-1">رصد درجات جماعي وسريع لكافة الطلاب المحددين في المسابقات المختلفة</p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={fetchBulkStudents}
+                disabled={isBulkStudentsLoading}
+                className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all"
+                title="تحديث البيانات"
+              >
+                <RefreshCcw size={16} className={isBulkStudentsLoading ? 'animate-spin' : ''} />
+              </button>
+              <span className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-xs font-black">
+                المطابقين: {bulkStudents.length} مشترك
+              </span>
+            </div>
+          </div>
+
+          {/* Top Filters Block (bounds stage_name and church_name) */}
+          <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 mb-6 flex flex-col md:flex-row gap-4 text-right animate-fade-in" dir="rtl">
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-xs font-black text-slate-600 mb-1.5">تصفية بالكنيسة / البلد</label>
+              <select 
+                value={bulkChurch}
+                onChange={(e) => setBulkChurch(e.target.value)}
+                className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 shadow-sm cursor-pointer"
+              >
+                <option value="الكل">جميع الكنائس والبلاد (الكل)</option>
+                {finalChurchOptions.map((church, idx) => (
+                  <option key={idx} value={church}>{church}</option>
+                ))}
+              </select>
+            </div>
+            <div className="w-full md:w-64">
+              <label className="block text-xs font-black text-slate-600 mb-1.5">تصفية بالمرحلة الدراسية</label>
+              <select 
+                value={bulkStage}
+                onChange={(e) => setBulkStage(e.target.value)}
+                className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 shadow-sm cursor-pointer"
+              >
+                <option value="الكل">جميع المراحل (الكل)</option>
+                {finalStageOptions.map((stage, idx) => (
+                  <option key={idx} value={stage}>{stage}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Dynamic Column Control Bar & Execution Panel */}
+          <div className="bg-gradient-to-r from-indigo-50 to-slate-100 p-5 rounded-2xl border border-indigo-150 mb-6 flex flex-col md:flex-row items-center justify-between gap-4 text-right animate-fade-in" dir="rtl">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
+              
+              {/* Target Dropdown [ اختار المسابقة] */}
+              <div className="flex flex-col min-w-[200px]">
+                <label className="block text-xs font-black text-indigo-700 mb-1.5">[ اختار المسابقة]</label>
+                <select 
+                  value={selectedColumn}
+                  onChange={(e) => setSelectedColumn(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-white border border-indigo-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm cursor-pointer"
+                >
+                  <option value="qebty_lvl1_score">قبطي مستوى أول (Paper Level 1)</option>
+                  <option value="qebty_lvl2_score">قبطي مستوى ثاني (Paper Level 2)</option>
+                  <option value="derasy_score">التحصيل الدراسي (Emergency Online Override)</option>
+                  <option value="mahfouzat_score">المحفوظات (Emergency Online Override)</option>
+                </select>
+              </div>
+
+              {/* Bulk Score Input */}
+              <div className="flex flex-col w-full sm:w-32">
+                <label className="block text-xs font-black text-indigo-700 mb-1.5">الدرجة المستهدفة</label>
+                <input 
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.5"
+                  placeholder="0 - 100"
+                  value={bulkScoreValue}
+                  onChange={(e) => setBulkScoreValue(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-white border border-indigo-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                />
+              </div>
+            </div>
+
+            {/* Execute Button [ حفظ وإرسال للكل] */}
+            <div className="shrink-0 w-full md:w-auto">
+              <button 
+                onClick={handleBulkSubmit}
+                disabled={isBulkSubmitting || isBulkStudentsLoading || selectedStudentIds.length === 0}
+                className="w-full md:w-auto px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-2 active:scale-95"
+              >
+                {isBulkSubmitting ? (
+                  <>
+                    <Loader className="animate-spin" size={14} />
+                    جاري الحفظ والرفع للسيرفر...
+                  </>
+                ) : (
+                  <>
+                    <Send size={14} />
+                    [ حفظ وإرسال للكل]
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Multi-selection bar and quick-actions */}
+          <div className="flex items-center justify-between bg-slate-100 rounded-xl px-4 py-2.5 mb-4 text-xs font-bold text-slate-700" dir="rtl">
+            <div>
+              تم تحديد <span className="text-indigo-600 font-extrabold">{selectedStudentIds.length}</span> من أصل <span className="text-slate-800 font-extrabold">{bulkStudents.length}</span> طالب للمزامنة الجماعية.
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setSelectedStudentIds(bulkStudents.map(s => s.id))}
+                className="text-indigo-600 hover:underline font-black"
+              >
+                تحديد الكل ☑️
+              </button>
+              <span className="text-slate-300">|</span>
+              <button 
+                onClick={() => setSelectedStudentIds([])}
+                className="text-rose-600 hover:underline font-black"
+              >
+                إلغاء التحديد ✖️
+              </button>
+            </div>
+          </div>
+
+          {/* Student Selection Data Table Checklist */}
+          {isBulkStudentsLoading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader className="animate-spin text-indigo-600 mb-4" size={32} />
+              <p className="text-slate-500 text-sm font-bold">جاري تحميل المشتركين من قاعدة البيانات...</p>
+            </div>
+          ) : bulkStudents.length === 0 ? (
+            <div className="text-center py-12 px-4 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+              <Users className="mx-auto text-slate-300 mb-3" size={44} />
+              <p className="text-slate-800 font-black text-sm">
+                لم يتم رصد أي طلاب مطابقين لهذه التصفية في جدول التسجيلات.
+              </p>
+              <p className="text-slate-500 text-xs mt-1">الرجاء ضبط الفلاتر أو إعادة المحاولة بفلتر آخر.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-right border-collapse" dir="rtl">
+                <thead>
+                  <tr className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase whitespace-nowrap border-b border-slate-150">
+                    <th className="p-3 w-16 text-center">[ حدد]</th>
+                    <th className="p-3">اسم الطالب (المشترك)</th>
+                    <th className="p-3">الكنيسة/البلد</th>
+                    <th className="p-3 font-black text-slate-500">المرحلة</th>
+                    <th className="p-3 text-center">الدرجات الحالية في السيرفر</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {bulkStudents.map((student, idx) => {
+                    const isSelected = selectedStudentIds.includes(student.id);
+                    const scores = existingScores[student.id] || {};
+                    return (
+                      <tr 
+                        key={student.id} 
+                        className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-indigo-55/35' : ''}`}
+                      >
+                        {/* Custom Checkbox Column [ حدد] */}
+                        <td className="p-3 text-center border-l border-slate-50">
+                          <input 
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedStudentIds([...selectedStudentIds, student.id]);
+                              } else {
+                                setSelectedStudentIds(selectedStudentIds.filter(id => id !== student.id));
+                              }
+                            }}
+                            className="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-350 rounded focus:ring-indigo-500 cursor-pointer"
+                          />
+                        </td>
+
+                        {/* Name */}
+                        <td className="p-3 font-bold text-slate-800 text-sm">{student.name}</td>
+
+                        {/* Church */}
+                        <td className="p-3 text-slate-500 text-xs font-bold">{student.churchName}</td>
+
+                        {/* Stage */}
+                        <td className="p-3 text-slate-600 text-xs font-bold">
+                          <span className="bg-slate-100 px-2.5 py-1 rounded-full text-[10px] font-black text-slate-700">
+                            {student.stage || 'عام'}
+                          </span>
+                        </td>
+
+                        {/* Existing Scores Capsules */}
+                        <td className="p-3 text-center border-r border-slate-50">
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-105">
+                              قبطي1: {scores.qebty_lvl1_score !== undefined && scores.qebty_lvl1_score !== null ? scores.qebty_lvl1_score : '-'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-105">
+                              قبطي2: {scores.qebty_lvl2_score !== undefined && scores.qebty_lvl2_score !== null ? scores.qebty_lvl2_score : '-'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-105">
+                              دراسي: {scores.derasy_score !== undefined && scores.derasy_score !== null ? scores.derasy_score : '-'}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-700 border border-purple-105">
+                              محفظات: {scores.mahfouzat_score !== undefined && scores.mahfouzat_score !== null ? scores.mahfouzat_score : '-'}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Admin Analytics: Church vs Stages Matrix */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm overflow-hidden font-arabic">

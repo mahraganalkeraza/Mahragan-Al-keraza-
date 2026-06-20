@@ -111,6 +111,33 @@ button.quick-access-card:active {
   box-shadow: inset 0 4px 6px 0 rgba(0, 0, 0, 0.25) !important;
 }
 @media print {
+  @page {
+    size: A4;
+    margin: 20mm 15mm 20mm 15mm; /* Protects top, bottom, and sides */
+  }
+  
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Target the main print wrapper/container */
+  .print-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    transform: scale(0.98); /* Slightly scale down to ensure 100% safety closure */
+    transform-origin: top left;
+  }
+
+  /* Prevent row breaking mid-text if printing tables or lists */
+  tr, .result-row {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
   .no-print {
     display: none !important;
   }
