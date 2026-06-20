@@ -50,6 +50,11 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   const [selectedChurch, setSelectedChurch] = useState(globalChurchFilter);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalFilteredCount, setTotalFilteredCount] = useState(0);
+  const PAGE_SIZE = 20;
+
   // Real-time statistics states
   const [activeExamsRealCount, setActiveExamsRealCount] = useState(0);
   const [submittedExamsRealCount, setSubmittedExamsRealCount] = useState(0);
@@ -85,19 +90,33 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
     }
   };
 
-  // Fetch device logs from Supabase
+  // Fetch device logs from Supabase with server-side filtering and pagination
   const fetchLiveLogs = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('exam_device_logs')
-        .select('*')
-        .order('created_at', { ascending: false }); // Show newest logs first
+        .select('*', { count: 'exact' });
+
+      // Apply server-side filters for consistency with pagination
+      if (searchTerm) {
+        query = query.or(`student_name.ilike.%${searchTerm.trim()}%,student_id.ilike.%${searchTerm.trim()}%,device_model.ilike.%${searchTerm.trim()}%`);
+      }
+      if (selectedStage !== 'الكل') {
+        query = query.eq('stage', selectedStage);
+      }
+      if (selectedChurch !== 'الكل') {
+        // Handle both church and church_name columns which might be used inconsistently
+        query = query.or(`church.eq."${selectedChurch}",church_name.eq."${selectedChurch}"`);
+      }
+
+      const { data, count, error } = await query
+        .order('created_at', { ascending: false })
+        .range(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE - 1);
 
       if (error) throw error;
-      if (data) {
-        setLogs(data);
-      }
+      setLogs(data || []);
+      setTotalFilteredCount(count || 0);
     } catch (err) {
       console.error("Error fetching live device logs:", err);
     } finally {
@@ -107,6 +126,9 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
 
   useEffect(() => {
     fetchLiveLogs();
+  }, [currentPage, selectedStage, selectedChurch, searchTerm]);
+
+  useEffect(() => {
     fetchRealtimeStats();
 
     // Set up realtime subscription for instantaneous live tracking of device logs
@@ -209,21 +231,23 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
     }
   };
 
-  const handleDeleteLogRow = async (studentId: string) => {
+  const handleDeleteLogRow = async (logId: string, studentId: string) => {
     if (!confirm('هل تريد حذف هذا السجل نهائياً من شاشة المراقبة؟ سيؤدي ذلك أيضاً لحذف الجلسة النشطة والسماح للطالب بالدخول مجدداً.')) return;
-    setIsProcessing(studentId);
+    setIsProcessing(logId);
     try {
-      // 1. Delete from exam_device_logs
+      // 1. Delete the specific log row using its unique ID (Fix Point 1)
       await supabase
         .from('exam_device_logs')
         .delete()
-        .eq('student_id', studentId);
+        .eq('id', logId);
 
       // 2. Delete from active_sessions to allow clean re-entry (Point 4)
-      await supabase
-        .from('active_sessions')
-        .delete()
-        .eq('student_id', studentId);
+      if (studentId) {
+        await supabase
+          .from('active_sessions')
+          .delete()
+          .eq('student_id', studentId);
+      }
 
       alert('تم حذف السجل والجلسة بنجاح 🗑️');
       fetchLiveLogs();
@@ -363,20 +387,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   const uniqueStages = Array.from(new Set(logs.map(log => log.stage || 'غير محدد'))).filter(Boolean);
 
   // Filter logs locally
-  const filteredLogs = logs.filter(log => {
-    const logChurch = log.church || log.church_name || 'غير محدد';
-    const logStage = log.stage || 'غير محدد';
-    
-    const matchesSearch = 
-      (log.student_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (log.student_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (log.device_name || log.device_model || '').toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesStage = selectedStage === 'الكل' || logStage === selectedStage;
-    const matchesChurch = selectedChurch === 'الكل' || logChurch === selectedChurch;
-
-    return matchesSearch && matchesStage && matchesChurch;
-  });
+  const filteredLogs = logs;
 
   // Calculate statistics from current active logs
   const totalLogsCount = logs.length;
@@ -532,9 +543,6 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700 text-sm font-sans">
               {filteredLogs.map((log) => {
-                const logChurch = log.church || log.church_name || 'غير مكتمل';
-                const logDeviceName = log.device_name || log.device_model || 'متصفح عشوائي';
-                const logOsVersion = log.os_version || log.device_os || 'غير معروف';
                 const logIp = log.ip_address || log.last_known_ip || 'غير معروف';
                 const isTerminated = log.status === 'terminated';
                 const isActive = log.status === 'active' || log.status === 'جاري الامتحان';
@@ -559,16 +567,21 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
                     <td className="p-4 font-bold text-slate-600">{log.stage}</td>
 
                     {/* Church */}
-                    <td className="p-4 text-slate-500 font-semibold">{logChurch}</td>
+                    <td className="p-4 text-slate-500 font-semibold">{log.church || log.church_name || 'غير مكتمل'}</td>
 
                     {/* Device info */}
                     <td className="p-4">
                       <div className="flex flex-col gap-0.5">
                         <span className="font-bold text-slate-700 flex items-center gap-1.5">
                           {log.device_type === 'Mobile' ? <Smartphone size={13} className="text-slate-400" /> : <Laptop size={13} className="text-slate-400" />}
-                          {logDeviceName}
+                          {log.device_name || log.device_model || 'متصفح عشوائي'}
                         </span>
-                        <span className="text-[10px] text-slate-400">{logOsVersion}</span>
+                        <div className="flex items-center gap-2">
+                           <span className="text-[10px] text-slate-400">{log.os_version || log.device_os || 'غير معروف'}</span>
+                           <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono border border-slate-200">
+                             Token: {log.id?.substring(0, 8) || log.student_id?.substring(0, 5)}
+                           </span>
+                        </div>
                       </div>
                     </td>
 
@@ -598,61 +611,61 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
                       })}
                     </td>
 
-                     {/* Controller Actions */}
-                     <td className="p-4">
-                       <div className="flex items-center justify-center gap-2" id={`actions-${log.id}`}>
-                         {/* Reset / Open Exam */}
-                         <button
-                           type="button"
-                           onClick={() => handleResetOpenExam(log.student_id, log.student_name)}
-                           disabled={isProcessing === log.student_id}
-                           className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-amber-500/25"
-                           title="إعادة تعيين / فتح الامتحان للطالب وتصفير السجل"
-                         >
-                           <RotateCcw size={12} className={isProcessing === log.student_id ? 'animate-spin' : ''} />
-                           إعادة تعيين / فتح الامتحان
-                         </button>
- 
-                         {/* Force Submit / Terminate Sheet */}
-                         {isActive && (
-                           <button
-                             type="button"
-                             onClick={() => handleForceSubmit(log.student_id, log.student_name)}
-                             disabled={isProcessing === log.student_id}
-                             className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-rose-600/25"
-                             title="إنهاء الاختبار وسحب ورقة الطالب"
-                           >
-                             <ShieldX size={12} />
-                             إنهاء الاختبار / سحب الورقة
-                           </button>
-                         )}
- 
-                         {/* Unban / Unblock */}
-                         {isTerminated && (
-                           <button
-                             type="button"
-                             onClick={() => handleClearBlacklist(log.student_id)}
-                             disabled={isProcessing === log.student_id}
-                             className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-750 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-emerald-500/25"
-                             title="فك حظر الجهاز"
-                           >
-                             <UserMinus size={12} />
-                             فك حظر الجهاز
-                           </button>
-                         )}
- 
-                         {/* Delete Log Row */}
-                         <button
-                           type="button"
-                           onClick={() => handleDeleteLogRow(log.student_id)}
-                           disabled={isProcessing === log.student_id}
-                           className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 transition-colors cursor-pointer"
-                           title="حذف هذا السجل فقط"
-                         >
-                           <Trash2 size={14} />
-                         </button>
-                       </div>
-                     </td>
+                    {/* Controller Actions */}
+                    <td className="p-4">
+                      <div className="flex items-center justify-center gap-2" id={`actions-${log.id}`}>
+                        {/* Reset / Open Exam */}
+                        <button
+                          type="button"
+                          onClick={() => handleResetOpenExam(log.student_id, log.student_name)}
+                          disabled={isProcessing === log.id}
+                          className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-amber-500/25"
+                          title="إعادة تعيين / فتح الامتحان للطالب وتصفير السجل"
+                        >
+                          <RotateCcw size={12} className={isProcessing === log.id ? 'animate-spin' : ''} />
+                          إعادة تعيين / فتح الامتحان
+                        </button>
+
+                        {/* Force Submit / Terminate Sheet */}
+                        {isActive && (
+                          <button
+                            type="button"
+                            onClick={() => handleForceSubmit(log.student_id, log.student_name)}
+                            disabled={isProcessing === log.id}
+                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-rose-600/25"
+                            title="إنهاء الاختبار وسحب ورقة الطالب"
+                          >
+                            <ShieldX size={12} />
+                            إنهاء الاختبار / سحب الورقة
+                          </button>
+                        )}
+
+                        {/* Unban / Unblock */}
+                        {isTerminated && (
+                          <button
+                            type="button"
+                            onClick={() => handleClearBlacklist(log.student_id)}
+                            disabled={isProcessing === log.id}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-750 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-emerald-500/25"
+                            title="فك حظر الجهاز"
+                          >
+                            <UserMinus size={12} />
+                            فك حظر الجهاز
+                          </button>
+                        )}
+
+                        {/* Delete Log Row */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteLogRow(log.id, log.student_id)}
+                          disabled={isProcessing === log.id}
+                          className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 transition-colors cursor-pointer"
+                          title="حذف هذا السجل فقط"
+                        >
+                          <Trash2 size={14} className={isProcessing === log.id ? 'animate-pulse' : ''} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -666,6 +679,43 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
           </div>
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {totalFilteredCount > PAGE_SIZE && (
+        <div className="flex items-center justify-center gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+            disabled={currentPage === 0}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold disabled:opacity-50 transition-all text-xs"
+          >
+            السابق
+          </button>
+          
+          <div className="flex items-center gap-1.5 overflow-x-auto max-w-[200px] sm:max-w-none py-1">
+            {Array.from({ length: Math.ceil(totalFilteredCount / PAGE_SIZE) }).map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrentPage(i)}
+                className={`w-8 h-8 min-w-[32px] rounded-lg text-xs font-black transition-all ${
+                  currentPage === i 
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200 scale-110' 
+                    : 'bg-slate-50 text-slate-400 hover:bg-slate-100'
+                }`}
+              >
+                {(i + 1).toLocaleString('ar-EG')}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setCurrentPage(p => Math.min(Math.ceil(totalFilteredCount / PAGE_SIZE) - 1, p + 1))}
+            disabled={currentPage >= Math.ceil(totalFilteredCount / PAGE_SIZE) - 1}
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold disabled:opacity-50 transition-all text-xs"
+          >
+            التالي
+          </button>
+        </div>
+      )}
     </div>
   );
 };
