@@ -64,21 +64,24 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
       // 1. Fetch from active_sessions for active count and unique devices
       const { data: sessions, error: sessionErr } = await supabase
         .from('active_sessions')
-        .select('status, device_id');
+        .select('status, device_id, student_id');
 
       if (!sessionErr && sessions) {
         const activeOnly = sessions.filter(s => s.status === 'active');
         setActiveExamsRealCount(activeOnly.length);
         
-        const uniqueDevices = new Set(sessions.map(s => s.device_id).filter(Boolean));
-        setTotalDevicesRealCount(uniqueDevices.size);
+        // Count total unique device fingerprints across ALL active/recently logged sessions
+        const deviceIds = sessions.map(s => s.device_id).filter(Boolean);
+        const uniqueDevices = new Set(deviceIds);
+        
+        // Fallback to logs count if sessions table is less populated than logs
+        setTotalDevicesRealCount(Math.max(uniqueDevices.size, logs.length));
       }
 
-      // 2. Fetch from view_central_filtered_results for today's submissions
+      // 2. Fetch from exam_submissions for total completed exams
       const { count, error: subErr } = await supabase
-        .from('view_central_filtered_results')
-        .select('*', { count: 'exact', head: true })
-        .eq('submission_status', 'submitted');
+        .from('exam_submissions')
+        .select('*', { count: 'exact', head: true });
 
       if (!subErr) {
         setSubmittedExamsRealCount(count || 0);
@@ -402,9 +405,9 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   }
 
   return (
-    <div className="space-y-8 font-sans" id="live-monitoring-container">
+    <div className="space-y-8 font-sans relative z-10 pointer-events-auto" id="live-monitoring-container">
       {/* Action Header */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-6 rounded-3xl border border-slate-200 shadow-sm relative z-20 pointer-events-auto">
         <div>
           <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
             <Activity className="text-indigo-600 animate-pulse" size={24} />
@@ -523,7 +526,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
       </div>
 
       {/* Live Logs Table Panel */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden" id="live-logs-table-panel">
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden relative z-10 pointer-events-auto" id="live-logs-table-panel">
         <div className="overflow-x-auto">
           <table className="w-full text-right border-collapse">
             <thead>
@@ -610,61 +613,60 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
                       })}
                     </td>
 
-                     {/* Controller Actions */}
-                     <td className="p-4">
-                       <div className="flex items-center justify-center gap-2" id={`actions-${String(log.id)}`}>
-                         {/* Reset / Open Exam */}
-                         <button
-                           type="button"
-                           onClick={() => handleResetOpenExam(String(log.student_id), log.student_name)}
-                           disabled={isProcessing === String(log.student_id)}
-                           className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-amber-500/25"
-                           title="إعادة تعيين / فتح الامتحان للطالب وتصفير السجل"
-                         >
-                           <RotateCcw size={12} className={isProcessing === String(log.student_id) ? 'animate-spin' : ''} />
-                           إعادة تعيين / فتح الامتحان
-                         </button>
+                      <td className="p-4">
+                        <div className="flex items-center justify-center gap-2" id={`actions-${String(log.id)}`}>
+                          {/* Reset / Open Exam */}
+                          <button
+                            type="button"
+                            onClick={() => handleResetOpenExam(String(log.student_id), log.student_name)}
+                            disabled={isProcessing === String(log.student_id)}
+                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer pointer-events-auto shadow-sm shadow-amber-500/25"
+                            title="إعادة تعيين / فتح الامتحان للطالب وتصفير السجل"
+                          >
+                            <RotateCcw size={12} className={isProcessing === String(log.student_id) ? 'animate-spin' : ''} />
+                            إعادة تعيين / فتح الامتحان
+                          </button>
  
-                         {/* Force Submit / Terminate Sheet */}
-                         {isActive && (
-                           <button
-                             type="button"
-                             onClick={() => handleForceSubmit(String(log.student_id), log.student_name)}
-                             disabled={isProcessing === String(log.student_id)}
-                             className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-rose-600/25"
-                             title="إنهاء الاختبار وسحب ورقة الطالب"
-                           >
-                             <ShieldX size={12} />
-                             إنهاء الاختبار / سحب الورقة
-                           </button>
-                         )}
+                          {/* Force Submit / Terminate Sheet */}
+                          {isActive && (
+                            <button
+                              type="button"
+                              onClick={() => handleForceSubmit(String(log.student_id), log.student_name)}
+                              disabled={isProcessing === String(log.student_id)}
+                              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer pointer-events-auto shadow-sm shadow-rose-600/25"
+                              title="إنهاء الاختبار وسحب ورقة الطالب"
+                            >
+                              <ShieldX size={12} />
+                              إنهاء الاختبار / سحب الورقة
+                            </button>
+                          )}
  
-                         {/* Unban / Unblock */}
-                         {isTerminated && (
-                           <button
-                             type="button"
-                             onClick={() => handleClearBlacklist(String(log.student_id))}
-                             disabled={isProcessing === String(log.student_id)}
-                             className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-750 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-emerald-500/25"
-                             title="فك حظر الجهاز"
-                           >
-                             <UserMinus size={12} />
-                             فك حظر الجهاز
-                           </button>
-                         )}
+                          {/* Unban / Unblock */}
+                          {isTerminated && (
+                            <button
+                              type="button"
+                              onClick={() => handleClearBlacklist(String(log.student_id))}
+                              disabled={isProcessing === String(log.student_id)}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-750 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer pointer-events-auto shadow-sm shadow-emerald-500/25"
+                              title="فك حظر الجهاز"
+                            >
+                              <UserMinus size={12} />
+                              فك حظر الجهاز
+                            </button>
+                          )}
  
-                         {/* Delete Log Row */}
-                         <button
-                           type="button"
-                           onClick={() => handleDeleteLogRow(log.id, String(log.student_id))}
-                           disabled={isProcessing === String(log.student_id)}
-                           className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 transition-colors cursor-pointer"
-                           title="حذف هذا السجل فقط"
-                         >
-                           <Trash2 size={14} />
-                         </button>
-                       </div>
-                     </td>
+                          {/* Delete Log Row */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteLogRow(log.id, String(log.student_id))}
+                            disabled={isProcessing === String(log.student_id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 transition-colors cursor-pointer pointer-events-auto"
+                            title="حذف هذا السجل فقط"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
                   </tr>
                 );
               })}
@@ -678,11 +680,11 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
             <span className="text-[10px] font-black text-slate-400 uppercase">
               عرض الصفحة {currentPage} من {totalPages} (إجمالي {filteredLogs.length} سجل)
             </span>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 pointer-events-auto">
               <button
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
-                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black hover:bg-slate-50 disabled:opacity-30 transition-all cursor-pointer"
+                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black hover:bg-slate-50 disabled:opacity-30 transition-all cursor-pointer pointer-events-auto"
               >
                 السابق
               </button>
@@ -693,7 +695,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
                     {i > 0 && arr[i - 1] !== p - 1 && <span className="text-slate-300">...</span>}
                     <button
                       onClick={() => setCurrentPage(p)}
-                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all cursor-pointer pointer-events-auto ${
                         currentPage === p ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
@@ -704,7 +706,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
               <button
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                 disabled={currentPage === totalPages}
-                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black hover:bg-slate-50 disabled:opacity-30 transition-all cursor-pointer"
+                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black hover:bg-slate-50 disabled:opacity-30 transition-all cursor-pointer pointer-events-auto"
               >
                 التالي
               </button>

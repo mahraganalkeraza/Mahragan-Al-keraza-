@@ -325,14 +325,14 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       // 1. التحقق الصارم من عدم وجود جلسة نشطة أو تسليم مسبق (Enforce One-Time Access)
       const [sessionCheck, submissionCheck] = await Promise.all([
         supabase.from('active_sessions').select('status, allowReentry').eq('student_id', studentIdStr).maybeSingle(),
-        supabase.from('view_central_filtered_results').select('submission_status').eq('student_id', studentIdStr).maybeSingle()
+        supabase.from('exam_submissions').select('student_id').eq('student_id', studentIdStr).maybeSingle()
       ]);
 
       const hasActiveSession = sessionCheck.data && sessionCheck.data.status === 'active' && !sessionCheck.data.allowReentry;
-      const isAlreadySubmitted = submissionCheck.data && submissionCheck.data.submission_status === 'submitted';
+      const isAlreadySubmitted = !!submissionCheck.data;
 
       if (hasActiveSession || isAlreadySubmitted) {
-        setErrors("عفواً، لا يمكن دخول الامتحان مجدداً إلا بسماح من اللجنة المركزية.");
+        setErrors("عفواً، لا يمكن دخول الامتحان مجدداً. لقد قمت بتسليم إجابتك بالفعل أو لديك جلسة نشطة حالياً. يرجى مراجعة المسؤول.");
         setIsLoading(false);
         return;
       }
