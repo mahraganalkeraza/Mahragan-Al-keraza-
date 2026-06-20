@@ -971,6 +971,65 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     is_site_disabled: false,
   });
   const [granularControls, setGranularControls] = useState<any[]>([]);
+  const [isGateChecking, setIsGateChecking] = useState(true);
+  const [isExamBlocked, setIsExamBlocked] = useState(false);
+
+  useEffect(() => {
+    const checkGateStatus = async () => {
+      let student = activeStudent;
+      if (!student) {
+        const activeStudentId = localStorage.getItem("active_student_id");
+        if (activeStudentId) {
+          const cached = localStorage.getItem(`student_profile_${activeStudentId}`);
+          if (cached) {
+            try { student = JSON.parse(cached); } catch(e) {}
+          }
+        }
+      }
+      
+      if (!student || !student.stage) {
+        setIsGateChecking(false);
+        return;
+      }
+
+      setIsGateChecking(true);
+      try {
+        const { data: sysData } = await supabase.from('system_settings').select('is_exam_locked').eq('id', '1').maybeSingle();
+        if (sysData?.is_exam_locked) {
+          setIsExamBlocked(true);
+          setIsGateChecking(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('granular_controls')
+          .select('is_exam_disabled, exam_start_at, exam_end_at')
+          .eq('target_name', student.stage)
+          .maybeSingle();
+
+        const now = new Date();
+        const start = data?.exam_start_at ? new Date(data.exam_start_at) : null;
+        const end = data?.exam_end_at ? new Date(data.exam_end_at) : null;
+
+        if (start && now < start) {
+          setIsExamBlocked(true);
+          // TODO: handle displaying the blocked message with dynamic time information. Hardcoding for now as a simple message.
+        } else if (end && now > end) {
+          setIsExamBlocked(true);
+        } else if (data?.is_exam_disabled) {
+          setIsExamBlocked(true);
+        } else {
+          setIsExamBlocked(false);
+        }
+      } catch (err) {
+        setIsExamBlocked(false);
+      } finally {
+        setIsGateChecking(false);
+      }
+    };
+
+    checkGateStatus();
+  }, [activeStudent?.stage]);
 
   // Load configuration from Supabase once on mount
   useEffect(() => {
@@ -1986,6 +2045,41 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     if (!activeStudentId) {
       return null;
     }
+  }
+
+  if (isGateChecking) {
+    return (
+      <div className="fixed inset-0 z-[200] bg-[#4a000b] flex flex-col items-center justify-center p-4 text-center">
+        <div className="animate-spin rounded-full h-16 w-16 border-4 border-amber-100 border-t-amber-500 mx-auto mb-6"></div>
+        <p className="text-white font-bold text-xl">جاري التحقق من صلاحيات اللجنة...</p>
+      </div>
+    );
+  }
+
+  if (isExamBlocked) {
+    return (
+      <div className="fixed inset-0 z-[200] bg-[#4a000b] flex flex-col items-center justify-center p-4 text-center">
+        <div className="bg-white p-12 rounded-3xl max-w-lg shadow-xl shadow-rose-900/50">
+          <div className="w-20 h-20 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldX size={48} />
+          </div>
+          <h2 className="text-3xl font-black mb-4 text-rose-700">الامتحان مغلق</h2>
+          <p className="text-slate-600 font-bold mb-8">
+            عفواً، الامتحان مغلق حالياً بقرار من إدارة الكنترول المركزي. يرجى مراجعة المشرف الخاص بك.
+          </p>
+          <button
+            onClick={() => {
+              localStorage.removeItem("active_student_id");
+              setActiveStudent(null);
+              handleBackToPortal();
+            }}
+            className="px-8 py-3 bg-slate-100 text-slate-700 rounded-xl font-black hover:bg-slate-200 transition-all font-sans"
+          >
+            العودة للترتيب
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (isExamCompleted) {

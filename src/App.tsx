@@ -1302,6 +1302,10 @@ function AppComponent() {
   const [granularTargetName, setGranularTargetName] = useState<string>('');
   const [granularIsExamDisabled, setGranularIsExamDisabled] = useState<boolean>(false);
   const [granularIsRegistrationDisabled, setGranularIsRegistrationDisabled] = useState<boolean>(false);
+  const [granularExamStartAt, setGranularExamStartAt] = useState<string>('');
+  const [granularExamEndAt, setGranularExamEndAt] = useState<string>('');
+  const [granularRegistrationStartAt, setGranularRegistrationStartAt] = useState<string>('');
+  const [granularRegistrationEndAt, setGranularRegistrationEndAt] = useState<string>('');
 
   const [systemControls, setSystemControls] = useState<{
     isRegistrationOpen: boolean;
@@ -2524,7 +2528,18 @@ function AppComponent() {
     }
   };
 
-  const handleSaveGranularControl = async (targetType: 'church' | 'stage', targetName: string, config: { is_exam_disabled: boolean; is_registration_disabled: boolean }) => {
+  const handleSaveGranularControl = async (
+    targetType: 'church' | 'stage', 
+    targetName: string, 
+    config: { 
+      is_exam_disabled: boolean; 
+      is_registration_disabled: boolean;
+      exam_start_at: string | null;
+      exam_end_at: string | null;
+      registration_start_at: string | null;
+      registration_end_at: string | null;
+    }
+  ) => {
     setIsLoading(true);
     try {
       const existing = granularControls.find(c => c.target_type === targetType && c.target_name === targetName);
@@ -2540,8 +2555,7 @@ function AppComponent() {
           .insert([{
             target_type: targetType,
             target_name: targetName,
-            is_exam_disabled: config.is_exam_disabled,
-            is_registration_disabled: config.is_registration_disabled
+            ...config
           }]);
       }
       if (res.error) throw res.error;
@@ -2551,7 +2565,7 @@ function AppComponent() {
       if (data) {
         setGranularControls(data);
       }
-      setNotification('تم حفظ الإستثناء بنجاح');
+      setNotification('تم حفظ الإستثناء والمواعيد بنجاح');
     } catch (e: any) {
       console.error(e);
       alert(`فشل تحديث إستثناءات التحكم: ${e.message}`);
@@ -7543,7 +7557,7 @@ function AppComponent() {
 
                       {/* Exceptions Switches */}
                       <div className="grid grid-cols-2 gap-4 pt-2">
-                        <div className="flex items-center gap-2 p-3 bg-white rounded-xl border border-slate-100">
+                        <div className="flex items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 col-span-2">
                           <input
                             type="checkbox"
                             id="exam_disabled_cb"
@@ -7553,8 +7567,16 @@ function AppComponent() {
                           />
                           <label htmlFor="exam_disabled_cb" className="text-xs font-black text-slate-700 cursor-pointer">تعطيل الامتحان</label>
                         </div>
+                        <div className="col-span-1">
+                          <label className="text-[10px] font-black text-slate-400 mb-1 block">وقت بدء الامتحان</label>
+                          <input type="datetime-local" value={granularExamStartAt} onChange={(e) => setGranularExamStartAt(e.target.value)} className="w-full text-xs p-2 rounded border border-slate-200" />
+                        </div>
+                        <div className="col-span-1">
+                          <label className="text-[10px] font-black text-slate-400 mb-1 block">وقت انتهاء الامتحان</label>
+                          <input type="datetime-local" value={granularExamEndAt} onChange={(e) => setGranularExamEndAt(e.target.value)} className="w-full text-xs p-2 rounded border border-slate-200" />
+                        </div>
 
-                        <div className="flex items-center gap-2 p-3 bg-white rounded-xl border border-slate-100">
+                        <div className="flex items-center gap-2 p-3 bg-white rounded-xl border border-slate-100 col-span-2">
                           <input
                             type="checkbox"
                             id="reg_disabled_cb"
@@ -7564,20 +7586,31 @@ function AppComponent() {
                           />
                           <label htmlFor="reg_disabled_cb" className="text-xs font-black text-slate-700 cursor-pointer">تعطيل التسجيل</label>
                         </div>
-                      </div>
+                        <div className="col-span-1">
+                          <label className="text-[10px] font-black text-slate-400 mb-1 block">وقت بدء التسجيل</label>
+                          <input type="datetime-local" value={granularRegistrationStartAt} onChange={(e) => setGranularRegistrationStartAt(e.target.value)} className="w-full text-xs p-2 rounded border border-slate-200" />
+                        </div>
+                        <div className="col-span-1">
+                          <label className="text-[10px] font-black text-slate-400 mb-1 block">وقت انتهاء التسجيل</label>
+                          <input type="datetime-local" value={granularRegistrationEndAt} onChange={(e) => setGranularRegistrationEndAt(e.target.value)} className="w-full text-xs p-2 rounded border border-slate-200" />
+                        </div>
 
-                      {/* Save Exclusions Button */}
-                      <button
-                        type="button"
-                        disabled={!granularTargetName}
-                        onClick={() => handleSaveGranularControl(granularTargetType, granularTargetName, {
-                          is_exam_disabled: granularIsExamDisabled,
-                          is_registration_disabled: granularIsRegistrationDisabled
-                        })}
-                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-black transition-all shadow-lg hover:shadow-indigo-100"
-                      >
-                        حفظ وتطبيق الاستثناء 💾
-                      </button>
+                        {/* Save Exclusions Button */}
+                        <button
+                          type="button"
+                          disabled={!granularTargetName}
+                          onClick={() => handleSaveGranularControl(granularTargetType, granularTargetName, {
+                            is_exam_disabled: granularIsExamDisabled,
+                            is_registration_disabled: granularIsRegistrationDisabled,
+                            exam_start_at: granularExamStartAt || null,
+                            exam_end_at: granularExamEndAt || null,
+                            registration_start_at: granularRegistrationStartAt || null,
+                            registration_end_at: granularRegistrationEndAt || null,
+                          })}
+                          className="col-span-2 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-black transition-all shadow-lg hover:shadow-indigo-100"
+                        >
+                          حفظ وتطبيق الاستثناء والمواعيد 💾
+                        </button>
                     </div>
 
                     {/* Exclusions List */}

@@ -342,6 +342,29 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         return;
       }
 
+      const { data: sysData } = await supabase.from('system_settings').select('is_exam_locked').eq('id', '1').maybeSingle();
+      if (sysData?.is_exam_locked) {
+        setErrors("عفواً، الامتحان مغلق حالياً بقرار من إدارة الكنترول المركزي. يرجى مراجعة المشرف الخاص بك.");
+        setIsLoading(false);
+        return;
+      }
+
+      const { data: gateData } = await supabase
+        .from('granular_controls')
+        .select('is_exam_disabled, exam_start_at, exam_end_at')
+        .eq('target_name', studentObj.stage)
+        .maybeSingle();
+        
+      const now = new Date();
+      const start = gateData?.exam_start_at ? new Date(gateData.exam_start_at) : null;
+      const end = gateData?.exam_end_at ? new Date(gateData.exam_end_at) : null;
+
+      if ((start && now < start) || (end && now > end) || gateData?.is_exam_disabled) {
+        setErrors("عفواً، الامتحان مغلق حالياً (إما خارج نطاق الوقت المحدد أو معطل). يرجى مراجعة المشرف.");
+        setIsLoading(false);
+        return;
+      }
+
       const { data: examRow, error: examErr } = await supabase
         .from('exams_pool')
         .select('id, exam_title, stage, questions_data, model_type, is_active')
