@@ -57,9 +57,13 @@ export const ResultsViewer: React.FC<{
       ...(hideNames ? [] : ['الاسم']),
       'الكنيسة/البلد',
       'المرحلة',
+      'دراسي',
+      'محفوظات',
+      'قبطي 1',
+      'قبطي 2',
+      'الدرجة الكلية',
       'نوع الامتحان',
       'النوع',
-      'الدرجة الكلية',
       'حالة التسليم'
     ];
     return base;
@@ -88,21 +92,37 @@ export const ResultsViewer: React.FC<{
   const fetchSubmissionsFromSupabase = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('view_central_filtered_results')
+      let query = supabase
+        .from('online_results')
         .select('*');
+      
+      if (!isAdmin && activeUserChurch) {
+        query = query.eq('is_published', true).filter('church_name', 'eq', activeUserChurch);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 
       if (data) {
         const mapped: Result[] = data.map((sbRow: any) => {
+          const d = Number(sbRow.derasy_score || 0);
+          const m = Number(sbRow.mahfouzat_score || 0);
+          const q1 = Number(sbRow.qebty_lvl1_score || 0);
+          const q2 = Number(sbRow.qebty_lvl2_score || 0);
+          const total = d + m + q1 + q2;
+
           return {
             id: sbRow.student_id || sbRow.id || Math.random().toString(),
             studentName: sbRow.student_name || sbRow.name || 'طالب',
             churchName: sbRow.church || sbRow.church_name || '',
             stage: sbRow.stage || '',
-            academicScore: sbRow.total_score !== undefined && sbRow.total_score !== null ? Number(sbRow.total_score) : null,
-            submissionStatus: sbRow.submission_status || '',
+            derasy_score: d,
+            mahfouzat_score: m,
+            qebty_lvl1_score: q1,
+            qebty_lvl2_score: q2,
+            academicScore: total,
+            submissionStatus: sbRow.submission_status || (sbRow.is_published ? 'منشور' : 'مسودة'),
             timestamp: sbRow.submitted_at || sbRow.created_at || null,
             gender: sbRow.gender || '',
             submissionType: sbRow.submission_type || 'online',
@@ -274,7 +294,7 @@ export const ResultsViewer: React.FC<{
         console.log("Payload to Supabase (bubble sheet):", submissionsToInsert);
 
         const { error } = await supabase
-          .from('exam_submissions')
+          .from('online_results')
           .insert(submissionsToInsert);
 
         if (error) throw error;
@@ -318,7 +338,7 @@ export const ResultsViewer: React.FC<{
       console.log("Payload to Supabase (manual):", payload);
 
       const { error } = await supabase
-        .from('exam_submissions')
+        .from('online_results')
         .insert(payload);
 
       if (error) throw error;
@@ -346,10 +366,11 @@ export const ResultsViewer: React.FC<{
     if (!confirm('هل أنت متأكد من مراجعة كافة الدرجات ونشرها رسميًا للكنائس؟')) return;
     try {
       setIsLoading(true);
+      
       const { error } = await supabase
-        .from('exam_submissions')
+        .from('online_results')
         .update({ is_published: true })
-        .neq('student_id', '');
+        .neq('id', '0'); // Update all rows
 
       if (error) throw error;
 
@@ -358,6 +379,26 @@ export const ResultsViewer: React.FC<{
     } catch (err: any) {
       console.error('Error publishing results:', err);
       alert('حدث خطأ أثناء نشر النتائج للكنائس: ' + err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePublishChurchResults = async (churchName: string) => {
+    try {
+      setIsLoading(true);
+      const { error } = await supabase
+        .from('online_results')
+        .update({ is_published: true })
+        .eq('church_name', churchName);
+
+      if (error) throw error;
+
+      alert(`تم نشر النتيجة بنجاح لكنيسة: ${churchName}`);
+      fetchSubmissionsFromSupabase();
+    } catch (err: any) {
+      console.error("Publishing failed:", err.message);
+      alert('حدث خطأ أثناء النشر: ' + err.message);
     } finally {
       setIsLoading(false);
     }
@@ -509,6 +550,10 @@ export const ResultsViewer: React.FC<{
                     'الاسم': row.studentName,
                     'الكنيسة/البلد': row.churchName,
                     'المرحلة': row.stage,
+                    'دراسي': row.derasy_score ?? 0,
+                    'محفوظات': row.mahfouzat_score ?? 0,
+                    'قبطي 1': row.qebty_lvl1_score ?? 0,
+                    'قبطي 2': row.qebty_lvl2_score ?? 0,
                     'نوع الامتحان': row.submissionType || 'online',
                     'النوع': row.gender || '',
                     'الدرجة الكلية': row.academicScore !== null && row.academicScore !== undefined ? row.academicScore : '-',
@@ -619,7 +664,13 @@ export const ResultsViewer: React.FC<{
             </table>
             
             {results.length === 0 && (
-              <div className="text-center py-12 text-slate-400 italic">بانتظار رصد وتسجيل درجات الامتحانات...</div>
+              <div className="text-center py-12 px-4 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                < Award className="mx-auto text-slate-300 mb-4" size={48} />
+                <p className="text-slate-800 font-black text-lg">
+                  {!isAdmin ? 'جاري رصد الدرجات، لم يتم نشر النتيجة بعد لهذه الكنيسة.' : 'بانتظار رصد وتسجيل درجات الامتحانات...'}
+                </p>
+                {!isAdmin && <p className="text-slate-500 font-bold mt-2">يرجى العودة لاحقاً فور اعتماد النتيجة رسمياً من الإدارة.</p>}
+              </div>
             )}
 
             <PaginationComponent 
@@ -654,7 +705,18 @@ export const ResultsViewer: React.FC<{
                 return (
                   <tr key={idx} className="bg-white hover:bg-slate-50 transition-colors">
                     <td className="p-4 font-bold text-indigo-700 text-sm border-l border-indigo-50">
-                      {church}
+                      <div className="flex items-center justify-between gap-2">
+                        <span>{church}</span>
+                        {isAdmin && (
+                          <button 
+                            onClick={() => handlePublishChurchResults(church)}
+                            className="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 px-2 py-1 rounded text-[9px] font-black border border-emerald-100 transition-all ml-4"
+                            title="نشر النتائج لهذه الكنيسة فقط"
+                          >
+                            نشر
+                          </button>
+                        )}
+                      </div>
                     </td>
                     {matrix.stages.map((stage, sIdx) => {
                       const count = churchResults.filter(r => (r.data?.['دراسي'] || r.stage) === stage).length;

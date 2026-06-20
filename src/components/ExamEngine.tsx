@@ -1247,11 +1247,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       // Gate Check: One-Time Entry Validation via exam_device_logs
       const { data: existingLog } = await supabase
         .from("exam_device_logs")
-        .select("id, status")
+        .select("id, status, allow_reentry")
         .eq("student_id", studentData.id)
         .maybeSingle();
 
-      if (existingLog || existingSub) {
+      if ((existingLog && !existingLog.allow_reentry) || existingSub) {
         setIsLoading(false);
         return alert("عفوًا، سبق للطالب دخول الامتحان من قبل، من هذا الجهاز أو جهاز آخر.");
       }
@@ -1259,20 +1259,23 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       // Consistent logging to exam_device_logs
       try {
         const fp = getDeviceFingerprint();
-        await supabase.from("exam_device_logs").insert({
+        const displayBrowser = fp.browser === 'Netscape' ? 'Browser' : fp.browser;
+
+        await supabase.from("exam_device_logs").upsert({
           student_id: studentData.id,
           student_name: studentData.studentName,
           church: studentData.churchName,
           stage: studentData.stage,
           device_id: fp.uuid,
-          device_name: fp.uuid || "Browser",
-          device_model: fp.model,
+          device_name: displayBrowser,
+          device_model: fp.model !== 'Unknown' ? fp.model : displayBrowser,
           device_type: deviceInfo.type,
           os_version: fp.os,
           ip_address: deviceInfo.ip,
           status: "Identification Success",
-          created_at: new Date().toISOString()
-        });
+          created_at: new Date().toISOString(),
+          allow_reentry: false
+        }, { onConflict: 'student_id' });
       } catch (e) {
         console.error("Failed to insert log row", e);
       }
@@ -1496,6 +1499,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         const deviceType = result.device.type || "Desktop";
         const deviceModel = result.device.model || result.browser.name || "Unknown Device";
         const fp = getDeviceFingerprint();
+        const displayBrowser = fp.browser === 'Netscape' ? 'Browser' : fp.browser;
 
         await supabase.from("exam_device_logs").upsert({
           student_id: String(activeStudent.id),
@@ -1505,11 +1509,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           device_id: fp.uuid || "N/A",
           device_type: deviceType,
           os_version: osName,
-          device_model: deviceModel,
+          device_model: deviceModel === 'Netscape' ? displayBrowser : deviceModel,
           ip_address: deviceInfo?.ip || "127.0.0.1",
           status: "جاري الامتحان",
           updated_at: new Date().toISOString()
-        });
+        }, { onConflict: 'student_id' });
       } catch (logErr) {
         console.error("Failed to update exam_device_logs on start:", logErr);
       }

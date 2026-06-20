@@ -10,6 +10,7 @@ export interface DeviceFingerprint {
   resolution: string;
   language: string;
   vendor: string;
+  ua: string;
 }
 
 export const getDeviceFingerprint = (): DeviceFingerprint => {
@@ -24,14 +25,20 @@ export const getDeviceFingerprint = (): DeviceFingerprint => {
     localStorage.setItem('device_hardware_token', deviceId);
   }
 
+  // Refined browser detection to avoid "Netscape" issues
+  const browserName = res.browser.name || 'Other';
+  const browserVersion = res.browser.version || '';
+  const fullBrowser = browserName === 'Netscape' ? 'Generic Browser' : `${browserName} ${browserVersion}`.trim();
+
   return {
     uuid: deviceId,
     brand: res.device.vendor || 'Unknown',
     model: res.device.model || 'Unknown',
     vendor: res.device.vendor || 'Unknown',
     os: `${res.os.name || 'Unknown OS'} ${res.os.version || ''}`.trim(),
-    browser: `${res.browser.name || 'Other'} ${res.browser.version || ''}`.trim(),
+    browser: fullBrowser,
     resolution: `${window.screen.width}x${window.screen.height}`,
-    language: navigator.language
+    language: navigator.language,
+    ua: ua
   };
 };

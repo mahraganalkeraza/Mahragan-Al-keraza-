@@ -295,20 +295,23 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       } catch (e) { /* silent */ }
 
       const fp = getDeviceFingerprint();
-      await supabase.from('exam_device_logs').insert({
+      const displayBrowser = fp.browser === 'Netscape' ? 'Browser' : fp.browser;
+
+      await supabase.from('exam_device_logs').upsert({
         student_id: String(studentId),
         student_name: studentName,
         stage: stage,
         church: church,
-        device_name: fp.uuid || "Browser",
+        device_name: displayBrowser,
         device_id: fp.uuid,
-        device_model: fp.model,
+        device_model: fp.model !== 'Unknown' ? fp.model : displayBrowser,
         device_type: deviceType,
         os_version: fp.os || os,
         ip_address: detectedIp,
         last_known_ip: detectedIp,
-        status: "Active Exam Started"
-      });
+        status: "Active Exam Started",
+        allow_reentry: false
+      }, { onConflict: 'student_id' });
     } catch (logErr) {
       console.error("Device Logging Failed safely:", logErr);
     }
@@ -325,7 +328,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       // 1. Anti-Cheat One-Time Entry Gate (منع الدخول المتعدد) via exam_device_logs
       const { data: existingLog, error: logCheckErr } = await supabase
         .from('exam_device_logs')
-        .select('id')
+        .select('id, allow_reentry')
         .eq('student_id', studentIdStr)
         .maybeSingle();
 
@@ -335,7 +338,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         .eq('student_id', studentIdStr)
         .maybeSingle();
 
-      if (existingLog || submissionCheck) {
+      if ((existingLog && !existingLog.allow_reentry) || submissionCheck) {
         setErrors("عفوًا، سبق للطالب دخول الامتحان من قبل، من هذا الجهاز أو جهاز آخر.");
         setIsLoading(false);
         return;

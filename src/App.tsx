@@ -80,6 +80,7 @@ import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
 import { ExamLoginPortal } from './components/ExamLoginPortal';
 import { supabase } from './lib/supabaseClient';
+import { getDeviceFingerprint } from './lib/deviceTracking';
 import { uploadToFirebase } from './services/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore - html2pdf.js doesn't have great types but works
@@ -4591,7 +4592,10 @@ function AppComponent() {
       const result = parser.getResult();
       const osName = result.os.name || 'Unknown OS';
       const deviceType = result.device.type || 'Desktop';
-      const deviceModel = result.device.model || result.browser.name || 'Unknown Device';
+      const deviceModelRaw = result.device.model || result.browser.name || 'Unknown Device';
+      const fp = getDeviceFingerprint();
+      const displayBrowser = fp.browser === 'Netscape' ? 'Browser' : fp.browser;
+      const finalDeviceModel = deviceModelRaw === 'Netscape' ? displayBrowser : deviceModelRaw;
 
       await supabase.from('exam_device_logs').insert({
         student_id: 'pending_login',
@@ -4599,7 +4603,8 @@ function AppComponent() {
         church_name: 'غير محدد',
         device_type: deviceType,
         device_os: osName,
-        device_model: deviceModel,
+        device_model: finalDeviceModel,
+        device_name: displayBrowser,
         ip_address: pendingDeviceIp,
         status: 'تم توثيق الجهاز',
         created_at: new Date().toISOString(),
@@ -4651,13 +4656,16 @@ function AppComponent() {
       }
       
       // 3. Unlock Gateway / Reset Session
-      await supabase.from('active_sessions').delete().eq('student_id', studentId);
+      await supabase.from('exam_device_logs').delete().eq('student_id', studentId);
 
-      await supabase.from('active_sessions').insert({
+      await supabase.from('exam_device_logs').insert({
         student_id: studentId,
-        allowReentry: true,
-        status: 'active',
-        lastUpdate: new Date().toISOString()
+        student_name: studentName || 'Unknown',
+        church: 'System',
+        device_name: 'Reset By Admin',
+        allow_reentry: true,
+        status: 'قيد الانتظار',
+        last_ping: new Date().toISOString()
       });
 
       const successMsg = `تمت إعادة فتح الامتحان بنجاح للطالب: ${studentName || studentId}`;

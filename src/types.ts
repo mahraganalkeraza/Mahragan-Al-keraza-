@@ -82,8 +82,12 @@ export interface Result {
   studentName: string;
   gender?: string;
   stage: string;
-  academicScore?: number;
-  memorizationScore?: number;
+  derasy_score?: number;
+  mahfouzat_score?: number;
+  qebty_lvl1_score?: number;
+  qebty_lvl2_score?: number;
+  academicScore?: number; // Total
+  memorizationScore?: number; // Keep for legacy if needed, but primary is above
   copticL1Score?: number;
   copticL2Score?: number;
   q1Score?: number;
