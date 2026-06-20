@@ -1524,9 +1524,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         const result = parser.getResult();
         const osName = result.os.name || "Unknown OS";
         const deviceType = result.device.type || "Desktop";
-        // Use fingerprint data if available for more accuracy as requested
-        const finalDeviceModel = fingerprint?.model || result.device.model || result.browser.name || "Unknown Device";
-        const finalDeviceId = fingerprint?.uuid || "unknown";
+        const deviceModel =
+          result.device.model || result.browser.name || "Unknown Device";
 
         await supabase.from("exam_device_logs").insert({
           student_id: activeStudent.id,
@@ -1534,10 +1533,9 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             activeStudent.studentName || activeStudent.name || "بدون اسم",
           church_name: activeStudent.churchName || "غير مكتمل",
           stage: stage,
-          device_id: finalDeviceId,
           device_type: deviceType,
           device_os: osName,
-          device_model: finalDeviceModel,
+          device_model: deviceModel,
           ip_address: deviceInfo?.ip || "127.0.0.1",
           status: "جاري الامتحان",
           created_at: new Date().toISOString(),
