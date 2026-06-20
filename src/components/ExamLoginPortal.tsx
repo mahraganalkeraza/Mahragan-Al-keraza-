@@ -277,7 +277,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   };
 
   // دالة ملاحقة وتتبع الأجهزة عبر جدول exam_device_logs
-  const logDeviceAccess = async (studentId: string, studentName: string, stage: string, church: string) => {
+  const logDeviceAccess = async (studentId: string, studentName: string, stage: string, church: string, examId: number) => {
     try {
       const userAgent = navigator.userAgent;
       let os = "Unknown OS";
@@ -294,22 +294,20 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         detectedIp = ipRes.ip || "127.0.0.1";
       } catch (e) { /* silent */ }
 
-      const fp = getDeviceFingerprint();
-      const displayBrowser = fp.browser === 'Netscape' ? 'Browser' : fp.browser;
-
       await supabase.from('exam_device_logs').upsert({
         student_id: String(studentId),
         student_name: studentName,
         stage: stage,
         church: church,
-        device_name: displayBrowser,
-        device_id: fp.uuid,
-        device_model: fp.model !== 'Unknown' ? fp.model : displayBrowser,
+        device_name: userAgent,
         device_type: deviceType,
-        os_version: fp.os || os,
+        os_version: os,
         ip_address: detectedIp,
         last_known_ip: detectedIp,
-        status: "Active Exam Started",
+        status: "active",
+        exam_id: examId,
+        started_at: new Date().toISOString(),
+        last_ping: new Date().toISOString(),
         allow_reentry: false
       }, { onConflict: 'student_id' });
     } catch (logErr) {
@@ -358,7 +356,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       }
 
       // توثيق وحفظ لوج الجهاز الملاحق
-      await logDeviceAccess(studentObj.id, studentObj.name, studentObj.stage, studentObj.churchName);
+      await logDeviceAccess(studentObj.id, studentObj.name, studentObj.stage, studentObj.churchName, examRow.id);
 
       // تمرير الداتا بنجاح تام لفتح شاشة الامتحان والأسئلة تلقائياً
       onSuccess(

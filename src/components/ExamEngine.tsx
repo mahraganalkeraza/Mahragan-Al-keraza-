@@ -1138,8 +1138,23 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     }
   }, [examSecondsLeft, activeExam, isExamCompleted, isTerminated]);
 
-  // Monitor student session realtime is disabled on shared terminal devices to enforce REST-only interaction and stay within free tier limits.
+  // Live Heartbeat (The Ping)
+  useEffect(() => {
+    if (!activeExam || isExamCompleted || isTerminated || !activeStudent?.id) return;
+    
+    const pingInterval = setInterval(async () => {
+      try {
+        await supabase
+          .from('exam_device_logs')
+          .update({ last_ping: new Date().toISOString() })
+          .eq('student_id', activeStudent.id);
+      } catch (e) {
+        console.warn("Heartbeat ping failed:", e);
+      }
+    }, 15000); // every 15 seconds
 
+    return () => clearInterval(pingInterval);
+  }, [activeExam, isExamCompleted, isTerminated, activeStudent]);
   // Load device info on mount
   useEffect(() => {
     const fp = getDeviceFingerprint();
@@ -1258,22 +1273,21 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       // Consistent logging to exam_device_logs
       try {
-        const fp = getDeviceFingerprint();
-        const displayBrowser = fp.browser === 'Netscape' ? 'Browser' : fp.browser;
+        const userAgent = navigator.userAgent;
 
         await supabase.from("exam_device_logs").upsert({
           student_id: studentData.id,
           student_name: studentData.studentName,
           church: studentData.churchName,
           stage: studentData.stage,
-          device_id: fp.uuid,
-          device_name: displayBrowser,
-          device_model: fp.model !== 'Unknown' ? fp.model : displayBrowser,
+          device_name: userAgent,
           device_type: deviceInfo.type,
-          os_version: fp.os,
+          os_version: deviceInfo.os,
           ip_address: deviceInfo.ip,
+          last_known_ip: deviceInfo.ip,
           status: "Identification Success",
           created_at: new Date().toISOString(),
+          last_ping: new Date().toISOString(),
           allow_reentry: false
         }, { onConflict: 'student_id' });
       } catch (e) {
@@ -1497,22 +1511,22 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         const result = parser.getResult();
         const osName = result.os.name || "Unknown OS";
         const deviceType = result.device.type || "Desktop";
-        const deviceModel = result.device.model || result.browser.name || "Unknown Device";
-        const fp = getDeviceFingerprint();
-        const displayBrowser = fp.browser === 'Netscape' ? 'Browser' : fp.browser;
+        const userAgent = navigator.userAgent;
 
         await supabase.from("exam_device_logs").upsert({
           student_id: String(activeStudent.id),
           student_name: activeStudent.studentName || activeStudent.name || "بدون اسم",
           church: activeStudent.churchName || "غير مكتمل",
           stage: stage,
-          device_id: fp.uuid || "N/A",
+          device_name: userAgent,
           device_type: deviceType,
           os_version: osName,
-          device_model: deviceModel === 'Netscape' ? displayBrowser : deviceModel,
           ip_address: deviceInfo?.ip || "127.0.0.1",
-          status: "جاري الامتحان",
-          updated_at: new Date().toISOString()
+          last_known_ip: deviceInfo?.ip || "127.0.0.1",
+          exam_id: randomModel?.id || null,
+          started_at: new Date().toISOString(),
+          status: "active",
+          last_ping: new Date().toISOString()
         }, { onConflict: 'student_id' });
       } catch (logErr) {
         console.error("Failed to update exam_device_logs on start:", logErr);
