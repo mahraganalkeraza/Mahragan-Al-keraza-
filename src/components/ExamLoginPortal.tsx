@@ -58,8 +58,78 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   const [errors, setErrors] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // إعدادات الذاكرة المحلية والسرعة
+  const [cachedRegistry, setCachedRegistry] = useState<any[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const qrScannerRef = useRef<Html5Qrcode | null>(null);
+
+  // مزامنة الداتا مرة واحدة من السيرفر للحفاظ على كفاءة الخادم
+  const syncRegistrations = async (forceRefetch = false) => {
+    setIsSyncing(true);
+    setSyncError(null);
+    try {
+      if (!forceRefetch) {
+        const cached = localStorage.getItem('cached_students_registry');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setCachedRegistry(parsed);
+            const timeCached = localStorage.getItem('cached_students_registry_time');
+            setLastSyncTime(timeCached || 'محلي مسبق');
+            setIsSyncing(false);
+            return;
+          }
+        }
+      }
+
+      // تحميل كافة المشتركين بشكل مجزأ لتلافي تخطي حدود الباندويث أو مشاكل السيرفر
+      let allRegistrations: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('registrations')
+          .select('id, name, stage, churchName, gender, competitions')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          hasMore = false;
+        } else {
+          allRegistrations = [...allRegistrations, ...data];
+          if (data.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        }
+      }
+
+      const cleaned = allRegistrations.filter((r: any) => r.name !== 'SYSTEM_LOCK');
+
+      localStorage.setItem('cached_students_registry', JSON.stringify(cleaned));
+      const syncTimeStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) + ' - ' + new Date().toLocaleDateString('ar-EG');
+      localStorage.setItem('cached_students_registry_time', syncTimeStr);
+      
+      setCachedRegistry(cleaned);
+      setLastSyncTime(syncTimeStr);
+    } catch (err: any) {
+      console.error("Failed to sync registrations:", err);
+      setSyncError("خطأ في تحديث قاعدة البيانات من الخادم.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  useEffect(() => {
+    syncRegistrations();
+  }, []);
 
   const processScannedCode = async (codeStr: string) => {
     setAcademicCode(codeStr);
@@ -69,13 +139,12 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     setErrors(null);
 
     try {
-      const { data: studentObj, error: dbErr } = await supabase
-        .from('registrations')
-        .select('id, name, stage, churchName, gender, competitions')
-        .eq('id', codeStr.trim())
-        .single();
+      const codeCleaned = codeStr.trim();
+      // سحب الطالب من الكاش المحلي بنسبة استهلاك صفر
+      const registryCached = JSON.parse(localStorage.getItem('cached_students_registry') || '[]');
+      const studentObj = registryCached.find((s: any) => String(s.id).trim() === codeCleaned);
 
-      if (dbErr || !studentObj) {
+      if (!studentObj) {
         setErrors("لم نتمكن من العثور على الكود المسحوب، يرجى الاستعانة بمسؤول اللجنة للتأكد.");
         setIsLoading(false);
         return;
@@ -83,7 +152,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
       await triggerActiveExamLaunch(studentObj);
     } catch (err: any) {
-      setErrors("فشل الاتصال بقاعدة البيانات.");
+      setErrors("فشل البحث في قاعدة البيانات المحلية.");
       setIsLoading(false);
     }
   };
@@ -156,7 +225,19 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   // لا حاجة لعداد الضغط أو رمز سري، يتم التبديل فوراً من خلال onClick
 
 
-  // البحث اللحظي بالاسم من جدول registrations
+  const normalizeArabic = (text: any): string => {
+    if (!text || typeof text !== "string") return "";
+    return text
+      .trim()
+      .replace(/[أإآ]/g, "ا")
+      .replace(/ة/g, "ه")
+      .replace(/ى/g, "ي")
+      .replace(/[ًٌٍَُِّْـ]/g, "")
+      .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, "")
+      .replace(/\s+/g, " ");
+  };
+
+  // البحث اللحظي بالاسم محلياً لتحقيق نسبة استئثار صفر وضمان سرعة فائقة
   useEffect(() => {
     if (loginMethod !== 'name' || searchQuery.trim().length < 3) {
       setSearchResults([]);
@@ -164,25 +245,25 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       return;
     }
 
-    const delayDebounce = setTimeout(async () => {
-      setIsSearching(true);
-      setErrors(null);
+    setIsSearching(true);
+    const delayDebounce = setTimeout(() => {
       try {
-        const { data, error } = await supabase
-          .from('registrations')
-          .select('id, name, stage, churchName, gender, competitions')
-          .ilike('name', `%${searchQuery.trim()}%`)
-          .limit(10);
+        const queryClean = normalizeArabic(searchQuery.trim());
+        const localRegistry = JSON.parse(localStorage.getItem('cached_students_registry') || '[]');
+        
+        const filtered = localRegistry.filter((s: any) => {
+          const studentNameNormalized = normalizeArabic(s.name || s.student_name || '');
+          return studentNameNormalized.includes(queryClean);
+        });
 
-        if (error) throw error;
-        setSearchResults(data || []);
+        setSearchResults(filtered.slice(0, 15));
         setShowDropdown(true);
       } catch (err: any) {
-        console.error("Fetch Err:", err.message);
+        console.error("Local search exception:", err);
       } finally {
         setIsSearching(false);
       }
-    }, 400);
+    }, 150); // 150ms delay for ultra responsiveness
 
     return () => clearTimeout(delayDebounce);
   }, [searchQuery, loginMethod]);
@@ -339,6 +420,31 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         </div>
 
         <div className="p-6">
+          {/* شريط مزامنة قاعدة البيانات وحالة الكاش المحلي */}
+          <div className="mb-5 bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-600">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-slate-900 font-black flex items-center gap-1.5">
+                <span className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+                دليل الطلاب: {isSyncing ? 'جاري التحميل...' : `${cachedRegistry.length} مشترك مسجل`}
+              </span>
+              {lastSyncTime && (
+                <span className="text-[10px] text-slate-400 font-semibold">آخر مزامنة للتطبيق: {lastSyncTime}</span>
+              )}
+              {syncError && (
+                <span className="text-[10px] text-rose-500 font-extrabold">{syncError}</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => syncRegistrations(true)}
+              disabled={isSyncing}
+              className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-900 active:scale-95 disabled:opacity-50 text-[10px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+              title="سحب آخر تعديلات الطلاب مباشرة من السيرفر وعمل كاش محلي"
+            >
+              🔄 مزامنة السجلات
+            </button>
+          </div>
+
           {/* شريط التبديل العلوي الخفي - لا يظهر إلا لو تم إدخال الباسورد 101096بنجاح */}
           {isAdminUnlocked && (
             <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-6">
