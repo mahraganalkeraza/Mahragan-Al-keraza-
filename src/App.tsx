@@ -546,6 +546,54 @@ const normalizeArabic = (str: string) => {
   return str.replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').trim();
 };
 
+const EarlyGateGuard = ({ targetType, targetName, actionType, children, fallbackMessage, userRole }: { targetType: 'church' | 'stage', targetName: string, actionType: 'registration' | 'orders', children: React.ReactNode, fallbackMessage: string, userRole: string }) => {
+  const [status, setStatus] = useState<'loading' | 'blocked' | 'open'>('loading');
+
+  useEffect(() => {
+    const checkGate = async () => {
+      setStatus('loading');
+      if (userRole === 'admin') { setStatus('open'); return; }
+      if (!targetName) { setStatus('open'); return; }
+      
+      try {
+        const { data: sys } = await supabase.from('system_settings').select('*').single();
+        const { data: granular } = await supabase.from('granular_controls').select('*').eq('target_name', targetName).eq('target_type', targetType);
+        
+        let blocked = false;
+        
+        if (actionType === 'registration') {
+           if (sys?.is_registration_locked) blocked = true;
+           if (granular?.some(g => g.is_registration_disabled)) blocked = true;
+        } else if (actionType === 'orders') {
+           if (sys?.is_book_orders_locked) blocked = true;
+           if (granular?.some(g => g.is_registration_disabled)) blocked = true;
+        }
+        
+        setStatus(blocked ? 'blocked' : 'open');
+      } catch (err) {
+        setStatus('open');
+      }
+    };
+    checkGate();
+  }, [targetName, targetType, actionType, userRole]);
+
+  if (status === 'loading') return <div className="py-20 text-center font-bold text-slate-500 animate-pulse">جاري التحقق من صلاحيات الدخول... ⏳</div>;
+
+  if (status === 'blocked') {
+     return (
+       <div className="py-20 my-8 bg-rose-50 rounded-2xl flex flex-col items-center justify-center text-center space-y-4 font-arabic shadow-inner border border-rose-100">
+         <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mb-2 shadow-sm">
+           <Lock size={32} className="text-rose-600" />
+         </div>
+         <h2 className="text-3xl font-black text-rose-700">التسجيل مغلق حالياً</h2>
+         <p className="text-rose-600 font-bold max-w-md">{fallbackMessage}</p>
+       </div>
+     );
+  }
+
+  return <>{children}</>;
+};
+
 function AppComponent() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -8773,6 +8821,7 @@ function AppComponent() {
               <p className="text-slate-500 text-sm font-bold">احسب تكلفة الكتب الرسمية للمهرجان</p>
             </div>
 
+            <EarlyGateGuard targetType="church" targetName={churchName} actionType="orders" userRole={userRole} fallbackMessage="عفواً، استقبال طلبيات الكتب متوقف حالياً.">
             {/* Order Details Card */}
             <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-6">
               <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
@@ -9041,6 +9090,7 @@ function AppComponent() {
                 ))}
               </div>
             </div>
+            </EarlyGateGuard>
           </motion.div>
         )}
 
@@ -9060,6 +9110,7 @@ function AppComponent() {
 
               {/* Team Registration form content starts below directly */}
 
+              <EarlyGateGuard targetType="church" targetName={churchName} actionType="registration" userRole={userRole} fallbackMessage="عفواً، باب التسجيل لهذه المرحلة مغلق حالياً بقرار من إدارة الكنترول المركزي.">
               <div className="space-y-8">
                 {viewMode === 'edit' ? (
                   <>
@@ -9075,15 +9126,6 @@ function AppComponent() {
                       <p className="text-slate-500 text-sm font-bold">يرجى ملء البيانات التالية بدقة</p>
                     </div>
 
-                    {!systemControls.isRegistrationOpen ? (
-                      <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
-                        <div className="w-20 h-20 bg-rose-100 rounded-full flex items-center justify-center mb-2">
-                          <Lock size={32} className="text-rose-600" />
-                        </div>
-                        <h2 className="text-3xl font-black text-rose-700">التسجيل مغلق حالياً</h2>
-                        <p className="text-slate-500 font-bold max-w-md">نعتذر، لقد تم إيقاف التسجيل الإلكتروني من قِبل الإدارة المركزية.</p>
-                      </div>
-                    ) : (
                       <div className="grid grid-cols-1 gap-8">
                         {/* Basic Information Card */}
                         <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
@@ -9237,7 +9279,6 @@ function AppComponent() {
                           </button>
                         </div>
                       </div>
-                    )}
 
                     {/* Preview Toggle Button */}
                     <div className="pt-8 border-t border-slate-100">
@@ -9275,14 +9316,7 @@ function AppComponent() {
                           </div>
                           
                           <div className="relative">
-                            {!systemControls.isRegistrationOpen && (
-                              <div className="absolute inset-0 z-10 bg-white/70 backdrop-blur-[1px] flex items-center justify-center rounded-xl">
-                                <span className="bg-rose-100 text-rose-700 px-6 py-2 rounded-full font-black text-sm border border-rose-200 shadow-sm animate-pulse">
-                                  التسجيل مغلق حالياً
-                                </span>
-                              </div>
-                            )}
-                            <form id="team-registration-form" onSubmit={handleAddTeam} className={`bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8 ${!systemControls.isRegistrationOpen ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <form id="team-registration-form" onSubmit={handleAddTeam} className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
                               {editingTeam && (
                               <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between">
                                 <p className="text-sm font-bold text-blue-700">أنت الآن تقوم بتعديل بيانات فريق مسجل</p>
@@ -9690,6 +9724,7 @@ function AppComponent() {
                   </>
                 )}
               </div>
+              </EarlyGateGuard>
             </div>
           </motion.div>
         )}

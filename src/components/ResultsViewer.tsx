@@ -210,7 +210,7 @@ export const ResultsViewer: React.FC<{
     try {
       // 1. Delete submission record from Supabase
       const { error } = await supabase
-        .from('exam_submissions')
+        .from('online_results')
         .delete()
         .eq('student_id', id);
 

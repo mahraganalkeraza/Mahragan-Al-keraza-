@@ -1128,7 +1128,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     }, 1000);
     
     return () => clearInterval(interval);
-  }, [activeExam, isExamCompleted, isTerminated, answers]);
+  }, [activeExam, isExamCompleted, isTerminated]); // strictly omitted answers to prevent re-renders wiping timer
 
   // Auto submit when time hits 0 (explicit watcher)
   useEffect(() => {
@@ -1246,7 +1246,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       // Check existing submission scores on Supabase
       const { data: existingSub } = await supabase
-        .from("exam_submissions")
+        .from("online_results")
         .select("*")
         .eq("student_id", studentData.id)
         .maybeSingle();
@@ -1812,46 +1812,65 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         },
       );
 
-      // Exact schema mapping for the 'exam_submissions' table
+      // Calculate duration securely from database
+      let calculatedDurationInSeconds = 0;
+      try {
+        const { data: dbLog } = await supabase
+          .from("exam_device_logs")
+          .select("started_at")
+          .eq("student_id", currentStudentObj?.id)
+          .maybeSingle();
+        if (dbLog?.started_at) {
+          calculatedDurationInSeconds = Math.floor((new Date().getTime() - new Date(dbLog.started_at).getTime()) / 1000);
+        }
+      } catch (err) {
+        console.warn("Could not compute precise duration, defaulting to 0", err);
+      }
+
+      // Exact schema mapping for the online_results table
       const currentStudentPayload = currentStudentObj ? {
         id: currentStudentObj.id,
         name: currentStudentObj.studentName || currentStudentObj.name || "بدون اسم",
-        church_name: currentStudentObj.churchName || currentStudentObj.church_name || "غير مكتمل",
+        church: currentStudentObj.churchName || currentStudentObj.church_name || "غير مكتمل",
         gender: currentStudentObj.gender || "",
         stage: currentStudentObj.stage || "ثالثة ورابعة"
       } : null;
 
+      // DO NOT PASS RESET OR EMPTY VARIABLES HERE:
       const finalDerasyScore = derasyTotal || currentCompletedSubjects.derasy || 0;
       const finalMahfouzatScore = mahfozatTotal || currentCompletedSubjects.mahfozat || 0;
       const finalQebtyLvl1Score = qebtyLvl1Total || currentCompletedSubjects.qebty_lvl1 || 0;
       const finalQebtyLvl2Score = qebtyLvl2Total || currentCompletedSubjects.qebty_lvl2 || 0;
       const selectedAnswers = JSON.stringify(allCollectedAnswersArray);
 
-      const databasePayload = {
+      const submissionPayload = {
         student_id: currentStudentPayload?.id,
         student_name: currentStudentPayload?.name,
-        church_name: currentStudentPayload?.church_name,
-        gender: currentStudentPayload?.gender,
-        derasy_score: finalDerasyScore || 0,
-        mahfouzat_score: finalMahfouzatScore || 0,
-        qebty_lvl1_score: finalQebtyLvl1Score || 0,
-        qebty_lvl2_score: finalQebtyLvl2Score || 0,
-        detailed_answers: selectedAnswers,
-        exam_id: activeExam?.id || primaryExamId || "UNKNOWN",
-        is_published: false,
         stage: currentStudentPayload?.stage,
+        church_name: currentStudentPayload?.church,
+        gender: currentStudentPayload?.gender,
+        competition_name: activeExam?.competitionType || "المهرجان الشامل",
+        duration_seconds: calculatedDurationInSeconds,
+        derasy_score: finalDerasyScore,
+        mahfouzat_score: finalMahfouzatScore,
+        qebty_lvl1_score: finalQebtyLvl1Score,
+        qebty_lvl2_score: finalQebtyLvl2Score,
+        detailed_answers: selectedAnswers,
+        exam_id: activeExam?.id || primaryExamId || 0,
+        is_published: false,
+        exam_date: new Date().toISOString().split('T')[0],
         submitted_at: new Date().toISOString()
       };
 
       const localUIState = {
-        ...databasePayload,
+        ...submissionPayload,
         stage_name: currentStudentPayload?.stage
       };
 
-      // Push record directly to Supabase
+      // Push record directly to Supabase - using the new online_results table
       const { error: subErr } = await supabase
-        .from('exam_submissions')
-        .insert([databasePayload]);
+        .from('online_results')
+        .upsert(submissionPayload, { onConflict: 'student_id' });
 
       if (subErr) {
         console.error("Supabase rejected insertion:", subErr.message);
@@ -1860,6 +1879,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         setIsLoading(false);
         return; // Stop execution if database fails
       }
+
+      // DO NOT clear React state, localStorage or navigate away BEFORE the above block resolves
 
       // Clean up local storage trace for this specific student
       localStorage.removeItem("exam_progress_" + currentStudentObj.id);

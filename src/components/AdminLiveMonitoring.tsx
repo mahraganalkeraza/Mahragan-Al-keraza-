@@ -245,9 +245,9 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
     if (!confirm(`هل أنت متأكد من إعادة تعيين وفتح الامتحان للطالب ${studentName || ''}؟ سيؤدي هذا تصفير محاولته والسماح له بالدخول مجدداً.`)) return;
     setIsProcessing(studentId);
     try {
-      // 1. Delete submission from exam_submissions to allow re-entry
+      // 1. Delete submission from online_results to allow re-entry
       const { error: subErr } = await supabase
-        .from('exam_submissions')
+        .from('online_results')
         .delete()
         .eq('student_id', studentId);
 

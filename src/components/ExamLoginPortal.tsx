@@ -331,7 +331,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         .maybeSingle();
 
       const { data: submissionCheck } = await supabase
-        .from('exam_submissions')
+        .from('online_results')
         .select('student_id')
         .eq('student_id', studentIdStr)
         .maybeSingle();
