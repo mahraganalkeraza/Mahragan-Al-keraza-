@@ -50,6 +50,41 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   const [selectedChurch, setSelectedChurch] = useState(globalChurchFilter);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
 
+  // Real-time statistics states
+  const [activeExamsRealCount, setActiveExamsRealCount] = useState(0);
+  const [submittedExamsRealCount, setSubmittedExamsRealCount] = useState(0);
+  const [totalDevicesRealCount, setTotalDevicesRealCount] = useState(0);
+
+  // Fetch real-time statistics from dedicated tables/views
+  const fetchRealtimeStats = async () => {
+    try {
+      // 1. Fetch from active_sessions for active count and unique devices
+      const { data: sessions, error: sessionErr } = await supabase
+        .from('active_sessions')
+        .select('status, device_id');
+
+      if (!sessionErr && sessions) {
+        const activeOnly = sessions.filter(s => s.status === 'active');
+        setActiveExamsRealCount(activeOnly.length);
+        
+        const uniqueDevices = new Set(sessions.map(s => s.device_id).filter(Boolean));
+        setTotalDevicesRealCount(uniqueDevices.size);
+      }
+
+      // 2. Fetch from view_central_filtered_results for today's submissions
+      const { count, error: subErr } = await supabase
+        .from('view_central_filtered_results')
+        .select('*', { count: 'exact', head: true })
+        .eq('submission_status', 'submitted');
+
+      if (!subErr) {
+        setSubmittedExamsRealCount(count || 0);
+      }
+    } catch (err) {
+      console.error("Failed to fetch dashboard metrics:", err);
+    }
+  };
+
   // Fetch device logs from Supabase
   const fetchLiveLogs = async () => {
     try {
@@ -72,6 +107,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
 
   useEffect(() => {
     fetchLiveLogs();
+    fetchRealtimeStats();
 
     // Set up realtime subscription for instantaneous live tracking of device logs
     const logsSubscription = supabase
@@ -86,7 +122,19 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
       )
       .subscribe();
 
-    // Set up realtime subscription for exam submissions to enable instant sync on submit actions
+    // Set up realtime subscription for session changes (Point 1 & 3)
+    const sessionsSubscription = supabase
+      .channel('active_sessions_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'active_sessions' },
+        () => {
+          fetchRealtimeStats();
+        }
+      )
+      .subscribe();
+
+    // Set up realtime subscription for exam submissions to enable instant sync on submit actions (Point 2)
     const submissionsSubscription = supabase
       .channel('live-submissions')
       .on(
@@ -95,12 +143,14 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
         () => {
           // Trigger fetch updated logs / active participant list dynamically
           fetchLiveLogs(); 
+          fetchRealtimeStats();
         }
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(logsSubscription);
+      supabase.removeChannel(sessionsSubscription);
       supabase.removeChannel(submissionsSubscription);
     };
   }, []);
@@ -160,17 +210,24 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   };
 
   const handleDeleteLogRow = async (studentId: string) => {
-    if (!confirm('هل تريد حذف هذا السجل نهائياً من شاشة المراقبة؟')) return;
+    if (!confirm('هل تريد حذف هذا السجل نهائياً من شاشة المراقبة؟ سيؤدي ذلك أيضاً لحذف الجلسة النشطة والسماح للطالب بالدخول مجدداً.')) return;
     setIsProcessing(studentId);
     try {
-      const { error } = await supabase
+      // 1. Delete from exam_device_logs
+      await supabase
         .from('exam_device_logs')
         .delete()
         .eq('student_id', studentId);
 
-      if (error) throw error;
-      alert('تم حذف السجل بنجاح 🗑️');
+      // 2. Delete from active_sessions to allow clean re-entry (Point 4)
+      await supabase
+        .from('active_sessions')
+        .delete()
+        .eq('student_id', studentId);
+
+      alert('تم حذف السجل والجلسة بنجاح 🗑️');
       fetchLiveLogs();
+      fetchRealtimeStats();
     } catch (e: any) {
       console.error(e);
       alert('حدث خطأ أثناء رغبتك بالمسح');
@@ -180,13 +237,16 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   };
 
   const handleResetAllMonitoring = async () => {
-    if (!confirm('سيتم حذف كافة بيانات المراقبة المباشرة وسجلات الأجهزة بالكامل! هل أنت متأكد؟')) return;
+    if (!confirm('سيتم حذف كافة بيانات المراقبة المباشرة وسجلات الأجهزة وكافة الجلسات النشطة! هل أنت متأكد؟')) return;
     setLoading(true);
     try {
-      const { error } = await supabase.from('exam_device_logs').delete().neq('student_id', '0');
-      if (error) throw error;
-      alert('تمت تصفير كافة السجلات بنجاح وتهيئتها 🧹');
+      await Promise.all([
+        supabase.from('exam_device_logs').delete().neq('student_id', '0'),
+        supabase.from('active_sessions').delete().neq('student_id', '0')
+      ]);
+      alert('تمت تصفير كافة السجلات والجلسات بنجاح وتهيئتها 🧹');
       fetchLiveLogs();
+      fetchRealtimeStats();
     } catch (e) {
       console.error(e);
       alert('حدث خطأ أثناء حذف كافة السجلات');
@@ -229,6 +289,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
 
       alert('تم إنهاء الاختبار وسحب الورقة بنجاح 📄');
       fetchLiveLogs();
+      fetchRealtimeStats();
     } catch (e: any) {
       console.error(e);
       alert('فشل سحب الورقة: ' + e.message);
@@ -288,6 +349,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
 
       alert('تم إعادة تعيين النتيجة وفتح الامتحان بنجاح! ✅');
       fetchLiveLogs();
+      fetchRealtimeStats();
     } catch (e: any) {
       console.error(e);
       alert('فشل إعادة فتح الامتحان: ' + e.message);
@@ -361,7 +423,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
           </button>
         </div>
       </div>
-
+ 
       {/* Mini Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
@@ -370,7 +432,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
           </div>
           <div>
             <p className="text-[11px] font-black text-slate-400 uppercase">الامتحانات النشطة حالياً</p>
-            <h3 className="text-xl font-black text-slate-800">{activeExamsCount}</h3>
+            <h3 className="text-xl font-black text-slate-800" id="stat-active-exams">{activeExamsRealCount}</h3>
           </div>
         </div>
 
@@ -380,7 +442,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
           </div>
           <div>
             <p className="text-[11px] font-black text-slate-400 uppercase">الامتحانات المسلمة</p>
-            <h3 className="text-xl font-black text-slate-800">{submittedExamsCount}</h3>
+            <h3 className="text-xl font-black text-slate-800" id="stat-submitted-exams">{submittedExamsRealCount}</h3>
           </div>
         </div>
 
@@ -400,7 +462,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
           </div>
           <div>
             <p className="text-[11px] font-black text-slate-400 uppercase font-sans">إجمالي أجهزة الطلاب</p>
-            <h3 className="text-xl font-black text-slate-800">{totalLogsCount}</h3>
+            <h3 className="text-xl font-black text-slate-800" id="stat-total-devices">{totalDevicesRealCount}</h3>
           </div>
         </div>
       </div>

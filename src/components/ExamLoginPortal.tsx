@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Html5Qrcode } from 'html5-qrcode';
+import { getDeviceFingerprint } from '../lib/deviceTracking';
 
 interface ExamLoginPortalProps {
   onClose: () => void; // زر الرجوع / إغلاق البوابة
@@ -316,6 +317,23 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     setErrors(null);
 
     try {
+      const studentIdStr = String(studentObj.id);
+
+      // 1. التحقق الصارم من عدم وجود جلسة نشطة أو تسليم مسبق (Enforce One-Time Access)
+      const [sessionCheck, submissionCheck] = await Promise.all([
+        supabase.from('active_sessions').select('status, allowReentry').eq('student_id', studentIdStr).maybeSingle(),
+        supabase.from('view_central_filtered_results').select('submission_status').eq('student_id', studentIdStr).maybeSingle()
+      ]);
+
+      const hasActiveSession = sessionCheck.data && sessionCheck.data.status === 'active' && !sessionCheck.data.allowReentry;
+      const isAlreadySubmitted = submissionCheck.data && submissionCheck.data.submission_status === 'submitted';
+
+      if (hasActiveSession || isAlreadySubmitted) {
+        setErrors("عفواً، لا يمكن دخول الامتحان مجدداً إلا بسماح من اللجنة المركزية.");
+        setIsLoading(false);
+        return;
+      }
+
       const { data: examRow, error: examErr } = await supabase
         .from('exams_pool')
         .select('id, exam_title, stage, questions_data, model_type, is_active')
@@ -328,6 +346,16 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         setIsLoading(false);
         return;
       }
+
+      // 2. تسجيل بصمة الجهاز وتحديث حالة الجلسة لمنع الدخول المتعدد
+      const fp = getDeviceFingerprint();
+      await supabase.from('active_sessions').upsert({
+        student_id: studentIdStr,
+        status: 'active',
+        allowReentry: false,
+        device_id: fp?.uuid || 'unknown',
+        lastUpdate: new Date().toISOString()
+      });
 
       // توثيق وحفظ لوج الجهاز الملاحق
       await logDeviceAccess(studentObj.id, studentObj.name, studentObj.stage, studentObj.churchName);
