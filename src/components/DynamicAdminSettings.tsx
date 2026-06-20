@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { uploadToFirebase } from '../services/firebase';
 import { Trash2, Edit2, Plus, LogIn, Database, ShieldCheck, Check, X, Image as ImageIcon, Upload, Loader2, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { sortStages } from '../constants';
@@ -832,37 +833,32 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
     if (!file) return;
 
     // Reject huge files directly to stay within reasonable limits
-    if (file.size > 800000) { // ~800KB
-      alert('حجم الصورة كبير جداً. يرجى رفع صورة أقل من 800 كيلوبايت.');
+    if (file.size > 2000000) { // Increased limit to 2MB for Firebase
+      alert('حجم الصورة كبير جداً. يرجى رفع صورة أقل من 2 ميجابايت.');
       return;
     }
 
     setIsUploadingLogo(true);
     try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64String = reader.result as string;
-        try {
-          alert('Operation disabled');
-          setAppLogo(base64String);
-          alert('تم تحديث شعار المهرجان بنجاح!');
-        } catch (innerError) {
-          console.error("Firestore write error for logo:", innerError);
-          alert('حدث خطأ أثناء حفظ الشعار في قاعدة البيانات.');
-        } finally {
-          setIsUploadingLogo(false);
-        }
-      };
+      // 1. Upload to Firebase Storage
+      const logoUrl = await uploadToFirebase(file, 'branding');
       
-      reader.onerror = () => {
-        alert("حدث خطأ أثناء قراءة الملف");
-        setIsUploadingLogo(false);
-      };
+      // 2. Update Supabase app_config
+      const { error: sbErr } = await supabase
+        .from('system_settings')
+        .upsert({ 
+          id: 'app_config', 
+          appLogo: logoUrl 
+        });
 
-      reader.readAsDataURL(file);
+      if (sbErr) throw sbErr;
+
+      setAppLogo(logoUrl);
+      alert('تم تحديث شعار المهرجان بنجاح!');
     } catch (error) {
       console.error("Error uploading logo:", error);
       alert('حدث خطأ أثناء رفع الشعار.');
+    } finally {
       setIsUploadingLogo(false);
     }
   };

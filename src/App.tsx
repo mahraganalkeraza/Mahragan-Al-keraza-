@@ -80,6 +80,7 @@ import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
 import { ExamLoginPortal } from './components/ExamLoginPortal';
 import { supabase } from './lib/supabaseClient';
+import { uploadToFirebase } from './services/firebase';
 import { motion, AnimatePresence } from 'motion/react';
 // @ts-ignore - html2pdf.js doesn't have great types but works
 import html2pdf from 'html2pdf.js';
@@ -1677,12 +1678,7 @@ function AppComponent() {
     const totalOrders = activeOrders.length;
 
     // Filtered teams count
-    const activeTeamsCount = (activityTeams || []).filter(t => {
-      const matchChurch = (userRole === 'admin')
-        ? (globalChurchFilter === 'الكل' || t.churchName === globalChurchFilter)
-        : (t.churchName === churchName);
-      return matchChurch;
-    }).length;
+    const activeTeamsCount = totalTeamsCount;
 
     const demographicsData = STAGE_ORDER.map(stg => ({
       name: stg,
@@ -1828,7 +1824,7 @@ function AppComponent() {
       growthTrendData,
       genderData
     };
-  }, [allChurchParticipants, orders, activityTeams, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
+  }, [allChurchParticipants, orders, activityTeams, totalTeamsCount, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
 
   const COLORS = ['#0f172a', '#d97706', '#e11d48', '#059669', '#2563eb', '#8b5cf6'];
 
@@ -2277,6 +2273,19 @@ function AppComponent() {
     });
   };
 
+  const dataURLToBlob = (dataUrl: string): Blob => {
+    const arr = dataUrl.split(',');
+    const match = arr[0].match(/:(.*?);/);
+    const mime = match ? match[1] : 'image/jpeg';
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  };
+
   const handleNewsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNews.title || !newNews.content || (!newNews.image && !editingNews)) {
@@ -2288,7 +2297,9 @@ function AppComponent() {
     try {
       let imageUrl = editingNews?.imageUrl || '';
       if (newNews.image) {
-        imageUrl = await compressImage(newNews.image);
+        const compressedDataUrl = await compressImage(newNews.image);
+        const compressedBlob = dataURLToBlob(compressedDataUrl);
+        imageUrl = await uploadToFirebase(compressedBlob, 'news');
       }
 
       if (editingNews) {
@@ -2360,7 +2371,9 @@ function AppComponent() {
     try {
       let url = editingCarousel?.url || '';
       if (newCarousel.image) {
-        url = await compressImage(newCarousel.image);
+        const compressedDataUrl = await compressImage(newCarousel.image);
+        const compressedBlob = dataURLToBlob(compressedDataUrl);
+        url = await uploadToFirebase(compressedBlob, 'slider');
       }
 
       if (editingCarousel) {
@@ -3855,13 +3868,17 @@ function AppComponent() {
   useEffect(() => {
     if (!isLoggedIn) return;
     if (activeSection === 'admin_dashboard') {
+      if (adminActiveTab === 'dashboard') {
+        fetchTeamsPage(true, true);
+        fetchOrdersPage(true, true);
+      }
       if (adminActiveTab === 'participants') fetchParticipantsPage(true, true, participantSearch);
       if (adminActiveTab === 'results' && results.length === 0) fetchResultsPage(true, true);
       if (adminActiveTab === 'online_results' && onlineResults.length === 0) fetchOnlineResultsPage(true, true);
       if (adminActiveTab === 'orders' && orders.length === 0) fetchOrdersPage(true, true);
       if (adminActiveTab === 'activity_teams' && activityTeams.length === 0) fetchTeamsPage(true, true, teamSearch);
     }
-  }, [adminActiveTab, activeSection, isLoggedIn, activeYear, partChurchFilter, partStageFilter, partCompFilter]);
+  }, [adminActiveTab, activeSection, isLoggedIn, activeYear, partChurchFilter, partStageFilter, partCompFilter, globalChurchFilter]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

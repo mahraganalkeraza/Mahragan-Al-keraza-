@@ -322,17 +322,31 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     try {
       const studentIdStr = String(studentObj.id);
 
-      // 1. التحقق الصارم من عدم وجود جلسة نشطة أو تسليم مسبق (Enforce One-Time Access)
+      // 1. Pre-Entry Exam Status Check (قفل وفتح الامتحان) via granular_controls
+      const { data: controls, error: controlErr } = await supabase
+        .from('granular_controls')
+        .select('is_exam_disabled')
+        .eq('target_name', studentObj.stage)
+        .eq('target_type', 'stage')
+        .maybeSingle();
+
+      if (!controlErr && controls && controls.is_exam_disabled) {
+        setErrors("عفواً، الامتحان مغلق حالياً لهذه المرحلة.");
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Anti-Cheat One-Time Entry Enforcer (منع التكرار والدخول متعدد المرات)
       const [sessionCheck, submissionCheck] = await Promise.all([
-        supabase.from('active_sessions').select('status, allowReentry').eq('student_id', studentIdStr).maybeSingle(),
+        supabase.from('active_sessions').select('status').eq('student_id', studentIdStr).maybeSingle(),
         supabase.from('exam_submissions').select('student_id').eq('student_id', studentIdStr).maybeSingle()
       ]);
 
-      const hasActiveSession = sessionCheck.data && sessionCheck.data.status === 'active' && !sessionCheck.data.allowReentry;
+      const sessionExists = !!sessionCheck.data && (sessionCheck.data.status === 'active' || sessionCheck.data.status === 'submitted');
       const isAlreadySubmitted = !!submissionCheck.data;
 
-      if (hasActiveSession || isAlreadySubmitted) {
-        setErrors("عفواً، لا يمكن دخول الامتحان مجدداً. لقد قمت بتسليم إجابتك بالفعل أو لديك جلسة نشطة حالياً. يرجى مراجعة المسؤول.");
+      if (sessionExists || isAlreadySubmitted) {
+        setErrors("عفواً، تم دخول هذا الامتحان مسبقاً ولا يمكن الدخول مجدداً إلا بسماح من اللجنة المركزية.");
         setIsLoading(false);
         return;
       }

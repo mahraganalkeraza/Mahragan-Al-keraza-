@@ -305,7 +305,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   };
 
   const handleResetOpenExam = async (studentId: string, studentName: string) => {
-    if (!confirm(`هل أنت متأكد من إعادة تعيين وفتح الامتحان للطالب ${studentName || ''}؟ سيؤدي هذا لتصفير محاولته والسماح له بالدخول مجدداً.`)) return;
+    if (!confirm(`هل أنت متأكد من إعادة تعيين وفتح الامتحان للطالب ${studentName || ''}؟ سيؤدي هذا تصفير محاولته والسماح له بالدخول مجدداً.`)) return;
     setIsProcessing(studentId);
     try {
       // 1. Delete submission from exam_submissions to allow re-entry
@@ -316,24 +316,13 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
 
       if (subErr) throw subErr;
 
-      // 2. Set active_sessions details status to 'active' & allowing reentry
+      // 2. Delete from active_sessions for this student to reset their gate access (Gate will allow re-entry if row is missing)
       await supabase
         .from('active_sessions')
         .delete()
         .eq('student_id', studentId);
 
-      const { error: activeErr } = await supabase
-        .from('active_sessions')
-        .insert({
-          student_id: studentId,
-          status: 'active',
-          allowReentry: true,
-          lastUpdate: new Date().toISOString()
-        });
-
-      if (activeErr) throw activeErr;
-
-      // 3. Reset exam_device_logs row status back to 'active' or 'جاري الامتحان'
+      // 3. Reset exam_device_logs row status back to 'active' or 'جاري الامتحان' (Optional, mostly for visual feedback)
       const { error: devErr } = await supabase
         .from('exam_device_logs')
         .update({
@@ -353,7 +342,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
         }
       }
 
-      alert('تم إعادة تعيين النتيجة وفتح الامتحان بنجاح! ✅');
+      alert('تم إعادة تعيين النتيجة وفتح الامتحان بنجاح! يمكن للطالب الدخول مجدداً الآن. ✅');
       fetchLiveLogs();
       fetchRealtimeStats();
     } catch (e: any) {
