@@ -1819,7 +1819,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                       normalizeArabic(String(val)) ===
                       normalizeArabic(String(correctAns))
                     ) {
-                      calculatedPts = question.points || 0;
+                      calculatedPts = Number(question.points) || 0;
                     }
                   } else if (question.type === "fill") {
                     compactAns = val;
@@ -1827,7 +1827,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                       normalizeArabic(String(val)) ===
                       normalizeArabic(String(correctAns))
                     ) {
-                      calculatedPts = question.points || 0;
+                      calculatedPts = Number(question.points) || 0;
                     }
                   } else if (question.type === "matching") {
                     calculatedPts = 0;
@@ -1850,7 +1850,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                     });
                     compactAns = matchedIndIndices;
                     if (correctMatches === matchingPairs.length)
-                      calculatedPts = question.points || 0;
+                      calculatedPts = Number(question.points) || 0;
                   }
                 }
               }
