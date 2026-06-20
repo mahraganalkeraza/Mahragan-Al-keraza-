@@ -322,31 +322,21 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     try {
       const studentIdStr = String(studentObj.id);
 
-      // 1. Pre-Entry Exam Status Check (قفل وفتح الامتحان) via granular_controls
-      const { data: controls, error: controlErr } = await supabase
-        .from('granular_controls')
-        .select('is_exam_disabled')
-        .eq('target_name', studentObj.stage)
-        .eq('target_type', 'stage')
+      // 1. Anti-Cheat One-Time Entry Gate (منع الدخول المتعدد) via exam_device_logs
+      const { data: existingLog, error: logCheckErr } = await supabase
+        .from('exam_device_logs')
+        .select('id')
+        .eq('student_id', studentIdStr)
         .maybeSingle();
 
-      if (!controlErr && controls && controls.is_exam_disabled) {
-        setErrors("عفواً، الامتحان مغلق حالياً لهذه المرحلة.");
-        setIsLoading(false);
-        return;
-      }
+      const { data: submissionCheck } = await supabase
+        .from('exam_submissions')
+        .select('student_id')
+        .eq('student_id', studentIdStr)
+        .maybeSingle();
 
-      // 2. Anti-Cheat One-Time Entry Enforcer (منع التكرار والدخول متعدد المرات)
-      const [sessionCheck, submissionCheck] = await Promise.all([
-        supabase.from('active_sessions').select('status').eq('student_id', studentIdStr).maybeSingle(),
-        supabase.from('exam_submissions').select('student_id').eq('student_id', studentIdStr).maybeSingle()
-      ]);
-
-      const sessionExists = !!sessionCheck.data && (sessionCheck.data.status === 'active' || sessionCheck.data.status === 'submitted');
-      const isAlreadySubmitted = !!submissionCheck.data;
-
-      if (sessionExists || isAlreadySubmitted) {
-        setErrors("عفواً، تم دخول هذا الامتحان مسبقاً ولا يمكن الدخول مجدداً إلا بسماح من اللجنة المركزية.");
+      if (existingLog || submissionCheck) {
+        setErrors("عفوًا، سبق للطالب دخول الامتحان من قبل، من هذا الجهاز أو جهاز آخر.");
         setIsLoading(false);
         return;
       }
@@ -363,16 +353,6 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         setIsLoading(false);
         return;
       }
-
-      // 2. تسجيل بصمة الجهاز وتحديث حالة الجلسة لمنع الدخول المتعدد
-      const fp = getDeviceFingerprint();
-      await supabase.from('active_sessions').upsert({
-        student_id: studentIdStr,
-        status: 'active',
-        allowReentry: false,
-        device_id: `${fp.uuid} (${fp.model})`,
-        lastUpdate: new Date().toISOString()
-      });
 
       // توثيق وحفظ لوج الجهاز الملاحق
       await logDeviceAccess(studentObj.id, studentObj.name, studentObj.stage, studentObj.churchName);

@@ -58,36 +58,24 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   const [submittedExamsRealCount, setSubmittedExamsRealCount] = useState(0);
   const [totalDevicesRealCount, setTotalDevicesRealCount] = useState(0);
 
-  // Fetch real-time statistics from dedicated tables/views
+  // Fetch real-time statistics from exam_device_logs
   const fetchRealtimeStats = async () => {
     try {
-      // 1. Fetch from active_sessions for active count and unique devices
-      const { data: sessions, error: sessionErr } = await supabase
-        .from('active_sessions')
-        .select('status, device_id, student_id');
+      const { data, error } = await supabase
+        .from('exam_device_logs')
+        .select('status, id');
 
-      if (!sessionErr && sessions) {
-        const activeOnly = sessions.filter(s => s.status === 'active');
+      if (!error && data) {
+        const activeOnly = data.filter(s => s.status === 'active' || s.status === 'جاري الامتحان' || s.status === 'Active Exam Started');
         setActiveExamsRealCount(activeOnly.length);
         
-        // Count total unique device fingerprints across ALL active/recently logged sessions
-        const deviceIds = sessions.map(s => s.device_id).filter(Boolean);
-        const uniqueDevices = new Set(deviceIds);
+        const submittedOnly = data.filter(s => s.status === 'submitted' || s.status === 'تم التسليم بنجاح');
+        setSubmittedExamsRealCount(submittedOnly.length);
         
-        // Fallback to logs count if sessions table is less populated than logs
-        setTotalDevicesRealCount(Math.max(uniqueDevices.size, logs.length));
-      }
-
-      // 2. Fetch from exam_submissions for total completed exams
-      const { count, error: subErr } = await supabase
-        .from('exam_submissions')
-        .select('*', { count: 'exact', head: true });
-
-      if (!subErr) {
-        setSubmittedExamsRealCount(count || 0);
+        setTotalDevicesRealCount(data.length);
       }
     } catch (err) {
-      console.error("Failed to fetch dashboard metrics:", err);
+      console.error("Failed to fetch dashboard metrics from logs:", err);
     }
   };
 
@@ -122,33 +110,8 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
         'postgres_changes', 
         { event: '*', schema: 'public', table: 'exam_device_logs' }, 
         () => {
-          // Fetch updated logs on any changes (insert, update, delete)
+          // Fetch updated logs and stats on any changes
           fetchLiveLogs();
-        }
-      )
-      .subscribe();
-
-    // Set up realtime subscription for session changes (Point 1 & 3)
-    const sessionsSubscription = supabase
-      .channel('active_sessions_realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'active_sessions' },
-        () => {
-          fetchRealtimeStats();
-        }
-      )
-      .subscribe();
-
-    // Set up realtime subscription for exam submissions to enable instant sync on submit actions (Point 2)
-    const submissionsSubscription = supabase
-      .channel('live-submissions')
-      .on(
-        'postgres_changes', 
-        { event: '*', schema: 'public', table: 'exam_submissions' }, 
-        () => {
-          // Trigger fetch updated logs / active participant list dynamically
-          fetchLiveLogs(); 
           fetchRealtimeStats();
         }
       )
@@ -156,8 +119,6 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
 
     return () => {
       supabase.removeChannel(logsSubscription);
-      supabase.removeChannel(sessionsSubscription);
-      supabase.removeChannel(submissionsSubscription);
     };
   }, []);
 
@@ -170,7 +131,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
 
   // Administration actions mirroring existing LiveExamMonitoring
   const handleTerminateSession = async (studentId: string) => {
-    if (!confirm('هل أنت متأكد من طرد هذا الطالب وحظر جهازه من الامتحان؟')) return;
+    if (!confirm('هل أنت متأكد من طرد هذا الطالب ومنعه من دخول الامتحان؟ سيتم بقاء سجله كمحروم.')) return;
     
     setIsProcessing(studentId);
     try {
@@ -178,13 +139,14 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
         .from('exam_device_logs')
         .update({
           status: 'terminated',
-          created_at: new Date().toISOString()
+          updated_at: new Date().toISOString()
         })
         .eq('student_id', studentId);
 
       if (error) throw error;
-      alert('تم إرسال أمر الطرد والإنهاء بنجاح 🛑');
+      alert('تم إرسال أمر الطرد والمنع بنجاح 🛑');
       fetchLiveLogs();
+      fetchRealtimeStats();
     } catch (e: any) {
       console.error(e);
       alert('فشل أمر الطرد: ' + e.message);
@@ -194,20 +156,19 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   };
 
   const handleClearBlacklist = async (studentId: string) => {
-    if (!confirm('هل تريد فك الحظر عن هذا الجهاز لتسمح له بالمحاولة مجدداً؟')) return;
+    if (!confirm('هل تريد فك الحظر عن هذا الطالب؟ سيتم حذف سجله الحالي ليتمكن من الدخول مجدداً.')) return;
     setIsProcessing(studentId);
     try {
+      // Deleting the log row unlocks the student's entry token
       const { error } = await supabase
         .from('exam_device_logs')
-        .update({
-          status: 'جاري الامتحان',
-          created_at: new Date().toISOString()
-        })
+        .delete()
         .eq('student_id', studentId);
 
       if (error) throw error;
-      alert('تم إزالة حظر الجهاز بنجاح ✅');
+      alert('تم فك حظر الطالب ومسح سجله بنجاح، يمكنه الدخول الآن ✅');
       fetchLiveLogs();
+      fetchRealtimeStats();
     } catch (e: any) {
       alert('حدث خطأ أثناء فك الحظر: ' + e.message);
     } finally {
@@ -216,41 +177,34 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   };
 
   const handleDeleteLogRow = async (logId: any, studentId: string) => {
-    if (!confirm('هل تريد حذف هذا السجل نهائياً من شاشة المراقبة؟ سيؤدي ذلك أيضاً لحذف الجلسة النشطة والسماح للطالب بالدخول مجدداً.')) return;
+    if (!confirm('هل تريد طرد هذا الجهاز ومسحه نهائياً؟ سيؤدي ذلك للسماح للطالب بالدخول مجدداً من أي جهاز.')) return;
     setIsProcessing(studentId);
     try {
-      // 1. Delete from exam_device_logs SURGICALLY by its unique row ID (supports integers/UUIDs safely)
-      await supabase
+      // Delete strictly from exam_device_logs as requested
+      const { error } = await supabase
         .from('exam_device_logs')
         .delete()
         .eq('id', logId);
 
-      // 2. Delete from active_sessions for this student to reset their gate access
-      await supabase
-        .from('active_sessions')
-        .delete()
-        .eq('student_id', studentId);
+      if (error) throw error;
 
-      alert('تم حذف السجل والجلسة بنجاح 🗑️');
+      alert('تم طرد الجهاز ومسح السجل بنجاح 🗑️');
       fetchLiveLogs();
       fetchRealtimeStats();
     } catch (e: any) {
       console.error(e);
-      alert('حدث خطأ أثناء رغبتك بالمسح');
+      alert('حدث خطأ أثناء المسح: ' + e.message);
     } finally {
       setIsProcessing(null);
     }
   };
 
   const handleResetAllMonitoring = async () => {
-    if (!confirm('سيتم حذف كافة بيانات المراقبة المباشرة وسجلات الأجهزة وكافة الجلسات النشطة! هل أنت متأكد؟')) return;
+    if (!confirm('سيتم حذف كافة بيانات المراقبة المباشرة وسجلات الأجهزة! هل أنت متأكد؟')) return;
     setLoading(true);
     try {
-      await Promise.all([
-        supabase.from('exam_device_logs').delete().neq('student_id', '0'),
-        supabase.from('active_sessions').delete().neq('student_id', '0')
-      ]);
-      alert('تمت تصفير كافة السجلات والجلسات بنجاح وتهيئتها 🧹');
+      await supabase.from('exam_device_logs').delete().neq('student_id', '0');
+      alert('تمت تصفير كافة سجلات المراقبة بنجاح وتهيئتها 🧹');
       fetchLiveLogs();
       fetchRealtimeStats();
     } catch (e) {
@@ -265,33 +219,16 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
     if (!confirm(`هل أنت متأكد من إنهاء الاختبار وسحب ورقة الطالب ${studentName || ''}؟`)) return;
     setIsProcessing(studentId);
     try {
-      // 1. Update status in exam_device_logs to 'submitted'
+      // Update status in exam_device_logs to 'submitted'
       const { error: logErr } = await supabase
         .from('exam_device_logs')
         .update({
           status: 'submitted',
-          created_at: new Date().toISOString()
+          updated_at: new Date().toISOString()
         })
         .eq('student_id', studentId);
 
       if (logErr) throw logErr;
-
-      // 2. Also update status in active_sessions to 'submitted'
-      await supabase
-        .from('active_sessions')
-        .delete()
-        .eq('student_id', studentId);
-
-      const { error: activeErr } = await supabase
-        .from('active_sessions')
-        .insert({
-          student_id: studentId,
-          status: 'submitted',
-          allowReentry: false,
-          lastUpdate: new Date().toISOString()
-        });
-
-      if (activeErr) throw activeErr;
 
       alert('تم إنهاء الاختبار وسحب الورقة بنجاح 📄');
       fetchLiveLogs();
@@ -316,24 +253,15 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
 
       if (subErr) throw subErr;
 
-      // 2. Delete from active_sessions for this student to reset their gate access (Gate will allow re-entry if row is missing)
-      await supabase
-        .from('active_sessions')
-        .delete()
-        .eq('student_id', studentId);
-
-      // 3. Reset exam_device_logs row status back to 'active' or 'جاري الامتحان' (Optional, mostly for visual feedback)
+      // 2. Delete from exam_device_logs for this student to reset their gate access (Unlock token)
       const { error: devErr } = await supabase
         .from('exam_device_logs')
-        .update({
-          status: 'جاري الامتحان',
-          created_at: new Date().toISOString()
-        })
+        .delete()
         .eq('student_id', studentId);
 
       if (devErr) throw devErr;
 
-      // 4. Trigger optional callback if passed
+      // 3. Trigger optional callback if passed
       if (onResetExam) {
         try {
           await onResetExam(studentId, studentName);

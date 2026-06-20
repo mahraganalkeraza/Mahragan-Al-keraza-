@@ -994,23 +994,17 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       }
 
       try {
-        const [globalRes, granularRes] = await Promise.all([
-          supabase.from("system_settings").select("*").eq("id", "1").maybeSingle(),
-          supabase.from("granular_controls").select("*")
-        ]);
-        if (globalRes.data) {
+        const { data: globalRes } = await supabase.from("system_settings").select("*").eq("id", "1").maybeSingle();
+        if (globalRes) {
           setGlobalSettings({
-            is_exam_locked: !!globalRes.data.is_exam_locked,
-            is_registration_locked: !!globalRes.data.is_registration_locked,
-            is_book_orders_locked: !!globalRes.data.is_book_orders_locked,
-            is_site_disabled: !!globalRes.data.is_site_disabled,
+            is_exam_locked: !!globalRes.is_exam_locked,
+            is_registration_locked: !!globalRes.is_registration_locked,
+            is_book_orders_locked: !!globalRes.is_book_orders_locked,
+            is_site_disabled: !!globalRes.is_site_disabled,
           });
         }
-        if (granularRes.data) {
-          setGranularControls(granularRes.data);
-        }
       } catch (e) {
-        console.warn("Failed to fetch system_settings or granular_controls:", e);
+        console.warn("Failed to fetch system_settings:", e);
       }
     };
     fetchConfig();
@@ -1216,47 +1210,23 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             (studentObj.competitions || studentObj.enrolled_subjects) ?? null,
         };
       } else {
-        // Fallback for demo/manual admin bypass
-        if (
-          confirm(
-            `لم يتم العثور على مشترك بالكود "${studentId}". هل تريد إنشاء جلسة يدوية وإدخال بياناته الآن؟`,
-          )
-        ) {
-          // إظهار نوافذ منبثقة لطلب البيانات يدوياً
-          const manualName = prompt(
-            "برجاء إدخال اسم الطالب (مثال: مينا كمال):",
-            "",
-          );
-          const manualChurch = prompt("برجاء إدخال البلد / الكنيسة:", "");
-          const manualStage = prompt(
-            "برجاء إدخال المرحلة (مثال: إبتدائي، إعدادي):",
-            "",
-          );
+        // Fallback for manual bypass
+        const manualName = prompt("برجاء إدخال اسم الطالب (مثال: مينا كمال):", "");
+        const manualChurch = prompt("برجاء إدخال البلد / الكنيسة:", "");
+        const manualStage = prompt("برجاء إدخال المرحلة (مثال: إبتدائي، إعدادي):", "");
 
-          // التأكد إن المستخدم أدخل الثلاث بيانات وما عملش (إلغاء)
-          if (manualName && manualChurch && manualStage) {
-            studentData = {
-              id: studentId,
-              studentName: manualName,
-              churchName: manualChurch,
-              stage: manualStage,
-              isManual: true,
-            };
-          } else {
-            // لو الخادم ساب خانة فاضية أو داس إلغاء
-            alert(
-              "تم إلغاء الدخول. يجب إدخال الاسم والبلد والمرحلة بالكامل لبدء الجلسة اليدوية.",
-            );
-            return; // عشان يوقف الدخول وميبعتش بيانات ناقصة للسوبابيز
-          }
+        if (manualName && manualChurch && manualStage) {
+          studentData = {
+            id: studentId,
+            studentName: manualName,
+            churchName: manualChurch,
+            stage: manualStage,
+            isManual: true,
+          };
+        } else {
+          setIsLoading(false);
+          return;
         }
-      }
-
-      if (!studentData) {
-        setIsLoading(false);
-        return alert(
-          `عذراً، هذا الكود غير مسجل: ${studentId}\nيرجى التأكد من الكود أو مراجعة المشرف.`,
-        );
       }
 
       // Check existing submission scores on Supabase
@@ -1268,44 +1238,44 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (existingSub) {
         studentData.academicScore = existingSub.derasy_score;
-        studentData.memorizationScore =
-          existingSub.mahfouzat_score ?? existingSub.mahfozat_score;
+        studentData.memorizationScore = existingSub.mahfouzat_score ?? existingSub.mahfozat_score;
         studentData.copticL1Score = existingSub.qebty_lvl1_score;
         studentData.copticL2Score = existingSub.qebty_lvl2_score;
         studentData.detailed_answers = existingSub.detailed_answers;
       }
 
-      // Log action to exam_logs in database gracefully
+      // Gate Check: One-Time Entry Validation via exam_device_logs
+      const { data: existingLog } = await supabase
+        .from("exam_device_logs")
+        .select("id, status")
+        .eq("student_id", studentData.id)
+        .maybeSingle();
+
+      if (existingLog || existingSub) {
+        setIsLoading(false);
+        return alert("عفوًا، سبق للطالب دخول الامتحان من قبل، من هذا الجهاز أو جهاز آخر.");
+      }
+
+      // Consistent logging to exam_device_logs
       try {
-        await supabase.from("exam_logs").insert({
+        const fp = getDeviceFingerprint();
+        await supabase.from("exam_device_logs").insert({
           student_id: studentData.id,
           student_name: studentData.studentName,
-          church_name: studentData.churchName,
-          device_id: fingerprint?.uuid,
+          church: studentData.churchName,
+          stage: studentData.stage,
+          device_id: fp.uuid,
+          device_name: fp.uuid || "Browser",
+          device_model: fp.model,
           device_type: deviceInfo.type,
+          os_version: fp.os,
           ip_address: deviceInfo.ip,
-          action: "IDENTIFIED",
-          created_at: new Date().toISOString(),
+          status: "Identification Success",
+          created_at: new Date().toISOString()
         });
       } catch (e) {
         console.error("Failed to insert log row", e);
       }
-
-      // Upsert student state as active in live_monitoring table
-      const { error: liveErr } = await supabase.from("live_monitoring").upsert({
-        student_id: studentData.id,
-        student_name: studentData.studentName,
-        church_name: studentData.churchName,
-        stage: studentData.stage,
-        status: "active",
-        device_type: deviceInfo.type,
-        ip_address: deviceInfo.ip,
-        fingerprint: fingerprint,
-        updated_at: new Date().toISOString(),
-        attempts_count: 1,
-      });
-
-      if (liveErr) console.error("Live Monitoring Upsert Error:", liveErr);
 
       // Lock-in student profile
       setSelectedCompetition(null);
@@ -1363,16 +1333,16 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         return alert("عذراً، الامتحانات الإلكترونية مغلقة بالكامل بقرار سيادي من اللجنة المركزية 🔒");
       }
 
-      const churchEx = (granularControls || []).find(c => c.target_type === 'church' && c.target_name === activeStudent.churchName);
-      if (churchEx?.is_exam_disabled) {
-        setIsLoading(false);
-        return alert(`عذراً، تم إيقاف الامتحانات الإلكترونية مؤقتاً لكنيسة ${activeStudent.churchName} بقرار من الكنترول 🔒`);
-      }
+      // Gate Check before starting exam
+      const { data: existingLog } = await supabase
+        .from("exam_device_logs")
+        .select("id, status")
+        .eq("student_id", activeStudent.id)
+        .maybeSingle();
 
-      const stageEx = (granularControls || []).find(c => c.target_type === 'stage' && c.target_name === stage);
-      if (stageEx?.is_exam_disabled) {
+      if (existingLog && (existingLog.status === 'submitted' || existingLog.status === 'completed' || existingLog.status === 'terminated')) {
         setIsLoading(false);
-        return alert(`عذراً، تم إيقاف الامتحانات الإلكترونية مؤقتاً لمرحلة ${stage} بقرار من الكنترول 🔒`);
+        return alert("عفوًا، لا يسمح بإعادة دخول الامتحان حالياً. يرجى مراجعة اللجنة.");
       }
 
       if (examConfig) {
@@ -1518,31 +1488,30 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       setSelectedCompetition(competitionType);
       setActiveExam(randomModel);
 
-      // DEVICE METADATA EXTRACTION & DB LOGGING
+      // DEVICE METADATA EXTRACTION & LOGGING CONSOLIDATION
       try {
         const parser = new UAParser();
         const result = parser.getResult();
         const osName = result.os.name || "Unknown OS";
         const deviceType = result.device.type || "Desktop";
-        const deviceModel =
-          result.device.model || result.browser.name || "Unknown Device";
+        const deviceModel = result.device.model || result.browser.name || "Unknown Device";
+        const fp = getDeviceFingerprint();
 
-        await supabase.from("exam_device_logs").insert({
-          student_id: activeStudent.id,
-          student_name:
-            activeStudent.studentName || activeStudent.name || "بدون اسم",
-          church_name: activeStudent.churchName || "غير مكتمل",
+        await supabase.from("exam_device_logs").upsert({
+          student_id: String(activeStudent.id),
+          student_name: activeStudent.studentName || activeStudent.name || "بدون اسم",
+          church: activeStudent.churchName || "غير مكتمل",
           stage: stage,
+          device_id: fp.uuid || "N/A",
           device_type: deviceType,
-          device_os: osName,
+          os_version: osName,
           device_model: deviceModel,
           ip_address: deviceInfo?.ip || "127.0.0.1",
           status: "جاري الامتحان",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         });
       } catch (logErr) {
-        console.error("Failed to insert into exam_device_logs:", logErr);
+        console.error("Failed to update exam_device_logs on start:", logErr);
       }
 
       // Update monitoring with chosen exam
@@ -1877,18 +1846,17 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       // Clean up local storage trace for this specific student
       localStorage.removeItem("exam_progress_" + currentStudentObj.id);
 
-      // Gracefully log status updates without letting secondary updates hijack success flow
+      // Gracefully log status updates to exam_device_logs consolidation table
       try {
         await supabase
-          .from("live_monitoring")
+          .from("exam_device_logs")
           .update({
-            status: "completed",
-            device_type: "أنهى الامتحان بالكامل",
-            updated_at: new Date().toISOString(),
+            status: "submitted",
+            updated_at: new Date().toISOString()
           })
           .eq("student_id", currentStudentObj.id);
-      } catch (monErr) {
-        console.warn("Silent check: live_monitoring table update failed", monErr);
+      } catch (logUpdateErr) {
+        console.warn("Silent check: exam_device_logs table update failed after submission", logUpdateErr);
       }
 
       try {
