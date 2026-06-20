@@ -294,14 +294,17 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         detectedIp = ipRes.ip || "127.0.0.1";
       } catch (e) { /* silent */ }
 
+      const fp = getDeviceFingerprint();
       await supabase.from('exam_device_logs').insert({
         student_id: String(studentId),
         student_name: studentName,
         stage: stage,
         church: church,
-        device_name: navigator.appName || "Browser",
+        device_name: fp.uuid || "Browser",
+        device_id: fp.uuid,
+        device_model: fp.model,
         device_type: deviceType,
-        os_version: os,
+        os_version: fp.os || os,
         ip_address: detectedIp,
         last_known_ip: detectedIp,
         status: "Active Exam Started"
@@ -353,7 +356,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         student_id: studentIdStr,
         status: 'active',
         allowReentry: false,
-        device_id: fp?.uuid || 'unknown',
+        device_id: `${fp.uuid} (${fp.model})`,
         lastUpdate: new Date().toISOString()
       });
 

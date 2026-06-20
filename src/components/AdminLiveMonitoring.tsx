@@ -50,6 +50,9 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   const [selectedChurch, setSelectedChurch] = useState(globalChurchFilter);
   const [isProcessing, setIsProcessing] = useState<string | null>(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
+
   // Real-time statistics states
   const [activeExamsRealCount, setActiveExamsRealCount] = useState(0);
   const [submittedExamsRealCount, setSubmittedExamsRealCount] = useState(0);
@@ -209,17 +212,17 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
     }
   };
 
-  const handleDeleteLogRow = async (studentId: string) => {
+  const handleDeleteLogRow = async (logId: any, studentId: string) => {
     if (!confirm('هل تريد حذف هذا السجل نهائياً من شاشة المراقبة؟ سيؤدي ذلك أيضاً لحذف الجلسة النشطة والسماح للطالب بالدخول مجدداً.')) return;
     setIsProcessing(studentId);
     try {
-      // 1. Delete from exam_device_logs
+      // 1. Delete from exam_device_logs SURGICALLY by its unique row ID (supports integers/UUIDs safely)
       await supabase
         .from('exam_device_logs')
         .delete()
-        .eq('student_id', studentId);
+        .eq('id', logId);
 
-      // 2. Delete from active_sessions to allow clean re-entry (Point 4)
+      // 2. Delete from active_sessions for this student to reset their gate access
       await supabase
         .from('active_sessions')
         .delete()
@@ -368,9 +371,10 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
     const logStage = log.stage || 'غير محدد';
     
     const matchesSearch = 
-      (log.student_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (log.student_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (log.device_name || log.device_model || '').toLowerCase().includes(searchTerm.toLowerCase());
+      String(log.student_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(log.student_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(log.device_name || log.device_model || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String((log as any).device_id || '').toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStage = selectedStage === 'الكل' || logStage === selectedStage;
     const matchesChurch = selectedChurch === 'الكل' || logChurch === selectedChurch;
@@ -383,6 +387,10 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
   const activeExamsCount = logs.filter(log => log.status === 'active' || log.status === 'جاري الامتحان').length;
   const submittedExamsCount = logs.filter(log => log.status === 'submitted' || log.status === 'تم التسليم بنجاح').length;
   const blacklistedCount = logs.filter(log => log.status === 'terminated').length;
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
+  const paginatedLogs = filteredLogs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   if (loading && logs.length === 0) {
     return (
@@ -531,17 +539,18 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700 text-sm font-sans">
-              {filteredLogs.map((log) => {
+              {paginatedLogs.map((log) => {
                 const logChurch = log.church || log.church_name || 'غير مكتمل';
                 const logDeviceName = log.device_name || log.device_model || 'متصفح عشوائي';
                 const logOsVersion = log.os_version || log.device_os || 'غير معروف';
                 const logIp = log.ip_address || log.last_known_ip || 'غير معروف';
+                const logDeviceId = (log as any).device_id || 'ID غير محدد';
                 const isTerminated = log.status === 'terminated';
                 const isActive = log.status === 'active' || log.status === 'جاري الامتحان';
                 const isCompleted = log.status === 'submitted' || log.status === 'تم التسليم بنجاح';
 
                 return (
-                  <tr key={log.id} className={`hover:bg-indigo-50/25 transition-all text-xs ${isTerminated ? 'opacity-40 grayscale bg-rose-50/10' : ''}`}>
+                  <tr key={String(log.id)} className={`hover:bg-indigo-50/25 transition-all text-xs ${isTerminated ? 'opacity-40 grayscale bg-rose-50/10' : ''}`}>
                     {/* Student Name */}
                     <td className="p-4 pr-6 font-black text-slate-900">
                       <div className="flex flex-col gap-0.5">
@@ -551,7 +560,7 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
                           {isCompleted && <span className="w-2.5 h-2.5 bg-indigo-500 rounded-full inline-block" />}
                           {isTerminated && <span className="px-1.5 py-0.5 bg-rose-100 text-rose-600 rounded text-[9px] font-black">مطرود وعنيف</span>}
                         </span>
-                        <span className="text-[10px] text-slate-450 font-mono">ID: {log.student_id}</span>
+                        <span className="text-[10px] text-slate-450 font-mono">ID: {String(log.student_id)}</span>
                       </div>
                     </td>
 
@@ -568,7 +577,10 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
                           {log.device_type === 'Mobile' ? <Smartphone size={13} className="text-slate-400" /> : <Laptop size={13} className="text-slate-400" />}
                           {logDeviceName}
                         </span>
-                        <span className="text-[10px] text-slate-400">{logOsVersion}</span>
+                        <div className="flex items-center gap-1 text-[9px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 max-w-fit">
+                          <Monitor size={10} />
+                          <span className="font-black">{logDeviceId}</span> | {logOsVersion}
+                        </div>
                       </div>
                     </td>
 
@@ -600,16 +612,16 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
 
                      {/* Controller Actions */}
                      <td className="p-4">
-                       <div className="flex items-center justify-center gap-2" id={`actions-${log.id}`}>
+                       <div className="flex items-center justify-center gap-2" id={`actions-${String(log.id)}`}>
                          {/* Reset / Open Exam */}
                          <button
                            type="button"
-                           onClick={() => handleResetOpenExam(log.student_id, log.student_name)}
-                           disabled={isProcessing === log.student_id}
+                           onClick={() => handleResetOpenExam(String(log.student_id), log.student_name)}
+                           disabled={isProcessing === String(log.student_id)}
                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-amber-500/25"
                            title="إعادة تعيين / فتح الامتحان للطالب وتصفير السجل"
                          >
-                           <RotateCcw size={12} className={isProcessing === log.student_id ? 'animate-spin' : ''} />
+                           <RotateCcw size={12} className={isProcessing === String(log.student_id) ? 'animate-spin' : ''} />
                            إعادة تعيين / فتح الامتحان
                          </button>
  
@@ -617,8 +629,8 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
                          {isActive && (
                            <button
                              type="button"
-                             onClick={() => handleForceSubmit(log.student_id, log.student_name)}
-                             disabled={isProcessing === log.student_id}
+                             onClick={() => handleForceSubmit(String(log.student_id), log.student_name)}
+                             disabled={isProcessing === String(log.student_id)}
                              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-rose-600/25"
                              title="إنهاء الاختبار وسحب ورقة الطالب"
                            >
@@ -631,8 +643,8 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
                          {isTerminated && (
                            <button
                              type="button"
-                             onClick={() => handleClearBlacklist(log.student_id)}
-                             disabled={isProcessing === log.student_id}
+                             onClick={() => handleClearBlacklist(String(log.student_id))}
+                             disabled={isProcessing === String(log.student_id)}
                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-750 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-sm shadow-emerald-500/25"
                              title="فك حظر الجهاز"
                            >
@@ -644,8 +656,8 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
                          {/* Delete Log Row */}
                          <button
                            type="button"
-                           onClick={() => handleDeleteLogRow(log.student_id)}
-                           disabled={isProcessing === log.student_id}
+                           onClick={() => handleDeleteLogRow(log.id, String(log.student_id))}
+                           disabled={isProcessing === String(log.student_id)}
                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 transition-colors cursor-pointer"
                            title="حذف هذا السجل فقط"
                          >
@@ -659,6 +671,46 @@ const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-4">
+            <span className="text-[10px] font-black text-slate-400 uppercase">
+              عرض الصفحة {currentPage} من {totalPages} (إجمالي {filteredLogs.length} سجل)
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black hover:bg-slate-50 disabled:opacity-30 transition-all cursor-pointer"
+              >
+                السابق
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                .map((p, i, arr) => (
+                  <React.Fragment key={p}>
+                    {i > 0 && arr[i - 1] !== p - 1 && <span className="text-slate-300">...</span>}
+                    <button
+                      onClick={() => setCurrentPage(p)}
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                        currentPage === p ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  </React.Fragment>
+                ))}
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black hover:bg-slate-50 disabled:opacity-30 transition-all cursor-pointer"
+              >
+                التالي
+              </button>
+            </div>
+          </div>
+        )}
 
         {filteredLogs.length === 0 && (
           <div className="text-center py-16 text-slate-400 italic bg-slate-50/50">

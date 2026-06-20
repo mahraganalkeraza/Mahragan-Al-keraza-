@@ -17,10 +17,11 @@ export const getDeviceFingerprint = (): DeviceFingerprint => {
   const res = parser.getResult();
   const ua = navigator.userAgent;
 
-  let deviceId = localStorage.getItem('coptic_fingerprint_id');
+  let deviceId = localStorage.getItem('device_hardware_token');
   if (!deviceId) {
-    deviceId = uuidv4();
-    localStorage.setItem('coptic_fingerprint_id', deviceId);
+    // Generate a unique shorthand token: DEV-XXXXX
+    deviceId = `DEV-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    localStorage.setItem('device_hardware_token', deviceId);
   }
 
   return {
