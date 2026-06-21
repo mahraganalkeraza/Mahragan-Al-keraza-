@@ -68,8 +68,7 @@ import {
   Printer,
   AlertTriangle,
   Bell,
-  ShieldAlert,
-  RefreshCw
+  ShieldAlert
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
@@ -620,24 +619,6 @@ function AppComponent() {
   };
   const initialProfile = getInitialProfile();
 
-  const [refreshCountdown, setRefreshCountdown] = useState<number | null>(null);
-  const [targetRefreshUrl, setTargetRefreshUrl] = useState<string>('');
-
-  useEffect(() => {
-    if (refreshCountdown === null) return;
-    
-    if (refreshCountdown <= 0) {
-      window.location.href = targetRefreshUrl || window.location.href;
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      setRefreshCountdown((prev) => (prev !== null ? prev - 1 : null));
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [refreshCountdown, targetRefreshUrl]);
-
   useEffect(() => {
     const sessionStr = localStorage.getItem('church_session');
     if (!sessionStr) return;
@@ -683,12 +664,12 @@ function AppComponent() {
       const timestamp = (payload && payload.timestamp) || Date.now();
       const cacheBusterUrl = `${currentUrl}?bust=${timestamp}${window.location.hash}`;
       
-      setTargetRefreshUrl(cacheBusterUrl);
-      setRefreshCountdown(5);
+      alert("يتم الآن تحديث النظام تلقائياً وتطبيق تعديلات الإدارة الأخيرة...");
+      window.location.href = cacheBusterUrl;
     };
 
     const globalLockChannel = supabase
-      .channel('church-lock-channel')
+      .channel('global-updates-subscriber-lock')
       .on(
         'broadcast',
         { event: 'FORCE_HARD_REFRESH' },
@@ -699,7 +680,7 @@ function AppComponent() {
       .subscribe();
 
     const globalUpdatesChannel = supabase
-      .channel('global-updates')
+      .channel('global-updates-subscriber-upd')
       .on(
         'broadcast',
         { event: 'FORCE_HARD_REFRESH' },
@@ -5508,37 +5489,6 @@ function AppComponent() {
 
   return (
     <div className="min-h-screen bg-bg-soft font-sans selection:bg-accent/30 relative" dir="rtl">
-      {/* Forced Remote Refresh Countdown Toast */}
-      <AnimatePresence>
-        {refreshCountdown !== null && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: -50 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: -50 }}
-            className="fixed top-6 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-600 to-amber-600 text-white shadow-2xl z-[1000] p-5 rounded-2xl flex items-center gap-4 border border-orange-500/30 max-w-lg min-w-[320px] sm:min-w-[400px] select-none"
-            dir="rtl"
-          >
-            <div className="bg-white/20 p-3 rounded-full flex items-center justify-center animate-bounce">
-              <RefreshCw size={24} className="animate-spin text-white" />
-            </div>
-            <div className="flex-1">
-              <h4 className="font-extrabold text-base mb-1">تحديث إجباري للنظام 🔄</h4>
-              <p className="text-xs text-orange-50/90 leading-relaxed font-black">
-                سيتم تحديث النظام خلال لحظات لضمان أفضل تجربة...
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-[10px] bg-white/25 px-2 py-0.5 rounded-full font-bold">
-                  جاري إعادة التشغيل تلقائياً خلال:
-                </span>
-                <span className="text-sm font-black text-white bg-black/30 px-2.5 py-0.5 rounded-lg animate-pulse">
-                  {refreshCountdown} ثوانٍ
-                </span>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* Global Watermark */}
       <div 
         className="fixed inset-0 pointer-events-none z-0 opacity-[0.03]"
