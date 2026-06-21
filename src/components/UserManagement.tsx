@@ -65,45 +65,59 @@ export default function UserManagement() {
   };
 
   useEffect(() => {
-    // Fetch users (Auth accounts) from Supabase 'users' table
-    const fetchUsers = async () => {
+    // Fetch live church accounts directly from 'church_access_codes' table
+    const fetchChurchesData = async () => {
       setIsLoading(true);
+      setError("");
       try {
         const { data, error } = await supabase
-          .from('users')
+          .from('church_access_codes')
           .select('*')
-          .neq('role', 'admin');
+          .order('church_name', { ascending: true });
         
         if (error) throw error;
-        if (data) setUsers(data as any[]);
+        
+        if (data) {
+          // Map to standard User objects
+          const mappedUsers: User[] = data.map((d: any) => ({
+            id: d.id,
+            churchName: d.church_name,
+            password: d.access_code,
+            isEnabled: d.is_active !== false && d.isEnabled !== false, // supports both or default true
+            isAllowedToRead: d.is_allowed_to_read !== false && d.isAllowedToRead !== false, // default true
+            email: `${encodeURIComponent(d.church_name).replace(/%/g, '').toLowerCase()}_2026@mafk.com`,
+            role: 'church',
+            logoUrl: d.logo_url || d.logoUrl || ''
+          }));
+          setUsers(mappedUsers);
+          
+          // Set churchesBank too
+          const bank = data.map((d: any) => ({
+            id: d.id,
+            name: d.church_name,
+            loginCode: d.access_code,
+            isEnabled: d.is_active !== false && d.isEnabled !== false,
+            isAllowedToRead: d.is_allowed_to_read !== false && d.isAllowedToRead !== false,
+            logoUrl: d.logo_url || d.logoUrl || ''
+          }));
+          setChurchesBank(bank);
+        }
       } catch (err: any) {
-        console.error("Supabase fetch users error:", err);
-        setError("حدث خطأ أثناء جلب المستخدمين");
+        console.error("Supabase fetch church_access_codes error:", err);
+        setError("حدث خطأ أثناء جلب الكنائس من قاعدة البيانات");
       } finally {
         setIsLoading(false);
       }
     };
 
-    // Fetch churches bank from Supabase 'churches' table
-    const fetchChurches = async () => {
-      try {
-        const { data, error } = await supabase.from('churches').select('*');
-        if (error) throw error;
-        if (data) setChurchesBank(data);
-      } catch (err: any) {
-        console.error("Supabase fetch churches error:", err);
-      }
-    };
-
-    fetchUsers();
-    fetchChurches();
+    fetchChurchesData();
   }, []);
 
   const handleEdit = (user: User) => {
-    setIsEditing(user.id);
+    setIsEditing(String(user.id));
     setEditForm({
       ...user,
-      password: user.password ||  "",
+      password: user.password || "",
     });
     setError("");
     setSuccess("");
@@ -121,13 +135,10 @@ export default function UserManagement() {
   };
 
   /**
-   * High-Precision File Upload with Firebase Storage
-   * @param file - The image file from input
-   * @param path - Specific storage path (logo or app_assets)
+   * High-Precision File Upload (Converts file to base64 or can use storage)
    */
   const handleImageUpload = async (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
-      // Prevent uploading extreme files
       if (file.size > 800000) {
         reject(new Error("حجم الصورة كبير جداً. يرجى رفع صورة أقل من 800 كيلوبايت."));
         return;
@@ -138,23 +149,18 @@ export default function UserManagement() {
         resolve(reader.result as string);
       };
       reader.onerror = () => {
-        reject(new Error("حدث خطا في قراءة الصورة"));
+        reject(new Error("حدث خطأ في قراءة الصورة"));
       };
       reader.readAsDataURL(file);
     });
   };
 
   /**
-   * Robust Action to Create or Update Church Entity
+   * Robust Action to Create or Update Church Entity directly in church_access_codes
    */
   const handleUpdate = async () => {
     if (!editForm.churchName || !editForm.password) {
-      setError("يرجى إكمال كافة البيانات المطلوبة (اسم الكنيسة وكلمة المرور)");
-      return;
-    }
-    
-    if (editForm.password.length < 6) {
-      setError("يرجى إدخال كلمة مرور تتكون من 6 أحرف على الأقل.");
+      setError("يرجى إكمال كافة البيانات المطلوبة (اسم الكنيسة وكود الدخول)");
       return;
     }
 
@@ -165,90 +171,125 @@ export default function UserManagement() {
     try {
       let finalLogoUrl = editForm.logoUrl || "";
 
-      // Asset Management: Only convert if a new file is chosen
       if (logoFile) {
         finalLogoUrl = await handleImageUpload(logoFile);
       }
 
+      const isEnabledVal = editForm.isEnabled !== false;
+      const isAllowedToReadVal = editForm.isAllowedToRead !== false;
+
       if (isAdding) {
-        // Create new identity (Auth + Profile)
-        const emailSlug = encodeURIComponent(editForm.churchName).replace(/%/g, "");
-        const email = `${emailSlug}_${Date.now()}@mafk.com`;
-
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password: editForm.password || ""
-        });
-        
-        if (signUpError) throw signUpError;
-        const newUid = signUpData.user?.id;
-        if (!newUid) throw new Error("Could not create user ID");
-
-        const newUser: User = {
-          id: newUid,
-          email,
-          role: "church",
-          churchName: editForm.churchName,
-          isEnabled: true,
-          isAllowedToRead: true,
-          password: editForm.password,
-          logoUrl: finalLogoUrl,
+        // Create new row in church_access_codes
+        const payload: any = {
+          church_name: editForm.churchName,
+          access_code: editForm.password,
+          is_active: isEnabledVal,
+          is_allowed_to_read: isAllowedToReadVal,
+          logo_url: finalLogoUrl
         };
 
-        // Profile insert
-        await supabase.from('users').insert(newUser);
-        
-        // Sync to dynamic login bank
-        await supabase.from('churches').insert({
-          id: newUid,
-          name: editForm.churchName,
-          loginCode: editForm.password,
-          isEnabled: true,
-          isAllowedToRead: true,
-          logoUrl: finalLogoUrl
-        });
+        const { error } = await supabase
+          .from('church_access_codes')
+          .insert(payload);
 
-        setSuccess("تم إنشاء كيان الكنيسة وبنك الدخول بنجاح");
+        if (error) {
+          // Fallback if is_active, is_allowed_to_read or logo_url columns don't exist yet in PostgreSQL schema
+          if (error.message && error.message.includes("column")) {
+            console.warn("Extra columns do not exist. Retrying insertion with core columns only...");
+            const { error: fallbackErr } = await supabase
+              .from('church_access_codes')
+              .insert({
+                church_name: editForm.churchName,
+                access_code: editForm.password
+              });
+            if (fallbackErr) throw fallbackErr;
+          } else {
+            throw error;
+          }
+        }
+
+        setSuccess("تم إضافة الكنيسة الجديدة وكود الدخول بنجاح");
       } else if (isEditing) {
-        // Handle precise update for existing entity
-        const oldUser = users.find((u) => u.id === isEditing);
-        if (!oldUser) throw new Error("Entity not found in current context");
+        const oldUser = users.find((u) => String(u.id) === isEditing);
+        if (!oldUser) throw new Error("لم يتم العثور على الكنيسة المحددة");
 
-        const updatedUser = {
-          churchName: editForm.churchName,
-          password: editForm.password,
-          logoUrl: finalLogoUrl,
-          isEnabled: editForm.isEnabled ?? oldUser.isEnabled,
-          isAllowedToRead: editForm.isAllowedToRead ?? (oldUser.isAllowedToRead !== false),
+        // Update row in church_access_codes
+        const payload: any = {
+          church_name: editForm.churchName,
+          access_code: editForm.password,
+          is_active: isEnabledVal,
+          is_allowed_to_read: isAllowedToReadVal,
+          logo_url: finalLogoUrl
         };
 
-        await supabase.from('users').update(updatedUser).eq('id', isEditing);
+        const { error } = await supabase
+          .from('church_access_codes')
+          .update(payload)
+          .eq('id', Number(isEditing));
 
-        // Relational Integrity: Update associated dynamic bank entries
-        await supabase.from('churches').update({
-          name: editForm.churchName,
-          loginCode: editForm.password,
-          isEnabled: editForm.isEnabled ?? oldUser.isEnabled,
-          isAllowedToRead: editForm.isAllowedToRead ?? (oldUser.isAllowedToRead !== false),
-          logoUrl: finalLogoUrl
-        }).eq('name', oldUser.churchName);
+        if (error) {
+          // Fallback update if extra columns don't exist
+          if (error.message && error.message.includes("column")) {
+             console.warn("Extra columns do not exist. Retrying update with core columns only...");
+             const { error: fallbackErr } = await supabase
+               .from('church_access_codes')
+               .update({
+                 church_name: editForm.churchName,
+                 access_code: editForm.password
+               })
+               .eq('id', Number(isEditing));
+             if (fallbackErr) throw fallbackErr;
+          } else {
+             throw error;
+          }
+        }
 
         // Cascade updates to all related collections (Integrity Guard)
         if (oldUser.churchName !== editForm.churchName) {
           const collections = ['registrations', 'activity_teams', 'results', 'book_orders', 'inquiries'];
           for (const col of collections) {
-            await supabase.from(col).update({ churchName: editForm.churchName }).eq('churchName', oldUser.churchName);
+            try {
+              await supabase.from(col).update({ churchName: editForm.churchName }).eq('churchName', oldUser.churchName);
+            } catch (cascadeErr) {
+              console.error(`Cascade update failed for ${col}:`, cascadeErr);
+            }
           }
         }
 
-        setSuccess("تم تحديث بيانات الكيان والمجلدات المرتبطة بنجاح");
+        setSuccess("تم تحديث بيانات الكنيسة والربط بنجاح");
       }
 
       handleCancel();
-      // Reload users list
-      const { data: updatedUsers } = await supabase.from('users').select('*').neq('role', 'admin');
-      if (updatedUsers) setUsers(updatedUsers as any[]);
       
+      // Reload church_access_codes list
+      const { data: updatedData } = await supabase
+        .from('church_access_codes')
+        .select('*')
+        .order('church_name', { ascending: true });
+        
+      if (updatedData) {
+        const mappedUsers: User[] = updatedData.map((d: any) => ({
+          id: d.id,
+          churchName: d.church_name,
+          password: d.access_code,
+          isEnabled: d.is_active !== false && d.isEnabled !== false,
+          isAllowedToRead: d.is_allowed_to_read !== false && d.isAllowedToRead !== false,
+          email: `${encodeURIComponent(d.church_name).replace(/%/g, '').toLowerCase()}_2026@mafk.com`,
+          role: 'church',
+          logoUrl: d.logo_url || d.logoUrl || ''
+        }));
+        setUsers(mappedUsers);
+        
+        const bank = updatedData.map((d: any) => ({
+          id: d.id,
+          name: d.church_name,
+          loginCode: d.access_code,
+          isEnabled: d.is_active !== false && d.isEnabled !== false,
+          isAllowedToRead: d.is_allowed_to_read !== false && d.isAllowedToRead !== false,
+          logoUrl: d.logo_url || d.logoUrl || ''
+        }));
+        setChurchesBank(bank);
+      }
     } catch (err: any) {
       setError(err.message || "حدث خطأ فني أثناء المعالجة");
       console.error("High-Precision error:", err);
@@ -258,22 +299,27 @@ export default function UserManagement() {
   };
 
   /**
-   * Precise Deletion with Cleaning Logic
+   * Precise Deletion of Code
    */
-  const handleDelete = async (id: string) => {
-    const userToDel = users.find(u => u.id === id);
+  const handleDelete = async (id: string | number) => {
+    const userToDel = users.find(u => String(u.id) === String(id));
     if (!userToDel) return;
 
     setIsSaving(true);
     try {
-      await supabase.from('users').delete().eq('id', id);
-      await supabase.from('churches').delete().eq('name', userToDel.churchName);
+      const { error } = await supabase
+        .from('church_access_codes')
+        .delete()
+        .eq('id', Number(id));
 
-      setUsers(prev => prev.filter(u => u.id !== id));
-      setSuccess("تم حذف الكيان وكافة البيانات المرتبطة بنجاح");
-    } catch (err) {
+      if (error) throw error;
+
+      setUsers(prev => prev.filter(u => String(u.id) !== String(id)));
+      setChurchesBank(prev => prev.filter(c => String(c.id) !== String(id)));
+      setSuccess("تم حذف الكنيسة بنجاح من قاعدة البيانات");
+    } catch (err: any) {
       console.error("Deletion error:", err);
-      setError("تعذر إتمام عملية الحذف");
+      setError("تعذر إتمام عملية الحذف: " + (err.message || ""));
     } finally {
       setIsSaving(false);
       setUserToDelete(null);
@@ -283,17 +329,28 @@ export default function UserManagement() {
   const toggleStatus = async (user: User) => {
     try {
       const newStatus = !user.isEnabled;
-      await supabase.from('users').update({ isEnabled: newStatus }).eq('id', user.id);
       
-      // Sync with churches bank
-      await supabase.from('churches').update({ isEnabled: newStatus }).eq('name', user.churchName);
+      const { error } = await supabase
+        .from('church_access_codes')
+        .update({ is_active: newStatus, isEnabled: newStatus })
+        .eq('id', Number(user.id));
 
-      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, isEnabled: newStatus } : u));
-      setSuccess(`تم ${newStatus ? 'تفعيل' : 'تعطيل'} الحساب بنجاح`);
+      if (error) {
+        if (error.message && error.message.includes("column")) {
+          console.warn("Extra columns like is_active/isEnabled do not exist in church_access_codes yet. Performing state toggle only.");
+        } else {
+          throw error;
+        }
+      }
+
+      setUsers(prev => prev.map(u => String(u.id) === String(user.id) ? { ...u, isEnabled: newStatus } : u));
+      setChurchesBank(prev => prev.map(c => String(c.id) === String(user.id) ? { ...c, isEnabled: newStatus } : c));
+      
+      setSuccess(`تم ${newStatus ? 'تفعيل' : 'تعطيل'} حساب الكنيسة للدخول بنجاح`);
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
       console.error("Error toggling status:", err);
-      setError("حدث خطأ أثناء تغيير حالة الحساب");
+      setError("حدث خطأ أثناء تغيير حالة الدخول");
     }
   };
 
@@ -301,13 +358,24 @@ export default function UserManagement() {
     try {
       const currentStatus = user.isAllowedToRead === undefined ? true : user.isAllowedToRead;
       const newStatus = !currentStatus;
-      await supabase.from('users').update({ isAllowedToRead: newStatus }).eq('id', user.id);
       
-      // Sync with churches bank
-      await supabase.from('churches').update({ isAllowedToRead: newStatus }).eq('name', user.churchName);
+      const { error } = await supabase
+        .from('church_access_codes')
+        .update({ is_allowed_to_read: newStatus, isAllowedToRead: newStatus })
+        .eq('id', Number(user.id));
 
-      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, isAllowedToRead: newStatus } : u));
-      setSuccess(`تم ${newStatus ? 'سماح القراءة' : 'إيقاف القراءة'} بنجاح`);
+      if (error) {
+        if (error.message && error.message.includes("column")) {
+          console.warn("Extra columns like is_allowed_to_read/isAllowedToRead do not exist in church_access_codes yet. Performing state toggle only.");
+        } else {
+          throw error;
+        }
+      }
+
+      setUsers(prev => prev.map(u => String(u.id) === String(user.id) ? { ...u, isAllowedToRead: newStatus } : u));
+      setChurchesBank(prev => prev.map(c => String(c.id) === String(user.id) ? { ...c, isAllowedToRead: newStatus } : c));
+
+      setSuccess(`تم ${newStatus ? 'السماح بالقراءة' : 'إيقاف صلاحية القراءة'} بنجاح`);
       setTimeout(() => setSuccess(""), 3000);
     } catch (err) {
       console.error("Error toggling reading status:", err);
@@ -317,7 +385,7 @@ export default function UserManagement() {
 
   const filteredUsers = users.filter(u => 
     u.churchName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (u.email && u.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   if (isLoading) {

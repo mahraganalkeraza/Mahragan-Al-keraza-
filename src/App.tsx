@@ -3990,13 +3990,19 @@ function AppComponent() {
       // Direct, ultra-fast query to our new table 'church_access_codes'
       const { data, error } = await supabase
         .from('church_access_codes')
-        .select('church_name')
+        .select('*')
         .eq('church_name', loginChurch)
         .eq('access_code', code)
         .single();
 
       if (error || !data) {
         setLoginError('الكود السري غير صحيح، يرجى المحاولة مرة أخرى');
+        setIsLoading(false);
+        return;
+      }
+
+      if (data && (data.is_active === false || data.isEnabled === false)) {
+        setLoginError('عذراً، تم إيقاف صلاحية الدخول لكيان هذه الكنيسة من قبل إدارة المهرجان 🔒');
         setIsLoading(false);
         return;
       }
