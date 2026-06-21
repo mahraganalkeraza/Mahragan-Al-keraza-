@@ -389,15 +389,7 @@ export default function UserManagement() {
     setShowSuccessToast(false);
     
     try {
-      // Broadcast on channel 'church-lock-channel'
       await supabase.channel('church-lock-channel').send({
-        type: 'broadcast',
-        event: 'FORCE_HARD_REFRESH',
-        payload: { type: 'FORCE_HARD_REFRESH', timestamp: Date.now() }
-      });
-      
-      // Broadcast on channel 'global-updates'
-      await supabase.channel('global-updates').send({
         type: 'broadcast',
         event: 'FORCE_HARD_REFRESH',
         payload: { type: 'FORCE_HARD_REFRESH', timestamp: Date.now() }
