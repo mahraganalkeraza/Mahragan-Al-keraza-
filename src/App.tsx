@@ -649,22 +649,50 @@ function AppComponent() {
           }
         }
       )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(churchSubscription);
+    };
+  }, []);
+
+  // Global Unconditional Broadcast Listener for Force Hard Refresh / Cache Busting
+  useEffect(() => {
+    const handleHardRefresh = (payload: any) => {
+      sessionStorage.clear();
+      const currentUrl = window.location.origin + window.location.pathname;
+      const timestamp = (payload && payload.timestamp) || Date.now();
+      const cacheBusterUrl = `${currentUrl}?bust=${timestamp}${window.location.hash}`;
+      
+      alert("يتم الآن تحديث النظام تلقائياً وتطبيق تعديلات الإدارة الأخيرة...");
+      window.location.href = cacheBusterUrl;
+    };
+
+    const globalLockChannel = supabase
+      .channel('global-updates-subscriber-lock')
       .on(
         'broadcast',
         { event: 'FORCE_HARD_REFRESH' },
-        () => {
-          sessionStorage.clear();
-          const currentUrl = window.location.origin + window.location.pathname;
-          const cacheBusterUrl = `${currentUrl}?bust=${new Date().getTime()}${window.location.hash}`;
-          
-          alert("يتم الآن تحديث النظام وتطبيق التعديلات الجديدة ...");
-          window.location.href = cacheBusterUrl;
+        (envelope: any) => {
+          handleHardRefresh(envelope.payload);
+        }
+      )
+      .subscribe();
+
+    const globalUpdatesChannel = supabase
+      .channel('global-updates-subscriber-upd')
+      .on(
+        'broadcast',
+        { event: 'FORCE_HARD_REFRESH' },
+        (envelope: any) => {
+          handleHardRefresh(envelope.payload);
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(churchSubscription);
+      supabase.removeChannel(globalLockChannel);
+      supabase.removeChannel(globalUpdatesChannel);
     };
   }, []);
   

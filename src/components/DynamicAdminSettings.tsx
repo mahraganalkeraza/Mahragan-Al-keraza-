@@ -479,12 +479,24 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
   const triggerHardRefresh = async () => {
     if (!confirm("هل أنت متأكد؟ سيؤدي هذا لتحديث كافة الأجهزة المتصلة فوراً.")) return;
     
-    await supabase.channel('church-lock-channel').send({
-      type: 'broadcast',
-      event: 'FORCE_HARD_REFRESH',
-      payload: { timestamp: Date.now() }
-    });
-    alert("تم إرسال أمر التحديث الإجباري.");
+    try {
+      await supabase.channel('church-lock-channel').send({
+        type: 'broadcast',
+        event: 'FORCE_HARD_REFRESH',
+        payload: { type: 'FORCE_HARD_REFRESH', timestamp: Date.now() }
+      });
+      
+      await supabase.channel('global-updates').send({
+        type: 'broadcast',
+        event: 'FORCE_HARD_REFRESH',
+        payload: { type: 'FORCE_HARD_REFRESH', timestamp: Date.now() }
+      });
+
+      alert("تم إرسال أمر التحديث الإجباري وطرد الكاش لكافة الأجهزة بنجاح! 🔄");
+    } catch (err) {
+      console.error("Error broadcasting hard refresh:", err);
+      alert("حدث خطأ أثناء بث أمر التحديث.");
+    }
   };
 
   // CHURCHES

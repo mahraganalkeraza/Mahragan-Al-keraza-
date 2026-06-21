@@ -14,6 +14,7 @@ import {
   Lock,
   Unlock,
   Upload,
+  RefreshCw,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -52,6 +53,8 @@ export default function UserManagement() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [togglingIds, setTogglingIds] = useState<Record<string | number, boolean>>({});
+  const [isRefreshingAllDevices, setIsRefreshingAllDevices] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -378,6 +381,41 @@ export default function UserManagement() {
     }
   };
 
+  const triggerHardRefresh = async () => {
+    if (isRefreshingAllDevices) return;
+    if (!confirm("هل أنت متأكد؟ سيؤدي هذا لتحديث كافة الأجهزة المتصلة فوراً.")) return;
+    
+    setIsRefreshingAllDevices(true);
+    setShowSuccessToast(false);
+    
+    try {
+      // Broadcast on channel 'church-lock-channel'
+      await supabase.channel('church-lock-channel').send({
+        type: 'broadcast',
+        event: 'FORCE_HARD_REFRESH',
+        payload: { type: 'FORCE_HARD_REFRESH', timestamp: Date.now() }
+      });
+      
+      // Broadcast on channel 'global-updates'
+      await supabase.channel('global-updates').send({
+        type: 'broadcast',
+        event: 'FORCE_HARD_REFRESH',
+        payload: { type: 'FORCE_HARD_REFRESH', timestamp: Date.now() }
+      });
+      
+      setShowSuccessToast(true);
+      // Auto-hide after 6 seconds
+      setTimeout(() => {
+        setShowSuccessToast(false);
+      }, 6000);
+    } catch (err) {
+      console.error("Error triggering hard refresh:", err);
+      setError("حدث خطأ أثناء إرسال أمر التحديث الإجباري.");
+    } finally {
+      setIsRefreshingAllDevices(false);
+    }
+  };
+
   const filteredUsers = users.filter(u => 
     u.churchName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (u.email && u.email.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -429,8 +467,21 @@ export default function UserManagement() {
       </div>
 
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-        <h2 className="text-2xl font-black text-slate-800">
+        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
           إدارة المستخدمين والكنائس
+          <button
+            onClick={triggerHardRefresh}
+            disabled={isRefreshingAllDevices}
+            className={`flex items-center gap-1.5 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white text-xs font-black px-3.5 py-2 rounded-xl shadow-md transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed`}
+            title="تحديث إجباري وطرد الكاش لجميع الأجهزة النشطة والطلاب"
+          >
+            {isRefreshingAllDevices ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <RefreshCw size={14} className="animate-spin-slow" />
+            )}
+            {isRefreshingAllDevices ? "جاري الإرسال..." : "تحديث إجباري للكاش"}
+          </button>
         </h2>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <div className="relative flex-1 md:w-64">
@@ -880,6 +931,35 @@ export default function UserManagement() {
                 </button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Absolute success Toast for remote refresh */}
+      <AnimatePresence>
+        {showSuccessToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 50, scale: 0.95 }}
+            className="fixed bottom-6 left-6 bg-gradient-to-r from-emerald-600 to-teal-600 text-white p-4.5 rounded-2xl shadow-2xl z-[100] flex items-center gap-4 border border-emerald-500 max-w-sm"
+            dir="rtl"
+          >
+            <div className="bg-white/20 p-2.5 rounded-xl">
+              <RefreshCw size={20} className="animate-spin" />
+            </div>
+            <div className="flex-1">
+              <h4 className="font-extrabold text-sm mb-0.5">تم التحديث الإجباري</h4>
+              <p className="text-xs text-emerald-50 opacity-95 leading-relaxed">
+                تم بث أمر التحديث الإجباري وتصفير كاش الأجهزة لجميع الطلاب والمنصات المتصلة بنجاح! 🔄⚡
+              </p>
+            </div>
+            <button 
+              onClick={() => setShowSuccessToast(false)} 
+              className="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-colors cursor-pointer self-start"
+            >
+              <X size={16} />
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
