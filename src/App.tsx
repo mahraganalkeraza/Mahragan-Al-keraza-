@@ -4002,7 +4002,7 @@ function AppComponent() {
       }
 
       if (data && (data.is_active === false || data.isEnabled === false)) {
-        setLoginError('عذراً، تم إيقاف صلاحية الدخول لكيان هذه الكنيسة من قبل إدارة المهرجان 🔒');
+        setLoginError('هذا الحساب معطل حالياً من قِبل لجنة المهرجان');
         setIsLoading(false);
         return;
       }

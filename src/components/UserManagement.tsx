@@ -51,6 +51,7 @@ export default function UserManagement() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [togglingIds, setTogglingIds] = useState<Record<string | number, boolean>>({});
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -327,21 +328,16 @@ export default function UserManagement() {
   };
 
   const toggleStatus = async (user: User) => {
+    setTogglingIds(prev => ({ ...prev, [user.id]: true }));
     try {
       const newStatus = !user.isEnabled;
       
       const { error } = await supabase
         .from('church_access_codes')
-        .update({ is_active: newStatus, isEnabled: newStatus })
+        .update({ is_active: newStatus })
         .eq('id', Number(user.id));
 
-      if (error) {
-        if (error.message && error.message.includes("column")) {
-          console.warn("Extra columns like is_active/isEnabled do not exist in church_access_codes yet. Performing state toggle only.");
-        } else {
-          throw error;
-        }
-      }
+      if (error) throw error;
 
       setUsers(prev => prev.map(u => String(u.id) === String(user.id) ? { ...u, isEnabled: newStatus } : u));
       setChurchesBank(prev => prev.map(c => String(c.id) === String(user.id) ? { ...c, isEnabled: newStatus } : c));
@@ -351,26 +347,23 @@ export default function UserManagement() {
     } catch (err) {
       console.error("Error toggling status:", err);
       setError("حدث خطأ أثناء تغيير حالة الدخول");
+    } finally {
+      setTogglingIds(prev => ({ ...prev, [user.id]: false }));
     }
   };
 
   const toggleReadingStatus = async (user: User) => {
+    setTogglingIds(prev => ({ ...prev, [user.id]: true }));
     try {
       const currentStatus = user.isAllowedToRead === undefined ? true : user.isAllowedToRead;
       const newStatus = !currentStatus;
       
       const { error } = await supabase
         .from('church_access_codes')
-        .update({ is_allowed_to_read: newStatus, isAllowedToRead: newStatus })
+        .update({ is_allowed_to_read: newStatus })
         .eq('id', Number(user.id));
 
-      if (error) {
-        if (error.message && error.message.includes("column")) {
-          console.warn("Extra columns like is_allowed_to_read/isAllowedToRead do not exist in church_access_codes yet. Performing state toggle only.");
-        } else {
-          throw error;
-        }
-      }
+      if (error) throw error;
 
       setUsers(prev => prev.map(u => String(u.id) === String(user.id) ? { ...u, isAllowedToRead: newStatus } : u));
       setChurchesBank(prev => prev.map(c => String(c.id) === String(user.id) ? { ...c, isAllowedToRead: newStatus } : c));
@@ -380,6 +373,8 @@ export default function UserManagement() {
     } catch (err) {
       console.error("Error toggling reading status:", err);
       setError("حدث خطأ أثناء تغيير صلاحية القراءة");
+    } finally {
+      setTogglingIds(prev => ({ ...prev, [user.id]: false }));
     }
   };
 
@@ -752,44 +747,82 @@ export default function UserManagement() {
                       </p>
                       <div className="mt-2 inline-flex items-center px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-xs font-mono">
                         <span className="font-bold ml-1">الرقم السري:</span>{" "}
-                        {user.password ||
-                          
-                          "غير متوفر"}
+                        {user.password || "غير متوفر"}
                       </div>
                     </div>
                   </div>
-                  <div className="mt-6 flex gap-2 border-t border-slate-100 pt-4">
+
+                  {/* High-Fidelity Active/Inactive Slide Toggle */}
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-100 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        {togglingIds[user.id] ? (
+                          <Loader2 className="animate-spin text-emerald-500" size={16} />
+                        ) : (
+                          <div className={`h-2.5 w-2.5 rounded-full ${user.isEnabled !== false ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+                        )}
+                        <span className="text-xs font-black text-slate-700">حالة الدخول للغرفة:</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${user.isEnabled !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                          {user.isEnabled !== false ? 'نشط ومفعل' : 'معطل ومغلق'}
+                        </span>
+                      </div>
+                      <button
+                        id={`toggle-status-btn-${user.id}`}
+                        disabled={togglingIds[user.id]}
+                        onClick={() => toggleStatus(user)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                          user.isEnabled !== false ? 'bg-emerald-500' : 'bg-slate-300'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            user.isEnabled !== false ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {/* High-Fidelity Allowed To Read Results Slide Toggle */}
+                    <div className="flex items-center justify-between p-2.5 bg-indigo-50/10 border border-indigo-50 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        {togglingIds[user.id] ? (
+                          <Loader2 className="animate-spin text-indigo-500" size={16} />
+                        ) : (
+                          <div className={`h-2.5 w-2.5 rounded-full ${user.isAllowedToRead !== false ? 'bg-indigo-500' : 'bg-amber-500'}`} />
+                        )}
+                        <span className="text-xs font-black text-slate-700">صلاحية قراءة النتائج:</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${user.isAllowedToRead !== false ? 'bg-indigo-100 text-indigo-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {user.isAllowedToRead !== false ? 'مسموح بالقراءة' : 'ممنوع من القراءة'}
+                        </span>
+                      </div>
+                      <button
+                        id={`toggle-reading-btn-${user.id}`}
+                        disabled={togglingIds[user.id]}
+                        onClick={() => toggleReadingStatus(user)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                          user.isAllowedToRead !== false ? 'bg-indigo-600' : 'bg-slate-300'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                            user.isAllowedToRead !== false ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Actions Footer */}
+                  <div className="mt-4 flex gap-2 border-t border-slate-100 pt-4">
                     <button
-                      onClick={() => toggleReadingStatus(user)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg transition-colors font-bold text-sm ${
-                        user.isAllowedToRead !== false
-                          ? "bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
-                          : "bg-amber-50 text-amber-600 hover:bg-amber-100"
-                      }`}
-                      title="سماح القراءة"
-                    >
-                      {user.isAllowedToRead !== false ? <Unlock size={16} /> : <Lock size={16} />} 
-                      {user.isAllowedToRead !== false ? "قراءة" : "منع"}
-                    </button>
-                    <button
-                      onClick={() => toggleStatus(user)}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg transition-colors font-bold text-sm ${
-                        user.isEnabled !== false
-                          ? "bg-amber-50 text-amber-600 hover:bg-amber-100"
-                          : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-                      }`}
-                      title={user.isEnabled !== false ? "تعطيل الحساب" : "تفعيل الحساب"}
-                    >
-                      {user.isEnabled !== false ? <Lock size={16} /> : <Unlock size={16} />} 
-                      {user.isEnabled !== false ? "دخول" : "سماح"}
-                    </button>
-                    <button
+                      id={`edit-user-btn-${user.id}`}
                       onClick={() => handleEdit(user)}
                       className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-50 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors font-bold text-sm"
                     >
-                      <Edit2 size={16} /> تعديل
+                      <Edit2 size={16} /> تعديل البيانات
                     </button>
                     <button
+                      id={`delete-user-btn-${user.id}`}
                       onClick={() => setUserToDelete(user.id)}
                       className="flex items-center justify-center p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
                     >
