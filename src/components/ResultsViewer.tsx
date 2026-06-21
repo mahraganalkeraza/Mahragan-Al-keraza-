@@ -15,7 +15,8 @@ import {
   Megaphone,
   Compass,
   Send,
-  Users
+  Users,
+  Search
 } from 'lucide-react';
 import { AdminHonorsEngine } from './AdminHonorsEngine';
 import { supabase } from '../utils/supabaseClient';
@@ -41,6 +42,7 @@ export const ResultsViewer: React.FC<{
   const [bulkStage, setBulkStage] = useState('الكل');
   const [bulkChurch, setBulkChurch] = useState('الكل');
   const [bulkStudents, setBulkStudents] = useState<any[]>([]);
+  const [bulkSearchQuery, setBulkSearchQuery] = useState('');
   const [isBulkStudentsLoading, setIsBulkStudentsLoading] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [selectedColumn, setSelectedColumn] = useState('qebty_lvl1_score');
@@ -49,6 +51,14 @@ export const ResultsViewer: React.FC<{
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [stageOptions, setStageOptions] = useState<string[]>([]);
   const [churchOptions, setChurchOptions] = useState<string[]>([]);
+
+  const filteredBulkStudents = useMemo(() => {
+    if (!bulkSearchQuery.trim()) return bulkStudents;
+    const q = bulkSearchQuery.toLowerCase().trim();
+    return bulkStudents.filter((student: any) => 
+      student.name?.toLowerCase().includes(q)
+    );
+  }, [bulkStudents, bulkSearchQuery]);
   
   const [manualForm, setManualForm] = useState({
     student_name: '',
@@ -969,17 +979,50 @@ export const ResultsViewer: React.FC<{
             </div>
           </div>
 
+          {/* instant Name Search Bar */}
+          <div className="mb-4 text-right" dir="rtl">
+            <div className="relative">
+              <span className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
+                <Search size={16} />
+              </span>
+              <input
+                type="text"
+                placeholder="🔍 ابحث عن اسم الطالب هنا للرصد السريع والتصفية اللحظية..."
+                value={bulkSearchQuery}
+                onChange={(e) => setBulkSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-10 py-3 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-2xl text-xs font-black outline-none shadow-sm transition-all text-slate-800 placeholder-slate-400"
+              />
+              {bulkSearchQuery && (
+                <button
+                  onClick={() => setBulkSearchQuery('')}
+                  className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400 hover:text-rose-500 transition-colors"
+                  title="مسح البحث السريع"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Multi-selection bar and quick-actions */}
           <div className="flex items-center justify-between bg-slate-100 rounded-xl px-4 py-2.5 mb-4 text-xs font-bold text-slate-700" dir="rtl">
             <div>
               تم تحديد <span className="text-indigo-600 font-extrabold">{selectedStudentIds.length}</span> من أصل <span className="text-slate-800 font-extrabold">{bulkStudents.length}</span> طالب للمزامنة الجماعية.
+              {bulkSearchQuery && (
+                <span className="text-slate-500 mr-2">
+                  (المطابق للبحث: <span className="text-indigo-600 font-extrabold">{filteredBulkStudents.length}</span>)
+                </span>
+              )}
             </div>
             <div className="flex gap-2">
               <button 
-                onClick={() => setSelectedStudentIds(bulkStudents.map(s => s.id))}
+                onClick={() => {
+                  const visibleIds = filteredBulkStudents.map(s => s.id);
+                  setSelectedStudentIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+                }}
                 className="text-indigo-600 hover:underline font-black"
               >
-                تحديد الكل ☑️
+                تحديد الكل الظاهر ☑️
               </button>
               <span className="text-slate-300">|</span>
               <button 
@@ -1005,6 +1048,14 @@ export const ResultsViewer: React.FC<{
               </p>
               <p className="text-slate-500 text-xs mt-1">الرجاء ضبط الفلاتر أو إعادة المحاولة بفلتر آخر.</p>
             </div>
+          ) : filteredBulkStudents.length === 0 ? (
+            <div className="text-center py-12 px-4 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+              <Search className="mx-auto text-indigo-500 mb-3 animate-bounce" size={44} />
+              <p className="text-slate-800 font-black text-sm">
+                لا توجد نتائج تطابق البحث الحالي "{bulkSearchQuery}".
+              </p>
+              <p className="text-slate-500 text-xs mt-1">يرجى تعديل كلمة البحث للتصفية بشكل صحيح.</p>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-right border-collapse" dir="rtl">
@@ -1018,7 +1069,7 @@ export const ResultsViewer: React.FC<{
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {bulkStudents.map((student, idx) => {
+                  {filteredBulkStudents.map((student, idx) => {
                     const isSelected = selectedStudentIds.includes(student.id);
                     const scores = existingScores[student.id] || {};
                     return (
