@@ -688,7 +688,7 @@ function AppComponent() {
     };
 
     const globalLockChannel = supabase
-      .channel('global-updates-subscriber-lock')
+      .channel('church-lock-channel')
       .on(
         'broadcast',
         { event: 'FORCE_HARD_REFRESH' },
@@ -699,7 +699,7 @@ function AppComponent() {
       .subscribe();
 
     const globalUpdatesChannel = supabase
-      .channel('global-updates-subscriber-upd')
+      .channel('global-updates')
       .on(
         'broadcast',
         { event: 'FORCE_HARD_REFRESH' },
