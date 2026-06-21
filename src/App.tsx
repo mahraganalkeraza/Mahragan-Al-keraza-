@@ -618,6 +618,43 @@ function AppComponent() {
     } catch { return null; }
   };
   const initialProfile = getInitialProfile();
+
+  useEffect(() => {
+    const sessionStr = localStorage.getItem('church_session');
+    if (!sessionStr) return;
+
+    const session = JSON.parse(sessionStr);
+    const currentChurchId = session.church || null;
+
+    if (!currentChurchId) return;
+
+    const churchSubscription = supabase
+      .channel('church-lock-channel')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'Church_access_codes'
+        },
+        (payload: any) => {
+          const updatedChurch = payload.new;
+          
+          if (updatedChurch.id === Number(currentChurchId) && updatedChurch.is_active === false) {
+            localStorage.clear();
+            sessionStorage.clear();
+            
+            alert("تنبيه أمني: تم غلق صلاحية الوصول لهذه الكنيسة من قِبل الإدارة.");
+            window.location.href = '/login'; 
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(churchSubscription);
+    };
+  }, []);
   
   const [userProfile, setUserProfile] = useState<any>(initialProfile);
   const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
