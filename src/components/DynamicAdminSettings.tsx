@@ -476,6 +476,17 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
     }
   };
 
+  const triggerHardRefresh = async () => {
+    if (!confirm("هل أنت متأكد؟ سيؤدي هذا لتحديث كافة الأجهزة المتصلة فوراً.")) return;
+    
+    await supabase.channel('church-lock-channel').send({
+      type: 'broadcast',
+      event: 'FORCE_HARD_REFRESH',
+      payload: { timestamp: Date.now() }
+    });
+    alert("تم إرسال أمر التحديث الإجباري.");
+  };
+
   // CHURCHES
   const addChurch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1538,6 +1549,12 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
               className="bg-red-600 text-white px-8 py-4 rounded-xl font-black text-lg shadow-lg hover:bg-red-700 transition"
             >
               تشغيل كود التنظيف Wipe Out
+            </button>
+            <button 
+              onClick={triggerHardRefresh}
+              className="mt-4 block mx-auto bg-sky-600 text-white px-8 py-4 rounded-xl font-black text-lg shadow-lg hover:bg-sky-700 transition"
+            >
+              تحديث إجباري لكافة الأجهزة (Bust Cache)
             </button>
             {purgeStatus && <p className="mt-6 text-slate-800 font-black">{purgeStatus}</p>}
           </div>

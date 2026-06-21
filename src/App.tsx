@@ -649,6 +649,18 @@ function AppComponent() {
           }
         }
       )
+      .on(
+        'broadcast',
+        { event: 'FORCE_HARD_REFRESH' },
+        () => {
+          sessionStorage.clear();
+          const currentUrl = window.location.origin + window.location.pathname;
+          const cacheBusterUrl = `${currentUrl}?bust=${new Date().getTime()}${window.location.hash}`;
+          
+          alert("يتم الآن تحديث النظام وتطبيق التعديلات الجديدة ...");
+          window.location.href = cacheBusterUrl;
+        }
+      )
       .subscribe();
 
     return () => {
