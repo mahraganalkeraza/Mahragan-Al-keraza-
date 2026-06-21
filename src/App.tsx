@@ -407,7 +407,7 @@ const ALL_ADMIN_TABS = [
   { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
   { id: 'calculator', label: 'حاسبة الكتب', icon: Calculator },
   { id: 'exams_management', label: 'إدارة الامتحانات', icon: BookOpen },
-  { id: 'exams_live', label: 'المتابعة المباشرة', icon: Activity },
+  // { id: 'exams_live', label: 'المتابعة المباشرة', icon: Activity }, -- Postponed to next season
   { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
   { id: 'dynamic_management', label: 'النظام الديناميكي', icon: Settings },
   { id: 'system_settings', label: 'إعدادات المنصة', icon: Settings }
@@ -7244,14 +7244,14 @@ function AppComponent() {
               </section>
             )}
 
-            {adminActiveTab === 'exams_live' && (
+            {/* {adminActiveTab === 'exams_live' && (
               <section>
                 <AdminLiveMonitoring 
                   globalChurchFilter={globalChurchFilter} 
                   onResetExam={handleResetExam}
                 />
               </section>
-            )}
+            )} */}
 
             {adminActiveTab === 'calculator' && (
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200 font-arabic">

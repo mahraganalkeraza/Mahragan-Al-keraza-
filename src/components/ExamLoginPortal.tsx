@@ -323,12 +323,12 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     try {
       const studentIdStr = String(studentObj.id);
 
-      // 1. Anti-Cheat One-Time Entry Gate (منع الدخول المتعدد) via exam_device_logs
-      const { data: existingLog, error: logCheckErr } = await supabase
-        .from('exam_device_logs')
-        .select('id, allow_reentry')
-        .eq('student_id', studentIdStr)
-        .maybeSingle();
+      // 1. Anti-Cheat One-Time Entry Gate (منع الدخول المتعدد) via exam_device_logs - Postponed to next season
+      // const { data: existingLog, error: logCheckErr } = await supabase
+      //   .from('exam_device_logs')
+      //   .select('id, allow_reentry')
+      //   .eq('student_id', studentIdStr)
+      //   .maybeSingle();
 
       const { data: submissionCheck } = await supabase
         .from('online_results')
@@ -336,7 +336,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         .eq('student_id', studentIdStr)
         .maybeSingle();
 
-      if ((existingLog && !existingLog.allow_reentry) || submissionCheck) {
+      if (submissionCheck) {
         setErrors("عفوًا، سبق للطالب دخول الامتحان من قبل، من هذا الجهاز أو جهاز آخر.");
         setIsLoading(false);
         return;
@@ -378,8 +378,8 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         return;
       }
 
-      // توثيق وحفظ لوج الجهاز الملاحق
-      await logDeviceAccess(studentObj.id, studentObj.name, studentObj.stage, studentObj.churchName, examRow.id);
+      // توثيق وحفظ لوج الجهاز الملاحق - Postponed to next season
+      // await logDeviceAccess(studentObj.id, studentObj.name, studentObj.stage, studentObj.churchName, examRow.id);
 
       // تمرير الداتا بنجاح تام لفتح شاشة الامتحان والأسئلة تلقائياً
       onSuccess(

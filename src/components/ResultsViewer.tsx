@@ -389,16 +389,16 @@ export const ResultsViewer: React.FC<{
 
       if (error) throw error;
 
-      // 2. Also reset live monitoring record back to active
-      await supabase
-        .from('live_monitoring')
-        .update({
-          status: 'active',
-          attempts_count: 0,
-          is_locked: false,
-          updated_at: new Date().toISOString()
-        })
-        .eq('student_id', id);
+      // 2. Also reset live monitoring record back to active - Postponed to next season
+      // await supabase
+      //   .from('live_monitoring')
+      //   .update({
+      //     status: 'active',
+      //     attempts_count: 0,
+      //     is_locked: false,
+      //     updated_at: new Date().toISOString()
+      //   })
+      //   .eq('student_id', id);
 
       alert('تم إعادة تعيين النتيجة وفتح الامتحان بنجاح في السيرفر!');
       fetchSubmissionsFromSupabase();

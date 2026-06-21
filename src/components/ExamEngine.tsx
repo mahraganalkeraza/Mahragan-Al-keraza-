@@ -1197,23 +1197,23 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     }
   }, [examSecondsLeft, activeExam, isExamCompleted, isTerminated]);
 
-  // Live Heartbeat (The Ping)
-  useEffect(() => {
-    if (!activeExam || isExamCompleted || isTerminated || !activeStudent?.id) return;
-    
-    const pingInterval = setInterval(async () => {
-      try {
-        await supabase
-          .from('exam_device_logs')
-          .update({ last_ping: new Date().toISOString() })
-          .eq('student_id', activeStudent.id);
-      } catch (e) {
-        console.warn("Heartbeat ping failed:", e);
-      }
-    }, 15000); // every 15 seconds
-
-    return () => clearInterval(pingInterval);
-  }, [activeExam, isExamCompleted, isTerminated, activeStudent]);
+  // Live Heartbeat (The Ping) - Postponed to next season
+  // useEffect(() => {
+  //   if (!activeExam || isExamCompleted || isTerminated || !activeStudent?.id) return;
+  //   
+  //   const pingInterval = setInterval(async () => {
+  //     try {
+  //       await supabase
+  //         .from('exam_device_logs')
+  //         .update({ last_ping: new Date().toISOString() })
+  //         .eq('student_id', activeStudent.id);
+  //     } catch (e) {
+  //       console.warn("Heartbeat ping failed:", e);
+  //     }
+  //   }, 15000); // every 15 seconds
+  // 
+  //   return () => clearInterval(pingInterval);
+  // }, [activeExam, isExamCompleted, isTerminated, activeStudent]);
   // Load device info on mount
   useEffect(() => {
     const fp = getDeviceFingerprint();
@@ -1409,17 +1409,17 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         return alert("عذراً، الامتحانات الإلكترونية مغلقة بالكامل بقرار سيادي من اللجنة المركزية 🔒");
       }
 
-      // Gate Check before starting exam
-      const { data: existingLog } = await supabase
-        .from("exam_device_logs")
-        .select("id, status")
-        .eq("student_id", activeStudent.id)
-        .maybeSingle();
-
-      if (existingLog && (existingLog.status === 'submitted' || existingLog.status === 'completed' || existingLog.status === 'terminated')) {
-        setIsLoading(false);
-        return alert("عفوًا، لا يسمح بإعادة دخول الامتحان حالياً. يرجى مراجعة اللجنة.");
-      }
+      // Gate Check before starting exam - Postponed to next season
+      // const { data: existingLog } = await supabase
+      //   .from("exam_device_logs")
+      //   .select("id, status")
+      //   .eq("student_id", activeStudent.id)
+      //   .maybeSingle();
+      // 
+      // if (existingLog && (existingLog.status === 'submitted' || existingLog.status === 'completed' || existingLog.status === 'terminated')) {
+      //   setIsLoading(false);
+      //   return alert("عفوًا، لا يسمح بإعادة دخول الامتحان حالياً. يرجى مراجعة اللجنة.");
+      // }
 
       if (examConfig) {
         if (!examConfig.isExamLive) {
@@ -1563,42 +1563,47 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       setSelectedCompetition(competitionType);
       setActiveExam(randomModel);
+      localStorage.setItem(`exam_start_time_${activeStudent.id}`, Date.now().toString());
 
-      // DEVICE METADATA EXTRACTION & LOGGING CONSOLIDATION
-      try {
-        const parser = new UAParser();
-        const result = parser.getResult();
-        const osName = result.os.name || "Unknown OS";
-        const deviceType = result.device.type || "Desktop";
-        const userAgent = navigator.userAgent;
-
-        await supabase.from("exam_device_logs").upsert({
-          student_id: String(activeStudent.id),
-          student_name: activeStudent.studentName || activeStudent.name || "بدون اسم",
-          church: activeStudent.churchName || "غير مكتمل",
-          stage: stage,
-          device_name: userAgent,
-          device_type: deviceType,
-          os_version: osName,
-          ip_address: deviceInfo?.ip || "127.0.0.1",
-          last_known_ip: deviceInfo?.ip || "127.0.0.1",
-          exam_id: randomModel?.id || null,
-          started_at: new Date().toISOString(),
-          status: "active",
-          last_ping: new Date().toISOString()
-        }, { onConflict: 'student_id' });
-      } catch (logErr) {
-        console.error("Failed to update exam_device_logs on start:", logErr);
-      }
-
-      // Update monitoring with chosen exam
-      await supabase
-        .from("live_monitoring")
-        .update({
-          device_type: `يجري امتحان: ${competitionType}`,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("student_id", activeStudent.id);
+      // DEVICE METADATA EXTRACTION & LOGGING CONSOLIDATION - Postponed to next season
+      // try {
+      //   const parser = new UAParser();
+      //   const result = parser.getResult();
+      //   const osName = result.os.name || "Unknown OS";
+      //   const deviceType = result.device.type || "Desktop";
+      //   const userAgent = navigator.userAgent;
+      // 
+      //   await supabase.from("exam_device_logs").upsert({
+      //     student_id: String(activeStudent.id),
+      //     student_name: activeStudent.studentName || activeStudent.name || "بدون اسم",
+      //     church: activeStudent.churchName || "غير مكتمل",
+      //     stage: stage,
+      //     device_name: userAgent,
+      //     device_type: deviceType,
+      //     os_version: osName,
+      //     ip_address: deviceInfo?.ip || "127.0.0.1",
+      //     last_known_ip: deviceInfo?.ip || "127.0.0.1",
+      //     exam_id: randomModel?.id || null,
+      //     started_at: new Date().toISOString(),
+      //     status: "active",
+      //     last_ping: new Date().toISOString()
+      //   }, { onConflict: 'student_id' });
+      // } catch (logErr) {
+      //   console.error("Failed to update exam_device_logs on start:", logErr);
+      // }
+      // 
+      // // Update monitoring with chosen exam
+      // try {
+      //   await supabase
+      //     .from("live_monitoring")
+      //     .update({
+      //       device_type: `يجري امتحان: ${competitionType}`,
+      //       updated_at: new Date().toISOString(),
+      //     })
+      //     .eq("student_id", activeStudent.id);
+      // } catch (e) {
+      //   console.error("Failed to update live monitoring:", e);
+      // }
 
       setIsLoading(false);
     } catch (e: any) {
@@ -1684,17 +1689,18 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       });
     }
 
-    try {
-      await supabase
-        .from("live_monitoring")
-        .update({
-          device_type: `حفظ مادة: ${selectedCompetition}`,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("student_id", activeStudent.id);
-    } catch (e) {
-      console.error("Failed to update status monitor:", e);
-    }
+    // Live monitoring postponed to next season
+    // try {
+    //   await supabase
+    //     .from("live_monitoring")
+    //     .update({
+    //       device_type: `حفظ مادة: ${selectedCompetition}`,
+    //       updated_at: new Date().toISOString(),
+    //     })
+    //     .eq("student_id", activeStudent.id);
+    // } catch (e) {
+    //   console.error("Failed to update status monitor:", e);
+    // }
 
     try {
       alert("تم حفظ وإرسال إجابات المسابقة بنجاح! 🎉");
@@ -1871,19 +1877,24 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         },
       );
 
-      // Calculate duration securely from database
+      // Calculate duration securely from database or local fallback (since live logging is postponed)
       let calculatedDurationInSeconds = 0;
       try {
-        const { data: dbLog } = await supabase
-          .from("exam_device_logs")
-          .select("started_at")
-          .eq("student_id", currentStudentObj?.id)
-          .maybeSingle();
-        if (dbLog?.started_at) {
-          calculatedDurationInSeconds = Math.floor((new Date().getTime() - new Date(dbLog.started_at).getTime()) / 1000);
+        const localStart = localStorage.getItem(`exam_start_time_${currentStudentObj?.id}`);
+        if (localStart) {
+          calculatedDurationInSeconds = Math.floor((new Date().getTime() - Number(localStart)) / 1000);
+        } else {
+          const { data: dbLog } = await supabase
+            .from("exam_device_logs")
+            .select("started_at")
+            .eq("student_id", currentStudentObj?.id)
+            .maybeSingle();
+          if (dbLog?.started_at) {
+            calculatedDurationInSeconds = Math.floor((new Date().getTime() - new Date(dbLog.started_at).getTime()) / 1000);
+          }
         }
       } catch (err) {
-        console.warn("Could not compute precise duration, defaulting to 0", err);
+        console.warn("Could not compute precise duration", err);
       }
 
       // Exact schema mapping for the online_results table
@@ -1943,31 +1954,32 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       // Clean up local storage trace for this specific student
       localStorage.removeItem("exam_progress_" + currentStudentObj.id);
+      localStorage.removeItem(`exam_start_time_${currentStudentObj.id}`);
 
-      // Gracefully log status updates to exam_device_logs consolidation table
-      try {
-        await supabase
-          .from("exam_device_logs")
-          .update({
-            status: "submitted",
-            updated_at: new Date().toISOString()
-          })
-          .eq("student_id", currentStudentObj.id);
-      } catch (logUpdateErr) {
-        console.warn("Silent check: exam_device_logs table update failed after submission", logUpdateErr);
-      }
-
-      try {
-        await supabase
-          .from("exam_device_logs")
-          .update({
-            status: "تم التسليم بنجاح",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("student_id", currentStudentObj.id);
-      } catch (devErr) {
-        console.warn("Silent check: exam_device_logs table update failed", devErr);
-      }
+      // Gracefully log status updates to exam_device_logs consolidation table - Postponed to next season
+      // try {
+      //   await supabase
+      //     .from("exam_device_logs")
+      //     .update({
+      //       status: "submitted",
+      //       updated_at: new Date().toISOString()
+      //     })
+      //     .eq("student_id", currentStudentObj.id);
+      // } catch (logUpdateErr) {
+      //   console.warn("Silent check: exam_device_logs table update failed after submission", logUpdateErr);
+      // }
+      // 
+      // try {
+      //   await supabase
+      //     .from("exam_device_logs")
+      //     .update({
+      //       status: "تم التسليم بنجاح",
+      //       updated_at: new Date().toISOString(),
+      //     })
+      //     .eq("student_id", currentStudentObj.id);
+      // } catch (devErr) {
+      //   console.warn("Silent check: exam_device_logs table update failed", devErr);
+      // }
 
       // Local update in cache
       const updatedProfile = {
