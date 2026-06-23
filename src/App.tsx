@@ -2288,17 +2288,15 @@ function AppComponent() {
                                  churchCheck.isEnabled === false;
 
           if (isReallyLocked) {
-            // Instantly clear their local session and redirect them to a /locked landing screen
-            localStorage.removeItem('church_session');
-            localStorage.removeItem('userProfileCache');
-            await supabase.auth.signOut().catch(() => {});
-            setUser(null);
-            setUserProfile(null);
-            setIsLoggedIn(false);
-            setUserRole('guest');
-            setChurchName('');
-            setActiveSection('locked');
             alert("عذراً، تم إغلاق التسجيل أو قفل الحساب الخاص بكنيستكم من قبل لجنة المهرجان بقرار مركزي سيادي!");
+            // 1. Clear Supabase Auth Session
+            await supabase.auth.signOut().catch(() => {});
+            // 2. Clear local storages to prevent stale states
+            localStorage.clear();
+            sessionStorage.clear();
+            // 3. Hard redirect to the absolute login/locked gate
+            window.location.href = '/login';
+            return;
           }
         }
       } catch (err) {
@@ -4196,8 +4194,8 @@ function AppComponent() {
         return;
       }
 
-      if (data && (data.is_active === false || data.isEnabled === false)) {
-        setLoginError('هذا الحساب معطل حالياً من قِبل لجنة المهرجان');
+      if (data && (data.is_active === false || data.isEnabled === false || data.is_locked === true || data.registration_status === 'closed')) {
+        setLoginError('هذا الحساب معطل أو مغلق حالياً من قِبل لجنة المهرجان');
         setIsLoading(false);
         return;
       }
@@ -5054,16 +5052,13 @@ function AppComponent() {
         if (dbData?.is_locked || dbData?.registration_status === 'closed') {
           alert("عذرًا، تم إغلاق التسجيل أو قفل الحساب من قبل لجنة المهرجان!");
           setIsSubmittingParticipant(false);
-          // Redirect and clear session
-          localStorage.removeItem('church_session');
-          localStorage.removeItem('userProfileCache');
+          // 1. Clear Supabase Auth Session
           await supabase.auth.signOut().catch(() => {});
-          setUser(null);
-          setUserProfile(null);
-          setIsLoggedIn(false);
-          setUserRole('guest');
-          setChurchName('');
-          setActiveSection('locked');
+          // 2. Clear local storages to prevent stale states
+          localStorage.clear();
+          sessionStorage.clear();
+          // 3. Hard redirect to the absolute login/locked gate
+          window.location.href = '/login';
           return;
         }
       }
