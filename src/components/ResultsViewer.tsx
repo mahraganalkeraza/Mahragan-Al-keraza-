@@ -22,6 +22,8 @@ import { AdminHonorsEngine } from './AdminHonorsEngine';
 import { supabase } from '../utils/supabaseClient';
 import PaginationComponent from './Pagination';
 import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 export const ResultsViewer: React.FC<{ 
   results?: Result[], 
@@ -32,6 +34,11 @@ export const ResultsViewer: React.FC<{
 }> = ({ results: resultsProp, onReset: onResetProp, isAdmin, hideNames, userChurch }) => {
   const [supabaseSubmissions, setSupabaseSubmissions] = useState<Result[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Advanced PDF Generation States
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState(0);
+  const [pdfStatus, setPdfStatus] = useState('');
   const [honorsRanks, setHonorsRanks] = useState<Record<string, { rank: number; colorClass: string, percentage: number, title: string }>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [activeTab, setActiveTab] = useState<'all' | 'online' | 'bubble_sheet' | 'paper'>('all');
@@ -408,6 +415,65 @@ export const ResultsViewer: React.FC<{
     }
   };
 
+  const handleAdvancedExportPDF = async () => {
+    if (results.length === 0) return;
+    setIsGeneratingPDF(true);
+    setPdfProgress(5);
+    setPdfStatus("جاري تحضير البيانات وتقسيم الجداول لملفات متعددة الأوراق...");
+
+    // Wait short time to let the DOM render the hidden element
+    setTimeout(async () => {
+      try {
+        const rowsPerPage = 12;
+        const totalPages = Math.ceil(results.length / rowsPerPage);
+        
+        // Setup jsPDF with Landscape orientation
+        const pdf = new jsPDF({
+          orientation: 'landscape',
+          unit: 'mm',
+          format: 'a4'
+        });
+
+        for (let i = 0; i < totalPages; i++) {
+          setPdfProgress(Math.round((i / totalPages) * 100));
+          setPdfStatus(`جاري معالجة وتصدير الصفحة ${i + 1} من ${totalPages}...`);
+          
+          const element = document.getElementById(`pdf-page-${i}`);
+          if (element) {
+            // Options for html2canvas
+            const canvas = await html2canvas(element, {
+              scale: 2, // Sharpness
+              useCORS: true,
+              logging: false,
+              backgroundColor: '#ffffff'
+            });
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+            
+            // On A4 Landscape (297mm x 210mm)
+            if (i > 0) {
+              pdf.addPage('a4', 'landscape');
+            }
+            pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210, `page-${i}`, 'FAST');
+          }
+        }
+
+        setPdfProgress(100);
+        setPdfStatus("جاري تحفيظ وتصدير ملف الـ PDF النهائي...");
+        
+        const timestamp = new Date().toISOString().slice(0, 10);
+        const fileName = `تقرير_النتائج_النهائي_${timestamp}.pdf`;
+        pdf.save(fileName);
+      } catch (err: any) {
+        console.error("Advanced export PDF error:", err);
+        alert("حدث خطأ أثناء تصدير ملف PDF: " + (err.message || err));
+      } finally {
+        setIsGeneratingPDF(false);
+        setPdfProgress(0);
+        setPdfStatus('');
+      }
+    }, 400);
+  };
+
   // Upload bubble sheet results from Excel
   const handleEmergencyToggle = () => {
     console.log("Emergency path triggered by admin");
@@ -641,7 +707,17 @@ export const ResultsViewer: React.FC<{
             نتائج التصفية المحلية {(!isAdmin && activeUserChurch) ? `(كنيسة ${activeUserChurch})` : ''}
           </h4>
           <div className="flex flex-wrap items-center gap-3 self-stretch md:self-auto justify-between md:justify-end">
-            
+            {results.length > 0 && (
+              <button 
+                onClick={handleAdvancedExportPDF}
+                disabled={isGeneratingPDF}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                title="تصدير كشف النتائج كملف PDF"
+              >
+                <FileSpreadsheet size={15} />
+                <span>تصدير تقرير PDF متعدد الصفحات (Landscape) 📑</span>
+              </button>
+            )}
             <div className="flex items-center gap-2">
               <button 
                 onClick={fetchSubmissionsFromSupabase}
@@ -1370,6 +1446,193 @@ export const ResultsViewer: React.FC<{
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden container designed to match exact A4 Landscape aspect ratio for html2canvas extraction */}
+      {isGeneratingPDF && (
+        <div 
+          style={{ position: 'fixed', left: '-9999px', top: '-9999px', width: '1122px', overflow: 'hidden' }}
+          className="bg-white font-arabic" 
+          dir="rtl"
+        >
+          {Array.from({ length: Math.ceil(results.length / 12) }).map((_, pageIndex) => {
+            const rowsPerPage = 12;
+            const startIdx = pageIndex * rowsPerPage;
+            const pageResults = results.slice(startIdx, startIdx + rowsPerPage);
+            const totalPagesNum = Math.ceil(results.length / rowsPerPage);
+
+            return (
+              <div 
+                key={pageIndex}
+                id={`pdf-page-${pageIndex}`}
+                style={{ width: '1122px', height: '794px' }}
+                className="bg-white p-[38px] flex flex-col justify-between border-b border-gray-100"
+              >
+                <div>
+                  {/* Page Header */}
+                  <div className="flex items-center justify-between border-b-2 border-indigo-600 pb-3 mb-4 text-slate-900">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center font-black text-white text-lg shadow-sm">
+                        م
+                      </div>
+                      <div className="text-right">
+                        <h3 className="text-base font-black text-indigo-950">بيان رصد الدرجات وتحليل نتائج الامتحانات</h3>
+                        <p className="text-[10px] font-bold text-slate-500">مهرجان الكرازة المرقسية ٢٠٢٦</p>
+                      </div>
+                    </div>
+                    
+                    <div className="text-left">
+                      <span className="inline-block bg-indigo-50 text-indigo-800 px-3 py-1 rounded-full text-[10px] font-black border border-indigo-150">
+                        صفحة {pageIndex + 1} من {totalPagesNum}
+                      </span>
+                      <p className="text-[9px] font-bold text-slate-400 mt-1">تاريخ الطباعة: {new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                    </div>
+                  </div>
+
+                  {/* Active Filters Metadata Card */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2.5 mb-4 text-[10px] font-black text-slate-600">
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <span className="text-slate-400 font-extrabold ml-1">كنيسة / جهة:</span>
+                        <span className="text-slate-800 font-black">{!isAdmin && activeUserChurch ? activeUserChurch : "جميع الكنائس"}</span>
+                      </div>
+                      <div className="w-[1px] h-3 bg-slate-200"></div>
+                      <div>
+                        <span className="text-slate-400 font-extrabold ml-1">التصفية الحالية:</span>
+                        <span className="text-slate-800 font-black">{filterStage === "الكل" ? "كل المراحل" : filterStage}</span>
+                      </div>
+                      <div className="w-[1px] h-3 bg-slate-200"></div>
+                      <div>
+                        <span className="text-slate-400 font-extrabold ml-1">نوع المسابقة:</span>
+                        <span className="text-slate-800 font-black">{filterCompetition === "الكل" ? "كل المسابقات" : filterCompetition}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-extrabold ml-1">إجمالي المقيدين في الكشف:</span>
+                      <span className="text-indigo-600 font-black">{results.length} طالب</span>
+                    </div>
+                  </div>
+
+                  {/* Table with fixed layout */}
+                  <table className="w-full text-right border-collapse border border-slate-300" style={{ tableLayout: 'fixed' }}>
+                    <thead>
+                      <tr className="bg-slate-100 text-[11px] font-black text-slate-700 uppercase whitespace-nowrap border-b border-slate-350 text-slate-900">
+                        <th style={{ width: '55px' }} className="p-2.5 text-center border-l border-slate-300">م</th>
+                        <th style={{ width: '230px' }} className="p-2.5 border-l border-slate-300">اسم الطالب</th>
+                        <th style={{ width: '220px' }} className="p-2.5 border-l border-slate-300">الكنيسة/البلد</th>
+                        <th style={{ width: '130px' }} className="p-2.5 border-l border-slate-300">المرحلة</th>
+                        <th style={{ width: '65px' }} className="p-2.5 text-center border-l border-slate-300">دراسي</th>
+                        <th style={{ width: '65px' }} className="p-2.5 text-center border-l border-slate-300">محفوظات</th>
+                        <th style={{ width: '65px' }} className="p-2.5 text-center border-l border-slate-300">قبطي 1</th>
+                        <th style={{ width: '65px' }} className="p-2.5 text-center border-l border-slate-300">قبطي 2</th>
+                        <th style={{ width: '85px' }} className="p-2.5 text-center border-l border-slate-300 font-extrabold text-indigo-900 bg-indigo-50/40">الدرجة الكلية</th>
+                        <th style={{ width: '100px' }} className="p-2 text-center text-[10px]">الامتحان</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-300">
+                      {pageResults.map((row, rowIdx) => {
+                        const globalIdx = startIdx + rowIdx + 1;
+                        const d = row.derasy_score ?? 0;
+                        const m = row.mahfouzat_score ?? 0;
+                        const q1 = row.qebty_lvl1_score ?? 0;
+                        const q2 = row.qebty_lvl2_score ?? 0;
+                        const total = row.academicScore ?? (d + m + q1 + q2);
+                        
+                        return (
+                          <tr key={row.id || rowIdx} className="hover:bg-slate-50/50 text-[11px] font-bold text-slate-800">
+                            {/* # (index) */}
+                            <td className="p-2 text-center border-l border-slate-200 font-extrabold text-slate-400">
+                              {globalIdx}
+                            </td>
+                            {/* Student Name */}
+                            <td className="p-2 border-l border-slate-200 font-black text-slate-900 truncate">
+                              {row.studentName}
+                            </td>
+                            {/* Church Name */}
+                            <td className="p-2 border-l border-slate-200 truncate text-slate-600">
+                              {row.churchName}
+                            </td>
+                            {/* Stage */}
+                            <td className="p-2 border-l border-slate-200 text-slate-600">
+                              {row.stage || 'عام'}
+                            </td>
+                            {/* score derasy */}
+                            <td className="p-2 text-center border-l border-slate-200">
+                              {d}
+                            </td>
+                            {/* score mahfouzat */}
+                            <td className="p-2 text-center border-l border-slate-200">
+                              {m}
+                            </td>
+                            {/* score qebty 1 */}
+                            <td className="p-2 text-center border-l border-slate-200">
+                              {q1}
+                            </td>
+                            {/* score qebty 2 */}
+                            <td className="p-2 text-center border-l border-slate-200">
+                              {q2}
+                            </td>
+                            {/* Total score */}
+                            <td className="p-2 text-center border-l border-slate-200 font-black text-xs text-indigo-700 bg-indigo-50/10">
+                              {total}
+                            </td>
+                            {/* Exam Type */}
+                            <td className="p-2 text-center whitespace-nowrap">
+                              {row.submissionType === 'bubble_sheet' ? (
+                                <span className="text-[9px] font-black bg-blue-50 text-blue-700 border border-blue-100 rounded px-1.5 py-0.5">بابل شيت</span>
+                              ) : row.submissionType === 'paper' ? (
+                                <span className="text-[9px] font-black bg-amber-50 text-amber-700 border border-amber-100 rounded px-1.5 py-0.5">ورقي</span>
+                              ) : (
+                                <span className="text-[9px] font-black bg-emerald-50 text-emerald-700 border border-emerald-100 rounded px-1.5 py-0.5">أونلاين</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Page Footer */}
+                <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 border-t border-slate-200 pt-3 mt-4">
+                  <p>مركز الدعم التكنولوجي والكنترول الرئيسي - مهرجان الكرازة المرقسية</p>
+                  <p className="text-indigo-650 font-black">تصميم ذكي متعدد الصفحات • كشف نتائج رسمي معتمد 10mm</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Progress Dialog Overlay for Premium Export Experience */}
+      {isGeneratingPDF && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 font-arabic text-center border-0 outline-none" dir="rtl">
+          <div className="bg-white p-8 rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 mx-4">
+            <div className="flex flex-col items-center">
+              <div className="relative w-20 h-20 mb-6 flex items-center justify-center">
+                <span className="absolute inset-0 rounded-full border-4 border-slate-100"></span>
+                <span className="absolute inset-0 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin"></span>
+                <FileSpreadsheet className="text-indigo-600 animate-pulse" size={28} />
+              </div>
+
+              <h4 className="text-lg font-black text-slate-900 mb-2">تصدير التقرير والنتائج كـ PDF</h4>
+              <p className="text-xs text-slate-500 font-bold mb-6 line-clamp-2 min-h-[2.5rem]">{pdfStatus}</p>
+
+              {/* Progress Slider Bar */}
+              <div className="w-full bg-slate-100 rounded-full h-2.5 mb-2 overflow-hidden border border-slate-200/50">
+                <div 
+                  className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                  style={{ width: `${pdfProgress}%` }}
+                ></div>
+              </div>
+
+              <div className="flex items-center justify-between w-full text-[10px] font-black text-slate-400 px-1">
+                <span>جاري البناء...</span>
+                <span className="text-indigo-600">{pdfProgress}%</span>
+              </div>
+            </div>
           </div>
         </div>
       )}

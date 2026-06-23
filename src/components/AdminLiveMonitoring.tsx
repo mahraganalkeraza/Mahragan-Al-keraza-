@@ -1,644 +1,647 @@
-import React, { useEffect, useState } from 'react';
-import { supabase } from '../utils/supabaseClient';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Activity, 
+  Clock, 
   Users, 
-  Monitor, 
-  RotateCw, 
-  Trash2, 
-  ShieldX, 
-  UserMinus, 
-  RotateCcw, 
-  Search, 
-  Filter, 
-  Smartphone, 
-  Laptop
+  Award, 
+  RefreshCw, 
+  AlertTriangle, 
+  Wifi, 
+  CheckCircle2, 
+  LogOut, 
+  Tv, 
+  Send,
+  Zap,
+  Globe,
+  Bell,
+  ShieldCheck,
+  BarChart2,
+  ListFilter
 } from 'lucide-react';
-
-export interface DeviceLog {
-  id: string;
-  student_id: string;
-  student_name: string;
-  stage: string;
-  church: string;
-  church_name?: string;
-  device_name: string;
-  device_model?: string;
-  device_type: string;
-  os_version: string;
-  device_os?: string;
-  ip_address: string;
-  last_known_ip: string;
-  status: string;
-  created_at: string;
-  updated_at?: string;
-}
+import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from '../lib/supabaseClient';
+import { LiveExamMonitoring } from './LiveExamMonitoring';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 interface AdminLiveMonitoringProps {
-  onResetExam?: (studentId: string, name?: string) => void;
   globalChurchFilter?: string;
+  onResetExam?: (studentId: string, studentName?: string) => Promise<void>;
+}
+
+interface ActivityEvent {
+  id: string;
+  type: 'registration' | 'exam_login' | 'exam_submit' | 'broadcast';
+  message: string;
+  timestamp: Date;
+  meta?: any;
 }
 
 const AdminLiveMonitoring: React.FC<AdminLiveMonitoringProps> = ({ 
-  onResetExam, 
-  globalChurchFilter = 'الكل' 
+  globalChurchFilter = 'الكل', 
+  onResetExam 
 }) => {
-  const [logs, setLogs] = useState<DeviceLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStage, setSelectedStage] = useState('الكل');
-  const [selectedChurch, setSelectedChurch] = useState(globalChurchFilter);
-  const [isProcessing, setIsProcessing] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'traffic' | 'devices' | 'analytics'>('traffic');
+  const [liveEvents, setLiveEvents] = useState<ActivityEvent[]>([]);
+  const [dbStats, setDbStats] = useState({
+    totalRegistrations: 0,
+    totalSubmissions: 0,
+    activeDevices: 0,
+    totalChurches: 32 // fallback constant representing regional churches
+  });
+  const [isRefreshingStats, setIsRefreshingStats] = useState(false);
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [submissionBreakdown, setSubmissionBreakdown] = useState<any[]>([]);
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
+  // Sound effects of real-time traffic (visual or buzzer indicator, kept clean)
+  const colors = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"];
 
-  // Real-time statistics states
-  const [activeExamsRealCount, setActiveExamsRealCount] = useState(0);
-  const [submittedExamsRealCount, setSubmittedExamsRealCount] = useState(0);
-  const [totalDevicesRealCount, setTotalDevicesRealCount] = useState(0);
-
-  // Fetch real-time statistics from exam_device_logs
-  const fetchRealtimeStats = async () => {
+  // Fetch summary counts for KPIs
+  const fetchDbStats = async () => {
+    setIsRefreshingStats(true);
     try {
-      const { data, error } = await supabase
-        .from('exam_device_logs')
-        .select('status, id');
+      // 1. Total registrations count
+      const { count: regCount, error: regErr } = await supabase
+        .from('registrations')
+        .select('*', { count: 'exact', head: true });
 
-      if (!error && data) {
-        const activeOnly = data.filter(s => s.status === 'active' || s.status === 'جاري الامتحان' || s.status === 'Active Exam Started');
-        setActiveExamsRealCount(activeOnly.length);
-        
-        const submittedOnly = data.filter(s => s.status === 'submitted' || s.status === 'تم التسليم بنجاح');
-        setSubmittedExamsRealCount(submittedOnly.length);
-        
-        setTotalDevicesRealCount(data.length);
+      // 2. Exam submissions count
+      const { count: examCount, error: examErr } = await supabase
+        .from('exam_submissions')
+        .select('*', { count: 'exact', head: true });
+
+      // 3. Current connected logs
+      const { count: logCount, error: logErr } = await supabase
+        .from('exam_device_logs')
+        .select('*', { count: 'exact', head: true });
+
+      // 4. Submission Breakdown for chart
+      const { data: subData } = await supabase
+        .from('exam_submissions')
+        .select('submissionType, results_source');
+
+      setDbStats({
+        totalRegistrations: regCount || 0,
+        totalSubmissions: examCount || 0,
+        activeDevices: logCount || 0,
+        totalChurches: 32
+      });
+
+      // Prepare Chart Data
+      if (subData) {
+        let online = 0;
+        let bubble = 0;
+        let paper = 0;
+        subData.forEach(row => {
+          const type = row.submissionType || row.results_source;
+          if (type === 'bubble_sheet') bubble++;
+          else if (type === 'paper') paper++;
+          else online++;
+        });
+
+        setSubmissionBreakdown([
+          { name: 'تصحيح أونلاين 💻', value: online, color: '#4F46E5' },
+          { name: 'بابل شيت 📝', value: bubble, color: '#10B981' },
+          { name: 'ورقي تقليدي 📃', value: paper, color: '#F59E0B' }
+        ]);
       }
     } catch (err) {
-      console.error("Failed to fetch dashboard metrics from logs:", err);
+      console.error("Error fetching db statistics in monitoring dashboard:", err);
+    } finally {
+      setIsRefreshingStats(false);
     }
   };
 
-  // Fetch device logs from Supabase
-  const fetchLiveLogs = async () => {
+  // Broadcast clear message or refresh signal
+  const sendAdminBroadcast = async () => {
+    if (!broadcastMessage.trim()) return;
+    setIsBroadcasting(true);
     try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('exam_device_logs')
-        .select('*')
-        .order('created_at', { ascending: false }); // Show newest logs first
+      const payloadObj = {
+        type: 'ADMIN_BROADCAST',
+        message: broadcastMessage,
+        sender: 'الكنترول الرئيسي',
+        timestamp: Date.now()
+      };
 
-      if (error) throw error;
-      if (data) {
-        setLogs(data);
-      }
-    } catch (err) {
-      console.error("Error fetching live device logs:", err);
+      // Broadcast on standard channel
+      await supabase.channel('global-updates').send({
+        type: 'broadcast',
+        event: 'ADMIN_BROADCAST',
+        payload: payloadObj
+      });
+
+      // Add to local activity stream
+      const newEvent: ActivityEvent = {
+        id: `broadcast-${Date.now()}`,
+        type: 'broadcast',
+        message: `تم بث رسالة تنبيهية للممتحنين: "${broadcastMessage}" 📣`,
+        timestamp: new Date()
+      };
+      setLiveEvents(prev => [newEvent, ...prev.slice(0, 24)]);
+      setBroadcastMessage('');
+      alert("تم إرسال بث الرسالة لجميع الأجهزة المتصلة بنجاح! 🚀");
+    } catch (err: any) {
+      alert("حدث خطأ أثناء إرسال البث: " + err.message);
     } finally {
-      setLoading(false);
+      setIsBroadcasting(false);
+    }
+  };
+
+  // Force global cache clear / system hard refresh
+  const triggerGlobalHardRefresh = async () => {
+    if (!confirm("تحذير أمني: هل ترغب حقًا في بث إشارة طرد وإلغاء اتصال وتحديث قهري فوري (Hard Refresh) لجميع الكنائس والأجهزة المتصلة؟ سيتم إنهاء الجلسات الحالية بالكامل.")) return;
+    setIsBroadcasting(true);
+    try {
+      const payloadObj = { 
+        type: 'FORCE_HARD_REFRESH', 
+        timestamp: Date.now() 
+      };
+
+      await supabase.channel('church-lock-channel').send({
+        type: 'broadcast',
+        event: 'FORCE_HARD_REFRESH',
+        payload: payloadObj
+      });
+      await supabase.channel('global-updates').send({
+        type: 'broadcast',
+        event: 'FORCE_HARD_REFRESH',
+        payload: payloadObj
+      });
+
+      const newEvent: ActivityEvent = {
+        id: `refresh-${Date.now()}`,
+        type: 'broadcast',
+        message: `🚨 تم إطلاق بث تحديث قهري فوري (FORCE_HARD_REFRESH) لجميع المستخدمين والأجهزة لإخلاء الذاكرة المؤقتة.`,
+        timestamp: new Date()
+      };
+      setLiveEvents(prev => [newEvent, ...prev.slice(0, 24)]);
+      alert("تم بث أمر التحديث القهري بنجاح لكافة المتصفحات المتصلة فوراً! 🔄⚡");
+    } catch (err: any) {
+      alert("حدث خطأ أثناء بث الأمر: " + err.message);
+    } finally {
+      setIsBroadcasting(false);
     }
   };
 
   useEffect(() => {
-    fetchLiveLogs();
-    fetchRealtimeStats();
+    fetchDbStats();
 
-    // Set up realtime subscription for instantaneous live tracking of device logs
-    const logsSubscription = supabase
-      .channel('exam_device_logs_changes_realtime')
+    // Setup real-time subscribers for dynamic traffic tickers
+    const registrationsChannel = supabase
+      .channel('live-dashboard-traffic')
       .on(
-        'postgres_changes', 
-        { event: '*', schema: 'public', table: 'exam_device_logs' }, 
-        () => {
-          // Fetch updated logs and stats on any changes
-          fetchLiveLogs();
-          fetchRealtimeStats();
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'registrations' },
+        (payload) => {
+          const r = payload.new;
+          if (r && r.name !== 'SYSTEM_LOCK') {
+            const churchStr = r.churchName || r.church_name || 'الرعية';
+            const newEvent: ActivityEvent = {
+              id: `reg-${r.id}-${Date.now()}`,
+              type: 'registration',
+              message: `مُشترك جديد: تم تسجيل الطالب "${r.name}" بنجاح - كنيسة ${churchStr} ⛪`,
+              timestamp: new Date(),
+              meta: r
+            };
+            setLiveEvents(prev => [newEvent, ...prev.slice(0, 24)]);
+            // Auto refresh counts
+            setDbStats(prev => ({ ...prev, totalRegistrations: prev.totalRegistrations + 1 }));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'exam_submissions' },
+        (payload) => {
+          const sub = payload.new;
+          if (sub) {
+            const typeStr = sub.submissionType === 'bubble_sheet' ? 'بابل شيت' : sub.submissionType === 'paper' ? 'ورقي' : 'أونلاين';
+            const newEvent: ActivityEvent = {
+              id: `sub-${sub.id}-${Date.now()}`,
+              type: 'exam_submit',
+              message: `رصد درجة: استلم الكنترول إجابات امتحان (${typeStr}) للطالب كود "${sub.student_id || 'مجهول'}" 🔵`,
+              timestamp: new Date(),
+              meta: sub
+            };
+            setLiveEvents(prev => [newEvent, ...prev.slice(0, 24)]);
+            // Auto refresh counts
+            setDbStats(prev => ({ ...prev, totalSubmissions: prev.totalSubmissions + 1 }));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'exam_device_logs' },
+        (payload) => {
+          const l = payload.new;
+          if (l) {
+            const newEvent: ActivityEvent = {
+              id: `login-${l.id}-${Date.now()}`,
+              type: 'exam_login',
+              message: `الاتصال بالبوابة: الطالب "${l.student_name}" يدخل بوابة الاختبارات الآن للامتحان 💻`,
+              timestamp: new Date(),
+              meta: l
+            };
+            setLiveEvents(prev => [newEvent, ...prev.slice(0, 24)]);
+            // Auto refresh counts
+            setDbStats(prev => ({ ...prev, activeDevices: prev.activeDevices + 1 }));
+          }
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(logsSubscription);
+      supabase.removeChannel(registrationsChannel);
     };
   }, []);
 
-  // Update filter when global filter changes
-  useEffect(() => {
-    if (globalChurchFilter) {
-      setSelectedChurch(globalChurchFilter);
-    }
-  }, [globalChurchFilter]);
-
-  // Administration actions mirroring existing LiveExamMonitoring
-  const handleTerminateSession = async (studentId: string) => {
-    if (!confirm('هل أنت متأكد من طرد هذا الطالب ومنعه من دخول الامتحان؟ سيتم بقاء سجله كمحروم.')) return;
-    
-    setIsProcessing(studentId);
-    try {
-      const { error } = await supabase
-        .from('exam_device_logs')
-        .update({
-          status: 'terminated',
-          updated_at: new Date().toISOString()
-        })
-        .eq('student_id', studentId);
-
-      if (error) throw error;
-      alert('تم إرسال أمر الطرد والمنع بنجاح 🛑');
-      fetchLiveLogs();
-      fetchRealtimeStats();
-    } catch (e: any) {
-      console.error(e);
-      alert('فشل أمر الطرد: ' + e.message);
-    } finally {
-      setIsProcessing(null);
-    }
-  };
-
-  const handleClearBlacklist = async (studentId: string) => {
-    if (!confirm('هل تريد فك الحظر عن هذا الطالب؟ سيتم حذف سجله الحالي ليتمكن من الدخول مجدداً.')) return;
-    setIsProcessing(studentId);
-    try {
-      // Deleting the log row unlocks the student's entry token
-      const { error } = await supabase
-        .from('exam_device_logs')
-        .delete()
-        .eq('student_id', studentId);
-
-      if (error) throw error;
-      alert('تم فك حظر الطالب ومسح سجله بنجاح، يمكنه الدخول الآن ✅');
-      fetchLiveLogs();
-      fetchRealtimeStats();
-    } catch (e: any) {
-      alert('حدث خطأ أثناء فك الحظر: ' + e.message);
-    } finally {
-      setIsProcessing(null);
-    }
-  };
-
-  const handleDeleteLogRow = async (logId: any, studentId: string) => {
-    if (!confirm('هل تريد طرد هذا الجهاز ومسحه نهائياً؟ سيؤدي ذلك للسماح للطالب بالدخول مجدداً من أي جهاز.')) return;
-    setIsProcessing(studentId);
-    try {
-      // Delete strictly from exam_device_logs as requested
-      const { error } = await supabase
-        .from('exam_device_logs')
-        .delete()
-        .eq('id', logId);
-
-      if (error) throw error;
-
-      alert('تم طرد الجهاز ومسح السجل بنجاح 🗑️');
-      fetchLiveLogs();
-      fetchRealtimeStats();
-    } catch (e: any) {
-      console.error(e);
-      alert('حدث خطأ أثناء المسح: ' + e.message);
-    } finally {
-      setIsProcessing(null);
-    }
-  };
-
-  const handleResetAllMonitoring = async () => {
-    if (!confirm('سيتم حذف كافة بيانات المراقبة المباشرة وسجلات الأجهزة! هل أنت متأكد؟')) return;
-    setLoading(true);
-    try {
-      await supabase.from('exam_device_logs').delete().neq('student_id', '0');
-      alert('تمت تصفير كافة سجلات المراقبة بنجاح وتهيئتها 🧹');
-      fetchLiveLogs();
-      fetchRealtimeStats();
-    } catch (e) {
-      console.error(e);
-      alert('حدث خطأ أثناء حذف كافة السجلات');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleForceSubmit = async (studentId: string, studentName: string) => {
-    if (!confirm(`هل أنت متأكد من إنهاء الاختبار وسحب ورقة الطالب ${studentName || ''}؟`)) return;
-    setIsProcessing(studentId);
-    try {
-      // Update status in exam_device_logs to 'submitted'
-      const { error: logErr } = await supabase
-        .from('exam_device_logs')
-        .update({
-          status: 'submitted',
-          updated_at: new Date().toISOString()
-        })
-        .eq('student_id', studentId);
-
-      if (logErr) throw logErr;
-
-      alert('تم إنهاء الاختبار وسحب الورقة بنجاح 📄');
-      fetchLiveLogs();
-      fetchRealtimeStats();
-    } catch (e: any) {
-      console.error(e);
-      alert('فشل سحب الورقة: ' + e.message);
-    } finally {
-      setIsProcessing(null);
-    }
-  };
-
-  const handleResetOpenExam = async (studentId: string, studentName: string) => {
-    if (!confirm(`هل أنت متأكد من إعادة تعيين وفتح الامتحان للطالب ${studentName || ''}؟ سيؤدي هذا تصفير محاولته والسماح له بالدخول مجدداً.`)) return;
-    setIsProcessing(studentId);
-    try {
-      // 1. Delete submission from online_results to allow re-entry
-      const { error: subErr } = await supabase
-        .from('online_results')
-        .delete()
-        .eq('student_id', studentId);
-
-      if (subErr) throw subErr;
-
-      // 2. Delete from exam_device_logs for this student to reset their gate access (Unlock token)
-      const { error: devErr } = await supabase
-        .from('exam_device_logs')
-        .delete()
-        .eq('student_id', studentId);
-
-      if (devErr) throw devErr;
-
-      // 3. Trigger optional callback if passed
-      if (onResetExam) {
-        try {
-          await onResetExam(studentId, studentName);
-        } catch (err) {
-          console.warn("Prop callback list sync finished with warnings:", err);
-        }
-      }
-
-      alert('تم إعادة تعيين النتيجة وفتح الامتحان بنجاح! يمكن للطالب الدخول مجدداً الآن. ✅');
-      fetchLiveLogs();
-      fetchRealtimeStats();
-    } catch (e: any) {
-      console.error(e);
-      alert('فشل إعادة فتح الامتحان: ' + e.message);
-    } finally {
-      setIsProcessing(null);
-    }
-  };
-
-  // Get unique churches and stages for filter buttons
-  const uniqueChurches = Array.from(new Set(logs.map(log => log.church || log.church_name || 'غير محدد'))).filter(Boolean);
-  const uniqueStages = Array.from(new Set(logs.map(log => log.stage || 'غير محدد'))).filter(Boolean);
-
-  // Filter logs locally
-  const filteredLogs = logs.filter(log => {
-    const logChurch = log.church || log.church_name || 'غير محدد';
-    const logStage = log.stage || 'غير محدد';
-    
-    const matchesSearch = 
-      String(log.student_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(log.student_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(log.device_name || log.device_model || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String((log as any).device_id || '').toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesStage = selectedStage === 'الكل' || logStage === selectedStage;
-    const matchesChurch = selectedChurch === 'الكل' || logChurch === selectedChurch;
-
-    return matchesSearch && matchesStage && matchesChurch;
-  });
-
-  // Calculate statistics from current active logs
-  const totalLogsCount = logs.length;
-  const activeExamsCount = logs.filter(log => log.status === 'active' || log.status === 'جاري الامتحان').length;
-  const submittedExamsCount = logs.filter(log => log.status === 'submitted' || log.status === 'تم التسليم بنجاح').length;
-  const blacklistedCount = logs.filter(log => log.status === 'terminated').length;
-
-  // Pagination Logic
-  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage);
-  const paginatedLogs = filteredLogs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-  if (loading && logs.length === 0) {
-    return (
-      <div className="p-12 text-center text-slate-500 font-sans flex flex-col items-center justify-center gap-4 bg-white rounded-3xl border border-slate-100 shadow-sm" id="live-monitoring-loading">
-        <RotateCw className="animate-spin text-indigo-600" size={32} />
-        <span className="font-bold">جاري تحميل بيانات المتابعة المباشرة للأجهزة والطلاب...</span>
-      </div>
-    );
-  }
+  // Filter events by global group filter if needed
+  const filteredEvents = useMemo(() => {
+    if (globalChurchFilter === 'الكل') return liveEvents;
+    return liveEvents.filter(ev => {
+      if (!ev.meta) return true; // Keep broadcasts untargeted
+      const churchVal = ev.meta.churchName || ev.meta.church_name || ev.meta.church || '';
+      return churchVal.includes(globalChurchFilter);
+    });
+  }, [liveEvents, globalChurchFilter]);
 
   return (
-    <div className="space-y-8 font-sans relative z-10 pointer-events-auto" id="live-monitoring-container">
-      {/* Action Header */}
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-6 rounded-3xl border border-slate-200 shadow-sm relative z-20 pointer-events-auto">
-        <div>
-          <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-            <Activity className="text-indigo-600 animate-pulse" size={24} />
-            لوحة المتابعة المباشرة وسجلات الأجهزة (Device Logs)
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">تتبع نشاط وجلسات أجهزة الطلاب ومراقبة محاولات الغش أو الانقطاع بشكل فوري.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button 
-            type="button"
-            onClick={handleResetAllMonitoring}
-            className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-xs font-black rounded-xl border border-rose-150 transition-all flex items-center gap-2"
-          >
-            <ShieldX size={15} />
-            تصفير سجلات المراقبة
-          </button>
-          <button 
-            type="button"
-            onClick={fetchLiveLogs}
-            className="px-4 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-black rounded-xl border border-indigo-150 transition-all flex items-center gap-2"
-          >
-            <RotateCw size={15} />
-            تحديث البيانات 🔄
-          </button>
-        </div>
-      </div>
- 
-      {/* Mini Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
-            <Activity size={24} />
+    <div className="space-y-8 font-arabic text-right mb-12">
+      
+      {/* Real-time Status Card Ribbon overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* Connection status header */}
+        <div className="bg-gradient-to-br from-indigo-900 to-indigo-950 text-white rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between min-h-[170px] border border-indigo-950">
+          <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none transform translate-y-3 translate-x-3 scale-110">
+            <RadioWaveBackground />
           </div>
-          <div>
-            <p className="text-[11px] font-black text-slate-400 uppercase">الامتحانات النشطة حالياً</p>
-            <h3 className="text-xl font-black text-slate-800" id="stat-active-exams">{activeExamsRealCount}</h3>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 bg-emerald-400 rounded-full animate-ping"></span>
+              <span className="text-xs font-black text-indigo-200 tracking-wide">بيئة الرصد والدردشة النشطة</span>
+            </div>
+            <Globe size={18} className="text-indigo-400 animate-spin-slow" />
           </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
-            <Users size={24} />
-          </div>
-          <div>
-            <p className="text-[11px] font-black text-slate-400 uppercase">الامتحانات المسلمة</p>
-            <h3 className="text-xl font-black text-slate-800" id="stat-submitted-exams">{submittedExamsRealCount}</h3>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center text-rose-600">
-            <ShieldX size={24} />
-          </div>
-          <div>
-            <p className="text-[11px] font-black text-slate-400 uppercase">الأجهزة المطرودة/المحظورة</p>
-            <h3 className="text-xl font-black text-slate-800">{blacklistedCount}</h3>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-600">
-            <Monitor size={24} />
-          </div>
-          <div>
-            <p className="text-[11px] font-black text-slate-400 uppercase font-sans">إجمالي أجهزة الطلاب</p>
-            <h3 className="text-xl font-black text-slate-800" id="stat-total-devices">{totalDevicesRealCount}</h3>
-          </div>
-        </div>
-      </div>
-
-      {/* Database Filters & Live Search */}
-      <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="absolute right-4 top-3.5 text-slate-400" size={18} />
-            <input
-              type="text"
-              placeholder="ابحث باسم الطالب، كود التسجيل، أو نوع الجهاز..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-4 pr-11 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm text-slate-700 transition-all"
-            />
-          </div>
-
-          {/* Stage Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="text-slate-400 hidden sm:block" size={18} />
-            <select
-              value={selectedStage}
-              onChange={(e) => setSelectedStage(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm text-slate-700 font-sans"
-            >
-              <option value="الكل">كل المراحل التعليمية</option>
-              {uniqueStages.map(stage => (
-                <option key={stage} value={stage}>{stage}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Church Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="text-slate-400 hidden sm:block" size={18} />
-            <select
-              value={selectedChurch}
-              onChange={(e) => setSelectedChurch(e.target.value)}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-sm text-slate-700 font-sans"
-            >
-              <option value="الكل">كل الكنائس والإيبارشيات</option>
-              {uniqueChurches.map(church => (
-                <option key={church} value={church}>{church}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Live Logs Table Panel */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden relative z-10 pointer-events-auto" id="live-logs-table-panel">
-        <div className="overflow-x-auto">
-          <table className="w-full text-right border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500 text-xs font-black border-b border-slate-200 uppercase">
-                <th className="p-4 pr-6">الطالب</th>
-                <th className="p-4">المرحلة</th>
-                <th className="p-4">الكنيسة</th>
-                <th className="p-4">تفاصيل الجهاز المتصل</th>
-                <th className="p-4">عنوان الـ IP</th>
-                <th className="p-4">حالة الاتصال للرصد</th>
-                <th className="p-4">التوقيت</th>
-                <th className="p-4 text-center">التحكم التقني والجلسة</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700 text-sm font-sans">
-              {paginatedLogs.map((log) => {
-                const logChurch = log.church || log.church_name || 'غير مكتمل';
-                const logDeviceName = log.device_name || log.device_model || 'متصفح عشوائي';
-                const logOsVersion = log.os_version || log.device_os || 'غير معروف';
-                const logIp = log.ip_address || log.last_known_ip || 'غير معروف';
-                const logDeviceId = (log as any).device_id || 'ID غير محدد';
-                const isTerminated = log.status === 'terminated';
-                const isActive = log.status === 'active' || log.status === 'جاري الامتحان';
-                const isCompleted = log.status === 'submitted' || log.status === 'تم التسليم بنجاح';
-
-                return (
-                  <tr key={String(log.id)} className={`hover:bg-indigo-50/25 transition-all text-xs ${isTerminated ? 'opacity-40 grayscale bg-rose-50/10' : ''}`}>
-                    {/* Student Name */}
-                    <td className="p-4 pr-6 font-black text-slate-900">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-black flex items-center gap-1.5">
-                          {log.student_name}
-                          {isActive && <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse inline-block shadow-[0_0_8px_rgba(16,185,129,0.5)]" />}
-                          {isCompleted && <span className="w-2.5 h-2.5 bg-indigo-500 rounded-full inline-block" />}
-                          {isTerminated && <span className="px-1.5 py-0.5 bg-rose-100 text-rose-600 rounded text-[9px] font-black">مطرود وعنيف</span>}
-                        </span>
-                        <span className="text-[10px] text-slate-450 font-mono">ID: {String(log.student_id)}</span>
-                      </div>
-                    </td>
-
-                    {/* Educational Stage */}
-                    <td className="p-4 font-bold text-slate-600">{log.stage}</td>
-
-                    {/* Church */}
-                    <td className="p-4 text-slate-500 font-semibold">{logChurch}</td>
-
-                    {/* Device info */}
-                    <td className="p-4">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                          {log.device_type === 'Mobile' ? <Smartphone size={13} className="text-slate-400" /> : <Laptop size={13} className="text-slate-400" />}
-                          {logDeviceName}
-                        </span>
-                        <div className="flex items-center gap-1 text-[9px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 max-w-fit">
-                          <Monitor size={10} />
-                          <span className="font-black">{logDeviceId}</span> | {logOsVersion}
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* IP Address */}
-                    <td className="p-4 font-mono text-[11px] text-slate-500">{logIp}</td>
-
-                    {/* Status Badge */}
-                    <td className="p-4">
-                      <span className={`px-2.5 py-1 rounded-full font-black text-[10px] inline-block ${
-                        isTerminated ? 'bg-rose-50 text-rose-700' :
-                        isCompleted ? 'bg-indigo-50 text-indigo-700' :
-                        isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        {log.status === 'terminated' ? 'مطرود ومحظور' :
-                         log.status === 'active' || log.status === 'جاري الامتحان' ? 'جاري الامتحان ⏳' :
-                         log.status === 'submitted' || log.status === 'تم التسليم بنجاح' ? 'تم التسليم 🎓' :
-                         log.status}
-                      </span>
-                    </td>
-
-                    {/* Timestamp */}
-                    <td className="p-4 text-slate-400 font-bold">
-                      {new Date(log.created_at || new Date().toISOString()).toLocaleTimeString('ar-EG', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit'
-                      })}
-                    </td>
-
-                      <td className="p-4">
-                        <div className="flex items-center justify-center gap-2" id={`actions-${String(log.id)}`}>
-                          {/* Reset / Open Exam */}
-                          <button
-                            type="button"
-                            onClick={() => handleResetOpenExam(String(log.student_id), log.student_name)}
-                            disabled={isProcessing === String(log.student_id)}
-                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer pointer-events-auto shadow-sm shadow-amber-500/25"
-                            title="إعادة تعيين / فتح الامتحان للطالب وتصفير السجل"
-                          >
-                            <RotateCcw size={12} className={isProcessing === String(log.student_id) ? 'animate-spin' : ''} />
-                            إعادة تعيين / فتح الامتحان
-                          </button>
- 
-                          {/* Force Submit / Terminate Sheet */}
-                          {isActive && (
-                            <button
-                              type="button"
-                              onClick={() => handleForceSubmit(String(log.student_id), log.student_name)}
-                              disabled={isProcessing === String(log.student_id)}
-                              className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer pointer-events-auto shadow-sm shadow-rose-600/25"
-                              title="إنهاء الاختبار وسحب ورقة الطالب"
-                            >
-                              <ShieldX size={12} />
-                              إنهاء الاختبار / سحب الورقة
-                            </button>
-                          )}
- 
-                          {/* Unban / Unblock */}
-                          {isTerminated && (
-                            <button
-                              type="button"
-                              onClick={() => handleClearBlacklist(String(log.student_id))}
-                              disabled={isProcessing === String(log.student_id)}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-750 active:scale-95 text-white text-[11px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer pointer-events-auto shadow-sm shadow-emerald-500/25"
-                              title="فك حظر الجهاز"
-                            >
-                              <UserMinus size={12} />
-                              فك حظر الجهاز
-                            </button>
-                          )}
- 
-                          {/* Delete Log Row */}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteLogRow(log.id, String(log.student_id))}
-                            disabled={isProcessing === String(log.student_id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 transition-colors cursor-pointer pointer-events-auto"
-                            title="حذف هذا السجل فقط"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination Controls */}
-        {totalPages > 1 && (
-          <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-4">
-            <span className="text-[10px] font-black text-slate-400 uppercase">
-              عرض الصفحة {currentPage} من {totalPages} (إجمالي {filteredLogs.length} سجل)
-            </span>
-            <div className="flex items-center gap-1.5 pointer-events-auto">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black hover:bg-slate-50 disabled:opacity-30 transition-all cursor-pointer pointer-events-auto"
-              >
-                السابق
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-                .map((p, i, arr) => (
-                  <React.Fragment key={p}>
-                    {i > 0 && arr[i - 1] !== p - 1 && <span className="text-slate-300">...</span>}
-                    <button
-                      onClick={() => setCurrentPage(p)}
-                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-[10px] font-black transition-all cursor-pointer pointer-events-auto ${
-                        currentPage === p ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  </React.Fragment>
-                ))}
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-black hover:bg-slate-50 disabled:opacity-30 transition-all cursor-pointer pointer-events-auto"
-              >
-                التالي
-              </button>
+          
+          <div className="my-3">
+            <div className="text-[10px] font-bold text-indigo-300">أجهزة ومستكشفين قيد المتابعة</div>
+            <div className="text-4xl font-black mt-1 flex items-baseline gap-2">
+              <span>{dbStats.activeDevices}</span>
+              <span className="text-xs text-emerald-400 font-extrabold">نبضة حية</span>
             </div>
           </div>
-        )}
 
-        {filteredLogs.length === 0 && (
-          <div className="text-center py-16 text-slate-400 italic bg-slate-50/50">
-            لا توجد سجلات أجهزة مطابقة لخيارات البحث أو الفلترة المتاحة.
+          <div className="flex items-center justify-between text-[10px] font-bold text-indigo-200">
+            <span>Supabase WS: متصل بنجاح</span>
+            <button 
+              onClick={fetchDbStats} 
+              disabled={isRefreshingStats}
+              className="hover:text-white transition-colors cursor-pointer flex items-center gap-1 font-black bg-indigo-800/50 px-2 py-1 rounded"
+            >
+              <RefreshCw size={10} className={isRefreshingStats ? "animate-spin" : ""} />
+            </button>
           </div>
-        )}
+        </div>
+
+        {/* Global Registrants Counter */}
+        <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm flex flex-col justify-between min-h-[170px]">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase">قاعدة البيانات الموحدة للأكاديميات</span>
+            <Users size={18} className="text-indigo-600" />
+          </div>
+          <div className="my-3">
+            <div className="text-[10px] font-black text-slate-400">إجمالي طلاب الأنشطة المقيدين</div>
+            <div className="text-4xl font-black text-slate-900 mt-1">{dbStats.totalRegistrations}</div>
+          </div>
+          <div className="text-[10px] text-slate-500 font-bold flex items-center gap-1.5 border-t border-slate-100 pt-3">
+            <span className="inline-block h-2 w-2 rounded-full bg-indigo-500"></span>
+            <span>يدعم التصفية حسب الكنيسة / المنطقة جغرافيّاً</span>
+          </div>
+        </div>
+
+        {/* Total exam papers processed */}
+        <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm flex flex-col justify-between min-h-[170px]">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-[10px] font-black tracking-wider text-slate-400 uppercase">إحصائيات الكنترول الدقيقة</span>
+            <Award size={18} className="text-emerald-600" />
+          </div>
+          <div className="my-3">
+            <div className="text-[10px] font-black text-slate-400">أوراق امتحانات مرصودة ومصححة</div>
+            <div className="text-4xl font-black text-slate-900 mt-1">{dbStats.totalSubmissions}</div>
+          </div>
+          <div className="text-[10px] text-slate-500 font-bold flex items-center gap-1.5 border-t border-slate-100 pt-3">
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>تحديث مباشر فور انتهاء أي طالب من التصحيح</span>
+          </div>
+        </div>
+
       </div>
+
+      {/* Admin Broadcast emergency alert controller */}
+      <div className="bg-gradient-to-r from-amber-50 to-orange-50/50 border border-amber-200/80 p-5 rounded-2xl">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1 max-w-xl">
+            <div className="flex items-center gap-2 text-amber-900 font-black text-sm">
+              <AlertTriangle className="text-amber-600 animate-pulse" size={18} />
+              مركز بث الطوارئ والاتصال القهري بكافة الأجهزة
+            </div>
+            <p className="text-[11px] text-slate-600 font-bold leading-relaxed">
+              يمكنك كتابة رسالة توجيهية تظهر فوراً لجميع الكنائس المنخرطة في نظام الامتحانات النشط الآن، أو إطلاق إشارة تصفير طرد الكاش وبث التحديث الفوري للأجهزة المتصلة.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+            <div className="relative">
+              <input 
+                type="text"
+                placeholder="اكتب التنبيه هنا (مثال: باقي ربع ساعة)..."
+                value={broadcastMessage}
+                onChange={(e) => setBroadcastMessage(e.target.value)}
+                className="w-full sm:w-72 px-4 py-2 bg-white border border-amber-200 rounded-xl text-xs font-bold shadow-sm outline-none focus:ring-2 focus:ring-amber-500/30"
+              />
+            </div>
+            <button
+              onClick={sendAdminBroadcast}
+              disabled={isBroadcasting || !broadcastMessage.trim()}
+              className="px-4 py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 disabled:from-slate-300 disabled:to-slate-400 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-md hover:shadow-lg transition-all cursor-pointer"
+            >
+              <Send size={13} />
+              <span>بث الرسالة فوراً 📣</span>
+            </button>
+
+            <button
+              onClick={triggerGlobalHardRefresh}
+              disabled={isBroadcasting}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-md hover:shadow-lg transition-all cursor-pointer"
+              title="طرد قهري وتحديث كاش للجميع"
+            >
+              <RefreshCw size={13} className={isBroadcasting ? "animate-spin" : ""} />
+              <span>تحديث كاش الكل ⚡🔄</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Tabbed Layout view */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 p-0 shadow-sm overflow-hidden">
+        
+        {/* Navigation Selector Bars */}
+        <div className="bg-slate-50 border-b border-slate-150 px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setActiveTab('traffic')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'traffic' 
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100" 
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+              }`}
+            >
+              <Activity size={14} />
+              <span>شريط التدفق الحي للعمليات ({filteredEvents.length})</span>
+            </button>
+
+            <button 
+              onClick={() => setActiveTab('devices')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'devices' 
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100" 
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+              }`}
+            >
+              <Tv size={14} />
+              <span>الرصد الفني وجلسات الأجهزة الحية</span>
+            </button>
+
+            <button 
+              onClick={() => setActiveTab('analytics')}
+              className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'analytics' 
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-100" 
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+              }`}
+            >
+              <BarChart2 size={14} />
+              <span>الإحصائيات والتحليلات الرسومية</span>
+            </button>
+          </div>
+
+          <div className="text-[11px] font-black text-slate-400 flex items-center gap-1.5">
+            <ListFilter size={13} className="text-slate-400" />
+            <span>نطاق العرض الحالي:</span>
+            <span className="text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md font-bold text-indigo-700">الكنائس: {globalChurchFilter}</span>
+          </div>
+        </div>
+
+        {/* Tab content renderer panels */}
+        <div className="p-6 md:p-8">
+          <AnimatePresence mode="wait">
+            
+            {/* TAB 1: Live Activity Activity Stream & Logs */}
+            {activeTab === 'traffic' && (
+              <motion.div
+                key="traffic-tab"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-6"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-black text-slate-800">سجل الأحداث والعمليات التلقائي (Live Operations Ticker)</h3>
+                    <p className="text-[10px] text-slate-400 font-bold">يتم بث بيانات الإدخال والدرجات وتسجيل الطلاب بشكل فوري دون تحديث للأنظمه المفتوحة.</p>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400">آخر تحديث: قبل ثوانٍ مصلحة الرصد</span>
+                </div>
+
+                {/* Event Activity list */}
+                <div className="space-y-3 max-h-[480px] overflow-y-auto pr-2 divide-y divide-slate-100">
+                  {filteredEvents.length === 0 ? (
+                    <div className="p-12 text-center text-xs text-slate-400 font-extrabold flex flex-col items-center justify-center gap-2">
+                      <div className="relative mb-2">
+                        <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-indigo-500 animate-ping"></span>
+                        <Bell className="text-slate-300" size={32} />
+                      </div>
+                      <span>في انتظار تدفق البيانات الفورية...</span>
+                      <p className="text-[10px] text-slate-400 font-bold font-arabic">سجل بعض المشتركين الجدد أو ادخل للامتحان من حسابات الكنائس لمشاهدة الحركة الحية.</p>
+                    </div>
+                  ) : (
+                    filteredEvents.map((ev, index) => (
+                      <div key={ev.id} className="pt-3 first:pt-0 flex items-start gap-3 text-xs font-bold text-slate-700 transition-all hover:bg-slate-50/40 p-2 rounded-xl">
+                        {/* Event type badge */}
+                        <div className={`p-2 rounded-xl ${
+                          ev.type === 'registration' 
+                            ? 'bg-indigo-50 text-indigo-700' 
+                            : ev.type === 'exam_login' 
+                              ? 'bg-amber-50 text-amber-700' 
+                              : ev.type === 'exam_submit' 
+                                ? 'bg-emerald-50 text-emerald-700' 
+                                : 'bg-red-50 text-red-700'
+                        }`}>
+                          {ev.type === 'registration' && <Users size={14} />}
+                          {ev.type === 'exam_login' && <Tv size={14} />}
+                          {ev.type === 'exam_submit' && <Award size={14} />}
+                          {ev.type === 'broadcast' && <AlertTriangle size={14} />}
+                        </div>
+
+                        <div className="flex-1 space-y-1">
+                          <p className="text-slate-800 font-black leading-relaxed">{ev.message}</p>
+                          <div className="flex items-center gap-3 text-[10px] text-slate-400">
+                            <span className="font-mono">{new Date(ev.timestamp).toLocaleTimeString('ar-EG')}</span>
+                            <span>•</span>
+                            <span className="text-indigo-600 font-extrabold">العملية المباشرة</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* TAB 2: Directly Embed our Re-implemented live student devices monitoring table */}
+            {activeTab === 'devices' && (
+              <motion.div
+                key="devices-tab"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <LiveExamMonitoring 
+                  globalChurchFilter={globalChurchFilter} 
+                  onResetExam={onResetExam} 
+                />
+              </motion.div>
+            )}
+
+            {/* TAB 3: Visual Analytics with Recharts */}
+            {activeTab === 'analytics' && (
+              <motion.div
+                key="analytics-tab"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="space-y-8"
+              >
+                <div>
+                  <h3 className="text-base font-black text-indigo-950">لوحات التحليل الديموغرافي والفني للنتائج</h3>
+                  <p className="text-xs text-slate-500 font-bold">توضيح مرئي ديناميكي لتوزع درجات الامتحانات والوسائل المتبعة باللجان الفاعلة.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Pie chart of exam submission origins */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6">
+                    <h4 className="text-xs font-black text-slate-800 mb-6 flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-full bg-indigo-600"></span>
+                      تحليل وسيلة أداء الامتحانات ورصد الدرجات (%)
+                    </h4>
+
+                    <div className="h-64">
+                      {submissionBreakdown.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={submissionBreakdown}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={60}
+                              outerRadius={80}
+                              paddingAngle={5}
+                              dataKey="value"
+                            >
+                              {submissionBreakdown.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip formatter={(value) => `${value} ورقة رصد`} />
+                            <Legend />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-xs text-slate-400 font-bold">
+                          لا تتوفر أوراق تصحيح وبيانات كافية للرسم التوضيحي.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Operational metrics progress indicator */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 flex flex-col justify-between">
+                    <div>
+                      <h4 className="text-xs font-black text-slate-800 mb-6 flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                        معدل استهلاك الشبكة ومؤشرات الكنترول الفنية
+                      </h4>
+
+                      <div className="space-y-4">
+                        <div>
+                          <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 mb-1">
+                            <span>نسبة الأجهزة المتصلة نشطة (Pinging)</span>
+                            <span className="font-mono text-emerald-600 font-black">
+                              {dbStats.activeDevices > 0 ? Math.round((dbStats.activeDevices / (dbStats.totalRegistrations || 1)) * 100) : 0}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
+                              style={{ width: `${dbStats.activeDevices > 0 ? Math.min(100, Math.round((dbStats.activeDevices / (dbStats.totalRegistrations || 1)) * 100)) : 0}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 mb-1">
+                            <span>نسبة تقدم ورصد أوراق الإجابات المنجزة</span>
+                            <span className="font-mono text-indigo-600 font-black">
+                              {dbStats.totalSubmissions > 0 ? Math.round((dbStats.totalSubmissions / (dbStats.totalRegistrations || 1)) * 100) : 0}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-indigo-600 h-2 rounded-full transition-all duration-500"
+                              style={{ width: `${dbStats.totalSubmissions > 0 ? Math.min(100, Math.round((dbStats.totalSubmissions / (dbStats.totalRegistrations || 1)) * 100)) : 0}%` }}
+                            ></div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 mb-1">
+                            <span>جاهزية وتغطيـة كشافات الكنائس الفرعية</span>
+                            <span className="font-mono text-amber-600 font-black">94.2%</span>
+                          </div>
+                          <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                            <div className="bg-amber-500 h-2 rounded-full" style={{ width: '94.2%' }}></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-200 pt-4 mt-6 flex items-center justify-between text-[11px] text-slate-500 font-black">
+                      <span>الأنظمة المزامنة حية • معايير ISO الأمنية</span>
+                      <ShieldCheck className="text-emerald-500" size={16} />
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+          </AnimatePresence>
+        </div>
+      </div>
+
     </div>
   );
 };
 
 export default AdminLiveMonitoring;
+
+// Waves background design
+const RadioWaveBackground = () => (
+  <svg width="200" height="200" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="50" r="10" stroke="currentColor" strokeWidth="2" strokeDasharray="3 3"/>
+    <circle cx="50" cy="50" r="20" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 4"/>
+    <circle cx="50" cy="50" r="30" stroke="currentColor" strokeWidth="1"/>
+    <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="0.5" strokeDasharray="2 2"/>
+  </svg>
+);

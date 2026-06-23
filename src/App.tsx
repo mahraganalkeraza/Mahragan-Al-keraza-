@@ -68,7 +68,8 @@ import {
   Printer,
   AlertTriangle,
   Bell,
-  ShieldAlert
+  ShieldAlert,
+  RefreshCw
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
@@ -407,7 +408,7 @@ const ALL_ADMIN_TABS = [
   { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
   { id: 'calculator', label: 'حاسبة الكتب', icon: Calculator },
   { id: 'exams_management', label: 'إدارة الامتحانات', icon: BookOpen },
-  // { id: 'exams_live', label: 'المتابعة المباشرة', icon: Activity }, -- Postponed to next season
+  { id: 'exams_live', label: 'المتابعة المباشرة', icon: Activity },
   { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
   { id: 'dynamic_management', label: 'النظام الديناميكي', icon: Settings },
   { id: 'system_settings', label: 'إعدادات المنصة', icon: Settings }
@@ -619,6 +620,24 @@ function AppComponent() {
   };
   const initialProfile = getInitialProfile();
 
+  const [refreshCountdown, setRefreshCountdown] = useState<number | null>(null);
+  const [targetRefreshUrl, setTargetRefreshUrl] = useState<string>('');
+
+  useEffect(() => {
+    if (refreshCountdown === null) return;
+    
+    if (refreshCountdown <= 0) {
+      window.location.href = targetRefreshUrl || window.location.href;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setRefreshCountdown((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [refreshCountdown, targetRefreshUrl]);
+
   useEffect(() => {
     const sessionStr = localStorage.getItem('church_session');
     if (!sessionStr) return;
@@ -649,24 +668,50 @@ function AppComponent() {
           }
         }
       )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(churchSubscription);
+    };
+  }, []);
+
+  // Global Unconditional Broadcast Listener for Force Hard Refresh / Cache Busting
+  useEffect(() => {
+    const handleHardRefresh = (payload: any) => {
+      sessionStorage.clear();
+      const currentUrl = window.location.origin + window.location.pathname;
+      const timestamp = (payload && payload.timestamp) || Date.now();
+      const cacheBusterUrl = `${currentUrl}?bust=${timestamp}${window.location.hash}`;
+      
+      setTargetRefreshUrl(cacheBusterUrl);
+      setRefreshCountdown(5);
+    };
+
+    const globalLockChannel = supabase
+      .channel('church-lock-channel')
       .on(
         'broadcast',
         { event: 'FORCE_HARD_REFRESH' },
-        (payload: any) => {
-          if (payload.type === 'FORCE_HARD_REFRESH') {
-            sessionStorage.clear();
-            const currentUrl = window.location.origin + window.location.pathname;
-            const cacheBusterUrl = `${currentUrl}?bust=${payload.timestamp}${window.location.hash}`;
-            
-            alert("يتم الآن تحديث النظام تلقائياً وتطبيق تعديلات الإدارة الأخيرة...");
-            window.location.href = cacheBusterUrl;
-          }
+        (envelope: any) => {
+          handleHardRefresh(envelope.payload);
+        }
+      )
+      .subscribe();
+
+    const globalUpdatesChannel = supabase
+      .channel('global-updates')
+      .on(
+        'broadcast',
+        { event: 'FORCE_HARD_REFRESH' },
+        (envelope: any) => {
+          handleHardRefresh(envelope.payload);
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(churchSubscription);
+      supabase.removeChannel(globalLockChannel);
+      supabase.removeChannel(globalUpdatesChannel);
     };
   }, []);
   
@@ -951,6 +996,7 @@ function AppComponent() {
   const [inquiryPage, setInquiryPage] = useState(1);
   const [analyticsPage, setAnalyticsPage] = useState(1);
   const [printingPage, setPrintingPage] = useState(1);
+  const [printingViewPart, setPrintingViewPart] = useState<1 | 2>(1);
   const [resultsFilterStage, setResultsFilterStage] = useState('الكل');
   const [resultsFilterGrade, setResultsFilterGrade] = useState('الكل');
   const [isScanning, setIsScanning] = useState(false);
@@ -1736,6 +1782,38 @@ function AppComponent() {
     });
     return cols;
   }, [aggregatedChurchPrintingTotals]);
+
+  const flatActiveColumns = useMemo(() => {
+    const list: { stage: string; col: 'darasi' | 'mahfouthat' | 'coptic1' | 'coptic2' }[] = [];
+    STAGE_ORDER.forEach(stg => {
+      const subCols = activeStagesCols[stg] || [];
+      subCols.forEach(col => {
+        list.push({ stage: stg, col });
+      });
+    });
+    return list;
+  }, [activeStagesCols]);
+
+  const part1Columns = useMemo(() => {
+    return flatActiveColumns.slice(0, 20);
+  }, [flatActiveColumns]);
+
+  const part2Columns = useMemo(() => {
+    return flatActiveColumns.slice(20);
+  }, [flatActiveColumns]);
+
+  const getStageHeaderGroups = (cols: { stage: string; col: string }[]) => {
+    const groups: { stage: string; colSpan: number }[] = [];
+    cols.forEach(c => {
+      const last = groups[groups.length - 1];
+      if (last && last.stage === c.stage) {
+        last.colSpan++;
+      } else {
+        groups.push({ stage: c.stage, colSpan: 1 });
+      }
+    });
+    return groups;
+  };
 
   // Analytical Metrics for the Advanced Dashboard
   const analyticsData = useMemo(() => {
@@ -3190,12 +3268,12 @@ function AppComponent() {
     });
   };
 
-  const exportPrintingStatementPDF = async () => {
-    const element = document.getElementById('printing-statement-table');
+  const exportPrintingStatementPartPDF = async (part: 1 | 2) => {
+    const element = document.getElementById(`printing-statement-table-part${part}`);
     if (!element) return;
     const opt = {
-      margin: 5,
-      filename: `بيان_طباعة_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString()}.pdf`,
+      margin: [15, 10, 15, 10],
+      filename: `بيان_طباعة_الجزء_${part === 1 ? 'الأول_أول_20' : 'الثاني_آخر_20'}_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
       html2canvas: { scale: 3, useCORS: true, allowTaint: true },
       jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
@@ -5463,6 +5541,37 @@ function AppComponent() {
 
   return (
     <div className="min-h-screen bg-bg-soft font-sans selection:bg-accent/30 relative" dir="rtl">
+      {/* Forced Remote Refresh Countdown Toast */}
+      <AnimatePresence>
+        {refreshCountdown !== null && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: -50 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: -50 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 bg-gradient-to-r from-orange-600 to-amber-600 text-white shadow-2xl z-[1000] p-5 rounded-2xl flex items-center gap-4 border border-orange-500/30 max-w-lg min-w-[320px] sm:min-w-[400px] select-none"
+            dir="rtl"
+          >
+            <div className="bg-white/20 p-3 rounded-full flex items-center justify-center animate-bounce">
+              <RefreshCw size={24} className="animate-spin text-white" />
+            </div>
+            <div className="flex-1">
+              <h4 className="font-extrabold text-base mb-1">تحديث إجباري للنظام 🔄</h4>
+              <p className="text-xs text-orange-50/90 leading-relaxed font-black">
+                سيتم تحديث النظام خلال لحظات لضمان أفضل تجربة...
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[10px] bg-white/25 px-2 py-0.5 rounded-full font-bold">
+                  جاري إعادة التشغيل تلقائياً خلال:
+                </span>
+                <span className="text-sm font-black text-white bg-black/30 px-2.5 py-0.5 rounded-lg animate-pulse">
+                  {refreshCountdown} ثوانٍ
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Global Watermark */}
       <div 
         className="fixed inset-0 pointer-events-none z-0 opacity-[0.03]"
@@ -7295,14 +7404,14 @@ function AppComponent() {
               </section>
             )}
 
-            {/* {adminActiveTab === 'exams_live' && (
+            {adminActiveTab === 'exams_live' && (
               <section>
                 <AdminLiveMonitoring 
                   globalChurchFilter={globalChurchFilter} 
                   onResetExam={handleResetExam}
                 />
               </section>
-            )} */}
+            )}
 
             {adminActiveTab === 'calculator' && (
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200 font-arabic">
@@ -8109,33 +8218,56 @@ function AppComponent() {
 
                 {/* Advanced Data Aggregation for Printing Statement */}
                 <section>
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                  <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
                     <div>
                       <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
                         <FileText className="text-primary" /> بيان طباعة الامتحانات 
                       </h4>
                       <p className="text-xs text-slate-500 font-bold mt-1">حصر أعداد النسخ المطلوب طباعتها لكل مسابقة (يتم حساب النسخ تفصيلياً للمشترك)</p>
                     </div>
-                    <div className="flex flex-col sm:flex-row items-center gap-2">
-                      <button 
-                        onClick={exportPrintingStatementExcel}
-                        className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-emerald-100 transition-colors shadow-sm"
-                      >
-                        <Download size={14} /> تحميل بيان الطباعة (Excel)
-                      </button>
-                      <button 
-                        onClick={exportPrintingStatementPDF}
-                        className="px-4 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-red-100 transition-colors shadow-sm"
-                      >
-                        <FileText size={14} /> بيان الطباعة (PDF)
-                      </button>
-                      <button 
-                        onClick={exportPrintingStatementPDF}
-                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-slate-200 transition-colors shadow-sm border border-slate-200"
-                        title="طباعة بيان الامتحانات الكلي"
-                      >
-                        <Printer size={14} /> طباعة (بيان كلي)
-                      </button>
+                    
+                    <div className="flex flex-col lg:flex-row items-center gap-3">
+                      {/* Interactive View Toggles */}
+                      <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/60 shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => setPrintingViewPart(1)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${printingViewPart === 1 ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                          عرض الجزء الأول (أول ٢٠)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPrintingViewPart(2)}
+                          disabled={part2Columns.length === 0}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${part2Columns.length === 0 ? 'opacity-40 cursor-not-allowed' : ''} ${printingViewPart === 2 ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                          عرض الجزء الثاني ({part2Columns.length > 0 ? `آخر ${part2Columns.length}` : 'لا يوجد'})
+                        </button>
+                      </div>
+
+                      {/* Print and Export Buttons */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button 
+                          onClick={exportPrintingStatementExcel}
+                          className="px-3 py-2 bg-emerald-50 text-emerald-600 rounded-xl text-xs font-black flex items-center gap-1.5 hover:bg-emerald-100 transition-colors shadow-sm"
+                        >
+                          <Download size={13} /> تحميل Excel
+                        </button>
+                        <button 
+                          onClick={() => exportPrintingStatementPartPDF(1)}
+                          className="px-3 py-2 bg-red-50 text-red-600 rounded-xl text-xs font-black flex items-center gap-1.5 hover:bg-red-100 transition-colors shadow-sm"
+                        >
+                          <FileText size={13} /> طباعة الجزء الأول (أول ٢٠ عمود)
+                        </button>
+                        <button 
+                          onClick={() => exportPrintingStatementPartPDF(2)}
+                          disabled={part2Columns.length === 0}
+                          className={`px-3 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-black flex items-center gap-1.5 hover:bg-slate-200 transition-colors shadow-sm border border-slate-200 ${part2Columns.length === 0 ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        >
+                          <Printer size={13} /> طباعة الجزء الثاني (آخر ٢٠ عمود)
+                        </button>
+                      </div>
                     </div>
                   </div>
                   
@@ -8144,26 +8276,19 @@ function AppComponent() {
                       <thead>
                         <tr className="bg-slate-50 font-black text-slate-500 uppercase border-b border-slate-200">
                           <th rowSpan={2} className="p-3 border-l border-slate-200 align-middle">الكنيسة</th>
-                          <th rowSpan={2} className="p-3 border-l border-slate-200 text-center align-middle">المشتركين</th>
-                          {STAGE_ORDER.map(stg => {
-                            const subCols = activeStagesCols[stg];
-                            if (subCols.length === 0) return null;
-                            return (
-                              <th key={stg} colSpan={subCols.length} className="p-2 border-l border-b border-slate-200 text-center text-[10px] bg-slate-100/50">
-                                {stg}
-                              </th>
-                            );
-                          })}
+                          <th rowSpan={2} className="p-3 border-l border-slate-200 text-center align-middle whitespace-nowrap">المشتركين</th>
+                          {getStageHeaderGroups(printingViewPart === 1 ? part1Columns : part2Columns).map((g, idx) => (
+                            <th key={idx} colSpan={g.colSpan} className="p-2 border-l border-b border-slate-200 text-center text-[10px] bg-slate-100/50">
+                              {g.stage}
+                            </th>
+                          ))}
                         </tr>
                         <tr className="bg-slate-50 font-black text-slate-500 border-b border-slate-200">
-                          {STAGE_ORDER.map(stg => {
-                            const subCols = activeStagesCols[stg];
-                            return subCols.map(col => (
-                              <th key={`${stg}-${col}`} className="p-2 border-l border-slate-200 text-center text-[9px]">
-                                {col === 'darasi' ? 'دراسي' : col === 'mahfouthat' ? 'مح' : col === 'coptic1' ? 'ق1' : 'ق2'}
-                              </th>
-                            ));
-                          })}
+                          {(printingViewPart === 1 ? part1Columns : part2Columns).map((c, idx) => (
+                            <th key={idx} className="p-2 border-l border-slate-200 text-center text-[9px] whitespace-nowrap font-bold">
+                              {c.col === 'darasi' ? 'دراسي' : c.col === 'mahfouthat' ? 'مح' : c.col === 'coptic1' ? 'ق1' : 'ق2'}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -8174,14 +8299,13 @@ function AppComponent() {
                             <td className="p-3 font-bold text-slate-800 border-l border-slate-100 whitespace-nowrap">{row.church}</td>
                             <td className="p-3 font-black text-slate-800 text-center border-l border-slate-100 bg-slate-50/50">{row.totalSubscribers}</td>
                             
-                            {STAGE_ORDER.map(stg => {
-                              const subCols = activeStagesCols[stg];
-                              const stgData = row.stages[stg];
-                              return subCols.map(col => (
-                                <td key={`${stg}-${col}`} className={`p-2 font-bold text-center border-l border-slate-100 ${stgData && stgData[col] > 0 ? 'text-slate-700' : 'text-slate-300'}`}>
-                                  {stgData ? stgData[col] : 0}
+                            {(printingViewPart === 1 ? part1Columns : part2Columns).map((c, idx) => {
+                              const stgData = row.stages[c.stage];
+                              return (
+                                <td key={idx} className={`p-2 font-bold text-center border-l border-slate-100 ${stgData && stgData[c.col] > 0 ? 'text-slate-700' : 'text-slate-300'}`}>
+                                  {stgData ? stgData[c.col] : 0}
                                 </td>
-                              ));
+                              );
                             })}
                           </tr>
                         ))}
@@ -8198,14 +8322,13 @@ function AppComponent() {
                           <td className="p-3 font-black text-slate-800 border-l border-slate-200">الإجمالي العام</td>
                           <td className="p-3 font-black text-slate-900 text-center border-l border-slate-200 bg-slate-200/50">{aggregatedChurchPrintingTotals.subscribers}</td>
                           
-                          {STAGE_ORDER.map(stg => {
-                            const subCols = activeStagesCols[stg];
-                            const stgData = aggregatedChurchPrintingTotals.stages[stg];
-                            return subCols.map(col => (
-                              <td key={`${stg}-${col}`} className="p-2 font-black text-slate-800 text-center border-l border-slate-200">
-                                {stgData ? stgData[col] : 0}
+                          {(printingViewPart === 1 ? part1Columns : part2Columns).map((c, idx) => {
+                            const stgData = aggregatedChurchPrintingTotals.stages[c.stage];
+                            return (
+                              <td key={idx} className="p-2 font-black text-slate-800 text-center border-l border-slate-200">
+                                {stgData ? stgData[c.col] : 0}
                               </td>
-                            ));
+                            );
                           })}
                         </tr>
                       </tfoot>
@@ -8410,23 +8533,29 @@ function AppComponent() {
                     </div>
                   </div>
                   
-                  <div id="printing-statement-table" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '297mm' }}>
+                  <div id="printing-statement-table-part1" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '297mm' }}>
                     <style>{`
                       @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
-                      #printing-statement-table, .font-arabic { font-family: 'Tajawal', sans-serif !important; }
-                      #printing-statement-table * { font-family: 'Tajawal', sans-serif !important; }
+                      #printing-statement-table-part1, .font-arabic { font-family: 'Tajawal', sans-serif !important; }
+                      #printing-statement-table-part1 * { font-family: 'Tajawal', sans-serif !important; }
                       table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
                       th { background-color: #f8fafc; font-weight: 900; color: #0f172a; border: 1px solid #cbd5e1; }
                       td, th { padding: 12px 8px !important; line-height: 1.8 !important; border: 1px solid #cbd5e1; text-align: center; font-weight: 800; }
                       .text-right-col { text-align: right !important; }
                       .text-primary { color: #0F172A; }
                       .summary-row { background-color: #f1f5f9; font-weight: 900; }
+                      @media print {
+                        @page { size: A4 landscape; margin: 15mm 10mm 15mm 10mm; }
+                        body { padding-top: 10px; padding-bottom: 10px; }
+                        table { page-break-inside: auto; }
+                        tr { page-break-inside: avoid; break-inside: avoid; }
+                      }
                     `}</style>
                     <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-8">
                       <div className="flex items-center gap-4">
                         <img src={logoBase64 || getValidLogoUrl((siteSettings as any)?.logoUrl, logo)} alt="Logo" className="w-12 h-12 object-contain" crossOrigin="anonymous" />
                         <div>
-                          <h1 className="text-xl font-black text-primary">بيان طباعة مسابقات الأفراد</h1>
+                          <h1 className="text-xl font-black text-primary">بيان طباعة مسابقات الأفراد - الجزء الأول (أول ٢٠ عمود)</h1>
                           <p className="text-xs font-bold text-slate-500 mt-1">
                             {userRole === 'admin' && globalChurchFilter === 'الكل' ? 'مهرجان الكرازة المرقسية - كل الكنائس' : `مهرجان الكرازة المرقسية - ${churchName}`}
                           </p>
@@ -8443,25 +8572,18 @@ function AppComponent() {
                         <tr>
                           <th rowSpan={2} className="text-right-col" style={{ verticalAlign: 'middle' }}>الكنيسة</th>
                           <th rowSpan={2} style={{ verticalAlign: 'middle' }}>المشتركين</th>
-                          {STAGE_ORDER.map(stg => {
-                            const subCols = activeStagesCols[stg];
-                            if (subCols.length === 0) return null;
-                            return (
-                              <th key={stg} colSpan={subCols.length} style={{ borderBottom: '1px solid #cbd5e1', fontSize: '9px', backgroundColor: '#f8fafc' }}>
-                                {stg}
-                              </th>
-                            );
-                          })}
+                          {getStageHeaderGroups(part1Columns).map((g, idx) => (
+                            <th key={idx} colSpan={g.colSpan} style={{ borderBottom: '1px solid #cbd5e1', fontSize: '9px', backgroundColor: '#f8fafc' }}>
+                              {g.stage}
+                            </th>
+                          ))}
                         </tr>
                         <tr>
-                          {STAGE_ORDER.map(stg => {
-                            const subCols = activeStagesCols[stg];
-                            return subCols.map(col => (
-                              <th key={`${stg}-${col}`} style={{ fontSize: '8px' }}>
-                                {col === 'darasi' ? 'در' : col === 'mahfouthat' ? 'مح' : col === 'coptic1' ? 'ق1' : 'ق2'}
-                              </th>
-                            ));
-                          })}
+                          {part1Columns.map((c, idx) => (
+                            <th key={idx} style={{ fontSize: '8px' }}>
+                              {c.col === 'darasi' ? 'در' : c.col === 'mahfouthat' ? 'مح' : c.col === 'coptic1' ? 'ق1' : 'ق2'}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
@@ -8469,15 +8591,13 @@ function AppComponent() {
                           <tr key={idx}>
                             <td className="text-right-col font-bold" style={{ whiteSpace: 'nowrap' }}>{row.church}</td>
                             <td className="font-black bg-slate-50">{row.totalSubscribers}</td>
-                            
-                            {STAGE_ORDER.map(stg => {
-                              const subCols = activeStagesCols[stg];
-                              const stgData = row.stages[stg];
-                              return subCols.map(col => (
-                                <td key={`${stg}-${col}`} style={{ color: stgData && stgData[col] > 0 ? '#334155' : '#cbd5e1' }}>
-                                  {stgData ? stgData[col] : 0}
+                            {part1Columns.map((c, cIdx) => {
+                              const stgData = row.stages[c.stage];
+                              return (
+                                <td key={cIdx} style={{ color: stgData && stgData[c.col] > 0 ? '#334155' : '#cbd5e1' }}>
+                                  {stgData ? stgData[c.col] : 0}
                                 </td>
-                              ));
+                              );
                             })}
                           </tr>
                         ))}
@@ -8486,15 +8606,99 @@ function AppComponent() {
                         <tr className="summary-row">
                           <td className="text-right-col">الإجمالي العام</td>
                           <td className="font-black bg-slate-200">{aggregatedChurchPrintingTotals.subscribers}</td>
-                          
-                          {STAGE_ORDER.map(stg => {
-                            const subCols = activeStagesCols[stg];
-                            const stgData = aggregatedChurchPrintingTotals.stages[stg];
-                            return subCols.map(col => (
-                              <td key={`${stg}-${col}`} className="font-black">
-                                {stgData ? stgData[col] : 0}
+                          {part1Columns.map((c, cIdx) => {
+                            const stgData = aggregatedChurchPrintingTotals.stages[c.stage];
+                            return (
+                              <td key={cIdx} className="font-black">
+                                {stgData ? stgData[c.col] : 0}
                               </td>
-                            ));
+                            );
+                          })}
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  <div id="printing-statement-table-part2" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '297mm' }}>
+                    <style>{`
+                      @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+                      #printing-statement-table-part2, .font-arabic { font-family: 'Tajawal', sans-serif !important; }
+                      #printing-statement-table-part2 * { font-family: 'Tajawal', sans-serif !important; }
+                      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                      th { background-color: #f8fafc; font-weight: 900; color: #0f172a; border: 1px solid #cbd5e1; }
+                      td, th { padding: 12px 8px !important; line-height: 1.8 !important; border: 1px solid #cbd5e1; text-align: center; font-weight: 800; }
+                      .text-right-col { text-align: right !important; }
+                      .text-primary { color: #0F172A; }
+                      .summary-row { background-color: #f1f5f9; font-weight: 900; }
+                      @media print {
+                        @page { size: A4 landscape; margin: 15mm 10mm 15mm 10mm; }
+                        body { padding-top: 10px; padding-bottom: 10px; }
+                        table { page-break-inside: auto; }
+                        tr { page-break-inside: avoid; break-inside: avoid; }
+                      }
+                    `}</style>
+                    <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-8">
+                      <div className="flex items-center gap-4">
+                        <img src={logoBase64 || getValidLogoUrl((siteSettings as any)?.logoUrl, logo)} alt="Logo" className="w-12 h-12 object-contain" crossOrigin="anonymous" />
+                        <div>
+                          <h1 className="text-xl font-black text-primary">بيان طباعة مساقات الأفراد - الجزء الثاني (العمود ٢١ فما فوق)</h1>
+                          <p className="text-xs font-bold text-slate-500 mt-1">
+                            {userRole === 'admin' && globalChurchFilter === 'الكل' ? 'مهرجان الكرازة المرقسية - كل الكنائس' : `مهرجان الكرازة المرقسية - ${churchName}`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-left bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <p className="text-[9px] font-black text-slate-400 uppercase mb-1">تاريخ الإصدار</p>
+                        <p className="text-xs font-bold text-slate-800">{new Date().toLocaleDateString('ar-EG')}</p>
+                      </div>
+                    </div>
+
+                    <table style={{ fontSize: '10px' }}>
+                      <thead>
+                        <tr>
+                          <th rowSpan={2} className="text-right-col" style={{ verticalAlign: 'middle' }}>الكنيسة</th>
+                          <th rowSpan={2} style={{ verticalAlign: 'middle' }}>المشتركين</th>
+                          {getStageHeaderGroups(part2Columns).map((g, idx) => (
+                            <th key={idx} colSpan={g.colSpan} style={{ borderBottom: '1px solid #cbd5e1', fontSize: '9px', backgroundColor: '#f8fafc' }}>
+                              {g.stage}
+                            </th>
+                          ))}
+                        </tr>
+                        <tr>
+                          {part2Columns.map((c, idx) => (
+                            <th key={idx} style={{ fontSize: '8px' }}>
+                              {c.col === 'darasi' ? 'در' : c.col === 'mahfouthat' ? 'مح' : c.col === 'coptic1' ? 'ق1' : 'ق2'}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aggregatedChurchPrintingData.map((row, idx) => (
+                          <tr key={idx}>
+                            <td className="text-right-col font-bold" style={{ whiteSpace: 'nowrap' }}>{row.church}</td>
+                            <td className="font-black bg-slate-50">{row.totalSubscribers}</td>
+                            {part2Columns.map((c, cIdx) => {
+                              const stgData = row.stages[c.stage];
+                              return (
+                                <td key={cIdx} style={{ color: stgData && stgData[c.col] > 0 ? '#334155' : '#cbd5e1' }}>
+                                  {stgData ? stgData[c.col] : 0}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="summary-row">
+                          <td className="text-right-col">الإجمالي العام</td>
+                          <td className="font-black bg-slate-200">{aggregatedChurchPrintingTotals.subscribers}</td>
+                          {part2Columns.map((c, cIdx) => {
+                            const stgData = aggregatedChurchPrintingTotals.stages[c.stage];
+                            return (
+                              <td key={cIdx} className="font-black">
+                                {stgData ? stgData[c.col] : 0}
+                              </td>
+                            );
                           })}
                         </tr>
                       </tfoot>

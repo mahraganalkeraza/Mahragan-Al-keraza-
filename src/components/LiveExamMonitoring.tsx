@@ -1,137 +1,152 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../utils/supabaseClient';
-import { Activity, Users, Monitor, Clock, TrendingUp, ShieldAlert, Smartphone, ShieldX, UserMinus, RotateCcw, RotateCw, Trash2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Activity, 
+  Wifi, 
+  WifiOff, 
+  Search, 
+  RefreshCw, 
+  Unlock, 
+  Lock, 
+  Trash2, 
+  Clock, 
+  CheckCircle2, 
+  AlertTriangle,
+  Monitor,
+  Database,
+  Users,
+  ShieldAlert,
+  Download,
+  AlertCircle
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { supabase } from '../lib/supabaseClient';
 
-export const LiveExamMonitoring: React.FC<{ 
-  results: any[], 
-  onlineResults?: any[],
-  globalChurchFilter: string,
-  onResetExam: (studentId: string, name?: string) => void
-}> = ({ results, onlineResults = [], globalChurchFilter, onResetExam }) => {
-  const [logs, setLogs] = useState<any[]>([]);
-  const [activeSessionsData, setActiveSessionsData] = useState<any[]>([]);
-  const [totalRegistered, setTotalRegistered] = useState(0);
-  const [isProcessing, setIsProcessing] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+interface ExamDeviceLog {
+  id: number;
+  student_id: string;
+  student_name: string;
+  church: string;
+  stage?: string;
+  device_name?: string;
+  device_type?: string;
+  os_version?: string;
+  ip_address?: string;
+  last_known_ip?: string;
+  status: string;
+  created_at?: string;
+  last_ping: string;
+  allow_reentry: boolean;
+  started_at?: string;
+}
 
-  const fetchTotalRegistered = async () => {
-    try {
-      const query = supabase.from('registrations').select('*', { count: 'exact', head: true });
-      if (globalChurchFilter !== 'الكل') {
-        query.eq('churchName', globalChurchFilter);
-      }
-      const { count, error } = await query;
-      if (error) throw error;
-      setTotalRegistered(count || 0);
-    } catch (e) { 
-      console.error("Failed to fetch count in Live Monitor:", e); 
-    }
-  };
+interface LiveExamMonitoringProps {
+  globalChurchFilter?: string;
+  onResetExam?: (studentId: string, studentName?: string) => Promise<void>;
+  hideActions?: boolean;
+}
 
-  const fetchData = async () => {
+export const LiveExamMonitoring: React.FC<LiveExamMonitoringProps> = ({ 
+  globalChurchFilter = 'الكل', 
+  onResetExam,
+  hideActions = false
+}) => {
+  const [logs, setLogs] = useState<ExamDeviceLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedStage, setSelectedStage] = useState('الكل');
+  const [isConnected, setIsConnected] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('الكل');
+  const [actioningId, setActioningId] = useState<string | null>(null);
+
+  // Fetch active logs
+  const fetchActiveLogs = async () => {
     setIsLoading(true);
     try {
-      await fetchTotalRegistered();
-      
-      const { data: monitors, error } = await supabase
+      let query = supabase
         .from('exam_device_logs')
         .select('*')
-        .order('updated_at', { ascending: false });
+        .order('last_ping', { ascending: false });
 
-      if (error) throw error;
-
-      if (monitors) {
-        // Map Supabase rows to local variables
-        const mappedRows = monitors.map((sbRow: any) => ({
-          id: sbRow?.id,
-          studentId: sbRow?.student_id,
-          studentName: sbRow?.student_name,
-          churchName: sbRow?.church_name,
-          stage: sbRow?.stage,
-          status: sbRow?.status,
-          deviceId: sbRow?.student_id,
-          deviceType: sbRow?.device_type || 'غير معروف',
-          deviceOs: sbRow?.device_os || '',
-          deviceModel: sbRow?.device_model || '',
-          ip: sbRow?.ip_address || '127.0.0.1',
-          attempts: sbRow?.status, // We use status for this column per instruction
-          timestamp: sbRow?.updated_at || new Date().toISOString(),
-        }));
-
-        setActiveSessionsData(mappedRows);
-        setLogs(mappedRows);
+      if (globalChurchFilter !== 'الكل') {
+        query = query.eq('church', globalChurchFilter);
       }
-    } catch (e: any) {
-      console.error("Error fetching monitoring data from Supabase:", e);
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setLogs(data || []);
+    } catch (err) {
+      console.error('Error fetching device logs:', err);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchActiveLogs();
 
-    // Subscribe to Postgres Realtime channel
-    const channel = supabase
-      .channel('exam_device_logs_changes_channel')
+    // Setup Supabase Realtime channel for exam_device_logs changes
+    const logsSubscription = supabase
+      .channel('live-logs-channel')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'exam_device_logs' },
-        (payload) => {
-          console.log('Realtime table event:', payload);
-          fetchData();
+        {
+          event: '*',
+          schema: 'public',
+          table: 'exam_device_logs'
+        },
+        (payload: any) => {
+          console.log('Realtime update on exam_device_logs:', payload);
+          if (payload.eventType === 'INSERT') {
+            const newItem = payload.new as ExamDeviceLog;
+            // Check if global filter matches
+            if (globalChurchFilter === 'الكل' || newItem.church === globalChurchFilter) {
+              setLogs(prev => [newItem, ...prev]);
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedItem = payload.new as ExamDeviceLog;
+            setLogs(prev => prev.map(log => log.student_id === updatedItem.student_id ? updatedItem : log));
+          } else if (payload.eventType === 'DELETE') {
+            const oldId = payload.old?.id;
+            const oldStudentId = payload.old?.student_id;
+            setLogs(prev => prev.filter(log => log.id !== oldId && log.student_id !== oldStudentId));
+          }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        setIsConnected(status === 'SUBSCRIBED');
+      });
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(logsSubscription);
     };
   }, [globalChurchFilter]);
 
-  const handleTerminateSession = async (studentId: string) => {
-    if (!confirm('هل أنت متأكد من طرد هذا الطالب وحظر جهازه من الامتحان؟')) return;
-    
-    setIsProcessing(studentId);
+  // Force re-entry allowance toggle
+  const toggleReentry = async (log: ExamDeviceLog) => {
+    setActioningId(log.student_id);
+    const updatedReentry = !log.allow_reentry;
     try {
       const { error } = await supabase
         .from('exam_device_logs')
-        .update({
-          status: 'terminated',
-          updated_at: new Date().toISOString()
-        })
-        .eq('student_id', studentId);
+        .update({ allow_reentry: updatedReentry })
+        .eq('student_id', log.student_id);
 
       if (error) throw error;
-      alert('تم إرسال أمر الطرد والإنهاء بنجاح');
-      fetchData();
-    } catch (e: any) {
-      console.error(e);
-      alert('فشل أمر الطرد: ' + e.message);
+      
+      // Update local state is done automatically via Postgres realtime,
+      // but let's update immediately for instant visual feedback.
+      setLogs(prev => prev.map(item => item.student_id === log.student_id ? { ...item, allow_reentry: updatedReentry } : item));
+    } catch (err: any) {
+      alert("فشل تحديث صلاحية إعادة الدخول: " + err.message);
     } finally {
-      setIsProcessing(null);
+      setActioningId(null);
     }
   };
 
-  const handleResetAllMonitoring = async () => {
-    if (!confirm('سيتم مسح كافة بيانات المراقبة المباشرة وسجلات الدخول (Logs) من Supabase. هل أنت متأكد؟')) return;
-    setIsLoading(true);
-    try {
-      const { error } = await supabase.from('exam_device_logs').delete().neq('student_id', '0');
-      if (error) throw error;
-      setLogs([]);
-      setActiveSessionsData([]);
-      alert('تم تصفير كافة البيانات بنجاح ');
-    } catch (e) {
-      console.error(e);
-      alert('حدث خطأ أثناء تصفير البيانات');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDeleteLogRow = async (studentId: string) => {
-    if (!confirm('هل تريد حذف هذا السجل من شاشة المراقبة؟')) return;
+  // Kick student or remove device footprint
+  const removeFootprint = async (studentId: string, studentName: string) => {
+    if (!confirm(`هل ترغب في طرد وحذف السجل التعريفي والتحقق الفني لجهاز الطالب: ${studentName}؟ سيتمكن من تسجيل الدخول من جهاز جديد.`)) return;
+    setActioningId(studentId);
     try {
       const { error } = await supabase
         .from('exam_device_logs')
@@ -139,246 +154,421 @@ export const LiveExamMonitoring: React.FC<{
         .eq('student_id', studentId);
 
       if (error) throw error;
-      setLogs(prev => prev.filter(l => l.studentId !== studentId));
-      setActiveSessionsData(prev => prev.filter(s => s.studentId !== studentId));
-      alert('تم حذف السجل بنجاح');
-    } catch (e) {
-      console.error(e);
+      setLogs(prev => prev.filter(item => item.student_id !== studentId));
+    } catch (err: any) {
+      alert("حدث خطأ أثناء طرد الجهاز: " + err.message);
+    } finally {
+      setActioningId(null);
     }
   };
 
-  const handleClearBlacklist = async (studentId: string) => {
-    if (!confirm('هل تريد فك الحظر عن هذا الجهاز؟')) return;
-    try {
-      const { error } = await supabase
-        .from('exam_device_logs')
-        .update({
-          status: 'جاري الامتحان',
-          updated_at: new Date().toISOString()
-        })
-        .eq('student_id', studentId);
+  // Unique list of stages for filtering
+  const distinctStages = useMemo(() => {
+    const list = new Set<string>();
+    logs.forEach(log => {
+      if (log.stage) list.add(log.stage);
+    });
+    return Array.from(list);
+  }, [logs]);
 
-      if (error) throw error;
-      alert('تم فك الحظر بنجاح');
-      fetchData();
-    } catch (e: any) {
-      alert('حدث خطأ أثناء فك الحظر: ' + e.message);
-    }
+  // Filter logs locally based on filters
+  const filteredLogs = useMemo(() => {
+    return logs.filter(log => {
+      const matchesSearch = 
+        log.student_name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        log.student_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (log.church && log.church.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      const matchesStage = selectedStage === 'الكل' || log.stage === selectedStage;
+      
+      const isPingActive = (Date.now() - new Date(log.last_ping).getTime()) < 35000;
+      const matchesStatus = 
+        statusFilter === 'الكل' || 
+        (statusFilter === 'نشط' && isPingActive) || 
+        (statusFilter === 'خامل' && !isPingActive) || 
+        (statusFilter === 'مسموح_بالإعادة' && log.allow_reentry);
+
+      return matchesSearch && matchesStage && matchesStatus;
+    });
+  }, [logs, searchQuery, selectedStage, statusFilter]);
+
+  // Analytics Metrics
+  const metrics = useMemo(() => {
+    let active = 0;
+    let completed = 0;
+    let pending = 0;
+    let fallbackAndIncomplete = 0;
+
+    logs.forEach(log => {
+      const isPingActive = (Date.now() - new Date(log.last_ping).getTime()) < 35000;
+      if (isPingActive) active++;
+      
+      if (log.status?.includes('Success') || log.status?.includes('اكتمل')) {
+        completed++;
+      } else if (log.status?.includes('انتظار') || log.status?.includes('قيد')) {
+        pending++;
+      } else {
+        fallbackAndIncomplete++;
+      }
+    });
+
+    return { active, total: logs.length, completed, pending, fallbackAndIncomplete };
+  }, [logs]);
+
+  const exportLogsToExcel = () => {
+    if (logs.length === 0) return;
+    
+    // Simple CSV formulation
+    const headers = ["معرف الطالب", "الاسم", "الكنيسة", "المرحلة", "الحالة المباشرة", "حالة الاتصال", "آخر تواصل (Ping)", "صلاحية الإعادة"];
+    const rows = logs.map(log => {
+      const isPingActive = (Date.now() - new Date(log.last_ping).getTime()) < 35000;
+      return [
+        log.student_id,
+        log.student_name,
+        log.church,
+        log.stage || "غير محدد",
+        log.status || "نشط",
+        isPingActive ? "متصل نشط" : "خامل / غير متصل",
+        new Date(log.last_ping).toLocaleString('ar-EG'),
+        log.allow_reentry ? "مسموح" : "مغلق"
+      ];
+    });
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.map(item => `"${String(item).replace(/"/g, '""')}"`).join(","))].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `تقرير_متابعة الأجهزة_المباشرة_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
-
-  // Stats per stage
-  const stageStats = logs.reduce((acc: any, r) => {
-    const stage = r.stage || 'غير محدد';
-    acc[stage] = (acc[stage] || 0) + 1;
-    return acc;
-  }, {});
-
-  // Device Counts
-  const deviceCounts = logs.reduce((acc: any, log) => {
-    const fingerprintString = `${log.ip}-${log.deviceModel}-${log.deviceOs}`;
-    acc[fingerprintString] = (acc[fingerprintString] || 0) + 1;
-    return acc;
-  }, {});
-
-  const activeSessionsCount = logs.filter(s => s.status === 'جاري الامتحان' || s.status === 'active').length;
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center bg-white p-4 rounded-3xl border border-slate-200">
-        <h3 className="font-black text-slate-800 text-lg">المتابعة المباشرة للامتحانات (Supabase Control)</h3>
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={handleResetAllMonitoring}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-rose-50 text-rose-600 rounded-xl font-bold hover:bg-rose-100 transition-all disabled:opacity-50 border border-rose-200 text-xs"
-          >
-            <ShieldX size={15} />
-            تصفير بيانات المراقبة المباشرة
-          </button>
-          <button 
-            onClick={fetchData}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition-all disabled:opacity-50 text-xs"
-          >
-            {isLoading ? <RotateCw className="animate-spin" size={15} /> : <RotateCw size={15} />}
-            تحديث البيانات
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm transition-all hover:shadow-md">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600">
-              <Activity size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-black text-slate-400 uppercase">الجلسات النشطة (Supabase)</p>
-              <h3 className="text-2xl font-black text-slate-800">{activeSessionsCount}</h3>
-            </div>
+    <div className="bg-white rounded-3xl border border-slate-200/80 p-6 md:p-8 shadow-sm font-arabic max-w-full" dir="rtl">
+      
+      {/* Upper Status Ribbon */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+        <div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+            <span className="text-xs text-indigo-600 font-black tracking-wide uppercase">قناة المتابعة والتحكم المباشر بالامتحانات (Supabase Live)</span>
           </div>
-          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-             <div className="h-full bg-indigo-500 animate-pulse" style={{ width: '45%' }} />
-          </div>
+          <h2 className="text-xl font-black text-slate-900">رصد وتحليل تفاعل الطلاب مباشر ⚡</h2>
         </div>
 
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600">
-              <Users size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-black text-slate-400 uppercase">إجمالي المسجلين (Registrations)</p>
-              <h3 className="text-2xl font-black text-slate-800">{totalRegistered.toLocaleString('ar-EG')}</h3>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-12 h-12 bg-rose-100 rounded-2xl flex items-center justify-center text-rose-600">
-              <Monitor size={24} />
-            </div>
-            <div>
-              <p className="text-xs font-black text-slate-400 uppercase">الأجهزة الفريدة / IPs</p>
-              <h3 className="text-2xl font-black text-slate-800">{Object.keys(deviceCounts).length}</h3>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-1 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-          <h4 className="font-black text-slate-800 mb-6 flex items-center gap-2">
-            <TrendingUp size={20} className="text-indigo-600" /> توزيع المراحل
-          </h4>
-          <div className="space-y-3">
-            {Object.entries(stageStats).map(([stage, count]: any) => (
-              <div key={stage} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                 <span className="font-bold text-slate-600 text-sm">{stage}</span>
-                 <span className="font-black text-indigo-600">{count}</span>
-              </div>
-            ))}
-            {Object.keys(stageStats).length === 0 && (
-              <div className="text-slate-400 text-xs italic text-center">لا توجد مراحل مسجلة حالياً</div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Connection status pill */}
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black tracking-normal ${
+            isConnected 
+              ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+              : "bg-red-50 text-red-700 border border-red-200"
+          }`}>
+            {isConnected ? (
+              <>
+                <Wifi size={13} className="animate-pulse" />
+                قناة البث متصلة ونشطة
+              </>
+            ) : (
+              <>
+                <WifiOff size={13} />
+                قناة البث منقطعة
+              </>
             )}
+          </span>
+
+          <button 
+            onClick={fetchActiveLogs}
+            className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl border border-slate-200 transition-all cursor-pointer"
+            title="تحديث البيانات يدبويًا"
+          >
+            <RefreshCw size={15} />
+          </button>
+
+          <button 
+            onClick={exportLogsToExcel}
+            className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl border border-indigo-100 text-[11px] font-black flex items-center gap-1.5 cursor-pointer transition-all"
+            title="تصدير السجلات الحالية كـ CSV"
+          >
+            <Download size={14} />
+            <span>تصدير تقرير متكامل</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Analytics KPI Ribbon Section */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
+          <div className="text-slate-400 font-extrabold text-xs mb-1">الطلاب المتصلين حالياً</div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-emerald-600">{metrics.active}</span>
+            <span className="text-[10px] font-bold text-slate-400">ينبض نشاطاً</span>
           </div>
         </div>
 
-        <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-          <h4 className="font-black text-slate-800 mb-6 flex items-center gap-2">
-            <ShieldAlert size={20} className="text-rose-600" /> مراقبة الأجهزة والنشاط المباشر
-          </h4>
-          <div className="overflow-x-auto">
-            <table className="w-full text-right">
-              <thead>
-                <tr className="text-xs font-black text-slate-400 uppercase border-b border-slate-100 pb-4">
-                   <th className="pb-4">الطالب</th>
-                   <th className="pb-4">الكنيسة</th>
-                   <th className="pb-4">الجهاز / IP</th>
-                   <th className="pb-4">الحالة / المحاولات</th>
-                   <th className="pb-4">التوقيت</th>
-                   <th className="pb-4 text-center">الإجراء</th>
+        <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
+          <div className="text-slate-400 font-extrabold text-xs mb-1">إجمالي الحسابات المسجلة</div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-slate-800">{metrics.total}</span>
+            <span className="text-[10px] font-bold text-slate-400">جهاز نشط اليوم</span>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
+          <div className="text-slate-400 font-extrabold text-xs mb-1">مرحلة إتمام وحفظ الأجوبة</div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-indigo-600">{metrics.completed}</span>
+            <span className="text-[10px] font-bold text-slate-400">مكتمل</span>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
+          <div className="text-slate-400 font-extrabold text-xs mb-1">قيد الدخول / الانتظار</div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-amber-600">{metrics.pending}</span>
+            <span className="text-[10px] font-bold text-slate-400">جاري الدخول</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Control Filters Area */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* Search */}
+        <div className="relative">
+          <input 
+            type="text"
+            placeholder="البحث عن طريق الاسم، الكود أو الكنيسة..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-250 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500/25 transition-all"
+          />
+          <Search className="absolute right-3.5 top-3 text-slate-400" size={16} />
+        </div>
+
+        {/* Stage Filter */}
+        <div className="relative">
+          <select
+            value={selectedStage}
+            onChange={(e) => setSelectedStage(e.target.value)}
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-250 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500/25 transition-all text-slate-700"
+          >
+            <option value="الكل">كل المراحل الدراسية ({distinctStages.length})</option>
+            {distinctStages.map(stg => (
+              <option key={stg} value={stg}>{stg}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Status Filter */}
+        <div className="relative">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-250 rounded-2xl text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500/25 transition-all text-slate-700"
+          >
+            <option value="الكل">جميع الأجهزة (متصل وخامل)</option>
+            <option value="نشط">الاتصال النشط فقط (Pinging) 🟢</option>
+            <option value="خامل">غير المتصلين/الخاملين 💤</option>
+            <option value="مسموح_بالإعادة">المسموح لهم بإعادة الدخول 🔄</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Main Monitoring Table */}
+      <div className="overflow-x-auto bg-white rounded-2xl border border-slate-200">
+        <table className="w-full text-right border-collapse">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+              <th className="p-4" style={{ width: '220px' }}>اسم وبيانات الطالب</th>
+              <th className="p-4">الكنيسة والمرحلة</th>
+              <th className="p-4" style={{ width: '240px' }}>جهاز الفحص والمستعرض</th>
+              <th className="p-4 text-center">آخر إشارة نبض</th>
+              <th className="p-4 text-center" style={{ width: '130px' }}>صلاحية الإعادة</th>
+              {!hideActions && <th className="p-4 text-center" style={{ width: '150px' }}>عمليات إدارية</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-150">
+            <AnimatePresence initial={false}>
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-xs text-slate-400 font-extrabold">
+                    <Loader2 className="animate-spin text-indigo-600 mx-auto mb-2" size={24} />
+                    جاري الاتصال والتحقق مع قاعدة البيانات للرصد الحي...
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {logs.slice(0, 50).map((log: any, idx: number) => {
-                  const isActive = log.status === 'جاري الامتحان' || log.status === 'active';
-                  const isTerminated = log.status === 'terminated';
-                  const isCompleted = log.status === 'تم التسليم بنجاح' || log.status === 'completed';
+              ) : filteredLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-xs text-slate-400 font-black">
+                    <AlertCircle className="text-slate-400 mx-auto mb-2" size={24} />
+                    لا توجد أجهزة نشطة حاليًا تطابق الفلاتر في هذه الكنيسة.
+                  </td>
+                </tr>
+              ) : (
+                filteredLogs.map((log) => {
+                  const pingTime = new Date(log.last_ping).getTime();
+                  const isPingActive = (Date.now() - pingTime) < 35000;
+                  const minutesAgo = Math.floor((Date.now() - pingTime) / 60000);
                   
                   return (
-                    <tr key={log.id || `${log.studentId}-${idx}`} className={`text-xs group ${isTerminated ? 'opacity-50 grayscale' : ''}`}>
-                      <td className="py-4 font-black text-slate-700">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                             {log.studentName || 'غير معروف'}
-                             {isActive && <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" title="نشط الآن" />}
-                             {isTerminated && <span className="bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded text-[9px] uppercase font-black">تم الطرد</span>}
-                             {isCompleted && <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full" title="أنهى الامتحان" />}
+                    <motion.tr 
+                      key={log.id || log.student_id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className={`hover:bg-slate-50/50 transition-colors text-xs font-bold text-slate-700 ${
+                        isPingActive ? 'bg-emerald-50/10' : ''
+                      }`}
+                    >
+                      {/* Name & ID */}
+                      <td className="p-4">
+                        <div className="flex items-center gap-2.5">
+                          {/* Live Traffic state check dot */}
+                          <span className={`h-3 w-3 rounded-full shrink-0 ${
+                            isPingActive ? 'bg-emerald-500 animate-ping' : 'bg-slate-350'
+                          }`} title={isPingActive ? "متصل ونشط حاليًا" : "غير متصل / خامل"}></span>
+
+                          <div>
+                            <div className="font-black text-slate-900 truncate max-w-[180px]">{log.student_name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono tracking-wider">{log.student_id}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="py-4 text-slate-500 font-bold">{log.churchName}</td>
-                      <td className="py-4">
-                          <div className="flex flex-col gap-1">
-                             <span className="flex items-center gap-1 font-bold text-slate-600">
-                               <Smartphone size={12} /> {`${log.deviceModel || ''} ${log.deviceType || ''} ${log.deviceOs ? `(${log.deviceOs})` : ''}`.trim() || 'متصفح غير معروف'}
-                             </span>
-                             <div className="flex gap-2 items-center text-[9px] text-slate-350 font-mono">
-                                <span>{log.ip}</span>
-                             </div>
-                          </div>
+
+                      {/* Church & Stage */}
+                      <td className="p-4">
+                        <div className="font-black text-slate-800 truncate max-w-[170px]">{log.church || 'كنيسة عامة'}</div>
+                        <div className="text-[10px] text-indigo-600 font-extrabold mt-0.5">{log.stage || 'غير محددة'}</div>
                       </td>
-                      <td className="py-4">
-                        <span className={`px-2 py-1 rounded-full font-black ${isCompleted ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}>
-                          {log.status || 'جاري الامتحان'}
+
+                      {/* Device User Agent details with icons */}
+                      <td className="p-4 text-slate-500">
+                        <div className="flex items-center gap-1 text-[10px] truncate max-w-[220px]" title={log.device_name}>
+                          <Monitor size={12} className="text-slate-400 shrink-0" />
+                          <span>{log.device_name || 'Generic Web Browser'}</span>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-[9px] text-slate-400">
+                          <span>IP: {log.ip_address || '127.0.0.1'}</span>
+                          {log.device_type && <span className="bg-slate-100 text-slate-600 px-1 rounded-sm">{log.device_type}</span>}
+                          {log.os_version && <span className="bg-slate-100 text-slate-600 px-1 rounded-sm">{log.os_version}</span>}
+                        </div>
+                      </td>
+
+                      {/* Last Pulse */}
+                      <td className="p-4 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1 text-slate-600 font-mono">
+                          <Clock size={12} className="text-slate-400" />
+                          <span>
+                            {isPingActive 
+                              ? "الآن (متصل)" 
+                              : minutesAgo <= 0 
+                                ? "منذ ثوانٍ" 
+                                : `منذ ${minutesAgo} دقيقة`
+                            }
+                          </span>
+                        </div>
+                        <span className="text-[8px] font-black text-slate-400 inline-block mt-0.5">
+                          {new Date(log.last_ping).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </span>
                       </td>
-                      <td className="py-4 text-slate-400 font-bold">{new Date(log.timestamp).toLocaleTimeString('ar-EG')}</td>
-                      <td className="py-4">
-                        <div className="flex items-center justify-center gap-1">
-                          <button 
-                            onClick={() => handleDeleteLogRow(log.studentId)}
-                            className="p-2 text-slate-300 hover:text-rose-500 rounded-lg transition-colors"
-                            title="حذف هذا السجل"
-                          >
-                             <Trash2 size={15} />
-                          </button>
 
-                          {isActive && (
-                            <button
-                              onClick={() => handleTerminateSession(log.studentId)}
-                              disabled={isProcessing === log.studentId}
-                              className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors flex items-center gap-1 font-black"
-                              title="طرد وحظر الجهاز"
-                            >
-                              <ShieldX size={15} />
-                              <span className="hidden group-hover:inline text-[10px]">طرد</span>
-                            </button>
+                      {/* Reentry Status toggle show */}
+                      <td className="p-4 text-center">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-black ${
+                          log.allow_reentry 
+                            ? "bg-amber-100 text-amber-800 border border-amber-200" 
+                            : "bg-slate-100 text-slate-600 border border-slate-200"
+                        }`}>
+                          {log.allow_reentry ? (
+                            <>
+                              <Unlock size={11} />
+                              مسموح بإعادة الدخول
+                            </>
+                          ) : (
+                            <>
+                              <Lock size={11} />
+                              دخول لمرة واحدة
+                            </>
                           )}
-                          
-                          <button 
-                            onClick={async () => {
-                              setIsProcessing(log.studentId);
-                              await onResetExam(log.studentId, log.studentName);
-                              // Also reset in exam_device_logs
-                              await supabase
-                                .from('exam_device_logs')
-                                .update({ status: 'جاري الامتحان', updated_at: new Date().toISOString() })
-                                .eq('student_id', log.studentId);
-                              setIsProcessing(null);
-                              fetchData();
-                            }}
-                            disabled={isProcessing === log.studentId}
-                            className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-colors"
-                            title="إعادة فتح الامتحان (تصفير المحاولة)"
-                          >
-                            <RotateCcw size={15} className={isProcessing === log.studentId ? 'animate-spin' : ''} />
-                          </button>
-
-                          {isTerminated && (
-                             <button 
-                               onClick={() => handleClearBlacklist(log.studentId)}
-                               className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                               title="فك حظر الجهاز"
-                             >
-                               <UserMinus size={15} />
-                             </button>
-                          )}
-                        </div>
+                        </span>
                       </td>
-                    </tr>
+
+                      {/* Operations */}
+                      {!hideActions && (
+                        <td className="p-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            {/* Toggle Reentry permission button */}
+                            <button
+                              onClick={() => toggleReentry(log)}
+                              disabled={actioningId === log.student_id}
+                              className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                                log.allow_reentry
+                                  ? "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
+                                  : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                              }`}
+                              title={log.allow_reentry ? "حظر إعادة الدخول الفوري" : "السماح بإعادة الدخول الفوري"}
+                            >
+                              {log.allow_reentry ? <Lock size={13} /> : <Unlock size={13} />}
+                            </button>
+
+                            {/* Reset full exam - which clears results, inserts new wait log */}
+                            {onResetExam && (
+                              <button
+                                onClick={() => onResetExam(log.student_id, log.student_name)}
+                                disabled={actioningId === log.student_id}
+                                className="p-1.5 bg-red-50 hover:bg-red-150 text-red-700 border border-red-200 rounded-lg transition-all cursor-pointer"
+                                title="إعادة تصفير كامل للامتحان وأرشفة المحاولة"
+                              >
+                                <RefreshCw size={13} className={actioningId === log.student_id ? "animate-spin" : ""} />
+                              </button>
+                            )}
+
+                            {/* Clear log completely - Kick student device */}
+                            <button
+                              onClick={() => removeFootprint(log.student_id, log.student_name)}
+                              disabled={actioningId === log.student_id}
+                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition-all cursor-pointer"
+                              title="حذف جهاز التحقق (طرد فوري)"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </motion.tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {logs.length === 0 && (
-             <div className="text-center py-12 text-slate-300 italic">بانتظار حركة للامتحانات الجارية...</div>
-          )}
-        </div>
+                })
+              )}
+            </AnimatePresence>
+          </tbody>
+        </table>
       </div>
+
+      {/* Helper tips for controllers */}
+      <div className="mt-4 p-3 bg-indigo-50/50 border border-indigo-100 rounded-2xl flex items-start gap-2.5 text-[11px] text-indigo-950 font-medium">
+        <ShieldAlert className="text-indigo-600 shrink-0 mt-0.5" size={14} />
+        <p className="leading-relaxed font-bold">
+          💡 <strong>إرشادات المراقبة الفنية:</strong> الطلاب يرسلون إشارة نبضات (Pings) تلقائية كل ٣٠ ثانية أثناء استمرار فتح الامتحان. في حال واجه طالب مشكلة انقطاع بالإنترنت أو الخروج المفاجئ، يمكنك الضغط على زر <strong>"السماح بإعادة الدخول" <Unlock className="inline text-amber-700" size={11} /></strong> لتمكينه من معاودة الإجابة دون فقدان تقدمه، أو الضغط على <strong>"تحديث وأرشفة المحاولة"</strong> لإعادة الامتحان بأكمله.
+        </p>
+      </div>
+
     </div>
+  );
+};
+
+// Loader custom replacement
+const Loader2: React.FC<{ className?: string; size?: number }> = ({ className = '', size = 16 }) => {
+  return (
+    <svg 
+      className={`animate-spin ${className}`} 
+      xmlns="http://www.w3.org/2000/svg" 
+      fill="none" 
+      viewBox="0 0 24 24" 
+      style={{ width: size, height: size }}
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
   );
 };

@@ -15,6 +15,10 @@ import {
   Unlock,
   Upload,
   RefreshCw,
+  CheckSquare,
+  Square,
+  Settings,
+  XOctagon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -55,6 +59,8 @@ export default function UserManagement() {
   const [togglingIds, setTogglingIds] = useState<Record<string | number, boolean>>({});
   const [isRefreshingAllDevices, setIsRefreshingAllDevices] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [selectedChurchIds, setSelectedChurchIds] = useState<string[]>([]);
+  const [isBatchUpdating, setIsBatchUpdating] = useState(false);
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -381,6 +387,143 @@ export default function UserManagement() {
     }
   };
 
+  const toggleSelectChurch = (id: string | number) => {
+    const strId = String(id);
+    setSelectedChurchIds(prev => 
+      prev.includes(strId) ? prev.filter(item => item !== strId) : [...prev, strId]
+    );
+  };
+
+  const toggleSelectAll = (filteredList: User[]) => {
+    const visibleIds = filteredList.map(u => String(u.id));
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedChurchIds.includes(id));
+    if (allVisibleSelected) {
+      // Deselect all visible
+      setSelectedChurchIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    } else {
+      // Select all visible
+      setSelectedChurchIds(prev => {
+        const newSelection = [...prev];
+        visibleIds.forEach(id => {
+          if (!newSelection.includes(id)) {
+            newSelection.push(id);
+          }
+        });
+        return newSelection;
+      });
+    }
+  };
+
+  const handleBatchStatus = async (toBeActive: boolean) => {
+    if (selectedChurchIds.length === 0) return;
+    if (!confirm(`هل أنت متأكد من ${toBeActive ? 'تفعيل' : 'تعطيل'} حسابات الكنائس المحددة (${selectedChurchIds.length} كنيسة) دفعة واحدة؟`)) return;
+
+    setIsBatchUpdating(true);
+    setError("");
+    setSuccess("");
+    try {
+      const { error } = await supabase
+        .from('church_access_codes')
+        .update({ is_active: toBeActive })
+        .in('id', selectedChurchIds.map(Number));
+
+      if (error) throw error;
+
+      // Update local state
+      setUsers(prev => prev.map(u => selectedChurchIds.includes(u.id) ? { ...u, isEnabled: toBeActive } : u));
+      setChurchesBank(prev => prev.map(c => selectedChurchIds.includes(c.id) ? { ...c, isEnabled: toBeActive } : c));
+
+      // Trigger hard refresh on disabled ones immediately to disconnect them
+      if (!toBeActive) {
+        await supabase.channel('church-lock-channel').send({
+          type: 'broadcast',
+          event: 'FORCE_HARD_REFRESH',
+          payload: { 
+            type: 'FORCE_HARD_REFRESH', 
+            targetChurchIds: selectedChurchIds.map(Number), 
+            timestamp: Date.now() 
+          }
+        });
+      }
+
+      setSuccess(`تم تحديث حالة تفعيل الدخول لـ ${selectedChurchIds.length} كنائس بنجاح! 🟢`);
+      setSelectedChurchIds([]); // Clear selection
+      setTimeout(() => setSuccess(""), 5000);
+    } catch (err: any) {
+      console.error("Batch update error:", err);
+      setError("حدث خطأ أثناء التحديث المجمع: " + (err.message || ""));
+    } finally {
+      setIsBatchUpdating(false);
+    }
+  };
+
+  const handleBatchReading = async (toBeAllowed: boolean) => {
+    if (selectedChurchIds.length === 0) return;
+    if (!confirm(`هل أنت متأكد من تفويض/حظر صلاحية قراءة النتائج لـ الكنائس المحددة (${selectedChurchIds.length} كنيسة)؟`)) return;
+
+    setIsBatchUpdating(true);
+    setError("");
+    setSuccess("");
+    try {
+      const { error } = await supabase
+        .from('church_access_codes')
+        .update({ is_allowed_to_read: toBeAllowed })
+        .in('id', selectedChurchIds.map(Number));
+
+      if (error) throw error;
+
+      // Update local state
+      setUsers(prev => prev.map(u => selectedChurchIds.includes(u.id) ? { ...u, isAllowedToRead: toBeAllowed } : u));
+      setChurchesBank(prev => prev.map(c => selectedChurchIds.includes(c.id) ? { ...c, isAllowedToRead: toBeAllowed } : c));
+
+      setSuccess(`تم تحديث صلاحية قراءة النتائج لـ ${selectedChurchIds.length} كنائس بنجاح! 🔵`);
+      setSelectedChurchIds([]); // Clear selection
+      setTimeout(() => setSuccess(""), 5000);
+    } catch (err: any) {
+      console.error("Batch update reading error:", err);
+      setError("حدث خطأ أثناء التحديث المجمع لقراءة النتائج: " + (err.message || ""));
+    } finally {
+      setIsBatchUpdating(false);
+    }
+  };
+
+  const handleBatchRefresh = async () => {
+    if (selectedChurchIds.length === 0) return;
+    if (!confirm(`سيتم إرسال أمر تحديث إجباري فوري وطرد الكاش لـ ${selectedChurchIds.length} كنائس محددة فقط. هل ترغب في الاستمرار؟`)) return;
+
+    setIsBatchUpdating(true);
+    setError("");
+    setSuccess("");
+    try {
+      const payloadObj = { 
+        type: 'FORCE_HARD_REFRESH', 
+        targetChurchIds: selectedChurchIds.map(Number), 
+        timestamp: Date.now() 
+      };
+
+      // Broadcast on both channels
+      await supabase.channel('church-lock-channel').send({
+        type: 'broadcast',
+        event: 'FORCE_HARD_REFRESH',
+        payload: payloadObj
+      });
+      await supabase.channel('global-updates').send({
+        type: 'broadcast',
+        event: 'FORCE_HARD_REFRESH',
+        payload: payloadObj
+      });
+
+      setSuccess(`تم بث أمر تحديث الكاش وطرد المتصلين لـ ${selectedChurchIds.length} كنائس محددة بنجاح! 🔄⚡`);
+      setSelectedChurchIds([]); // Clear selection
+      setTimeout(() => setSuccess(""), 5000);
+    } catch (err: any) {
+      console.error("Batch broadcast refresh error:", err);
+      setError("حدث خطأ أثناء إرسال إشارة التحديث الموجه.");
+    } finally {
+      setIsBatchUpdating(false);
+    }
+  };
+
   const triggerHardRefresh = async () => {
     if (isRefreshingAllDevices) return;
     if (!confirm("هل أنت متأكد؟ سيؤدي هذا لتحديث كافة الأجهزة المتصلة فوراً.")) return;
@@ -389,7 +532,15 @@ export default function UserManagement() {
     setShowSuccessToast(false);
     
     try {
+      // Broadcast on channel 'church-lock-channel'
       await supabase.channel('church-lock-channel').send({
+        type: 'broadcast',
+        event: 'FORCE_HARD_REFRESH',
+        payload: { type: 'FORCE_HARD_REFRESH', timestamp: Date.now() }
+      });
+      
+      // Broadcast on channel 'global-updates'
+      await supabase.channel('global-updates').send({
         type: 'broadcast',
         event: 'FORCE_HARD_REFRESH',
         payload: { type: 'FORCE_HARD_REFRESH', timestamp: Date.now() }
@@ -513,6 +664,123 @@ export default function UserManagement() {
         </div>
       )}
 
+      {/* Bulk Operation Configuration Panel (الإعدادات المجمعة) */}
+      <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/80 mb-6 flex flex-col gap-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => toggleSelectAll(filteredUsers)}
+              className="flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg text-slate-700 text-xs font-black transition-all shadow-sm cursor-pointer"
+            >
+              {filteredUsers.length > 0 && filteredUsers.every(u => selectedChurchIds.includes(u.id)) ? (
+                <>
+                  <CheckSquare size={16} className="text-indigo-600" />
+                  إلغاء تحديد الكل ({filteredUsers.length})
+                </>
+              ) : (
+                <>
+                  <Square size={16} className="text-slate-400" />
+                  تحديد الكل ({filteredUsers.length})
+                </>
+              )}
+            </button>
+            
+            {selectedChurchIds.length > 0 && (
+              <button
+                onClick={() => setSelectedChurchIds([])}
+                className="text-red-600 hover:text-red-700 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-all"
+              >
+                <XOctagon size={14} /> إلغاء التحديد ({selectedChurchIds.length})
+              </button>
+            )}
+          </div>
+
+          <div className="text-xs font-black text-slate-500 flex items-center gap-2">
+            <Settings size={15} className="text-indigo-500 animate-spin-slow" />
+            <span>نظام الإعدادات والاستثناءات المجمعة للكنائس (Granular Batch Settings)</span>
+          </div>
+        </div>
+
+        {/* Bulk Action Controls */}
+        <AnimatePresence>
+          {selectedChurchIds.length > 0 ? (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden bg-white rounded-xl border border-indigo-120 p-4 shadow-sm"
+            >
+              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 text-indigo-900 font-black text-sm">
+                    <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 animate-ping"></span>
+                    تطبيق إعدادات مجمعة على {selectedChurchIds.length} كنيسة محددة
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-extrabold">
+                    سيتم إجراء التعديل لجميع المحدد دفعة واحدة مباشرة في قاعدة البيانات وبث التعديلات للأجهزة النشطة.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-black text-slate-500 px-1.5">حالة الدخول:</span>
+                    <button
+                      onClick={() => handleBatchStatus(true)}
+                      disabled={isBatchUpdating}
+                      className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/50 rounded-lg text-[10px] font-black flex items-center gap-1 transition-all cursor-pointer"
+                    >
+                      تفعيل للكل 🟢
+                    </button>
+                    <button
+                      onClick={() => handleBatchStatus(false)}
+                      disabled={isBatchUpdating}
+                      className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200/50 rounded-lg text-[10px] font-black flex items-center gap-1 transition-all cursor-pointer"
+                    >
+                      تعطيل للكل 🔴
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
+                    <span className="text-[10px] font-black text-slate-500 px-1.5">الاطلاع على النتائج:</span>
+                    <button
+                      onClick={() => handleBatchReading(true)}
+                      disabled={isBatchUpdating}
+                      className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/50 rounded-lg text-[10px] font-black flex items-center gap-1 transition-all cursor-pointer"
+                    >
+                      سماح للكل 🔵
+                    </button>
+                    <button
+                      onClick={() => handleBatchReading(false)}
+                      disabled={isBatchUpdating}
+                      className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/50 rounded-lg text-[10px] font-black flex items-center gap-1 transition-all cursor-pointer"
+                    >
+                      حظر للكل 🟠
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={handleBatchRefresh}
+                    disabled={isBatchUpdating}
+                    className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+                  >
+                    {isBatchUpdating ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={13} />
+                    )}
+                    تحديث كاش المحدد 🔄
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <div className="text-[11px] text-slate-400 font-bold leading-relaxed text-center">
+              💡 <strong>نصيحة المسؤول:</strong> حدد واحدة أو أكثر من الكنائس في الأسفل لتعديل صلاحياتهم (حظر/سماح دخول أو الاطلاع على النتائج) وتحديث كاش المتصفح لجميع أجهزتهم فوراً دفعة واحدة.
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <AnimatePresence>
           {isAdding && (
@@ -626,12 +894,14 @@ export default function UserManagement() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className={`bg-white p-6 rounded-xl shadow-sm border transition-all ${
+              className={`bg-white p-6 rounded-xl shadow-sm border transition-all relative ${
                 isEditing === user.id 
                   ? "border-primary ring-2 ring-primary/20" 
-                  : user.isEnabled === false 
-                    ? "border-red-100 bg-red-50/10 grayscale-[0.5]" 
-                    : "border-slate-100"
+                  : selectedChurchIds.includes(user.id)
+                    ? "border-indigo-400 ring-2 ring-indigo-400/25 bg-indigo-50/5 shadow-md scale-[1.01]"
+                    : user.isEnabled === false 
+                      ? "border-red-100 bg-red-50/10 grayscale-[0.5]" 
+                      : "border-slate-100 hover:border-slate-200"
               }`}
             >
               {isEditing === user.id ? (
@@ -753,7 +1023,20 @@ export default function UserManagement() {
                 </div>
               ) : (
                 <>
-                  <div className="flex items-start gap-4">
+                  <div className="flex items-start gap-3">
+                    {/* Granular Selection Toggle Checkbox */}
+                    <button
+                      onClick={() => toggleSelectChurch(user.id)}
+                      className="mt-2 text-slate-400 hover:text-indigo-600 transition-colors shrink-0 cursor-pointer self-start p-0.5 rounded"
+                      title={selectedChurchIds.includes(user.id) ? "إلغاء التحديد المجمع" : "تحديد مجمع"}
+                    >
+                      {selectedChurchIds.includes(user.id) ? (
+                        <CheckSquare size={21} className="text-indigo-600" />
+                      ) : (
+                        <Square size={21} className="text-slate-300 hover:text-slate-400" />
+                      )}
+                    </button>
+
                     <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200">
                       {user.logoUrl ? (
                         <img
