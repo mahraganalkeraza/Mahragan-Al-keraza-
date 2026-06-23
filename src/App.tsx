@@ -3272,7 +3272,7 @@ function AppComponent() {
     const element = document.getElementById(`printing-statement-table-part${part}`);
     if (!element) return;
     const opt = {
-      margin: [15, 10, 15, 10],
+      margin: [5, 5, 5, 5] as [number, number, number, number],
       filename: `بيان_طباعة_الجزء_${part === 1 ? 'الأول_أول_20' : 'الثاني_آخر_20'}_${churchName || 'مهرجان_الكرازة'}_${new Date().toLocaleDateString()}.pdf`,
       image: { type: 'jpeg' as const, quality: 0.98 },
       html2canvas: { scale: 3, useCORS: true, allowTaint: true },
@@ -3986,10 +3986,6 @@ function AppComponent() {
   const fetchTeamsPage = async (isNext: boolean = true, isFirst: boolean = false, search: string = '') => {
     if (!isLoggedIn) return;
     setIsTeamsLoading(true);
-    let offset = 0;
-    if (isNext && !isFirst && activityTeams.length > 0) {
-      offset = activityTeams.length;
-    }
 
     try {
       let queryBuilder = supabase.from('activity_teams').select('id, team_name, stage_name, church_name, created_at, members_number, activity_type', { count: 'exact' });
@@ -4002,14 +3998,13 @@ function AppComponent() {
         queryBuilder = queryBuilder.eq('church_name', churchName);
       }
 
-      // If there's an activityType column or similar, handle search
-      // if (search) {
-      //   queryBuilder = queryBuilder.ilike('teamName', `%${search}%`);
-      // }
+      if (search) {
+        queryBuilder = queryBuilder.ilike('team_name', `%${search}%`);
+      }
 
       const { data, count, error } = await queryBuilder
-        // .order('teamName') // Assuming teamName exists
-        .range(offset, offset + 49);
+        .order('created_at', { ascending: false })
+        .range(0, 4999);
 
       if (error) throw error;
 
@@ -4034,17 +4029,12 @@ function AppComponent() {
         } as ActivityTeam;
       });
 
-      if (isFirst) {
-        setActivityTeams(mappedData);
-      } else {
-        setActivityTeams(prev => [...prev, ...mappedData]);
-      }
+      setActivityTeams(mappedData);
       
       if (count !== null) setTotalTeamsCount(count);
-      setIsTeamsEnd((data || []).length < 50);
+      setIsTeamsEnd(true);
       
-      if (isFirst) setTeamPageCount(1);
-      else if (isNext) setTeamPageCount(prev => prev + 1);
+      setTeamPageCount(1);
       
     } catch (err: any) { 
       console.error("Supabase load teams error: ", err.message); 
@@ -8533,37 +8523,62 @@ function AppComponent() {
                     </div>
                   </div>
                   
-                  <div id="printing-statement-table-part1" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '297mm' }}>
+                  <div id="printing-statement-table-part1" className="pt-0 px-2 pb-2 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '297mm', boxSizing: 'border-box' }}>
                     <style>{`
                       @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
                       #printing-statement-table-part1, .font-arabic { font-family: 'Tajawal', sans-serif !important; }
-                      #printing-statement-table-part1 * { font-family: 'Tajawal', sans-serif !important; }
-                      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                      #printing-statement-table-part1 * { font-family: 'Tajawal', sans-serif !important; box-sizing: border-box !important; }
+                      table { width: 100% !important; border-collapse: collapse; margin-bottom: 5px !important; box-sizing: border-box !important; }
                       th { background-color: #f8fafc; font-weight: 900; color: #0f172a; border: 1px solid #cbd5e1; }
-                      td, th { padding: 12px 8px !important; line-height: 1.8 !important; border: 1px solid #cbd5e1; text-align: center; font-weight: 800; }
+                      td, th { padding: 8px 4px !important; line-height: 1.5 !important; border: 1px solid #cbd5e1; text-align: center; font-weight: 800; }
                       .text-right-col { text-align: right !important; }
                       .text-primary { color: #0F172A; }
                       .summary-row { background-color: #f1f5f9; font-weight: 900; }
                       @media print {
-                        @page { size: A4 landscape; margin: 15mm 10mm 15mm 10mm; }
-                        body { padding-top: 10px; padding-bottom: 10px; }
-                        table { page-break-inside: auto; }
+                        @page {
+                          size: A4 landscape;
+                          margin-top: 5mm !important; /* Minimal secure top margin */
+                          margin-bottom: 5mm !important;
+                          margin-left: 5mm !important;
+                          margin-right: 5mm !important;
+                        }
+                        body, #root, .print-container {
+                          padding-top: 0 !important;
+                          margin-top: 0 !important;
+                        }
+                        .print-container {
+                          width: 98% !important;
+                          margin: 0 auto !important;
+                        }
+                        #printing-statement-table-part1 {
+                          padding: 0 4mm 0 4mm !important;
+                          margin: 0 auto !important;
+                          width: 100% !important;
+                          box-sizing: border-box !important;
+                        }
+                        table {
+                          page-break-inside: auto;
+                          margin-top: 0 !important;
+                          position: static !important; /* Force stretch smoothly from container boundary */
+                          box-sizing: border-box !important;
+                          width: 100% !important;
+                        }
                         tr { page-break-inside: avoid; break-inside: avoid; }
                       }
                     `}</style>
-                    <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-8">
-                      <div className="flex items-center gap-4">
-                        <img src={logoBase64 || getValidLogoUrl((siteSettings as any)?.logoUrl, logo)} alt="Logo" className="w-12 h-12 object-contain" crossOrigin="anonymous" />
+                    <div className="flex justify-between items-center border-b border-coptic-blue pb-1 mb-2">
+                      <div className="flex items-center gap-2">
+                        <img src={logoBase64 || getValidLogoUrl((siteSettings as any)?.logoUrl, logo)} alt="Logo" className="w-6 h-6 object-contain" crossOrigin="anonymous" />
                         <div>
-                          <h1 className="text-xl font-black text-primary">بيان طباعة مسابقات الأفراد - الجزء الأول (أول ٢٠ عمود)</h1>
-                          <p className="text-xs font-bold text-slate-500 mt-1">
+                          <h1 className="text-xs font-black text-primary leading-tight">بيان طباعة مسابقات الأفراد - الجزء الأول (أول ٢٠ عمود)</h1>
+                          <p className="text-[9px] font-bold text-slate-500 leading-tight">
                             {userRole === 'admin' && globalChurchFilter === 'الكل' ? 'مهرجان الكرازة المرقسية - كل الكنائس' : `مهرجان الكرازة المرقسية - ${churchName}`}
                           </p>
                         </div>
                       </div>
-                      <div className="text-left bg-slate-50 p-3 rounded-xl border border-slate-100">
-                        <p className="text-[9px] font-black text-slate-400 uppercase mb-1">تاريخ الإصدار</p>
-                        <p className="text-xs font-bold text-slate-800">{new Date().toLocaleDateString('ar-EG')}</p>
+                      <div className="text-left bg-slate-50 p-1 px-2 rounded-lg border border-slate-100 flex gap-2 items-center">
+                        <span className="text-[8px] font-black text-slate-400 uppercase">تاريخ الإصدار:</span>
+                        <span className="text-[9px] font-bold text-slate-800">{new Date().toLocaleDateString('ar-EG')}</span>
                       </div>
                     </div>
 
@@ -8619,7 +8634,7 @@ function AppComponent() {
                     </table>
                   </div>
 
-                  <div id="printing-statement-table-part2" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '297mm' }}>
+                  <div id="printing-statement-table-part2" className="pt-1 px-4 pb-4 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '297mm' }}>
                     <style>{`
                       @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
                       #printing-statement-table-part2, .font-arabic { font-family: 'Tajawal', sans-serif !important; }
@@ -8631,25 +8646,38 @@ function AppComponent() {
                       .text-primary { color: #0F172A; }
                       .summary-row { background-color: #f1f5f9; font-weight: 900; }
                       @media print {
-                        @page { size: A4 landscape; margin: 15mm 10mm 15mm 10mm; }
-                        body { padding-top: 10px; padding-bottom: 10px; }
-                        table { page-break-inside: auto; }
+                        @page {
+                          size: A4 landscape;
+                          margin-top: 5mm !important; /* Minimal secure top margin */
+                          margin-bottom: 5mm !important;
+                          margin-left: 5mm !important;
+                          margin-right: 5mm !important;
+                        }
+                        body, #root, .print-container, #printing-statement-table-part2 {
+                          padding-top: 0 !important;
+                          margin-top: 0 !important;
+                        }
+                        table {
+                          page-break-inside: auto;
+                          margin-top: 0 !important;
+                          position: static !important; /* Force stretch smoothly from container boundary */
+                        }
                         tr { page-break-inside: avoid; break-inside: avoid; }
                       }
                     `}</style>
-                    <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-8">
-                      <div className="flex items-center gap-4">
-                        <img src={logoBase64 || getValidLogoUrl((siteSettings as any)?.logoUrl, logo)} alt="Logo" className="w-12 h-12 object-contain" crossOrigin="anonymous" />
+                    <div className="flex justify-between items-start border-b-2 border-coptic-blue pb-2 mb-3">
+                      <div className="flex items-center gap-3">
+                        <img src={logoBase64 || getValidLogoUrl((siteSettings as any)?.logoUrl, logo)} alt="Logo" className="w-8 h-8 object-contain" crossOrigin="anonymous" />
                         <div>
-                          <h1 className="text-xl font-black text-primary">بيان طباعة مساقات الأفراد - الجزء الثاني (العمود ٢١ فما فوق)</h1>
-                          <p className="text-xs font-bold text-slate-500 mt-1">
+                          <h1 className="text-sm font-black text-primary">بيان طباعة مساقات الأفراد - الجزء الثاني (العمود ٢١ فما فوق)</h1>
+                          <p className="text-[10px] font-bold text-slate-500">
                             {userRole === 'admin' && globalChurchFilter === 'الكل' ? 'مهرجان الكرازة المرقسية - كل الكنائس' : `مهرجان الكرازة المرقسية - ${churchName}`}
                           </p>
                         </div>
                       </div>
-                      <div className="text-left bg-slate-50 p-3 rounded-xl border border-slate-100">
-                        <p className="text-[9px] font-black text-slate-400 uppercase mb-1">تاريخ الإصدار</p>
-                        <p className="text-xs font-bold text-slate-800">{new Date().toLocaleDateString('ar-EG')}</p>
+                      <div className="text-left bg-slate-50 p-2 rounded-xl border border-slate-100">
+                        <p className="text-[8px] font-black text-slate-400 uppercase">تاريخ الإصدار</p>
+                        <p className="text-[10px] font-bold text-slate-800">{new Date().toLocaleDateString('ar-EG')}</p>
                       </div>
                     </div>
 
