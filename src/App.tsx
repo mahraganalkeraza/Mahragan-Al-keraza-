@@ -81,6 +81,7 @@ import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
 import { ExamLoginPortal } from './components/ExamLoginPortal';
 import { supabase } from './lib/supabaseClient';
+import { getCustomActivities } from './utils/activitiesService';
 import { getDeviceFingerprint } from './lib/deviceTracking';
 import { uploadToFirebase } from './services/firebase';
 import { motion, AnimatePresence } from 'motion/react';
@@ -720,7 +721,7 @@ function AppComponent() {
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [allActivityStages, setAllActivityStages] = useState<any[]>([]);
   const [availableActivities, setAvailableActivities] = useState<string[]>([]);
-  const [activities] = useState<string[]>(['ألحان', 'كورال', 'ترنيم فردي', 'عزف', 'ثقافية', 'أدبية', 'فنون تشكيلية', 'كمبيوتر']);
+  const [activities, setActivities] = useState<string[]>(['ألحان', 'كورال', 'ترنيم فردي', 'عزف', 'ثقافية', 'أدبية', 'فنون تشكيلية', 'كمبيوتر']);
   const [hymnStages, setHymnStages] = useState<any[]>([]);
 
   // Customization State
@@ -748,6 +749,28 @@ function AppComponent() {
   useEffect(() => {
     console.log("Current User Role:", userRole);
   }, [userRole]);
+
+  useEffect(() => {
+    const loadDynamicActivities = async () => {
+      try {
+        const list = await getCustomActivities();
+        // Use only active activities
+        const activeNames = list.filter(a => a.is_active).map(a => a.name);
+        if (activeNames.length > 0) {
+          setActivities(activeNames);
+        }
+      } catch (err) {
+        console.error("Failed to load custom activities:", err);
+      }
+    };
+
+    loadDynamicActivities();
+
+    window.addEventListener('custom-activities-updated', loadDynamicActivities);
+    return () => {
+      window.removeEventListener('custom-activities-updated', loadDynamicActivities);
+    };
+  }, []);
 
   const [notification, setNotification] = useState<string | null>(null);
   const [activeYear, setActiveYear] = useState(CURRENT_YEAR);
@@ -9598,30 +9621,30 @@ function AppComponent() {
               {/* Team Registration form content starts below directly */}
 
               <EarlyGateGuard targetType="church" targetName={churchName} actionType="registration" userRole={userRole} fallbackMessage="عفواً، باب التسجيل لهذه المرحلة مغلق حالياً بقرار من إدارة الكنترول المركزي.">
-              <div className="space-y-8">
-                {viewMode === 'edit' ? (
-                  <>
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
-                      <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
-                        <UserPlus size={28} className="text-primary" /> تسجيل مشترك جديد
-                        {userRole === 'admin' && (
-                          <button onClick={bulkInsertParticipants} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-black hover:bg-purple-700">
-                            حقن بيانات 20 مشترك (خاص)
-                          </button>
-                        )}
-                      </h4>
-                      <p className="text-slate-500 text-sm font-bold">يرجى ملء البيانات التالية بدقة</p>
-                    </div>
+                <div className="space-y-8">
+                  {viewMode === 'edit' ? (
+                    <>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+                  <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
+                    <UserPlus size={28} className="text-primary" /> تسجيل مشترك جديد
+                    {userRole === 'admin' && (
+                      <button type="button" onClick={bulkInsertParticipants} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-black hover:bg-purple-700 cursor-pointer">
+                        حقن بيانات 20 مشترك (خاص)
+                      </button>
+                    )}
+                  </h4>
+                  <p className="text-slate-500 text-sm font-bold">يرجى ملء البيانات التالية بدقة</p>
+                </div>
 
-                      <div className="grid grid-cols-1 gap-8">
-                        {/* Basic Information Card */}
-                        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
-                          <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                            <User size={20} className="text-primary" />
-                            <h5 className="font-black text-lg text-slate-800">البيانات الأساسية</h5>
-                          </div>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 gap-8">
+                  {/* Basic Information Card */}
+                  <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
+                    <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                      <User size={20} className="text-primary" />
+                      <h5 className="font-black text-lg text-slate-800">البيانات الأساسية</h5>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                             <div className="space-y-2">
                               <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
                                 اسم المخدوم ثلاثياً
@@ -9852,16 +9875,33 @@ function AppComponent() {
                                 required
                               >
                                 <option value="">-- اختر نوع النشاط --</option>
-                                <option value="كورال">كورال</option>
-                                <option value="ألحان فردي">ألحان فردي</option>
-                                <option value="ألحان جماعي">ألحان جماعي</option>
-                                <option value="ترنيم فردي">ترنيم فردي</option>
-                                <option value="عزف فردي">عزف فردي</option>
-                                <option value="عزف جماعي">عزف جماعي</option>
-                                <option value="كمبيوتر">كمبيوتر</option>
-                                <option value="أدبية">أدبية</option>
-                                <option value="ثقافية">ثقافية</option>
-                                <option value="فنون تشكيلية">فنون تشكيلية</option>
+                                {(() => {
+                                  const parent = newTeam.activityType;
+                                  if (!parent) return null;
+                                  if (parent === 'ألحان') {
+                                    return (
+                                      <>
+                                        <option value="ألحان فردي">ألحان فردي</option>
+                                        <option value="ألحان جماعي">ألحان جماعي</option>
+                                      </>
+                                    );
+                                  }
+                                  if (parent === 'عزف') {
+                                    return (
+                                      <>
+                                        <option value="عزف فردي">عزف فردي</option>
+                                        <option value="عزف جماعي">عزف جماعي</option>
+                                      </>
+                                    );
+                                  }
+                                  return (
+                                    <>
+                                      <option value={parent}>{parent}</option>
+                                      <option value={`${parent} فردي`}>{parent} فردي</option>
+                                      <option value={`${parent} جماعي`}>{parent} جماعي</option>
+                                    </>
+                                  );
+                                })()}
                               </select>
                             </div>
 
