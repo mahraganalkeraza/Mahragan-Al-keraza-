@@ -1305,52 +1305,14 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       // Check existing submission scores on Supabase
       const { data: existingSub } = await supabase
-        .from("online_results")
+        .from("exam_submissions")
         .select("*")
         .eq("student_id", studentData.id)
         .maybeSingle();
 
       if (existingSub) {
-        studentData.academicScore = existingSub.derasy_score;
-        studentData.memorizationScore = existingSub.mahfouzat_score ?? existingSub.mahfozat_score;
-        studentData.copticL1Score = existingSub.qebty_lvl1_score;
-        studentData.copticL2Score = existingSub.qebty_lvl2_score;
-        studentData.detailed_answers = existingSub.detailed_answers;
-      }
-
-      // Gate Check: One-Time Entry Validation via exam_device_logs
-      const { data: existingLog } = await supabase
-        .from("exam_device_logs")
-        .select("id, status, allow_reentry")
-        .eq("student_id", studentData.id)
-        .maybeSingle();
-
-      if ((existingLog && !existingLog.allow_reentry) || existingSub) {
         setIsLoading(false);
-        return alert("عفوًا، سبق للطالب دخول الامتحان من قبل، من هذا الجهاز أو جهاز آخر.");
-      }
-
-      // Consistent logging to exam_device_logs
-      try {
-        const userAgent = navigator.userAgent;
-
-        await supabase.from("exam_device_logs").upsert({
-          student_id: studentData.id,
-          student_name: studentData.studentName,
-          church: studentData.churchName,
-          stage: studentData.stage,
-          device_name: userAgent,
-          device_type: deviceInfo.type,
-          os_version: (deviceInfo as any).os || "غير معروف",
-          ip_address: deviceInfo.ip,
-          last_known_ip: deviceInfo.ip,
-          status: "Identification Success",
-          created_at: new Date().toISOString(),
-          last_ping: new Date().toISOString(),
-          allow_reentry: false
-        }, { onConflict: 'student_id' });
-      } catch (e) {
-        console.error("Failed to insert log row", e);
+        return alert("عفوًا، سبق للطالب الخضوع للامتحان وإرسال الإجابات.");
       }
 
       // Lock-in student profile
@@ -1409,17 +1371,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         return alert("عذراً، الامتحانات الإلكترونية مغلقة بالكامل بقرار سيادي من اللجنة المركزية 🔒");
       }
 
-      // Gate Check before starting exam - Postponed to next season
-      // const { data: existingLog } = await supabase
-      //   .from("exam_device_logs")
-      //   .select("id, status")
-      //   .eq("student_id", activeStudent.id)
-      //   .maybeSingle();
-      // 
-      // if (existingLog && (existingLog.status === 'submitted' || existingLog.status === 'completed' || existingLog.status === 'terminated')) {
-      //   setIsLoading(false);
-      //   return alert("عفوًا، لا يسمح بإعادة دخول الامتحان حالياً. يرجى مراجعة اللجنة.");
-      // }
+      // Get exams_pool info without devicelogs check
 
       if (examConfig) {
         if (!examConfig.isExamLive) {
@@ -1877,21 +1829,12 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         },
       );
 
-      // Calculate duration securely from database or local fallback (since live logging is postponed)
+      // Calculate duration securely from database or local fallback
       let calculatedDurationInSeconds = 0;
       try {
         const localStart = localStorage.getItem(`exam_start_time_${currentStudentObj?.id}`);
         if (localStart) {
           calculatedDurationInSeconds = Math.floor((new Date().getTime() - Number(localStart)) / 1000);
-        } else {
-          const { data: dbLog } = await supabase
-            .from("exam_device_logs")
-            .select("started_at")
-            .eq("student_id", currentStudentObj?.id)
-            .maybeSingle();
-          if (dbLog?.started_at) {
-            calculatedDurationInSeconds = Math.floor((new Date().getTime() - new Date(dbLog.started_at).getTime()) / 1000);
-          }
         }
       } catch (err) {
         console.warn("Could not compute precise duration", err);
@@ -1913,34 +1856,23 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const finalQebtyLvl2Score = qebtyLvl2Total || currentCompletedSubjects.qebty_lvl2 || 0;
       const selectedAnswers = JSON.stringify(allCollectedAnswersArray);
 
+      const totalScore = (Number(finalDerasyScore) || 0) + 
+                         (Number(finalMahfouzatScore) || 0) + 
+                         (Number(finalQebtyLvl1Score) || 0) + 
+                         (Number(finalQebtyLvl2Score) || 0);
+
       const submissionPayload = {
         student_id: currentStudentPayload?.id,
-        student_name: currentStudentPayload?.name,
-        stage: currentStudentPayload?.stage,
-        church_name: currentStudentPayload?.church,
-        gender: currentStudentPayload?.gender,
-        competition_name: activeExam?.competitionType || "المهرجان الشامل",
-        duration_seconds: Number(calculatedDurationInSeconds) || 0,
-        derasy_score: Number(finalDerasyScore) || 0,
-        mahfouzat_score: Number(finalMahfouzatScore) || 0,
-        qebty_lvl1_score: Number(finalQebtyLvl1Score) || 0,
-        qebty_lvl2_score: Number(finalQebtyLvl2Score) || 0,
-        detailed_answers: selectedAnswers,
-        exam_id: activeExam?.id || primaryExamId || 0,
-        is_published: false,
-        exam_date: new Date().toISOString().split('T')[0],
-        submitted_at: new Date().toISOString()
+        exam_id: activeExam?.id || primaryExamId || "unknown",
+        answers_json: selectedAnswers,
+        score: totalScore,
+        submission_time: new Date().toISOString()
       };
 
-      const localUIState = {
-        ...submissionPayload,
-        stage_name: currentStudentPayload?.stage
-      };
-
-      // Push record directly to Supabase - using the new online_results table
+      // Push record directly to Supabase - using the exam_submissions table
       const { error: subErr } = await supabase
-        .from('online_results')
-        .upsert(submissionPayload, { onConflict: 'student_id' });
+        .from('exam_submissions')
+        .insert(submissionPayload);
 
       if (subErr) {
         console.error("Supabase rejected insertion:", subErr.message);
@@ -1956,30 +1888,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       localStorage.removeItem("exam_progress_" + currentStudentObj.id);
       localStorage.removeItem(`exam_start_time_${currentStudentObj.id}`);
 
-      // Gracefully log status updates to exam_device_logs consolidation table - Postponed to next season
-      // try {
-      //   await supabase
-      //     .from("exam_device_logs")
-      //     .update({
-      //       status: "submitted",
-      //       updated_at: new Date().toISOString()
-      //     })
-      //     .eq("student_id", currentStudentObj.id);
-      // } catch (logUpdateErr) {
-      //   console.warn("Silent check: exam_device_logs table update failed after submission", logUpdateErr);
-      // }
-      // 
-      // try {
-      //   await supabase
-      //     .from("exam_device_logs")
-      //     .update({
-      //       status: "تم التسليم بنجاح",
-      //       updated_at: new Date().toISOString(),
-      //     })
-      //     .eq("student_id", currentStudentObj.id);
-      // } catch (devErr) {
-      //   console.warn("Silent check: exam_device_logs table update failed", devErr);
-      // }
+      // device_log status logic has been removed permanently
 
       // Local update in cache
       const updatedProfile = {

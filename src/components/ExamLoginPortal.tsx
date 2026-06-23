@@ -276,45 +276,6 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     setErrors(null);
   };
 
-  // دالة ملاحقة وتتبع الأجهزة عبر جدول exam_device_logs
-  const logDeviceAccess = async (studentId: string, studentName: string, stage: string, church: string, examId: number) => {
-    try {
-      const userAgent = navigator.userAgent;
-      let os = "Unknown OS";
-      let deviceType = "Desktop";
-      
-      if (/Android/i.test(userAgent)) { os = "Android"; deviceType = "Mobile"; }
-      else if (/iPhone|iPad/i.test(userAgent)) { os = "iOS"; deviceType = "Mobile"; }
-      else if (/Windows/i.test(userAgent)) { os = "Windows"; }
-      else if (/Macintosh/i.test(userAgent)) { os = "macOS"; }
-
-      let detectedIp = "127.0.0.1";
-      try {
-        const ipRes = await fetch('https://api.ipify.org?format=json').then(r => r.json());
-        detectedIp = ipRes.ip || "127.0.0.1";
-      } catch (e) { /* silent */ }
-
-      await supabase.from('exam_device_logs').upsert({
-        student_id: String(studentId),
-        student_name: studentName,
-        stage: stage,
-        church: church,
-        device_name: userAgent,
-        device_type: deviceType,
-        os_version: os,
-        ip_address: detectedIp,
-        last_known_ip: detectedIp,
-        status: "active",
-        exam_id: examId,
-        started_at: new Date().toISOString(),
-        last_ping: new Date().toISOString(),
-        allow_reentry: false
-      }, { onConflict: 'student_id' });
-    } catch (logErr) {
-      console.error("Device Logging Failed safely:", logErr);
-    }
-  };
-
   // معالج سحب الامتحان الفعلي من الـ Pool وتفجير شاشة الأسئلة
   const triggerActiveExamLaunch = async (studentObj: any) => {
     setIsLoading(true);
@@ -323,15 +284,8 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     try {
       const studentIdStr = String(studentObj.id);
 
-      // 1. Anti-Cheat One-Time Entry Gate (منع الدخول المتعدد) via exam_device_logs - Postponed to next season
-      // const { data: existingLog, error: logCheckErr } = await supabase
-      //   .from('exam_device_logs')
-      //   .select('id, allow_reentry')
-      //   .eq('student_id', studentIdStr)
-      //   .maybeSingle();
-
       const { data: submissionCheck } = await supabase
-        .from('online_results')
+        .from('exam_submissions')
         .select('student_id')
         .eq('student_id', studentIdStr)
         .maybeSingle();

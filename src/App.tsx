@@ -73,8 +73,6 @@ import {
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
-import { LiveExamMonitoring } from './components/LiveExamMonitoring';
-import AdminLiveMonitoring from './components/AdminLiveMonitoring';
 import { ResultsViewer } from './components/ResultsViewer';
 import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
@@ -409,7 +407,6 @@ const ALL_ADMIN_TABS = [
   { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
   { id: 'calculator', label: 'حاسبة الكتب', icon: Calculator },
   { id: 'exams_management', label: 'إدارة الامتحانات', icon: BookOpen },
-  { id: 'exams_live', label: 'المتابعة المباشرة', icon: Activity },
   { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
   { id: 'dynamic_management', label: 'النظام الديناميكي', icon: Settings },
   { id: 'system_settings', label: 'إعدادات المنصة', icon: Settings }
@@ -4885,20 +4882,6 @@ function AppComponent() {
       const displayBrowser = fp.browser === 'Netscape' ? 'Browser' : fp.browser;
       const finalDeviceModel = deviceModelRaw === 'Netscape' ? displayBrowser : deviceModelRaw;
 
-      await supabase.from('exam_device_logs').insert({
-        student_id: 'pending_login',
-        student_name: 'جهاز قيد التسجيل',
-        church_name: 'غير محدد',
-        device_type: deviceType,
-        device_os: osName,
-        device_model: finalDeviceModel,
-        device_name: displayBrowser,
-        ip_address: pendingDeviceIp,
-        status: 'تم توثيق الجهاز',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-
       localStorage.setItem('exam_session', JSON.stringify({ deviceApproved: true, savedIp: pendingDeviceIp }));
       setShowDevicePermissionModal(false);
       setShowExamGateway(true);
@@ -4933,28 +4916,11 @@ function AppComponent() {
         }]);
         
         // 2. Clear primary fields in exam_submissions
-        await supabase.from('exam_submissions').update({
-          derasy_score: null,
-          mahfouzat_score: null,
-          qebty_lvl1_score: null,
-          qebty_lvl2_score: null,
-          detailed_answers: null,
-          is_published: false
-        }).eq('student_id', studentId);
+        await supabase.from('exam_submissions').delete().eq('student_id', studentId);
       }
       
       // 3. Unlock Gateway / Reset Session
-      await supabase.from('exam_device_logs').delete().eq('student_id', studentId);
-
-      await supabase.from('exam_device_logs').insert({
-        student_id: studentId,
-        student_name: studentName || 'Unknown',
-        church: 'System',
-        device_name: 'Reset By Admin',
-        allow_reentry: true,
-        status: 'قيد الانتظار',
-        last_ping: new Date().toISOString()
-      });
+      // removed exam_device_logs operations
 
       const successMsg = `تمت إعادة فتح الامتحان بنجاح للطالب: ${studentName || studentId}`;
       setNotification(successMsg);
@@ -7578,15 +7544,6 @@ function AppComponent() {
                   <BookOpen className="text-primary" /> بناء وتحكم الامتحانات الإلكترونية
                 </h4>
                 <ExamBuilder stages={dynamicLevels} />
-              </section>
-            )}
-
-            {adminActiveTab === 'exams_live' && (
-              <section>
-                <AdminLiveMonitoring 
-                  globalChurchFilter={globalChurchFilter} 
-                  onResetExam={handleResetExam}
-                />
               </section>
             )}
 
