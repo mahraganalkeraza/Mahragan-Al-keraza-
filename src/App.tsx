@@ -2177,6 +2177,8 @@ function AppComponent() {
               uid: session.church || 'church-session',
               role: session.role === 'admin' ? 'admin' : 'church',
               churchName: session.church,
+              church_id: session.church_id || session.id,
+              id: session.id || session.church_id,
               email: `${encodeURIComponent(session.church).replace(/%/g, '').toLowerCase()}_2026@mafk.com`
             };
             setUserProfile(profile);
@@ -2238,6 +2240,80 @@ function AppComponent() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // 1️⃣ Route Guard on Page Load / Init to fix Authorization Bypass
+  useEffect(() => {
+    let activeQuery = true;
+    const runRouteGuard = async () => {
+      if (!isLoggedIn || !churchName || userRole === 'admin') return;
+
+      try {
+        let currentChurchId = userProfile?.church_id || userProfile?.id;
+        let churchCheck: any = null;
+
+        // Try 'church_id' query first
+        if (currentChurchId) {
+          try {
+            const { data, error } = await supabase
+              .from('church_access_codes')
+              .select('is_locked, registration_status, is_active, isEnabled')
+              .eq('church_id', currentChurchId)
+              .maybeSingle();
+            if (!error && data) churchCheck = data;
+          } catch (e) {}
+        }
+
+        // Fallback to 'id' or 'church_name'
+        if (!churchCheck && activeQuery) {
+          try {
+            let query = supabase.from('church_access_codes').select('is_locked, registration_status, is_active, isEnabled');
+            if (currentChurchId) {
+              query = query.eq('id', currentChurchId);
+            } else if (churchName) {
+              query = query.eq('church_name', churchName);
+            } else {
+              query = null;
+            }
+            if (query) {
+              const { data, error } = await query.maybeSingle();
+              if (!error && data) churchCheck = data;
+            }
+          } catch (e) {}
+        }
+
+        if (churchCheck && activeQuery) {
+          const isReallyLocked = churchCheck.is_locked === true || 
+                                 churchCheck.registration_status === 'closed' || 
+                                 churchCheck.is_active === false || 
+                                 churchCheck.isEnabled === false;
+
+          if (isReallyLocked) {
+            // Instantly clear their local session and redirect them to a /locked landing screen
+            localStorage.removeItem('church_session');
+            localStorage.removeItem('userProfileCache');
+            await supabase.auth.signOut().catch(() => {});
+            setUser(null);
+            setUserProfile(null);
+            setIsLoggedIn(false);
+            setUserRole('guest');
+            setChurchName('');
+            setActiveSection('locked');
+            alert("عذراً، تم إغلاق التسجيل أو قفل الحساب الخاص بكنيستكم من قبل لجنة المهرجان بقرار مركزي سيادي!");
+          }
+        }
+      } catch (err) {
+        console.error("Route guard error:", err);
+      }
+    };
+
+    if (isLoggedIn && churchName && userRole !== 'admin') {
+      runRouteGuard();
+    }
+
+    return () => {
+      activeQuery = false;
+    };
+  }, [isLoggedIn, churchName, userRole, userProfile]);
 
   const fetchUserProfile = async (uid: string) => {
     try {
@@ -4132,6 +4208,8 @@ function AppComponent() {
         email: `${encodeURIComponent(data.church_name).replace(/%/g, '').toLowerCase()}_2026@mafk.com`,
         role: 'church' as const,
         churchName: data.church_name,
+        church_id: data.id,
+        id: data.id,
         dashboardBg: ''
       };
 
@@ -4142,6 +4220,8 @@ function AppComponent() {
 
       localStorage.setItem('church_session', JSON.stringify({ 
         church: data.church_name, 
+        church_id: data.id,
+        id: data.id,
         isAuthenticated: true, 
         role: 'servant' 
       }));
@@ -4931,6 +5011,63 @@ function AppComponent() {
     setIsSubmittingParticipant(true);
 
     try {
+      // 2️⃣ Submit Form Guard (The Ultimate Lock) to fix Authorization Bypass
+      if (userRole !== 'admin') {
+        let dbData: any = null;
+        let dbErr: any = null;
+        const currentChurchId = userProfile?.church_id || userProfile?.id;
+
+        try {
+          if (currentChurchId) {
+            const { data: qData, error: qErr } = await supabase
+              .from('church_access_codes')
+              .select('is_locked, registration_status')
+              .eq('church_id', currentChurchId)
+              .maybeSingle();
+            dbData = qData;
+            dbErr = qErr;
+          }
+        } catch (err) {
+          console.warn("Query with church_id failed, will try fallback:", err);
+        }
+
+        // Fallback to id / church_name if needed
+        if (!dbData) {
+          try {
+            let query = supabase.from('church_access_codes').select('is_locked, registration_status');
+            if (currentChurchId) {
+              query = query.eq('id', currentChurchId);
+            } else if (churchName) {
+              query = query.eq('church_name', churchName);
+            } else {
+              query = null;
+            }
+            if (query) {
+              const { data: qData } = await query.maybeSingle();
+              dbData = qData;
+            }
+          } catch (err) {
+            console.error("Fallback query in Submit Guard failed:", err);
+          }
+        }
+
+        if (dbData?.is_locked || dbData?.registration_status === 'closed') {
+          alert("عذرًا، تم إغلاق التسجيل أو قفل الحساب من قبل لجنة المهرجان!");
+          setIsSubmittingParticipant(false);
+          // Redirect and clear session
+          localStorage.removeItem('church_session');
+          localStorage.removeItem('userProfileCache');
+          await supabase.auth.signOut().catch(() => {});
+          setUser(null);
+          setUserProfile(null);
+          setIsLoggedIn(false);
+          setUserRole('guest');
+          setChurchName('');
+          setActiveSection('locked');
+          return;
+        }
+      }
+
       if (editingParticipant) {
         const updatedFields = {
           name: newParticipant.name,
@@ -5703,123 +5840,155 @@ function AppComponent() {
       </header>
 
       {!isLoggedIn && activeSection !== 'schedule' ? (
-        <main className="max-w-md mx-auto px-4 py-20 relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white p-10 rounded-xl shadow-sm border border-slate-100"
-          >
-            <div className="text-center mb-10">
-              <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-20 h-20 rounded-full mx-auto mb-6 object-contain shadow-sm border border-slate-50 bg-white" />
-              <h2 className="text-2xl font-black text-slate-800">تسجيل الدخول</h2>
-              <p className="text-slate-500 text-sm mt-2 font-bold">يرجى اختيار الكنيسة وإدخال الكود الخاص بها</p>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-8">
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                  اسم الكنيسة
-                </label>
-                <select
-                  value={loginChurch}
-                  onChange={(e) => setLoginChurch(e.target.value)}
-                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
-                  required
-                >
-                  <option value="">اختر الكنيسة</option>
-                  <option value="مسئول">دخول مسئول (Admin)</option>
-                  {Array.from(new Set([
-                    ...dbChurches,
-                    ...Object.keys(CHURCH_CREDENTIALS),
-                    ...publicChurches.map(c => c.name)
-                  ])).sort().map(church => (
-                    <option key={church} value={church}>{church}</option>
-                  ))}
-                </select>
-                {loginChurch && loginChurch !== 'مسئول' && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex items-center gap-3 mt-4 p-2 bg-slate-50 rounded-xl border border-slate-200"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center overflow-hidden border border-slate-200 shrink-0">
-                      {publicChurches.find(c => c.name === loginChurch)?.logoUrl ? (
-                        <img 
-                          src={getValidLogoUrl(publicChurches.find(c => c.name === loginChurch)?.logoUrl, null)} 
-                          onError={(e) => { e.currentTarget.src = logo; }}
-                          alt="Church Logo" 
-                          className="w-full h-full object-contain bg-white"
-                        />
-                      ) : (
-                        <Church size={20} className="text-slate-300" />
-                      )}
-                    </div>
-                    <span className="text-xs font-black text-slate-700">{loginChurch}</span>
-                  </motion.div>
-                )}
+        activeSection === 'locked' ? (
+          <main className="max-w-md mx-auto px-4 py-20 relative z-10 text-center">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-10 rounded-2xl shadow-xl border border-red-100 text-center space-y-6 flex flex-col items-center justify-center font-arabic"
+              dir="rtl"
+            >
+              <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center shadow-inner">
+                <Lock size={40} className="stroke-[2.5]" />
               </div>
-
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                  كود الكنيسة
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    value={loginCode}
-                    onChange={(e) => setLoginCode(e.target.value)}
-                    placeholder="أدخل الكود الخاص بالكنيسة"
-                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none text-center font-mono"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors"
-                  >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
+              <div className="space-y-2 col-span-full">
+                <h2 className="text-2xl font-black text-slate-800">الحساب مغلق 🔒</h2>
+                <p className="text-slate-500 font-bold leading-relaxed text-sm">
+                  عذرًا، تم إغلاق التسجيل أو قفل الحساب الخاص بكنيستكم من قبل لجنة المهرجان بقرار مركزي سيادي!
+                </p>
               </div>
-
-              <div className="flex items-center gap-2">
-                <input 
-                  type="checkbox" 
-                  id="rememberMe" 
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 text-primary border-slate-300 rounded focus:ring-primary"
-                />
-                <label htmlFor="rememberMe" className="text-xs font-black text-slate-500 cursor-pointer">تذكرني على هذا الجهاز</label>
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-xs font-bold text-slate-600 leading-relaxed">
+                يرجى مراجعة الكنترول العام أو الدعم الفني للمهرجان لإنهاء الإجراءات وطلب فك القفل اللوجستي.
               </div>
-
-              {loginError && (
-                <motion.p 
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="text-red-500 text-xs font-bold text-center bg-red-50 py-3 rounded-lg border border-red-100"
-                >
-                  {loginError}
-                </motion.p>
-              )}
-
               <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full py-4 bg-primary text-white rounded-lg font-black text-lg shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => {
+                  setActiveSection('home');
+                }}
+                className="w-full py-3.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-850 transition-all flex items-center justify-center gap-2 text-sm"
               >
-                {isLoading ? (
-                  <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <LogIn size={20} />
-                    <span>دخول</span>
-                  </>
-                )}
+                <span>العودة للرئيسية</span>
               </button>
-            </form>
-          </motion.div>
-        </main>
+            </motion.div>
+          </main>
+        ) : (
+          <main className="max-w-md mx-auto px-4 py-20 relative z-10">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-10 rounded-xl shadow-sm border border-slate-100"
+            >
+              <div className="text-center mb-10">
+                <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-20 h-20 rounded-full mx-auto mb-6 object-contain shadow-sm border border-slate-50 bg-white" />
+                <h2 className="text-2xl font-black text-slate-800">تسجيل الدخول</h2>
+                <p className="text-slate-500 text-sm mt-2 font-bold">يرجى اختيار الكنيسة وإدخال الكود الخاص بها</p>
+              </div>
+
+              <form onSubmit={handleLogin} className="space-y-8">
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                    اسم الكنيسة
+                  </label>
+                  <select
+                    value={loginChurch}
+                    onChange={(e) => setLoginChurch(e.target.value)}
+                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
+                    required
+                  >
+                    <option value="">اختر الكنيسة</option>
+                    <option value="مسئول">دخول مسئول (Admin)</option>
+                    {Array.from(new Set([
+                      ...dbChurches,
+                      ...Object.keys(CHURCH_CREDENTIALS),
+                      ...publicChurches.map(c => c.name)
+                    ])).sort().map(church => (
+                      <option key={church} value={church}>{church}</option>
+                    ))}
+                  </select>
+                  {loginChurch && loginChurch !== 'مسئول' && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center gap-3 mt-4 p-2 bg-slate-50 rounded-xl border border-slate-200"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center overflow-hidden border border-slate-200 shrink-0">
+                        {publicChurches.find(c => c.name === loginChurch)?.logoUrl ? (
+                          <img 
+                            src={getValidLogoUrl(publicChurches.find(c => c.name === loginChurch)?.logoUrl, null)} 
+                            onError={(e) => { e.currentTarget.src = logo; }}
+                            alt="Church Logo" 
+                            className="w-full h-full object-contain bg-white"
+                          />
+                        ) : (
+                          <Church size={20} className="text-slate-300" />
+                        )}
+                      </div>
+                      <span className="text-xs font-black text-slate-700">{loginChurch}</span>
+                    </motion.div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                    كود الكنيسة
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={loginCode}
+                      onChange={(e) => setLoginCode(e.target.value)}
+                      placeholder="أدخل الكود الخاص بالكنيسة"
+                      className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none text-center font-mono"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors"
+                    >
+                      {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="checkbox" 
+                    id="rememberMe" 
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 text-primary border-slate-300 rounded focus:ring-primary"
+                  />
+                  <label htmlFor="rememberMe" className="text-xs font-black text-slate-500 cursor-pointer">تذكرني على هذا الجهاز</label>
+                </div>
+
+                {loginError && (
+                  <motion.p 
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="text-red-500 text-xs font-bold text-center bg-red-50 py-3 rounded-lg border border-red-100"
+                  >
+                    {loginError}
+                  </motion.p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-4 bg-primary text-white rounded-lg font-black text-lg shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? (
+                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <LogIn size={20} />
+                      <span>دخول</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </motion.div>
+          </main>
+        )
       ) : (
         <div 
           className={`min-h-screen transition-all duration-500 ${dashboardBg ? 'bg-fixed bg-cover bg-center' : 'bg-slate-50'}`}
