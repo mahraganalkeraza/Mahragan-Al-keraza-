@@ -139,6 +139,8 @@ import { generateMasterExcel, downloadMasterTemplate, exportOnlineResultsExcel }
 import { generateShortId } from './lib/utils';
 import DynamicAdminSettings from './components/DynamicAdminSettings';
 import AdminBulkRegister from './components/AdminBulkRegister';
+import ExportColumnSelector, { ColumnDefinition } from './components/ExportColumnSelector';
+import { printDataTable } from './utils/printHelper';
 // @ts-ignore
 import logo from './by-logo.jpeg';
 
@@ -1034,6 +1036,13 @@ function AppComponent() {
   const [partChurchFilter, setPartChurchFilter] = useState('الكل');
   const [partStageFilter, setPartStageFilter] = useState('الكل');
   const [partCompFilter, setPartCompFilter] = useState('الكل');
+
+  // PDF Export States
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [pdfData, setPdfData] = useState<any[]>([]);
+  const [pdfColumns, setPdfColumns] = useState<ColumnDefinition[]>([]);
+  const [pdfTitle, setPdfTitle] = useState('');
+
 
   useEffect(() => {
     setCurrentPage(1);
@@ -2015,6 +2024,43 @@ function AppComponent() {
       };
     });
 
+    // --- Sub-Activities Analytics (Teams & Individuals) ---
+    const activeSubActivities = (activityTeams || []).filter(t => {
+      return (userRole === 'admin') 
+        ? (globalChurchFilter === 'الكل' || t.churchName === globalChurchFilter)
+        : (t.churchName === churchName);
+    });
+
+    const subActivityStatsMap: Record<string, { isGroup: boolean, count: number }> = {};
+    const churchSubActivitiesMatrixMap: Record<string, Set<string>> = {};
+
+    activeSubActivities.forEach(t => {
+      const actType = t.activityType || t.activity_type || 'نشاط غير محدد';
+      const cName = t.churchName || t.church_name || 'غير محدد';
+      const isGroup = actType === 'كورال' || actType.includes('جماعي') || t.choirLevel?.includes('جماعي') || actType === 'مسرح' || actType === 'ألحان';
+
+      if (!subActivityStatsMap[actType]) {
+        subActivityStatsMap[actType] = { isGroup, count: 0 };
+      }
+      subActivityStatsMap[actType].count++;
+
+      if (!churchSubActivitiesMatrixMap[cName]) {
+        churchSubActivitiesMatrixMap[cName] = new Set<string>();
+      }
+      churchSubActivitiesMatrixMap[cName].add(actType);
+    });
+
+    const subActivityStats = Object.keys(subActivityStatsMap).map(k => ({
+      name: k,
+      isGroup: subActivityStatsMap[k].isGroup,
+      count: subActivityStatsMap[k].count
+    })).sort((a, b) => b.count - a.count);
+
+    const churchMatrix = Object.keys(churchSubActivitiesMatrixMap).map(cName => ({
+      churchName: cName,
+      activities: Array.from(churchSubActivitiesMatrixMap[cName]).join('، ')
+    })).sort((a, b) => a.churchName.localeCompare(b.churchName));
+
     return { 
       demographicsData, 
       retentionData, 
@@ -2024,7 +2070,9 @@ function AppComponent() {
       totalOrders,
       totalTeams: activeTeamsCount,
       growthTrendData,
-      genderData
+      genderData,
+      subActivityStats,
+      churchMatrix
     };
   }, [allChurchParticipants, orders, activityTeams, totalTeamsCount, STAGE_ORDER, globalChurchFilter, churchName, userRole]);
 
@@ -3648,6 +3696,71 @@ function AppComponent() {
 
   const exportAllRegistrationsToExcel = async () => {
     await generateMasterExcel(allChurchParticipants, userRole === 'admin' ? null : churchName);
+  };
+
+  const openParticipantsPdfExport = () => {
+    // Determine data based on current filters
+    let filteredData = allChurchParticipants;
+    if (userRole !== 'admin') {
+      filteredData = filteredData.filter(p => p.churchName === churchName);
+    } else {
+      if (partChurchFilter !== 'الكل') filteredData = filteredData.filter(p => p.churchName === partChurchFilter);
+    }
+    
+    if (partStageFilter !== 'الكل') filteredData = filteredData.filter(p => p.stage === partStageFilter);
+    if (partCompFilter !== 'الكل') filteredData = filteredData.filter(p => (p.competitions || []).includes(partCompFilter));
+    if (participantSearch.trim()) {
+      const qs = participantSearch.trim().toLowerCase();
+      filteredData = filteredData.filter(p => p.name.toLowerCase().includes(qs) || p.serial?.includes(qs));
+    }
+
+    const columns: ColumnDefinition[] = [
+      { key: 'serial', label: 'كود المشترك' },
+      { key: 'name', label: 'الاسم رباعي' },
+      { key: 'churchName', label: 'الكنيسة', defaultSelected: userRole === 'admin' },
+      { key: 'stage', label: 'المرحلة' },
+      { key: 'gender', label: 'الجنس' },
+      { key: 'competitions', label: 'المسابقات' }
+    ];
+
+    const mappedData = filteredData.map(p => ({
+      ...p,
+      competitions: p.competitions?.join('، ') || 'لا يوجد'
+    }));
+
+    setPdfData(mappedData);
+    setPdfColumns(columns);
+    setPdfTitle('بيانات المشتركين');
+    setIsPdfModalOpen(true);
+  };
+
+  const openOrdersPdfExport = () => {
+    let filteredOrders = orders || [];
+    if (adminFilterChurch !== 'الكل') {
+      filteredOrders = filteredOrders.filter(o => o.churchName === adminFilterChurch);
+    }
+    
+    const columns: ColumnDefinition[] = [
+      { key: 'churchName', label: 'الكنيسة', defaultSelected: true },
+      { key: 'timestamp', label: 'التاريخ' },
+      { key: 'grandTotal', label: 'الإجمالي (ج.م)' },
+      { key: 'details_info', label: 'تفاصيل الطلب' }
+    ];
+
+    const mappedData = filteredOrders.map(o => {
+       const detailsStr = Array.isArray(o.details) 
+          ? o.details.map(d => `${d.stage} (${d.quantity} كتاب)`).join(' | ') 
+          : 'لا يوجد تفاصيل';
+       return {
+          ...o,
+          details_info: detailsStr
+       };
+    });
+
+    setPdfData(mappedData);
+    setPdfColumns(columns);
+    setPdfTitle('طلبات الكتب');
+    setIsPdfModalOpen(true);
   };
 
   const fetchSupabaseParticipants = async () => {
@@ -6975,6 +7088,12 @@ function AppComponent() {
                     >
                       <Download size={14} /> Excel
                     </button>
+                    <button 
+                      onClick={openParticipantsPdfExport}
+                      className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-black flex items-center gap-2 hover:bg-slate-800 transition-all shadow-sm"
+                    >
+                      <Printer size={14} /> طباعة / PDF
+                    </button>
                   </div>
                 </div>
 
@@ -7297,13 +7416,21 @@ function AppComponent() {
                   <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
                     <ShoppingCart className="text-coptic-red" /> إدارة طلبات الكتب
                   </h4>
-                  <button 
-                    onClick={() => fetchOrdersPage(true, true)}
-                    disabled={isOrdersLoading}
-                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition flex items-center gap-2"
-                  >
-                    <RotateCw size={18} className={isOrdersLoading ? 'animate-spin' : ''} /> تحديث
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={openOrdersPdfExport}
+                      className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-black flex items-center gap-2 hover:bg-slate-800 transition-all shadow-sm"
+                    >
+                      <Printer size={14} /> طباعة / PDF
+                    </button>
+                    <button 
+                      onClick={() => fetchOrdersPage(true, true)}
+                      disabled={isOrdersLoading}
+                      className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 transition flex items-center gap-2"
+                    >
+                      <RotateCw size={18} className={isOrdersLoading ? 'animate-spin' : ''} /> تحديث
+                    </button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-right border-collapse">
@@ -8347,6 +8474,74 @@ function AppComponent() {
                       itemsPerPage={20}
                       onPageChange={setAnalyticsPage}
                     />
+                  </motion.div>
+                </div>
+
+                {/* Sub-Activities Analytics (Teams & Individuals) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+                  {/* Widget 1: Activity Participation Counter */}
+                  <motion.div 
+                    initial={{ opacity: 0, y: 40 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.7, ease: "easeOut" }}
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"
+                  >
+                    <h3 className="font-black text-slate-800 mb-6 text-lg">عداد المشاركات في الأنشطة الفرعية</h3>
+                    <div className="space-y-4">
+                      {analyticsData.subActivityStats && analyticsData.subActivityStats.length > 0 ? (
+                        analyticsData.subActivityStats.map((stat, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                            <div className="flex items-center gap-3">
+                              <span className={`p-2 rounded-lg ${stat.isGroup ? 'bg-emerald-100 text-emerald-600' : 'bg-coptic-blue/10 text-coptic-blue'}`}>
+                                {stat.isGroup ? <Users size={18} /> : <User size={18} />}
+                              </span>
+                              <span className="font-bold text-slate-700">{stat.name}</span>
+                            </div>
+                            <span className="font-black text-xl text-slate-900 border-b-2 border-slate-200 px-2">
+                              {stat.count} <span className="text-sm text-slate-500">{stat.isGroup ? 'فريق' : 'شخص'}</span>
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-6 text-slate-400 font-bold">لا يوجد بيانات تسجيل في الأنشطة</div>
+                      )}
+                    </div>
+                  </motion.div>
+
+                  {/* Widget 2: Detailed Church Participation Matrix */}
+                  <motion.div 
+                    initial={{ opacity: 0, y: 40 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"
+                  >
+                    <h3 className="font-black text-slate-800 mb-6 text-lg">مصفوفة الأنشطة للكنائس المشاركة</h3>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-right text-sm">
+                        <thead className="bg-slate-50 text-slate-600 font-bold">
+                          <tr>
+                            <th className="p-4 border-b">اسم الكنيسة</th>
+                            <th className="p-4 border-b">الأنشطة المشاركة بها</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {analyticsData.churchMatrix && analyticsData.churchMatrix.length > 0 ? (
+                            analyticsData.churchMatrix.map((row, idx) => (
+                              <tr key={idx} className="border-b last:border-0 hover:bg-slate-50 transition-colors">
+                                <td className="p-4 font-black text-slate-800 whitespace-nowrap">{row.churchName}</td>
+                                <td className="p-4 text-slate-600 leading-relaxed font-bold">{row.activities}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={2} className="p-8 text-center text-slate-400 font-bold">لا يوجد بيانات اشتراك للكنائس</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </motion.div>
                 </div>
 
@@ -10434,6 +10629,16 @@ function AppComponent() {
       <DeleteScheduleModal />
       <DeleteCalculatorModal />
       <OrderDetailsModal />
+      
+      <ExportColumnSelector
+        isOpen={isPdfModalOpen}
+        onClose={() => setIsPdfModalOpen(false)}
+        columns={pdfColumns}
+        title={pdfTitle}
+        onConfirm={(selectedCols) => {
+           printDataTable(pdfData, selectedCols, pdfTitle, `تقرير رسمي تم توليده من النظام بتاريخ ${new Date().toLocaleDateString('ar-EG')}`);
+        }}
+      />
 
       <AnimatePresence>
         {confirmModal.isOpen && (

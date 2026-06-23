@@ -1864,7 +1864,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const submissionPayload = {
         student_id: currentStudentPayload?.id,
         exam_id: activeExam?.id || primaryExamId || "unknown",
-        answers_json: selectedAnswers,
+        detailed_answers: selectedAnswers,
         score: totalScore,
         submission_time: new Date().toISOString()
       };

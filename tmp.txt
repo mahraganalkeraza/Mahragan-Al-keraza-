@@ -1,0 +1,54 @@
+402:  { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
+1051:  const [teamSearch, setTeamSearch] = useState('');
+1129:  const [teamPageCount, setTeamPageCount] = useState(1);
+1620:        console.error("Error querying registrations for team registration lookup:", err);
+1882:    // Filtered teams count
+4085:      let queryBuilder = supabase.from('activity_teams').select('id, team_name, stage_name, church_name, created_at, members_number, activity_type', { count: 'exact' });
+4096:        queryBuilder = queryBuilder.ilike('team_name', `%${search}%`);
+4111:          team_name: row.team_name,
+4117:          members: isIndividual && row.team_name ? [{ name: row.team_name, gender: 'ذكر' as const, stage: row.stage_name }] : [],
+4134:      console.error("Supabase load teams error: ", err.message); 
+4155:      if (adminActiveTab === 'activity_teams' && activityTeams.length === 0) fetchTeamsPage(true, true, teamSearch);
+4545:      team_name: ''
+4588:    // Strict limit of TWO teams per stage per church
+4591:      alert('Limit Reached: Only 2 teams per stage allowed.');
+4607:      currentTeamName = newTeam.team_name?.trim() || `فريق ${newTeam.activityType || 'نشاط'} - ${selectedStageName}`;
+4626:      team_name: currentTeamName,
+4636:          .from('activity_teams')
+4646:          team_name: currentTeamName,
+4665:          .from('activity_teams')
+4678:            team_name: row.team_name,
+4684:            members: isIndividual && row.team_name ? [{ name: row.team_name, gender: 'ذكر', stage: row.stage_name }] : [],
+4724:        team_name: ''
+4732:      console.error("Supabase activity team save failed:", error);
+4748:  const handleEditTeam = async (team: any) => {
+4749:    const sName = team.stage_name || team.choirLevel || '';
+4753:    const inferredActType = team.activityType || (foundStage ? foundStage.activity_type : (sName.includes('ألحان') ? 'ألحان' : (sName.includes('كورال') ? 'كورال' : (sName.includes('عزف') ? 'عزف' : 'ترنيم فردي'))));
+4759:      members: team.members?.length ? team.members : [{ name: team.team_name || '', gender: 'ذكر', stage: sName }],
+4760:      choirLevel: team.choirLevel || sName,
+4761:      instrumentType: team.instrumentType || '',
+4762:      performanceType: team.performanceType || '',
+4763:      maleCount: team.maleCount || 0,
+4764:      femaleCount: team.femaleCount || 0,
+4765:      team_name: team.team_name || ''
+4767:    setActivity_type(team.activity_type || '');
+4770:      setIndividualParticipantName(team.team_name || '');
+4774:    setEditingTeam(team);
+4781:  const handleDeleteTeam = async (teamId: string | number) => {
+4786:        .from('activity_teams')
+4788:        .eq('id', teamId);
+4794:      setActivityTeams(prev => prev.filter(t => t.id !== teamId));
+4797:      console.error("Supabase delete team failed:", error);
+7184:            {adminActiveTab === 'activity_teams' && (
+7196:                        value={teamSearch}
+7198:                        onKeyDown={(e) => e.key === 'Enter' && fetchTeamsPage(true, true, teamSearch)}
+7203:                      onClick={() => fetchTeamsPage(true, true, teamSearch)}
+7209:                      onClick={() => fetchTeamsPage(true, true, teamSearch)}
+7232:                        .slice((teamPageCount - 1) * 20, teamPageCount * 20)
+7236:                            <td className="p-4 font-bold text-slate-850 text-xs">{t.team_name || '-'}</td>
+7267:                    currentPage={teamPageCount}
+9786:                            <form id="team-registration-form" onSubmit={handleAddTeam} className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
+9919:                                        value={newTeam.team_name || ''}
+9920:                                        onChange={e => setNewTeam({...newTeam, team_name: e.target.value})}
+10085:                                  {(t as any).team_name && (t as any).team_name !== ((t as any).stage_name || t.choirLevel) && (
+10086:                                    <p className="text-xs font-bold text-primary mt-1">{(t as any).team_name}</p>
