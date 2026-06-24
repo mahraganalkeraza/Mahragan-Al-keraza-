@@ -226,6 +226,14 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
               }).catch(() => {});
             }
             await processScannedCode(decodedText);
+
+            // AUTOMATIC RESUME TIMEOUT (Solution A):
+            // After 3 seconds, automatically re-activate the camera to allow scanning the next card without manual click
+            setTimeout(() => {
+              if (loginMethod === 'code' && (!qrScannerRef.current || !qrScannerRef.current.isScanning)) {
+                startCamera();
+              }
+            }, 3000);
           };
 
           html5Qrcode.start(
@@ -608,6 +616,18 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                           </button>
                         </div>
                       )}
+                    </div>
+
+                    {/* Permanent Button to Re-activate Camera (Solution B) */}
+                    <div className="mt-2.5 px-1">
+                      <button
+                        type="button"
+                        onClick={() => startCamera()}
+                        className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-750 text-slate-200 hover:text-white border border-slate-700 font-black text-xs rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm cursor-pointer"
+                      >
+                        <RefreshCw size={14} className={isScanningActive ? "animate-spin text-emerald-400" : "text-amber-400"} />
+                        <span>إعادة تنشيط الكاميرا يدويًا</span>
+                      </button>
                     </div>
                   </div>
 
