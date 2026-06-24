@@ -121,16 +121,64 @@ export const ResultsViewer: React.FC<{
     return '';
   }, [userChurch]);
 
+  const syncSubmissionsToOnlineResults = async (targetChurch?: string) => {
+    try {
+      let query = supabase.from('exam_submissions').select('*');
+      if (targetChurch) {
+        query = query.or(`church_name.eq."${targetChurch}",churchName.eq."${targetChurch}"`);
+      }
+      
+      const { data: submissions, error: fetchErr } = await query;
+      if (fetchErr) throw fetchErr;
+
+      if (submissions && submissions.length > 0) {
+        const bulkPayload = submissions.map((row: any) => ({
+          student_id: row.student_id,
+          student_name: row.student_name,
+          church_name: row.church_name || row.churchName || row.church || '',
+          stage: row.stage_name || row.stage || '',
+          stage_name: row.stage_name || row.stage || '',
+          gender: row.gender || '',
+          derasy_score: row.derasy_score !== null && row.derasy_score !== undefined ? Number(row.derasy_score) : (row.score !== null ? Number(row.score) : null),
+          mahfouzat_score: row.mahfouzat_score !== null && row.mahfouzat_score !== undefined ? Number(row.mahfouzat_score) : null,
+          qebty_lvl1_score: row.qebty_lvl1_score !== null && row.qebty_lvl1_score !== undefined ? Number(row.qebty_lvl1_score) : null,
+          qebty_lvl2_score: row.qebty_lvl2_score !== null && row.qebty_lvl2_score !== undefined ? Number(row.qebty_lvl2_score) : null,
+          submission_type: row.submission_type || 'online',
+          submitted_at: row.submitted_at || row.created_at || new Date().toISOString()
+        }));
+
+        const { error: upsertErr } = await supabase
+          .from('online_results')
+          .upsert(bulkPayload, { onConflict: 'student_id' });
+
+        if (upsertErr) throw upsertErr;
+        console.log(`Synced ${bulkPayload.length} exam submissions to online_results.`);
+      }
+    } catch (err: any) {
+      console.error('Error syncing exam submissions:', err.message);
+      throw err;
+    }
+  };
+
   // Fetch results dynamically from database view 'view_central_filtered_results'
   const fetchSubmissionsFromSupabase = async () => {
     setIsLoading(true);
     try {
+      // Auto-sync first if isAdmin to ensure up-to-date values
+      if (isAdmin) {
+        try {
+          await syncSubmissionsToOnlineResults();
+        } catch (syncErr) {
+          console.warn("Auto-sync failed on fetch, proceeding with existing records:", syncErr);
+        }
+      }
+
       let query = supabase
         .from('online_results')
         .select('*');
       
       if (!isAdmin && activeUserChurch) {
-        query = query.eq('is_published', true).filter('church_name', 'eq', activeUserChurch);
+        query = query.eq('is_published', true).or(`church_name.eq."${activeUserChurch}",churchName.eq."${activeUserChurch}"`);
       }
 
       const { data, error } = await query;
@@ -148,8 +196,8 @@ export const ResultsViewer: React.FC<{
           return {
             id: sbRow.student_id || sbRow.id || Math.random().toString(),
             studentName: sbRow.student_name || sbRow.name || 'طالب',
-            churchName: sbRow.church || sbRow.church_name || '',
-            stage: sbRow.stage || '',
+            churchName: sbRow.church || sbRow.church_name || sbRow.churchName || '',
+            stage: sbRow.stage_name || sbRow.stage || '',
             derasy_score: d,
             mahfouzat_score: m,
             qebty_lvl1_score: q1,
@@ -416,7 +464,7 @@ export const ResultsViewer: React.FC<{
   };
 
   const handleAdvancedExportPDF = async () => {
-    if (results.length === 0) return;
+    if (!results || results?.length === 0) return;
     setIsGeneratingPDF(true);
     setPdfProgress(5);
     setPdfStatus("جاري تحضير البيانات وتقسيم الجداول لملفات متعددة الأوراق...");
@@ -425,7 +473,7 @@ export const ResultsViewer: React.FC<{
     setTimeout(async () => {
       try {
         const rowsPerPage = 12;
-        const totalPages = Math.ceil(results.length / rowsPerPage);
+        const totalPages = Math.ceil((results?.length || 0) / rowsPerPage);
         
         // Setup jsPDF with Landscape orientation
         const pdf = new jsPDF({
@@ -606,6 +654,13 @@ export const ResultsViewer: React.FC<{
     try {
       setIsLoading(true);
       
+      // Auto-sync online exam submissions first
+      try {
+        await syncSubmissionsToOnlineResults();
+      } catch (syncErr) {
+        console.warn("Sync failed during publish, proceeding with existing records:", syncErr);
+      }
+      
       const { error } = await supabase
         .from('online_results')
         .update({ is_published: true })
@@ -626,6 +681,14 @@ export const ResultsViewer: React.FC<{
   const handlePublishChurchResults = async (churchName: string) => {
     try {
       setIsLoading(true);
+
+      // Auto-sync online exam submissions for this church first
+      try {
+        await syncSubmissionsToOnlineResults(churchName);
+      } catch (syncErr) {
+        console.warn("Sync failed during church publish, proceeding with existing records:", syncErr);
+      }
+
       const { error } = await supabase
         .from('online_results')
         .update({ is_published: true })
@@ -687,6 +750,26 @@ export const ResultsViewer: React.FC<{
             >
               <Award size={14} />
               {showBulkScoreDashboard ? "العودة لجدول النتائج 📋" : "رصد الدرجات الجماعي ⚡"}
+            </button>
+            <button 
+              onClick={async () => {
+                try {
+                  setIsLoading(true);
+                  await syncSubmissionsToOnlineResults();
+                  alert('تمت مزامنة كافة درجات الامتحانات الإلكترونية بنجاح! 🎉');
+                  fetchSubmissionsFromSupabase();
+                } catch (err: any) {
+                  alert('فشل في مزامنة الدرجات: ' + err.message);
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
+              disabled={isLoading}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-black transition-all shadow-sm disabled:opacity-50"
+              title="مزامنة وتحديث كافة درجات الامتحانات الإلكترونية الحية"
+            >
+              <RefreshCcw size={14} className={isLoading ? "animate-spin" : ""} />
+              مزامنة الامتحانات الإلكترونية 🔄
             </button>
             <button 
               onClick={handlePublishResults}
@@ -1457,11 +1540,11 @@ export const ResultsViewer: React.FC<{
           className="bg-white font-arabic" 
           dir="rtl"
         >
-          {Array.from({ length: Math.ceil(results.length / 12) }).map((_, pageIndex) => {
+          {Array.from({ length: Math.ceil((results?.length || 0) / 12) }).map((_, pageIndex) => {
             const rowsPerPage = 12;
             const startIdx = pageIndex * rowsPerPage;
-            const pageResults = results.slice(startIdx, startIdx + rowsPerPage);
-            const totalPagesNum = Math.ceil(results.length / rowsPerPage);
+            const pageResults = (results || []).slice(startIdx, startIdx + rowsPerPage);
+            const totalPagesNum = Math.ceil((results?.length || 0) / rowsPerPage);
 
             return (
               <div 
@@ -1511,7 +1594,7 @@ export const ResultsViewer: React.FC<{
                     </div>
                     <div>
                       <span className="text-slate-400 font-extrabold ml-1">إجمالي المقيدين في الكشف:</span>
-                      <span className="text-indigo-600 font-black">{results.length} طالب</span>
+                      <span className="text-indigo-600 font-black">{(results?.length || 0)} طالب</span>
                     </div>
                   </div>
 

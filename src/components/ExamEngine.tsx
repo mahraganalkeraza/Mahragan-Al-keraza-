@@ -316,7 +316,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
       const cleanPayload = {
         student_id: activeStudent?.id || "admin_builder",
         student_name: activeStudent?.name || activeStudent?.studentName || "admin",
-        church_name: activeStudent?.church || activeStudent?.churchName || "admin",
+        church_name: activeStudent?.church_name || activeStudent?.churchName || activeStudent?.church_Name || activeStudent?.church || "admin",
         gender: activeStudent?.gender || "",
         detailed_answers: JSON.stringify(currentQuestions),
         exam_id: examId,
@@ -1276,6 +1276,19 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             studentObj.churchName ||
             studentObj.church ||
             studentObj.church_name ||
+            studentObj.church_Name ||
+            "غير محدد",
+          church_name:
+            studentObj.church_name ||
+            studentObj.churchName ||
+            studentObj.church ||
+            studentObj.church_Name ||
+            "غير محدد",
+          church_Name:
+            studentObj.church_Name ||
+            studentObj.church_name ||
+            studentObj.churchName ||
+            studentObj.church ||
             "غير محدد",
           stage: studentObj.stage || "عام",
           gender: studentObj.gender || "",
@@ -1294,6 +1307,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             id: studentId,
             studentName: manualName,
             churchName: manualChurch,
+            church_name: manualChurch,
+            church_Name: manualChurch,
             stage: manualStage,
             isManual: true,
           };
@@ -1844,7 +1859,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const currentStudentPayload = currentStudentObj ? {
         id: currentStudentObj.id,
         name: currentStudentObj.studentName || currentStudentObj.name || "بدون اسم",
-        church: currentStudentObj.churchName || currentStudentObj.church_name || "غير مكتمل",
+        church: currentStudentObj.church_name || currentStudentObj.churchName || currentStudentObj.church_Name || currentStudentObj.church || "غير مكتمل",
         gender: currentStudentObj.gender || "",
         stage: currentStudentObj.stage || "ثالثة ورابعة"
       } : null;
@@ -1891,6 +1906,31 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         setHasSubmissionFailed(true);
         setIsLoading(false);
         return; // Stop execution if database fails
+      }
+
+      // Sync submission immediately to the online_results table to prevent zero/empty grades in reporting
+      const onlineResultsPayload = {
+        student_id: currentStudentPayload?.id,
+        student_name: currentStudentPayload?.name,
+        church_name: currentStudentPayload?.church,
+        stage: currentStudentPayload?.stage,
+        stage_name: currentStudentPayload?.stage,
+        gender: currentStudentPayload?.gender,
+        derasy_score: finalDerasyScore,
+        mahfouzat_score: finalMahfouzatScore,
+        qebty_lvl1_score: finalQebtyLvl1Score,
+        qebty_lvl2_score: finalQebtyLvl2Score,
+        submission_type: 'online',
+        is_published: true, // Mark published so churches/admins see it immediately if needed
+        submitted_at: new Date().toISOString()
+      };
+
+      const { error: onlineResErr } = await supabase
+        .from('online_results')
+        .upsert(onlineResultsPayload, { onConflict: 'student_id' });
+
+      if (onlineResErr) {
+        console.warn("Could not immediately sync to online_results table:", onlineResErr.message);
       }
 
       // DO NOT clear React state, localStorage or navigate away BEFORE the above block resolves

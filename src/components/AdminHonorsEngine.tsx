@@ -75,11 +75,14 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
   };
 
   const { studentRanks, exportData } = useMemo(() => {
-    if (!isOpen || results.length === 0) return { studentRanks: {}, exportData: [] };
+    if (!isOpen || !results || results?.length === 0) return { studentRanks: {}, exportData: [] };
 
     const grouped: Record<string, Record<string, { result: Result, percentage: number }[]>> = {};
 
-    results.forEach(r => {
+    const validResults = (results || []).filter(r => r && (r.academicScore !== undefined || r.derasy_score !== undefined || r.score !== undefined || r.data));
+    const totalCount = validResults?.length || 0;
+
+    validResults.forEach(r => {
       const stage = r.academicScore !== undefined ? r.stage : r.data?.['دراسي'] || r.stage;
       const church = r.churchName || 'غير محدد';
       
@@ -118,13 +121,14 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
 
     Object.keys(grouped).forEach(church => {
       Object.keys(grouped[church]).forEach(stage => {
-        const students = grouped[church][stage];
-        const uniqueValues = Array.from(new Set(students.map(s => s.percentage))).sort((a, b) => b - a);
+        const students = grouped[church][stage] || [];
+        const uniqueValues = Array.from(new Set((students || []).map(s => s?.percentage))).sort((a, b) => b - a);
 
         students.forEach((s) => {
+          if (!s) return;
           const rank = uniqueValues.indexOf(s.percentage) + 1;
           if (rank <= 3) {
-            const isTied = students.filter(x => x.percentage === s.percentage).length > 1;
+            const isTied = (students || []).filter(x => x?.percentage === s?.percentage)?.length > 1;
             
             let color = '';
             let rankName = '';
@@ -134,16 +138,16 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
             
             const title = `مركز ${rankName}${isTied ? ' مكرر' : ''}`;
 
-            if (s.result.id) {
+            if (s.result?.id) {
               sRanks[s.result.id] = { rank, colorClass: color, percentage: s.percentage, title };
             }
             
             eData.push({
-               'الكود': s.result.id,
-               'الاسم': s.result.studentName,
+               'الكود': s.result?.id || '',
+               'الاسم': s.result?.studentName || '',
                'الكنيسة': church,
                'المرحلة': stage,
-               'النسبة المئوية (%)': parseFloat(s.percentage.toFixed(2)),
+               'النسبة المئوية (%)': parseFloat((s.percentage || 0).toFixed(2)),
                'المركز': title,
                'رقم المركز': rank
             });
