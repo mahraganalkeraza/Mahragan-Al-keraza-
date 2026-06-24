@@ -1840,7 +1840,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         console.warn("Could not compute precise duration", err);
       }
 
-      // Exact schema mapping for the online_results table
+      // Prepare the data matching exactly the `exam_submissions` table schema
       const currentStudentPayload = currentStudentObj ? {
         id: currentStudentObj.id,
         name: currentStudentObj.studentName || currentStudentObj.name || "بدون اسم",
@@ -1856,17 +1856,20 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const finalQebtyLvl2Score = qebtyLvl2Total || currentCompletedSubjects.qebty_lvl2 || 0;
       const selectedAnswers = JSON.stringify(allCollectedAnswersArray);
 
-      const totalScore = (Number(finalDerasyScore) || 0) + 
-                         (Number(finalMahfouzatScore) || 0) + 
-                         (Number(finalQebtyLvl1Score) || 0) + 
-                         (Number(finalQebtyLvl2Score) || 0);
-
       const submissionPayload = {
         student_id: currentStudentPayload?.id,
-        exam_id: activeExam?.id || primaryExamId || "unknown",
+        student_name: currentStudentPayload?.name,
+        church_name: currentStudentPayload?.church,
+        stage: currentStudentPayload?.stage,
+        gender: currentStudentPayload?.gender,
+        derasy_score: finalDerasyScore,
+        mahfouzat_score: finalMahfouzatScore,
+        qebty_lvl1_score: finalQebtyLvl1Score,
+        qebty_lvl2_score: finalQebtyLvl2Score,
         detailed_answers: selectedAnswers,
-        score: totalScore,
-        submission_time: new Date().toISOString()
+        submitted_at: new Date().toISOString(),
+        submission_type: 'online',
+        is_published: true
       };
 
       // Push record directly to Supabase - using the exam_submissions table
