@@ -315,19 +315,19 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
 
       const cleanPayload = {
         student_id: activeStudent?.id || "admin_builder",
-        student_name: activeStudent?.name || activeStudent?.studentName || "admin",
-        church_name: activeStudent?.church_name || activeStudent?.churchName || activeStudent?.church_Name || activeStudent?.church || "admin",
         churchName: activeStudent?.church_name || activeStudent?.churchName || activeStudent?.church_Name || activeStudent?.church || "admin",
-        church: activeStudent?.church_name || activeStudent?.churchName || activeStudent?.church_Name || activeStudent?.church || "admin",
-        gender: activeStudent?.gender || "",
-        detailed_answers: JSON.stringify(currentQuestions),
-        exam_id: examId,
         stage: selectedStage,
-        stage_name: selectedStage,
-        competition_name: selectedCompetition,
-        score: 0,
+        gender: activeStudent?.gender || "",
+        derasy_score: 0,
+        mahfouzat_score: 0,
+        qebty_lvl1_score: 0,
+        qebty_lvl2_score: 0,
+        detailed_answers: currentQuestions,
+        exam_id: examId,
+        is_published: true,
         duration_seconds: 0,
-        status: "completed"
+        status: "completed",
+        submitted_at: new Date().toISOString()
       };
 
       const { error: saveErr } = await supabase
@@ -1880,23 +1880,19 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       const submissionPayload = {
         student_id: currentStudentPayload?.id,
-        student_name: currentStudentPayload?.name,
-        church_name: currentStudentPayload?.church,
         churchName: currentStudentPayload?.church,
-        church: currentStudentPayload?.church,
+        stage: currentStudentPayload?.stage,
         gender: currentStudentPayload?.gender,
         derasy_score: finalDerasyScore,
         mahfouzat_score: finalMahfouzatScore,
         qebty_lvl1_score: finalQebtyLvl1Score,
         qebty_lvl2_score: finalQebtyLvl2Score,
-        detailed_answers: selectedAnswers,
+        detailed_answers: JSON.parse(selectedAnswers || "[]"),
         exam_id: activeExam?.id || primaryExamId || "unknown",
         is_published: true,
-        stage: currentStudentPayload?.stage,
-        competition_name: selectedCompetition || "امتحان شامل",
-        score: totalScore,
         duration_seconds: calculatedDurationInSeconds,
-        status: "completed"
+        status: "completed",
+        submitted_at: new Date().toISOString()
       };
 
       // Push record directly to Supabase - using the exam_submissions table
@@ -1910,32 +1906,6 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         setHasSubmissionFailed(true);
         setIsLoading(false);
         return; // Stop execution if database fails
-      }
-
-      // Sync submission immediately to the online_results table to prevent zero/empty grades in reporting
-      const onlineResultsPayload = {
-        student_id: currentStudentPayload?.id,
-        student_name: currentStudentPayload?.name,
-        church_name: currentStudentPayload?.church,
-        churchname: currentStudentPayload?.church,
-        stage: currentStudentPayload?.stage,
-        stage_name: currentStudentPayload?.stage,
-        gender: currentStudentPayload?.gender,
-        derasy_score: finalDerasyScore,
-        mahfouzat_score: finalMahfouzatScore,
-        qebty_lvl1_score: finalQebtyLvl1Score,
-        qebty_lvl2_score: finalQebtyLvl2Score,
-        submission_type: 'online',
-        is_published: true, // Mark published so churches/admins see it immediately if needed
-        submitted_at: new Date().toISOString()
-      };
-
-      const { error: onlineResErr } = await supabase
-        .from('online_results')
-        .upsert(onlineResultsPayload, { onConflict: 'student_id' });
-
-      if (onlineResErr) {
-        console.warn("Could not immediately sync to online_results table:", onlineResErr.message);
       }
 
       // DO NOT clear React state, localStorage or navigate away BEFORE the above block resolves

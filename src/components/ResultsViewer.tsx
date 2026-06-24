@@ -121,65 +121,15 @@ export const ResultsViewer: React.FC<{
     return '';
   }, [userChurch]);
 
-  const syncSubmissionsToOnlineResults = async (targetChurch?: string) => {
-    try {
-      let query = supabase.from('exam_submissions').select('*');
-      if (targetChurch) {
-        query = query.or(`church_name.eq."${targetChurch}",churchName.eq."${targetChurch}"`);
-      }
-      
-      const { data: submissions, error: fetchErr } = await query;
-      if (fetchErr) throw fetchErr;
-
-      if (submissions && submissions.length > 0) {
-        const bulkPayload = submissions.map((row: any) => ({
-          student_id: row.student_id,
-          student_name: row.student_name,
-          church_name: row.church_name || row.churchName || row.church || '',
-          churchname: row.church_name || row.churchName || row.church || '',
-          stage: row.stage_name || row.stage || '',
-          stage_name: row.stage_name || row.stage || '',
-          gender: row.gender || '',
-          derasy_score: row.derasy_score !== null && row.derasy_score !== undefined ? Number(row.derasy_score) : (row.score !== null ? Number(row.score) : null),
-          mahfouzat_score: row.mahfouzat_score !== null && row.mahfouzat_score !== undefined ? Number(row.mahfouzat_score) : null,
-          qebty_lvl1_score: row.qebty_lvl1_score !== null && row.qebty_lvl1_score !== undefined ? Number(row.qebty_lvl1_score) : null,
-          qebty_lvl2_score: row.qebty_lvl2_score !== null && row.qebty_lvl2_score !== undefined ? Number(row.qebty_lvl2_score) : null,
-          submission_type: row.submission_type || 'online',
-          submitted_at: row.submitted_at || row.created_at || new Date().toISOString()
-        }));
-
-        const { error: upsertErr } = await supabase
-          .from('online_results')
-          .upsert(bulkPayload, { onConflict: 'student_id' });
-
-        if (upsertErr) throw upsertErr;
-        console.log(`Synced ${bulkPayload.length} exam submissions to online_results.`);
-      }
-    } catch (err: any) {
-      console.error('Error syncing exam submissions:', err.message);
-      throw err;
-    }
-  };
-
-  // Fetch results dynamically from database view 'view_central_filtered_results'
   const fetchSubmissionsFromSupabase = async () => {
     setIsLoading(true);
     try {
-      // Auto-sync first if isAdmin to ensure up-to-date values
-      if (isAdmin) {
-        try {
-          await syncSubmissionsToOnlineResults();
-        } catch (syncErr) {
-          console.warn("Auto-sync failed on fetch, proceeding with existing records:", syncErr);
-        }
-      }
-
       let query = supabase
-        .from('online_results')
+        .from('exam_submissions')
         .select('*');
       
       if (!isAdmin && activeUserChurch) {
-        query = query.eq('is_published', true).or(`church_name.eq."${activeUserChurch}",churchName.eq."${activeUserChurch}"`);
+        query = query.eq('is_published', true).eq('churchName', activeUserChurch);
       }
 
       const { data, error } = await query;
@@ -196,18 +146,18 @@ export const ResultsViewer: React.FC<{
 
           return {
             id: sbRow.student_id || sbRow.id || Math.random().toString(),
-            studentName: sbRow.student_name || sbRow.name || 'طالب',
-            churchName: sbRow.church || sbRow.church_name || sbRow.churchName || '',
-            stage: sbRow.stage_name || sbRow.stage || '',
+            studentName: sbRow.student_id || 'طالب', // fallback
+            churchName: sbRow.churchName || '',
+            stage: sbRow.stage || '',
             derasy_score: d,
             mahfouzat_score: m,
             qebty_lvl1_score: q1,
             qebty_lvl2_score: q2,
             academicScore: total,
-            submissionStatus: sbRow.submission_status || (sbRow.is_published ? 'منشور' : 'مسودة'),
+            submissionStatus: sbRow.status || (sbRow.is_published ? 'منشور' : 'مسودة'),
             timestamp: sbRow.submitted_at || sbRow.created_at || null,
             gender: sbRow.gender || '',
-            submissionType: sbRow.submission_type || 'online',
+            submissionType: 'online',
           };
         });
 
@@ -220,7 +170,7 @@ export const ResultsViewer: React.FC<{
         setSupabaseSubmissions(finalData);
       }
     } catch (err: any) {
-      console.error('Error fetching submissions from view_central_filtered_results:', err.message);
+      console.error('Error fetching submissions from exam_submissions:', err.message);
     } finally {
       setIsLoading(false);
     }
@@ -273,8 +223,8 @@ export const ResultsViewer: React.FC<{
       if (data && data.length > 0) {
         const studentIds = data.map(s => s.id);
         const { data: scoresData, error: scoresErr } = await supabase
-          .from('online_results')
-          .select('student_id, student_name, church_name, stage, gender, qebty_lvl1_score, qebty_lvl2_score, derasy_score, mahfouzat_score')
+          .from('exam_submissions')
+          .select('student_id, churchName, stage, gender, qebty_lvl1_score, qebty_lvl2_score, derasy_score, mahfouzat_score')
           .in('student_id', studentIds);
         
         if (!scoresErr && scoresData) {
@@ -335,12 +285,10 @@ export const ResultsViewer: React.FC<{
       const bulkPayload = selectedStudentIds.map(id => {
         const student = bulkStudents.find(s => s.id === id);
         const existing = existingScores[id] || {};
-        const churchNameVal = student?.churchName || existing.church_name || '';
+        const churchNameVal = student?.churchName || existing.churchName || '';
         return {
           student_id: id,
-          student_name: student?.name || existing.student_name || '',
-          church_name: churchNameVal,
-          churchname: churchNameVal,
+          churchName: churchNameVal,
           stage: student?.stage || existing.stage || '',
           gender: student?.gender || existing.gender || 'ذكر',
           // Safe preservation of other score columns
@@ -348,11 +296,13 @@ export const ResultsViewer: React.FC<{
           mahfouzat_score: selectedColumn === 'mahfouzat_score' ? scoreVal : (existing.mahfouzat_score !== undefined ? existing.mahfouzat_score : null),
           qebty_lvl1_score: selectedColumn === 'qebty_lvl1_score' ? scoreVal : (existing.qebty_lvl1_score !== undefined ? existing.qebty_lvl1_score : null),
           qebty_lvl2_score: selectedColumn === 'qebty_lvl2_score' ? scoreVal : (existing.qebty_lvl2_score !== undefined ? existing.qebty_lvl2_score : null),
+          is_published: true,
+          status: 'completed'
         };
       });
 
       const { error } = await supabase
-        .from('online_results')
+        .from('exam_submissions')
         .upsert(bulkPayload, { onConflict: 'student_id' });
 
       if (error) throw error;
@@ -441,7 +391,7 @@ export const ResultsViewer: React.FC<{
     try {
       // 1. Delete submission record from Supabase
       const { error } = await supabase
-        .from('online_results')
+        .from('exam_submissions')
         .delete()
         .eq('student_id', id);
 
@@ -563,29 +513,28 @@ export const ResultsViewer: React.FC<{
 
           return {
             student_id: studentId,
-            student_name: studentName,
-            church_name: churchName,
-            churchname: churchName,
+            churchName: churchName,
             stage: stage,
             gender: gender,
             derasy_score: derasy,
             mahfouzat_score: mahfouzat,
             qebty_lvl1_score: qebtyL1,
             qebty_lvl2_score: qebtyL2,
-            submission_type: 'bubble_sheet',
+            is_published: true,
+            status: 'completed',
             submitted_at: new Date().toISOString()
           };
-        }).filter(item => item.student_name && item.church_name);
+        }).filter(item => item.student_id && item.churchName);
 
         if (submissionsToInsert.length === 0) {
-          alert('لم يتم العثور على أي صفوف صالحة. تأكد من وجود أعمدة (student_name) و(church_name) و(stage).');
+          alert('لم يتم العثور على أي صفوف صالحة. تأكد من وجود أعمدة (الاسم) و(الكنيسة/البلد) و(المرحلة).');
           return;
         }
 
         console.log("Payload to Supabase (bubble sheet):", submissionsToInsert);
 
         const { error } = await supabase
-          .from('online_results')
+          .from('exam_submissions')
           .insert(submissionsToInsert);
 
         if (error) throw error;
@@ -614,23 +563,22 @@ export const ResultsViewer: React.FC<{
       const studentId = `paper-${Math.random().toString(36).substring(2, 11)}`;
       const payload = {
         student_id: studentId,
-        student_name: manualForm.student_name,
-        church_name: manualForm.church_name,
-        churchname: manualForm.church_name,
+        churchName: manualForm.church_name,
         stage: manualForm.stage,
         gender: manualForm.gender,
         derasy_score: manualForm.derasy_score !== '' ? Number(manualForm.derasy_score) : null,
         mahfouzat_score: manualForm.mahfouzat_score !== '' ? Number(manualForm.mahfouzat_score) : null,
         qebty_lvl1_score: manualForm.qebty_lvl1_score !== '' ? Number(manualForm.qebty_lvl1_score) : null,
         qebty_lvl2_score: manualForm.qebty_lvl2_score !== '' ? Number(manualForm.qebty_lvl2_score) : null,
-        submission_type: 'paper',
+        is_published: true,
+        status: 'completed',
         submitted_at: new Date().toISOString()
       };
 
       console.log("Payload to Supabase (manual):", payload);
 
       const { error } = await supabase
-        .from('online_results')
+        .from('exam_submissions')
         .insert(payload);
 
       if (error) throw error;
@@ -659,15 +607,8 @@ export const ResultsViewer: React.FC<{
     try {
       setIsLoading(true);
       
-      // Auto-sync online exam submissions first
-      try {
-        await syncSubmissionsToOnlineResults();
-      } catch (syncErr) {
-        console.warn("Sync failed during publish, proceeding with existing records:", syncErr);
-      }
-      
       const { error } = await supabase
-        .from('online_results')
+        .from('exam_submissions')
         .update({ is_published: true })
         .neq('id', '0'); // Update all rows
 
@@ -687,17 +628,10 @@ export const ResultsViewer: React.FC<{
     try {
       setIsLoading(true);
 
-      // Auto-sync online exam submissions for this church first
-      try {
-        await syncSubmissionsToOnlineResults(churchName);
-      } catch (syncErr) {
-        console.warn("Sync failed during church publish, proceeding with existing records:", syncErr);
-      }
-
       const { error } = await supabase
-        .from('online_results')
+        .from('exam_submissions')
         .update({ is_published: true })
-        .eq('church_name', churchName);
+        .eq('churchName', churchName);
 
       if (error) throw error;
 
@@ -755,26 +689,6 @@ export const ResultsViewer: React.FC<{
             >
               <Award size={14} />
               {showBulkScoreDashboard ? "العودة لجدول النتائج 📋" : "رصد الدرجات الجماعي ⚡"}
-            </button>
-            <button 
-              onClick={async () => {
-                try {
-                  setIsLoading(true);
-                  await syncSubmissionsToOnlineResults();
-                  alert('تمت مزامنة كافة درجات الامتحانات الإلكترونية بنجاح! 🎉');
-                  fetchSubmissionsFromSupabase();
-                } catch (err: any) {
-                  alert('فشل في مزامنة الدرجات: ' + err.message);
-                } finally {
-                  setIsLoading(false);
-                }
-              }}
-              disabled={isLoading}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-black transition-all shadow-sm disabled:opacity-50"
-              title="مزامنة وتحديث كافة درجات الامتحانات الإلكترونية الحية"
-            >
-              <RefreshCcw size={14} className={isLoading ? "animate-spin" : ""} />
-              مزامنة الامتحانات الإلكترونية 🔄
             </button>
             <button 
               onClick={handlePublishResults}

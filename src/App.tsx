@@ -1143,11 +1143,6 @@ function AppComponent() {
   const [isResultsEnd, setIsResultsEnd] = useState(false);
   const [isResultsLoading, setIsResultsLoading] = useState(false);
 
-  const [onlineResults, setOnlineResults] = useState<any[]>([]);
-  const [lastOnlineResultDoc, setLastOnlineResultDoc] = useState<any>(null);
-  const [onlineResultPageCount, setOnlineResultPageCount] = useState(1);
-  const [isOnlineResultsEnd, setIsOnlineResultsEnd] = useState(false);
-  const [isOnlineResultsLoading, setIsOnlineResultsLoading] = useState(false);
 
   const [activityTeams, setActivityTeams] = useState<ActivityTeam[]>([]);
   const [lastTeamDoc, setLastTeamDoc] = useState<any>(null);
@@ -3127,6 +3122,7 @@ function AppComponent() {
           
           // Filter out rows without student name
           const validData = data
+            .filter((row: any) => String(row['الاسم'] || '').trim() !== '')
             .map((row: any) => {
               const studentId = String(row['الرقم التعريفي'] || '') || `excel-${Math.random().toString(36).substring(2, 11)}`;
               
@@ -3144,8 +3140,7 @@ function AppComponent() {
 
               return {
                 student_id: studentId,
-                student_name: String(row['الاسم'] || ''),
-                church_name: String(row['الكنيسة/البلد'] || ''),
+                churchName: String(row['الكنيسة/البلد'] || ''),
                 stage: stage,
                 gender: gender,
                 derasy_score: derasy,
@@ -3153,11 +3148,12 @@ function AppComponent() {
                 qebty_lvl1_score: qebtyL1,
                 qebty_lvl2_score: qebtyL2,
                 submitted_at: row['توقيت التسجيل'] ? new Date(row['توقيت التسجيل']).toISOString() : new Date().toISOString(),
-                submission_type: 'excel_upload',
-                is_published: true
+                is_published: true,
+                status: 'completed',
+                duration_seconds: 0,
+                detailed_answers: null
               };
-            })
-            .filter(r => r.student_name.trim() !== '');
+            });
 
           const { error: sbErr } = await supabase
             .from('exam_submissions')
@@ -4027,10 +4023,6 @@ function AppComponent() {
         fetchAllChurchParticipants()
       ];
       
-      if (userRole === 'admin') {
-        promises.push(fetchOnlineResultsPage(true, true));
-      }
-      
       await Promise.all(promises);
       
       if (toast) {
@@ -4120,35 +4112,6 @@ function AppComponent() {
     }
   };
 
-  const fetchOnlineResultsPage = async (isNext: boolean = true, isFirst: boolean = false) => {
-    if (!isLoggedIn) return;
-    setIsOnlineResultsLoading(true);
-    try {
-      let queryBuilder = supabase.from('online_results').select('*', { count: 'exact' });
-      
-      if (userRole === 'church') {
-        queryBuilder = queryBuilder.eq('churchName', churchName);
-      }
-
-      const { data, count, error } = await queryBuilder
-        .order('timestamp', { ascending: false })
-        .range(0, 49);
-
-      if (error) throw error;
-      
-      setOnlineResults(data || []);
-      if (count !== null) setTotalOnlineCount(count);
-      setIsOnlineResultsEnd((data || []).length < 50);
-      
-      if (isFirst) setOnlineResultPageCount(1);
-      else if (isNext) setOnlineResultPageCount(prev => prev + 1);
-    } catch (err: any) { 
-      console.error("Supabase load online results error: ", err.message); 
-    } finally { 
-      setIsOnlineResultsLoading(false); 
-    }
-  };
-
   const fetchResultsPage = async (isNext: boolean = true, isFirst: boolean = false, search: string = '') => {
     if (!isLoggedIn) return;
     setIsResultsLoading(true);
@@ -4162,10 +4125,10 @@ function AppComponent() {
       
       if (userRole === 'admin') {
         if (globalChurchFilter !== 'الكل') {
-          queryBuilder = queryBuilder.eq('church_name', globalChurchFilter);
+          queryBuilder = queryBuilder.eq('churchName', globalChurchFilter);
         }
       } else {
-        queryBuilder = queryBuilder.eq('church_name', churchName).eq('is_published', true);
+        queryBuilder = queryBuilder.eq('churchName', churchName).eq('is_published', true);
       }
 
       if (globalStageFilter !== 'الكل') {
@@ -4173,7 +4136,7 @@ function AppComponent() {
       }
 
       if (search) {
-        queryBuilder = queryBuilder.ilike('student_name', `%${search}%`);
+        queryBuilder = queryBuilder.ilike('student_id', `%${search}%`);
       }
 
       const { data, count, error } = await queryBuilder
@@ -4184,11 +4147,11 @@ function AppComponent() {
 
       const mappedData = (data || []).map((row: any) => ({
         id: row.student_id || row.id,
-        studentName: row.student_name,
-        churchName: row.church_name,
+        studentName: row.student_id, // Fallback since student_name is removed
+        churchName: row.churchName,
         stage: row.stage,
         academicScore: row.derasy_score ?? null,
-        memorizationScore: row.mahfouzat_score ?? row.mahfozat_score ?? null,
+        memorizationScore: row.mahfouzat_score ?? null,
         copticL1Score: row.qebty_lvl1_score ?? null,
         copticL2Score: row.qebty_lvl2_score ?? null,
         timestamp: row.submitted_at || null,
@@ -4302,7 +4265,6 @@ function AppComponent() {
       }
       if (adminActiveTab === 'participants') fetchParticipantsPage(true, true, participantSearch);
       if (adminActiveTab === 'results' && results.length === 0) fetchResultsPage(true, true);
-      if (adminActiveTab === 'online_results' && onlineResults.length === 0) fetchOnlineResultsPage(true, true);
       if (adminActiveTab === 'orders' && orders.length === 0) fetchOrdersPage(true, true);
       if (adminActiveTab === 'activity_teams' && activityTeams.length === 0) fetchTeamsPage(true, true, teamSearch);
     }
@@ -4472,8 +4434,7 @@ function AppComponent() {
     try {
       const payload = {
         student_id: editingResult ? editingResult.id : `manual-${Math.random().toString(36).substring(2, 11)}`,
-        student_name: newResult.studentName,
-        church_name: newResult.churchName,
+        churchName: newResult.churchName,
         stage: newResult.stage || 'عام',
         gender: 'ذكر',
         derasy_score: newResult.academicScore !== undefined ? Number(newResult.academicScore) : null,
@@ -4481,8 +4442,10 @@ function AppComponent() {
         qebty_lvl1_score: newResult.q1Score !== undefined ? Number(newResult.q1Score) : null,
         qebty_lvl2_score: newResult.qScore !== undefined ? Number(newResult.qScore) : null,
         submitted_at: new Date().toISOString(),
-        submission_type: 'paper',
-        is_published: true
+        is_published: true,
+        status: 'completed',
+        duration_seconds: 0,
+        detailed_answers: null
       };
 
       if (editingResult) {
