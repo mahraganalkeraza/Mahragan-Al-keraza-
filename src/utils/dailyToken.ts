@@ -97,3 +97,38 @@ export function getDailyExamToken(): string {
     return "0000000000";
   }
 }
+
+export function getHourlyExamToken(offsetHours: number = 0): string {
+  try {
+    const d = new Date();
+    if (offsetHours !== 0) {
+      d.setTime(d.getTime() + offsetHours * 60 * 60 * 1000);
+    }
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Africa/Cairo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hour12: false
+    });
+    const parts = formatter.formatToParts(d);
+    const year = parts.find(p => p.type === 'year')?.value || '';
+    const month = parts.find(p => p.type === 'month')?.value || '';
+    const day = parts.find(p => p.type === 'day')?.value || '';
+    const hour = parts.find(p => p.type === 'hour')?.value || '';
+    const cairoDateHour = `${year}-${month}-${day}-${hour}`;
+
+    const secretPepper = "MahraganAlKeraza2026_SecureSalt_Hourly!!";
+    return sha256(cairoDateHour + secretPepper).substring(0, 12);
+  } catch (err) {
+    return "000000000000";
+  }
+}
+
+export function validateHourlyExamToken(token: string | null): boolean {
+  if (!token) return false;
+  const currentToken = getHourlyExamToken(0);
+  const previousToken = getHourlyExamToken(-1);
+  return token === currentToken || token === previousToken;
+}

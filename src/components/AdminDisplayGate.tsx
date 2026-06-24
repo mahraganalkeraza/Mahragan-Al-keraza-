@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
-import { getDailyExamToken } from '../utils/dailyToken';
+import { getHourlyExamToken } from '../utils/dailyToken';
 import { QrCode, Printer, RefreshCw, Clock, Calendar, CheckCircle, ShieldAlert } from 'lucide-react';
 import logo from '../by-logo.jpeg';
 
@@ -10,8 +10,9 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
   const [timeRemaining, setTimeRemaining] = useState('');
   const [cairoDateStr, setCairoDateStr] = useState('');
   const [cairoTimeStr, setCairoTimeStr] = useState('');
-  const dailyToken = getDailyExamToken();
-  const qrValue = `https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/Exam_engine?gateway_token=${dailyToken}`;
+  const [hourlyToken, setHourlyToken] = useState(() => getHourlyExamToken());
+
+  const qrValue = `https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/Exam_engine?gateway_token=${hourlyToken}`;
 
   // Generate QR Code
   useEffect(() => {
@@ -53,14 +54,18 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         });
         setCairoTimeStr(formatterTime.format(now));
 
-        // Countdown to Midnight Cairo
+        // Sync token value dynamically on hour flip
+        const currentTk = getHourlyExamToken();
+        setHourlyToken(prev => prev !== currentTk ? currentTk : prev);
+
+        // Countdown to the end of the current Cairo hour
         const cairoString = now.toLocaleString('en-US', { timeZone: 'Africa/Cairo' });
         const cairoNow = new Date(cairoString);
         
-        const cairoMidnight = new Date(cairoString);
-        cairoMidnight.setHours(24, 0, 0, 0); // Moves to midnight
+        const cairoNextHour = new Date(cairoString);
+        cairoNextHour.setHours(cairoNextHour.getHours() + 1, 0, 0, 0);
         
-        const diffSeconds = Math.max(0, Math.floor((cairoMidnight.getTime() - cairoNow.getTime()) / 1000));
+        const diffSeconds = Math.max(0, Math.floor((cairoNextHour.getTime() - cairoNow.getTime()) / 1000));
         
         const h = Math.floor(diffSeconds / 3600);
         const m = Math.floor((diffSeconds % 3600) / 60);
@@ -141,9 +146,9 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         )}
         
         <div className="mt-4 border-t border-slate-100 pt-3 text-center">
-          <p className="text-slate-400 text-[10px] font-black uppercase tracking-wider print:text-slate-500">رمز التوثيق اليومي</p>
+          <p className="text-slate-400 text-[10px] font-black uppercase tracking-wider print:text-slate-500">رمز التوثيق الساعي الديناميكي</p>
           <p className="text-slate-900 text-lg font-black font-mono tracking-widest mt-1 bg-slate-100 inline-block px-4 py-1.5 rounded-xl print:bg-slate-200">
-            {dailyToken}
+            {hourlyToken}
           </p>
         </div>
       </div>
@@ -153,11 +158,11 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         <div className="flex items-center gap-2.5 text-right">
           <ShieldAlert className="text-amber-500 shrink-0" size={20} />
           <div>
-            <p className="text-slate-200 font-black">حماية وتحديث ذاتي 24 ساعة</p>
-            <p className="text-slate-400 text-[11px] font-semibold">يتغير كود التوثيق تلقائياً عند الساعة 12:00 منتصف الليل بتوقيت القاهرة.</p>
+            <p className="text-slate-200 font-black">حماية وتحديث ذاتي كل ساعة</p>
+            <p className="text-slate-400 text-[11px] font-semibold">يتغير كود التوثيق تلقائياً في رأس كل ساعة لتأمين الاختبارات ومنع تسريب الرابط.</p>
           </div>
         </div>
-        <div className="bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 font-mono text-emerald-400 text-sm font-black flex flex-col items-center shrink-0">
+        <div className="bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 font-mono text-emerald-400 text-sm font-black flex flex-col items-center shrink-0 animate-pulse">
           <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">صلاحية الرمز</span>
           <span>{timeRemaining || '--:--:--'}</span>
         </div>
@@ -165,7 +170,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
 
       {/* User instructions */}
       <div className="p-4 bg-amber-500/5 rounded-2xl border border-amber-500/10 text-right text-xs font-bold leading-relaxed mb-6 text-amber-300 print:text-slate-800 print:border-slate-300 print:bg-slate-50">
-        💡 <span className="font-black text-amber-400 print:text-black">تعليمات الاستخدام:</span> وجه كاميرا هاتف الطالب أو الخادم لمسح الـ QR Code لتفعيل صلاحية دخول بوابة الامتحانات للـ 24 ساعة القادمة فوراً دون الحاجة لأي تفعيل يدوي.
+        💡 <span className="font-black text-amber-400 print:text-black">تعليمات الاستخدام:</span> وجه كاميرا هاتف الطالب أو الخادم لمسح الـ QR Code لتفعيل صلاحية دخول بوابة الامتحانات فوراً. الرمز صالح لمدة ساعة ومحمي من التمرير غير المصرح به.
       </div>
 
       {/* Actions Button */}

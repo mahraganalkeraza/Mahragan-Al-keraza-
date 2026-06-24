@@ -19,7 +19,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { getDeviceFingerprint } from '../lib/deviceTracking';
-import { getDailyExamToken } from '../utils/dailyToken';
+import { getDailyExamToken, validateHourlyExamToken } from '../utils/dailyToken';
 
 interface ExamLoginPortalProps {
   onClose: () => void; // زر الرجوع / إغلاق البوابة
@@ -86,21 +86,37 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       providedToken = new URLSearchParams(hashQuery).get('gateway_token');
     }
 
-    const validDailyToken = getDailyExamToken();
-
-    if (providedToken === validDailyToken) {
-      localStorage.setItem('gate_access_granted', validDailyToken);
-      localStorage.setItem('gateway_exam_token', validDailyToken);
-      setGateAccessGranted(true);
-    } else if (
-      localStorage.getItem('gate_access_granted') === validDailyToken ||
-      localStorage.getItem('gateway_exam_token') === validDailyToken
-    ) {
-      setGateAccessGranted(true);
+    if (providedToken) {
+      if (validateHourlyExamToken(providedToken)) {
+        localStorage.setItem('gate_access_granted_hourly', providedToken);
+        setGateAccessGranted(true);
+      } else {
+        // Scenario B: Expired token in URL
+        localStorage.removeItem('gate_access_granted_hourly');
+        localStorage.removeItem('gate_access_granted');
+        localStorage.removeItem('gateway_exam_token');
+        localStorage.removeItem('active_student_session');
+        setGateAccessGranted(false);
+        alert("عفواً، انتهت صلاحية رمز الدخول.");
+        if (onClose) onClose();
+      }
     } else {
-      setGateAccessGranted(false);
+      // Missing token from URL - check stored token
+      const storedToken = localStorage.getItem('gate_access_granted_hourly');
+      if (storedToken && validateHourlyExamToken(storedToken)) {
+        setGateAccessGranted(true);
+      } else {
+        // Scenario B: Missing token / Direct shortcut access
+        localStorage.removeItem('gate_access_granted_hourly');
+        localStorage.removeItem('gate_access_granted');
+        localStorage.removeItem('gateway_exam_token');
+        localStorage.removeItem('active_student_session');
+        setGateAccessGranted(false);
+        alert("عفواً، انتهت صلاحية رمز الدخول.");
+        if (onClose) onClose();
+      }
     }
-  }, []);
+  }, [onClose]);
 
   // مزامنة الداتا مرة واحدة من السيرفر للحفاظ على كفاءة الخادم
   const syncRegistrations = async (forceRefetch = false) => {
@@ -508,10 +524,10 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
               </div>
               <h2 className="text-xl font-black text-red-600">البوابة مغلقة حالياً</h2>
               <p className="text-slate-600 text-sm font-bold leading-relaxed max-w-sm">
-                عذراً، البوابة مغلقة. برجاء مسح الـ QR Code المعتمد لليوم من مقر اللجنة لتفعيل الدخول.
+                عذراً، البوابة مغلقة. برجاء مسح الـ QR Code المعتمد الساعي من مقر اللجنة لتفعيل الدخول.
               </p>
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-500 font-bold max-w-sm">
-                تنبيه: يتغير رمز الدخول الخاص بالبوابة تلقائياً كل 24 ساعة (عند الساعة 12:00 منتصف الليل بتوقيت القاهرة) لتأمين الاختبارات الإقليمية.
+                تنبيه: يتغير رمز الدخول الخاص بالبوابة تلقائياً كل ساعة (ساعي ديناميكي متزامن) لتأمين الاختبارات ومنع التمرير غير المصرح به.
               </div>
             </div>
           ) : (
