@@ -136,6 +136,7 @@ export const ResultsViewer: React.FC<{
           student_id: row.student_id,
           student_name: row.student_name,
           church_name: row.church_name || row.churchName || row.church || '',
+          churchname: row.church_name || row.churchName || row.church || '',
           stage: row.stage_name || row.stage || '',
           stage_name: row.stage_name || row.stage || '',
           gender: row.gender || '',
@@ -334,10 +335,12 @@ export const ResultsViewer: React.FC<{
       const bulkPayload = selectedStudentIds.map(id => {
         const student = bulkStudents.find(s => s.id === id);
         const existing = existingScores[id] || {};
+        const churchNameVal = student?.churchName || existing.church_name || '';
         return {
           student_id: id,
           student_name: student?.name || existing.student_name || '',
-          church_name: student?.churchName || existing.church_name || '',
+          church_name: churchNameVal,
+          churchname: churchNameVal,
           stage: student?.stage || existing.stage || '',
           gender: student?.gender || existing.gender || 'ذكر',
           // Safe preservation of other score columns
@@ -562,6 +565,7 @@ export const ResultsViewer: React.FC<{
             student_id: studentId,
             student_name: studentName,
             church_name: churchName,
+            churchname: churchName,
             stage: stage,
             gender: gender,
             derasy_score: derasy,
@@ -612,6 +616,7 @@ export const ResultsViewer: React.FC<{
         student_id: studentId,
         student_name: manualForm.student_name,
         church_name: manualForm.church_name,
+        churchname: manualForm.church_name,
         stage: manualForm.stage,
         gender: manualForm.gender,
         derasy_score: manualForm.derasy_score !== '' ? Number(manualForm.derasy_score) : null,
