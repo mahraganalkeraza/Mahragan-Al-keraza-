@@ -18,6 +18,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { getDeviceFingerprint } from '../lib/deviceTracking';
+import { getDailyExamToken } from '../utils/dailyToken';
 
 interface ExamLoginPortalProps {
   onClose: () => void; // زر الرجوع / إغلاق البوابة
@@ -67,6 +68,24 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const qrScannerRef = useRef<Html5Qrcode | null>(null);
+
+  // Gate check for Daily Rotating Gate
+  const [gateAccessGranted, setGateAccessGranted] = useState(false);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const providedToken = urlParams.get('gateway_token');
+    const validDailyToken = getDailyExamToken();
+
+    if (providedToken === validDailyToken) {
+      localStorage.setItem('gate_access_granted', validDailyToken);
+      setGateAccessGranted(true);
+    } else if (localStorage.getItem('gate_access_granted') === validDailyToken) {
+      setGateAccessGranted(true);
+    } else {
+      setGateAccessGranted(false);
+    }
+  }, []);
 
   // مزامنة الداتا مرة واحدة من السيرفر للحفاظ على كفاءة الخادم
   const syncRegistrations = async (forceRefetch = false) => {
@@ -423,173 +442,190 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         </div>
 
         <div className="p-6">
-          {/* شريط مزامنة قاعدة البيانات وحالة الكاش المحلي */}
-          <div className="mb-5 bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-600">
-            <div className="flex flex-col gap-0.5">
-              <span className="text-slate-900 font-black flex items-center gap-1.5">
-                <span className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
-                دليل الطلاب: {isSyncing ? 'جاري التحميل...' : `${cachedRegistry.length} مشترك مسجل`}
-              </span>
-              {lastSyncTime && (
-                <span className="text-[10px] text-slate-400 font-semibold">آخر مزامنة للتطبيق: {lastSyncTime}</span>
-              )}
-              {syncError && (
-                <span className="text-[10px] text-rose-500 font-extrabold">{syncError}</span>
-              )}
+          {!gateAccessGranted ? (
+            <div className="text-center py-10 px-4 space-y-6 flex flex-col items-center">
+              <div className="w-20 h-20 bg-red-50 border border-red-200 rounded-full flex items-center justify-center animate-bounce text-red-500">
+                <Lock size={40} />
+              </div>
+              <h2 className="text-xl font-black text-red-600">البوابة مغلقة حالياً</h2>
+              <p className="text-slate-600 text-sm font-bold leading-relaxed max-w-sm">
+                عذراً، البوابة مغلقة. برجاء مسح الـ QR Code المعتمد لليوم من مقر اللجنة لتفعيل الدخول.
+              </p>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-500 font-bold max-w-sm">
+                تنبيه: يتغير رمز الدخول الخاص بالبوابة تلقائياً كل 24 ساعة (عند الساعة 12:00 منتصف الليل بتوقيت القاهرة) لتأمين الاختبارات الإقليمية.
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => syncRegistrations(true)}
-              disabled={isSyncing}
-              className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-900 active:scale-95 disabled:opacity-50 text-[10px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer"
-              title="سحب آخر تعديلات الطلاب مباشرة من السيرفر وعمل كاش محلي"
-            >
-              🔄 مزامنة السجلات
-            </button>
-          </div>
-
-          {/* شريط التبديل العلوي الخفي - لا يظهر إلا لو تم إدخال الباسورد 101096بنجاح */}
-          {isAdminUnlocked && (
-            <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-6">
-              <button
-                type="button"
-                onClick={() => setLoginMethod('code')}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all ${
-                  loginMethod === 'code' ? 'bg-white shadow text-slate-950' : 'text-slate-500'
-                }`}
-              >
-                <Key size={14} />
-                الدخول بـ الـ QR
-              </button>
-              <button
-                type="button"
-                onClick={() => setLoginMethod('name')}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all ${
-                  loginMethod === 'name' ? 'bg-white shadow text-red-600' : 'text-slate-500'
-                }`}
-              >
-                <User size={14} />
-                طوارئ: البحث بالاسم
-              </button>
-            </div>
-          )}
-
-          {/* التنبيهات والأخطاء */}
-          <AnimatePresence mode="wait">
-            {errors && (
-              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
-                className="mb-5 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-3"
-              >
-                <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
-                <div className="text-xs font-bold text-red-600 leading-relaxed">{errors}</div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* تبديل النماذج الذكية */}
-          {loginMethod === 'code' ? (
-            <form onSubmit={handleCodeLoginSubmit} className="space-y-5">
-              {cameraPermissionDenied && (
-                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-amber-800 text-xs font-bold leading-relaxed">
-                  <span className="shrink-0 text-amber-500 font-bold">⚠️</span>
-                  <span>تم حظر صلاحية الكاميرا. يرجى السماح بتشغيل الكاميرا من إعدادات المتصفح أو كتابة الكود يدوياً بالأسفل للحل فورا.</span>
-                </div>
-              )}
-
-              {/* الكاميرا الحية لمسح الكيورآر */}
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2">
-                <div className="text-[11px] text-slate-500 font-bold mb-2 flex items-center gap-1 px-2">
-                  <Camera size={14} className="text-primary" />
-                  قارئ استمارات الـ QR كود النشط:
-                </div>
-                <div id="qr-reader" className="w-full rounded-xl overflow-hidden border-none bg-white"></div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-black text-slate-500 mb-2">كود التوثيق الممسوح</label>
-                <input
-                  type="text"
-                  value={academicCode}
-                  onChange={(e) => setAcademicCode(e.target.value)}
-                  placeholder="وجه الكارت للكاميرا ليتم السحب التلقائي هنا..."
-                  className="w-full px-4 py-3 bg-white border-2 border-gray-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 rounded-xl transition-all duration-300 text-right font-black text-sm text-slate-950 shadow-inner"
-                  required
-                />
-              </div>
-
-              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex gap-2.5 text-[11px] text-slate-500 font-bold leading-relaxed">
-                <Lock size={15} className="text-slate-400 shrink-0 mt-0.5" />
-                تنبيه: بوابة الدخول بالـ QR مفتوحة لجميع لجان الخدام دون حيازة حساب إدارة مسجل.
-              </div>
-
-              <button
-                type="submit"
-                disabled={isLoading || !academicCode.trim()}
-                className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#4a000b] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
-              >
-                {isLoading ? "جاري سحب الأسئلة ومطابقة جهازك..." : "ابدأ الامتحان"}
-              </button>
-            </form>
           ) : (
-            <form onSubmit={handleNameLoginSubmit} className="space-y-5">
-              <div className="relative" ref={dropdownRef}>
-                <label className="block text-xs font-black text-slate-500 mb-2">اسم المشترك</label>
-                <div className="relative">
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
-                    <Search size={16} />
+            <>
+              {/* شريط مزامنة قاعدة البيانات وحالة الكاش المحلي */}
+              <div className="mb-5 bg-slate-50 border border-slate-200 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs font-bold text-slate-600">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-slate-900 font-black flex items-center gap-1.5">
+                    <span className={`w-2.5 h-2.5 rounded-full ${isSyncing ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} />
+                    دليل الطلاب: {isSyncing ? 'جاري التحميل...' : `${cachedRegistry.length} مشترك مسجل`}
                   </span>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setSelectedStudent(null); }}
-                    placeholder="اكتب 3 أحرف من الاسم لمطابقة قاعدة البيانات..."
-                    className="w-full pr-11 pl-4 py-3 bg-white text-right border-2 border-gray-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 rounded-xl transition-all duration-300 text-sm font-black text-slate-950"
-                  />
-                  {isSearching && (
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                  {lastSyncTime && (
+                    <span className="text-[10px] text-slate-400 font-semibold">آخر مزامنة للتطبيق: {lastSyncTime}</span>
+                  )}
+                  {syncError && (
+                    <span className="text-[10px] text-rose-500 font-extrabold">{syncError}</span>
                   )}
                 </div>
-
-                <AnimatePresence>
-                  {showDropdown && searchResults.length > 0 && (
-                    <motion.div className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-50 max-h-48 overflow-y-auto divide-y divide-slate-100">
-                      {searchResults.map((student) => (
-                        <button
-                          key={student.id}
-                          type="button"
-                          onClick={() => handleSelectStudent(student)}
-                          className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex justify-between items-center text-xs font-black"
-                        >
-                          <div>
-                            <p className="text-slate-950">{student.name}</p>
-                            <p className="text-[10px] text-slate-400">{student.churchName}</p>
-                          </div>
-                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] rounded">{student.stage}</span>
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                <button
+                  type="button"
+                  onClick={() => syncRegistrations(true)}
+                  disabled={isSyncing}
+                  className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-900 active:scale-95 disabled:opacity-50 text-[10px] font-black rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                  title="سحب آخر تعديلات الطلاب مباشرة من السيرفر وعمل كاش محلي"
+                >
+                  🔄 مزامنة السجلات
+                </button>
               </div>
 
-              {selectedStudent && (
-                <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center justify-between text-xs font-bold">
-                  <div>
-                    <p className="text-emerald-600">تم فك القفل والمطابقة الاستثنائية للولد:</p>
-                    <p className="text-slate-900 font-black">{selectedStudent.name} ({selectedStudent.stage})</p>
-                  </div>
-                  <CheckCircle className="text-emerald-500" size={20} />
+              {/* شريط التبديل العلوي الخفي - لا يظهر إلا لو تم إدخال الباسورد 101096بنجاح */}
+              {isAdminUnlocked && (
+                <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-6">
+                  <button
+                    type="button"
+                    onClick={() => setLoginMethod('code')}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all ${
+                      loginMethod === 'code' ? 'bg-white shadow text-slate-950' : 'text-slate-500'
+                    }`}
+                  >
+                    <Key size={14} />
+                    الدخول بـ الـ QR
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLoginMethod('name')}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all ${
+                      loginMethod === 'name' ? 'bg-white shadow text-red-600' : 'text-slate-500'
+                    }`}
+                  >
+                    <User size={14} />
+                    طوارئ: البحث بالاسم
+                  </button>
                 </div>
               )}
 
-              <button
-                type="submit"
-                disabled={isLoading || !selectedStudent}
-                className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#4a000b] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
-              >
-                {isLoading ? "جاري سحب الأسئلة المتوافقة..." : "ابدأ الامتحان"}
-              </button>
-            </form>
+              {/* التنبيهات والأخطاء */}
+              <AnimatePresence mode="wait">
+                {errors && (
+                  <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                    className="mb-5 p-4 bg-red-50 border border-red-100 rounded-2xl flex items-start gap-3"
+                  >
+                    <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
+                    <div className="text-xs font-bold text-red-600 leading-relaxed">{errors}</div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* تبديل النماذج الذكية */}
+              {loginMethod === 'code' ? (
+                <form onSubmit={handleCodeLoginSubmit} className="space-y-5">
+                  {cameraPermissionDenied && (
+                    <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-amber-800 text-xs font-bold leading-relaxed">
+                      <span className="shrink-0 text-amber-500 font-bold">⚠️</span>
+                      <span>تم حظر صلاحية الكاميرا. يرجى السماح بتشغيل الكاميرا من إعدادات المتصفح أو كتابة الكود يدوياً بالأسفل للحل فورا.</span>
+                    </div>
+                  )}
+
+                  {/* الكاميرا الحية لمسح الكيورآر */}
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2">
+                    <div className="text-[11px] text-slate-500 font-bold mb-2 flex items-center gap-1 px-2">
+                      <Camera size={14} className="text-primary" />
+                      قارئ استمارات الـ QR كود النشط:
+                    </div>
+                    <div id="qr-reader" className="w-full rounded-xl overflow-hidden border-none bg-white"></div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black text-slate-500 mb-2">كود التوثيق الممسوح</label>
+                    <input
+                      type="text"
+                      value={academicCode}
+                      onChange={(e) => setAcademicCode(e.target.value)}
+                      placeholder="وجه الكارت للكاميرا ليتم السحب التلقائي هنا..."
+                      className="w-full px-4 py-3 bg-white border-2 border-gray-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 rounded-xl transition-all duration-300 text-right font-black text-sm text-slate-950 shadow-inner"
+                      required
+                    />
+                  </div>
+
+                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex gap-2.5 text-[11px] text-slate-500 font-bold leading-relaxed">
+                    <Lock size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                    تنبيه: بوابة الدخول بالـ QR مفتوحة لجميع لجان الخدام دون حيازة حساب إدارة مسجل.
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading || !academicCode.trim()}
+                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#4a000b] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
+                  >
+                    {isLoading ? "جاري سحب الأسئلة ومطابقة جهازك..." : "ابدأ الامتحان"}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleNameLoginSubmit} className="space-y-5">
+                  <div className="relative" ref={dropdownRef}>
+                    <label className="block text-xs font-black text-slate-500 mb-2">اسم المشترك</label>
+                    <div className="relative">
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
+                        <Search size={16} />
+                      </span>
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => { setSearchQuery(e.target.value); setSelectedStudent(null); }}
+                        placeholder="اكتب 3 أحرف من الاسم لمطابقة قاعدة البيانات..."
+                        className="w-full pr-11 pl-4 py-3 bg-white text-right border-2 border-gray-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 rounded-xl transition-all duration-300 text-sm font-black text-slate-950"
+                      />
+                      {isSearching && (
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                      )}
+                    </div>
+
+                    <AnimatePresence>
+                      {showDropdown && searchResults.length > 0 && (
+                        <motion.div className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-50 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                          {searchResults.map((student) => (
+                            <button
+                              key={student.id}
+                              type="button"
+                              onClick={() => handleSelectStudent(student)}
+                              className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex justify-between items-center text-xs font-black"
+                            >
+                              <div>
+                                <p className="text-slate-950">{student.name}</p>
+                                <p className="text-[10px] text-slate-400">{student.churchName}</p>
+                              </div>
+                              <span className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] rounded">{student.stage}</span>
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
+                  {selectedStudent && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center justify-between text-xs font-bold">
+                      <div>
+                        <p className="text-emerald-600">تم فك القفل والمطابقة الاستثنائية للولد:</p>
+                        <p className="text-slate-900 font-black">{selectedStudent.name} ({selectedStudent.stage})</p>
+                      </div>
+                      <CheckCircle className="text-emerald-500" size={20} />
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isLoading || !selectedStudent}
+                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#4a000b] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
+                  >
+                    {isLoading ? "جاري سحب الأسئلة المتوافقة..." : "ابدأ الامتحان"}
+                  </button>
+                </form>
+              )}
+            </>
           )}
 
           {/* فوتر النظام */}

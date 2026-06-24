@@ -78,6 +78,8 @@ import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
 import { ExamLoginPortal } from './components/ExamLoginPortal';
+import AdminDisplayGate from './components/AdminDisplayGate';
+import { getDailyExamToken } from './utils/dailyToken';
 import { supabase } from './lib/supabaseClient';
 import { getCustomActivities } from './utils/activitiesService';
 import { getDeviceFingerprint } from './lib/deviceTracking';
@@ -409,6 +411,7 @@ const ALL_ADMIN_TABS = [
   { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
   { id: 'calculator', label: 'حاسبة الكتب', icon: Calculator },
   { id: 'exams_management', label: 'إدارة الامتحانات', icon: BookOpen },
+  { id: 'rotating_gate', label: 'بوابة الـ QR الدوارة', icon: QrCode },
   { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
   { id: 'dynamic_management', label: 'النظام الديناميكي', icon: Settings },
   { id: 'system_settings', label: 'إعدادات المنصة', icon: Settings }
@@ -734,8 +737,13 @@ function AppComponent() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isPortalOpen, setIsPortalOpen] = useState(false);
   const [activeSection, setActiveSection] = useState(() => {
-    if (typeof window !== 'undefined' && window.location.pathname === '/exam-login') {
-      return 'exam-login';
+    if (typeof window !== 'undefined') {
+      if (window.location.pathname === '/exam-login' || window.location.search.includes('gateway_token=')) {
+        return 'exam-login';
+      }
+      if (window.location.pathname === '/admin/display-gate') {
+        return 'admin-display-gate';
+      }
     }
     return 'home';
   });
@@ -5703,6 +5711,20 @@ function AppComponent() {
     // Shared exam-login portal is accessible to all users directly without admin role check
   }, [activeSection, userRole]);
 
+  if (activeSection === 'admin-display-gate') {
+    return (
+      <AdminDisplayGate 
+        onClose={() => {
+          if (isLoggedIn && (userRole === 'admin' || userRole === 'super_admin')) {
+            setActiveSection('admin_dashboard');
+          } else {
+            setActiveSection('home');
+          }
+        }} 
+      />
+    );
+  }
+
   if (activeSection === 'exam-login' || activeSection === 'student-exam' || isPortalOpen) {
     return (
       <ExamLoginPortal 
@@ -7400,6 +7422,10 @@ function AppComponent() {
 
             {adminActiveTab === 'omr' && (
               <OmrGenerator allStudents={allChurchParticipants} />
+            )}
+
+            {adminActiveTab === 'rotating_gate' && (
+              <AdminDisplayGate isInline={true} />
             )}
 
             {adminActiveTab === 'results' && (
