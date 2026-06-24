@@ -126,7 +126,7 @@ export const ResultsViewer: React.FC<{
     try {
       let query = supabase
         .from('exam_submissions')
-        .select('*');
+        .select('student_id, name, churchName, stage, derasy_score, mahfouzat_score, qebty_lvl1_score, qebty_lvl2_score, status, is_published, submitted_at, gender');
       
       if (!isAdmin && activeUserChurch) {
         query = query.eq('is_published', true).eq('churchName', activeUserChurch);
@@ -146,7 +146,7 @@ export const ResultsViewer: React.FC<{
 
           return {
             id: sbRow.student_id || sbRow.id || Math.random().toString(),
-            studentName: sbRow.student_id || 'طالب', // fallback
+            studentName: sbRow.name || sbRow.student_id || 'طالب',
             churchName: sbRow.churchName || '',
             stage: sbRow.stage || '',
             derasy_score: d,
