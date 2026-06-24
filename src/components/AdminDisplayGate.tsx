@@ -11,7 +11,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
   const [cairoDateStr, setCairoDateStr] = useState('');
   const [cairoTimeStr, setCairoTimeStr] = useState('');
   const dailyToken = getDailyExamToken();
-  const qrValue = `https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/?gateway_token=${dailyToken}`;
+  const qrValue = `https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/Exam_engine?gateway_token=${dailyToken}`;
 
   // Generate QR Code
   useEffect(() => {
