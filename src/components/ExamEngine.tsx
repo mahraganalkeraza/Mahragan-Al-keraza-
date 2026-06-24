@@ -1880,6 +1880,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       const submissionPayload = {
         student_id: currentStudentPayload?.id,
+        name: currentStudentPayload?.name,
         churchName: currentStudentPayload?.church,
         stage: currentStudentPayload?.stage,
         gender: currentStudentPayload?.gender,
