@@ -5876,7 +5876,7 @@ function AppComponent() {
         )}
       </AnimatePresence>
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-md">
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-md no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button 
@@ -6600,7 +6600,7 @@ function AppComponent() {
 
         {activeSection === 'admin_dashboard' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 no-print">
               <div className="flex items-center gap-2">
                 <BackButton />
                 <div className="flex bg-slate-100 p-1 rounded-xl gap-1 border border-slate-200">
@@ -6627,7 +6627,7 @@ function AppComponent() {
             </div>
             <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden min-h-[700px] flex flex-col lg:flex-row">
               {/* Sidebar Navigation */}
-              <div className="w-full lg:w-72 bg-slate-50 border-b lg:border-b-0 lg:border-l border-slate-200 flex flex-col">
+              <div className="w-full lg:w-72 bg-slate-50 border-b lg:border-b-0 lg:border-l border-slate-200 flex flex-col no-print">
                 <div className="p-6 border-b border-slate-200">
                   <div className="flex items-center gap-4 mb-6">
                     <div className="w-12 h-12 bg-coptic-red text-white rounded-xl flex items-center justify-center shadow-lg">
@@ -6712,26 +6712,26 @@ function AppComponent() {
 
               {adminActiveTab === 'dashboard' && (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
-                <div className="p-6 bg-coptic-blue/5 rounded-3xl border border-coptic-blue/10">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full px-4 mb-12">
+                <div className="p-6 bg-coptic-blue/5 rounded-3xl border border-coptic-blue/10 w-full">
                   <p className="text-[10px] font-black text-coptic-blue uppercase mb-1">المشتركين ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
                     {analyticsData.totalParticipants}
                   </p>
                 </div>
-                <div className="p-6 bg-coptic-gold/5 rounded-3xl border border-coptic-gold/10">
+                <div className="p-6 bg-coptic-gold/5 rounded-3xl border border-coptic-gold/10 w-full">
                   <p className="text-[10px] font-black text-coptic-gold uppercase mb-1">طلبات الكتب ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
                     {analyticsData.totalOrders}
                   </p>
                 </div>
-                <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100">
+                <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100 w-full">
                   <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">الفرق ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
                     {analyticsData.totalTeams}
                   </p>
                 </div>
-                <div className="p-6 bg-coptic-red/5 rounded-3xl border border-coptic-red/10">
+                <div className="p-6 bg-coptic-red/5 rounded-3xl border border-coptic-red/10 w-full">
                   <p className="text-[10px] font-black text-coptic-red uppercase mb-1">الاستفسارات ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
                     {(inquiries || []).filter(i => globalChurchFilter === 'الكل' || i.churchName === globalChurchFilter).length}
@@ -6739,7 +6739,7 @@ function AppComponent() {
                 </div>
               </div>
 
-                  <div className="mb-12 p-6 bg-slate-50 rounded-3xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div className="mb-12 p-6 bg-slate-50 rounded-3xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4 w-full">
                     <div>
                       <h4 className="font-black text-slate-800">تصدير البيانات المجمعة</h4>
                       <p className="text-xs text-slate-400 font-bold">تحميل كافة بيانات التسجيل (مشتركين + فرق) في ملف واحد</p>
@@ -8217,7 +8217,7 @@ function AppComponent() {
             {adminActiveTab === 'dashboard' && (
               <div className="space-y-16 mt-16 font-arabic">
                 
-                <div className="flex justify-between items-center bg-slate-50 p-6 rounded-3xl border border-slate-200">
+                <div className="flex flex-col md:flex-row justify-between items-center bg-slate-50 p-6 rounded-3xl border border-slate-200 gap-4 w-full">
                   <div>
                     <h2 className="text-xl font-black text-slate-800">اللوحة التحليلية الشاملة</h2>
                     <p className="text-sm text-slate-500 font-bold mt-1">مؤشرات إحصائية ورسوم بيانية لبيانات التسجيل والحاسبة</p>
@@ -8228,12 +8228,12 @@ function AppComponent() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
                   <motion.div 
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">منحنى توزيع المشتركين (كثافة المراحل)</h3>
                     <div className="h-64">
@@ -8257,7 +8257,7 @@ function AppComponent() {
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut", delay: 0.2 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">معدل الانخراط والمشاركة (عدد المسابقات)</h3>
                     <div className="h-64">
@@ -8278,7 +8278,7 @@ function AppComponent() {
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">توزيع المشتركين حسب الجنس</h3>
                     <div className="h-64">
@@ -8320,7 +8320,7 @@ function AppComponent() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3"
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3 w-full"
                   >
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                       <div>
@@ -8420,7 +8420,7 @@ function AppComponent() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3"
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3 w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">الطلب الحقيقي للكتب (الكتب المطلوبة vs مسابقات المشتركين)</h3>
                     <div className="h-80 mb-8">
@@ -8478,14 +8478,14 @@ function AppComponent() {
                 </div>
 
                 {/* Sub-Activities Analytics (Teams & Individuals) */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16 w-full">
                   {/* Widget 1: Activity Participation Counter */}
                   <motion.div 
                     initial={{ opacity: 0, y: 40 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut" }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">عداد المشاركات في الأنشطة الفرعية</h3>
                     <div className="space-y-4">
@@ -8515,7 +8515,7 @@ function AppComponent() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm"
+                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">مصفوفة الأنشطة للكنائس المشاركة</h3>
                     <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -8546,7 +8546,7 @@ function AppComponent() {
                 </div>
 
                 {/* Advanced Data Aggregation for Printing Statement */}
-                <section>
+                <section className="analytics-report-container pt-12 border-t border-slate-100">
                   <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
                     <div>
                       <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
