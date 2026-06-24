@@ -305,34 +305,19 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
       if (!selectedStage || !selectedCompetition || !selectedModel) return;
       const examId = `${selectedStage}_${selectedCompetition}_${selectedModel}`;
 
-      const activeStudentId = localStorage.getItem("active_student_id");
-      let activeStudent: any = null;
-      if (activeStudentId) {
-        try {
-          activeStudent = JSON.parse(localStorage.getItem(`student_profile_${activeStudentId}`) || "{}");
-        } catch(e) {}
-      }
-
-      const cleanPayload = {
-        student_id: activeStudent?.id || "admin_builder",
-        churchName: activeStudent?.church_name || activeStudent?.churchName || activeStudent?.church_Name || activeStudent?.church || "admin",
+      const examPayload = {
+        exam_title: selectedCompetition,
         stage: selectedStage,
-        gender: activeStudent?.gender || "",
-        derasy_score: 0,
-        mahfouzat_score: 0,
-        qebty_lvl1_score: 0,
-        qebty_lvl2_score: 0,
-        detailed_answers: currentQuestions,
-        exam_id: examId,
-        is_published: true,
-        duration_seconds: 0,
-        status: "completed",
-        submitted_at: new Date().toISOString()
+        subject: selectedCompetition,
+        model_type: "online",
+        questions_data: currentQuestions,
+        is_active: true,
+        model: selectedModel
       };
 
       const { error: saveErr } = await supabase
-        .from("exam_submissions")
-        .insert([cleanPayload]);
+        .from("exams_pool")
+        .insert([examPayload]);
 
       if (saveErr) throw saveErr;
 
@@ -1878,9 +1863,13 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                          (Number(finalQebtyLvl1Score) || 0) + 
                          (Number(finalQebtyLvl2Score) || 0);
 
+      // تأكد أولاً إن متغير اسم الطالب ممسوك من الشاشة أو من بيانات الدخول (مثلاً: studentData.name أو userProfile.name)
+      const studentName = currentStudentPayload?.name || "مخدوم غير مسجل";
+
+      // قبل سطر الـ insert مباشرة، ندمج الـ name جوة الـ payload المبعوت
       const submissionPayload = {
         student_id: currentStudentPayload?.id,
-        name: currentStudentPayload?.name,
+        name: studentName,
         churchName: currentStudentPayload?.church,
         stage: currentStudentPayload?.stage,
         gender: currentStudentPayload?.gender,
