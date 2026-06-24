@@ -513,6 +513,7 @@ export const ResultsViewer: React.FC<{
 
           return {
             student_id: studentId,
+            name: studentName,
             churchName: churchName,
             stage: stage,
             gender: gender,
@@ -563,6 +564,7 @@ export const ResultsViewer: React.FC<{
       const studentId = `paper-${Math.random().toString(36).substring(2, 11)}`;
       const payload = {
         student_id: studentId,
+        name: manualForm.student_name,
         churchName: manualForm.church_name,
         stage: manualForm.stage,
         gender: manualForm.gender,

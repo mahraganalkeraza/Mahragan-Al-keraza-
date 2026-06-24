@@ -4144,7 +4144,7 @@ function AppComponent() {
 
       const mappedData = (data || []).map((row: any) => ({
         id: row.student_id || row.id,
-        studentName: row.student_id, // Fallback since student_name is removed
+        studentName: row.name, // Fixed: map from name
         churchName: row.churchName,
         stage: row.stage,
         academicScore: row.derasy_score ?? null,
