@@ -305,32 +305,32 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
       if (!selectedStage || !selectedCompetition || !selectedModel) return;
       const examId = `${selectedStage}_${selectedCompetition}_${selectedModel}`;
 
+      const activeStudentId = localStorage.getItem("active_student_id");
+      let activeStudent: any = null;
+      if (activeStudentId) {
+        try {
+          activeStudent = JSON.parse(localStorage.getItem(`student_profile_${activeStudentId}`) || "{}");
+        } catch(e) {}
+      }
+
       const cleanPayload = {
-        id: examId,
-        exam_title: `${selectedStage} - ${selectedCompetition} - نموذج ${selectedModel}`,
+        student_id: activeStudent?.id || "admin_builder",
+        student_name: activeStudent?.name || activeStudent?.studentName || "admin",
+        church_name: activeStudent?.church || activeStudent?.churchName || "admin",
+        gender: activeStudent?.gender || "",
+        detailed_answers: JSON.stringify(currentQuestions),
+        exam_id: examId,
         stage: selectedStage,
-        subject: selectedCompetition,
-        model_type: selectedModel,
-        questions_data: currentQuestions,
+        stage_name: selectedStage,
+        competition_name: selectedCompetition,
+        score: 0,
+        duration_seconds: 0,
+        status: "completed"
       };
 
-      const exists = exams.some((e) => e.id === examId);
-      let saveErr;
-
-      if (exists) {
-        // performs an .update() on that specific row
-        const { error } = await supabase
-          .from("exams_pool")
-          .update(cleanPayload)
-          .eq("id", examId);
-        saveErr = error;
-      } else {
-        // falls back to .upsert()
-        const { error } = await supabase
-          .from("exams_pool")
-          .upsert(cleanPayload);
-        saveErr = error;
-      }
+      const { error: saveErr } = await supabase
+        .from("exam_submissions")
+        .insert([cleanPayload]);
 
       if (saveErr) throw saveErr;
 
@@ -1856,20 +1856,28 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const finalQebtyLvl2Score = qebtyLvl2Total || currentCompletedSubjects.qebty_lvl2 || 0;
       const selectedAnswers = JSON.stringify(allCollectedAnswersArray);
 
+      const totalScore = (Number(finalDerasyScore) || 0) + 
+                         (Number(finalMahfouzatScore) || 0) + 
+                         (Number(finalQebtyLvl1Score) || 0) + 
+                         (Number(finalQebtyLvl2Score) || 0);
+
       const submissionPayload = {
         student_id: currentStudentPayload?.id,
         student_name: currentStudentPayload?.name,
         church_name: currentStudentPayload?.church,
-        stage: currentStudentPayload?.stage,
         gender: currentStudentPayload?.gender,
         derasy_score: finalDerasyScore,
         mahfouzat_score: finalMahfouzatScore,
         qebty_lvl1_score: finalQebtyLvl1Score,
         qebty_lvl2_score: finalQebtyLvl2Score,
         detailed_answers: selectedAnswers,
-        submitted_at: new Date().toISOString(),
-        submission_type: 'online',
-        is_published: true
+        exam_id: activeExam?.id || primaryExamId || "unknown",
+        is_published: true,
+        stage: currentStudentPayload?.stage,
+        competition_name: selectedCompetition || "امتحان شامل",
+        score: totalScore,
+        duration_seconds: calculatedDurationInSeconds,
+        status: "completed"
       };
 
       // Push record directly to Supabase - using the exam_submissions table
