@@ -306,6 +306,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
       const examId = `${selectedStage}_${selectedCompetition}_${selectedModel}`;
 
       const examPayload = {
+        id: examId,
         exam_title: selectedCompetition,
         stage: selectedStage,
         subject: selectedCompetition,
