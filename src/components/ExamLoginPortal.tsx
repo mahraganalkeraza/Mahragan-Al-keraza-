@@ -73,14 +73,24 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   const [gateAccessGranted, setGateAccessGranted] = useState(false);
 
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const providedToken = urlParams.get('gateway_token');
+    let providedToken = new URLSearchParams(window.location.search).get('gateway_token');
+    
+    // Support hash-routed query parameters
+    if (!providedToken && window.location.hash.includes('?')) {
+      const hashQuery = window.location.hash.split('?')[1];
+      providedToken = new URLSearchParams(hashQuery).get('gateway_token');
+    }
+
     const validDailyToken = getDailyExamToken();
 
     if (providedToken === validDailyToken) {
       localStorage.setItem('gate_access_granted', validDailyToken);
+      localStorage.setItem('gateway_exam_token', validDailyToken);
       setGateAccessGranted(true);
-    } else if (localStorage.getItem('gate_access_granted') === validDailyToken) {
+    } else if (
+      localStorage.getItem('gate_access_granted') === validDailyToken ||
+      localStorage.getItem('gateway_exam_token') === validDailyToken
+    ) {
       setGateAccessGranted(true);
     } else {
       setGateAccessGranted(false);

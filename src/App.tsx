@@ -738,10 +738,18 @@ function AppComponent() {
   const [isPortalOpen, setIsPortalOpen] = useState(false);
   const [activeSection, setActiveSection] = useState(() => {
     if (typeof window !== 'undefined') {
-      if (window.location.pathname === '/exam-login' || window.location.search.includes('gateway_token=')) {
+      if (
+        window.location.pathname === '/exam-login' || 
+        window.location.search.includes('gateway_token=') ||
+        window.location.hash.includes('gateway_token=') ||
+        window.location.hash.includes('/exam-login')
+      ) {
         return 'exam-login';
       }
-      if (window.location.pathname === '/admin/display-gate') {
+      if (
+        window.location.pathname === '/admin/display-gate' ||
+        window.location.hash.includes('/admin/display-gate')
+      ) {
         return 'admin-display-gate';
       }
     }
