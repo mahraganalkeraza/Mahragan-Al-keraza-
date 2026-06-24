@@ -13,7 +13,8 @@ import {
   QrCode,
   XCircle,
   Camera,
-  Compass
+  Compass,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -68,6 +69,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
   const dropdownRef = useRef<HTMLDivElement>(null);
   const qrScannerRef = useRef<Html5Qrcode | null>(null);
+  const [isScanningActive, setIsScanningActive] = useState(false);
 
   // Gate check for Daily Rotating Gate
   const [gateAccessGranted, setGateAccessGranted] = useState(false);
@@ -187,18 +189,37 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     }
   };
 
-  // 1. تشغيل الكاميرا فورياً عند فتح واجهة الـ QR كود
-  useEffect(() => {
-    if (loginMethod === 'code') {
+  const startCamera = () => {
+    setErrors(null);
+    setCameraPermissionDenied(false);
+
+    // If already scanning, stop first, then run startup
+    if (qrScannerRef.current && qrScannerRef.current.isScanning) {
+      qrScannerRef.current.stop().then(() => {
+        qrScannerRef.current?.clear();
+        doStart();
+      }).catch(() => {
+        doStart();
+      });
+    } else {
+      doStart();
+    }
+
+    function doStart() {
       setTimeout(() => {
         try {
-          if (!document.getElementById('qr-reader')) return;
-          
+          const element = document.getElementById('qr-reader');
+          if (!element) return;
+
+          // Clear any dynamic elements leftover inside qr-reader container
+          element.innerHTML = '';
+
           const html5Qrcode = new Html5Qrcode("qr-reader");
           qrScannerRef.current = html5Qrcode;
-          
+
           const config = { fps: 10, qrbox: { width: 250, height: 250 } };
           const qrCodeSuccessCallback = async (decodedText: string) => {
+            setIsScanningActive(false);
             if (qrScannerRef.current) {
               qrScannerRef.current.stop().then(() => {
                 qrScannerRef.current?.clear();
@@ -208,11 +229,13 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           };
 
           html5Qrcode.start(
-            { facingMode: "environment" }, // 👈 CRITICAL: Enforces rear camera by default
+            { facingMode: "environment" }, // Enforces rear camera by default
             config,
             qrCodeSuccessCallback,
             () => { /* silent error log */ }
-          ).catch((err) => {
+          ).then(() => {
+            setIsScanningActive(true);
+          }).catch((err) => {
             console.warn("Camera environmental start blocked or unavailable, trying fallback:", err);
             // Fallback to front camera if environment is unavailable
             html5Qrcode.start(
@@ -220,16 +243,27 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
               config,
               qrCodeSuccessCallback,
               () => {}
-            ).catch((err2) => {
+            ).then(() => {
+              setIsScanningActive(true);
+            }).catch((err2) => {
               console.warn("Camera fallback user start blocked, switching to manual code:", err2);
               setCameraPermissionDenied(true);
+              setIsScanningActive(false);
             });
           });
         } catch (err) {
           console.warn("Camera Init Exception:", err);
           setCameraPermissionDenied(true);
+          setIsScanningActive(false);
         }
-      }, 300);
+      }, 100);
+    }
+  };
+
+  // 1. تشغيل الكاميرا فورياً عند فتح واجهة الـ QR كود
+  useEffect(() => {
+    if (loginMethod === 'code') {
+      startCamera();
     }
 
     return () => {
@@ -546,7 +580,35 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                       <Camera size={14} className="text-primary" />
                       قارئ استمارات الـ QR كود النشط:
                     </div>
-                    <div id="qr-reader" className="w-full rounded-xl overflow-hidden border-none bg-white"></div>
+                    
+                    <div className="relative w-full aspect-video min-h-[220px] bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center">
+                      {/* The QR reader div - must remain in DOM */}
+                      <div 
+                        id="qr-reader" 
+                        className="w-full h-full rounded-xl overflow-hidden border-none bg-black"
+                      ></div>
+
+                      {/* Fallback Placeholder Overlay when camera is inactive */}
+                      {!isScanningActive && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 text-slate-200 p-4 text-center z-10 transition-all">
+                          <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mb-3 animate-pulse">
+                            <Camera size={22} />
+                          </div>
+                          <p className="text-xs font-black mb-1 text-slate-300">الكاميرا متوقفة حالياً</p>
+                          <p className="text-[10px] text-slate-500 max-w-[240px] leading-relaxed mb-4">
+                            تم إيقاف قارئ الـ QR لحماية الطاقة والخصوصية، أو بسبب انتهاء المسح السابق.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => startCamera()}
+                            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <RefreshCw size={14} />
+                            إعادة تشغيل الكاميرا
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div>
