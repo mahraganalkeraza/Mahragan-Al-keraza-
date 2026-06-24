@@ -1268,7 +1268,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (studentObj) {
         studentData = {
-          id: studentObj.id,
+          id: studentObj.student_id,
           studentName:
             studentObj.name ||
             studentObj.student_name ||
