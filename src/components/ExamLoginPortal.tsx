@@ -449,7 +449,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] backdrop-blur-xl flex items-center justify-center p-4 md:p-8 font-arabic antialiased fixed inset-0 z-[160] overflow-y-auto" dir="rtl">
+    <div className="fixed inset-0 overflow-y-auto z-[160] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] backdrop-blur-xl flex flex-col items-center justify-start md:justify-center p-4 md:p-8 pt-12 md:pt-8 min-h-[100dvh] font-arabic antialiased" dir="rtl">
       <img src={logo} className="absolute inset-0 w-full h-full object-cover opacity-10 mix-blend-overlay pointer-events-none blur-md" alt="" />
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
