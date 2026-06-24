@@ -49,6 +49,9 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   
   // وضع الطوارئ الخاص بك (مغلق افتراضياً ولا يفتح إلا بـ 5 ضغطات والرقم السري 101096)
   const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   // محرك البحث بالاسم لجدول الطلاب
   const [searchQuery, setSearchQuery] = useState('');
@@ -469,14 +472,18 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
             رجوع
           </button>
 
-          {/* أيقونة البوصلة المخفية (ضغطة واحدة تفتح الإعدادات) */}
+          {/* أيقونة البوصلة المخفية (تتطلب الرقم السري لتفعيل وضع الطوارئ) */}
           <div 
-            onClick={() => setIsAdminUnlocked(prev => {
-              const newState = !prev;
-              if (newState) setLoginMethod('name');
-              else setLoginMethod('code');
-              return newState;
-            })}
+            onClick={() => {
+              if (isAdminUnlocked) {
+                setIsAdminUnlocked(false);
+                setLoginMethod('code');
+              } else {
+                setShowPasswordModal(true);
+                setPasswordInput('');
+                setPasswordError('');
+              }
+            }}
             className="absolute top-4 right-4 bg-white/10 p-2 rounded-xl backdrop-blur-md cursor-pointer hover:bg-white/20 transition-all select-none"
             title="وضع الطوارئ للجان"
           >
@@ -727,6 +734,90 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           </div>
         </div>
       </motion.div>
+
+      {/* Password Verification Modal for Compass Unlock */}
+      <AnimatePresence>
+        {showPasswordModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 z-[200]"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm p-6 text-white relative shadow-2xl"
+              dir="rtl"
+            >
+              <button
+                type="button"
+                onClick={() => setShowPasswordModal(false)}
+                className="absolute top-4 left-4 bg-white/10 hover:bg-white/20 p-2 rounded-xl text-slate-400 hover:text-white transition-all"
+              >
+                <XCircle size={18} />
+              </button>
+
+              <div className="text-center mb-6">
+                <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                  <Lock size={22} />
+                </div>
+                <h3 className="text-base font-black">رمز حماية وضع الطوارئ</h3>
+                <p className="text-[11px] text-slate-400 mt-1">يرجى إدخال الرقم السري المخصص لتفعيل البحث بالاسم للجان الطوارئ</p>
+              </div>
+
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (passwordInput === '101096') {
+                    setIsAdminUnlocked(true);
+                    setLoginMethod('name');
+                    setShowPasswordModal(false);
+                    setPasswordInput('');
+                    setPasswordError('');
+                  } else {
+                    setPasswordError('رمز المرور غير صحيح! يرجى المحاولة مرة أخرى.');
+                  }
+                }}
+                className="space-y-4"
+              >
+                <div>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={passwordInput}
+                    onChange={(e) => setPasswordInput(e.target.value)}
+                    placeholder="••••••"
+                    className="w-full text-center tracking-[0.5em] font-mono py-3.5 bg-slate-950 border border-slate-800 rounded-xl focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-lg font-bold text-white placeholder:text-slate-700 outline-none transition-all"
+                    autoFocus
+                  />
+                  {passwordError && (
+                    <p className="text-red-500 text-[10px] font-bold mt-2 text-center">{passwordError}</p>
+                  )}
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="submit"
+                    className="flex-1 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 rounded-xl font-black text-xs transition-all active:scale-95 shadow-lg cursor-pointer"
+                  >
+                    تأكيد الرمز
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordModal(false)}
+                    className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-black text-xs transition-all active:scale-95 cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
