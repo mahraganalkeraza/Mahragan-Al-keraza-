@@ -1155,6 +1155,16 @@ function AppComponent() {
   const [isTeamsEnd, setIsTeamsEnd] = useState(false);
   const [isTeamsLoading, setIsTeamsLoading] = useState(false);
 
+  useEffect(() => {
+    if (activityTeams && activityTeams.length > 0) {
+      try {
+        localStorage.setItem('fallback_activity_teams', JSON.stringify(activityTeams));
+      } catch (err) {
+        console.error("Error writing fallback activity teams:", err);
+      }
+    }
+  }, [activityTeams]);
+
   const [news, setNews] = useState<News[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -4260,7 +4270,20 @@ function AppComponent() {
       setTeamPageCount(1);
       
     } catch (err: any) { 
-      console.error("Supabase load teams error: ", err.message); 
+      console.error("Supabase load teams error: ", err?.message || err); 
+      // FALLBACK: Load from local storage if Supabase fails (e.g. Failed to fetch)
+      try {
+        const saved = localStorage.getItem('fallback_activity_teams');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setActivityTeams(parsed);
+            setTotalTeamsCount(parsed.length);
+          }
+        }
+      } catch (storageErr) {
+        console.error("Error reading fallback activity teams from localStorage:", storageErr);
+      }
     } finally { 
       setIsTeamsLoading(false); 
     }
