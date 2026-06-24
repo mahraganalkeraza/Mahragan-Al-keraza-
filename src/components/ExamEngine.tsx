@@ -310,7 +310,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
         exam_title: selectedCompetition,
         stage: selectedStage,
         subject: selectedCompetition,
-        model_type: "online",
+        model_type: selectedModel,
         questions_data: currentQuestions,
         is_active: true,
         model: selectedModel
