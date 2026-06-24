@@ -60,7 +60,7 @@ export default function AdminBulkRegister({
       const { error } = await supabase
         .from('registrations')
         .delete()
-        .in('id', lastInsertedIds);
+        .in('student_id', lastInsertedIds);
         
       if (error) throw error;
       
@@ -166,13 +166,12 @@ export default function AdminBulkRegister({
       
       // Map to supabase structure matching the registrations columns
       supabaseInserts.push({
-        id: customId,
+        student_id: customId,
         name: name,
         churchName: churchName,
         stage: stage,
         gender: gender,
         competitions: selectedCompetitions,
-        country: 'مصر',
         timestamp: new Date().toISOString()
       });
     });

@@ -1259,7 +1259,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const { data: studentObj, error: fetchErr } = await supabase
         .from("registrations")
         .select("*")
-        .eq("id", normalizedId)
+        .eq("student_id", normalizedId)
         .maybeSingle();
 
       if (fetchErr) throw fetchErr;

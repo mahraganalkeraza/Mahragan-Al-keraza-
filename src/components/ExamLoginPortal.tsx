@@ -146,7 +146,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       while (hasMore) {
         const { data, error } = await supabase
           .from('registrations')
-          .select('id, name, stage, churchName, gender, competitions')
+          .select('student_id, name, stage, churchName, gender, competitions')
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (error) throw error;
@@ -191,11 +191,14 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
     try {
       const codeCleaned = codeStr.trim();
-      // سحب الطالب من الكاش المحلي بنسبة استهلاك صفر
-      const registryCached = JSON.parse(localStorage.getItem('cached_students_registry') || '[]');
-      const studentObj = registryCached.find((s: any) => String(s.id).trim() === codeCleaned);
+      
+      const { data: studentObj, error } = await supabase
+        .from('registrations')
+        .select('student_id, name, stage, churchName, gender, competitions')
+        .eq('student_id', codeCleaned)
+        .maybeSingle();
 
-      if (!studentObj) {
+      if (error || !studentObj) {
         setErrors("لم نتمكن من العثور على الكود المسحوب، يرجى الاستعانة بمسؤول اللجنة للتأكد.");
         setIsLoading(false);
         return;
@@ -203,7 +206,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
       await triggerActiveExamLaunch(studentObj);
     } catch (err: any) {
-      setErrors("فشل البحث في قاعدة البيانات المحلية.");
+      setErrors("فشل البحث في قاعدة البيانات.");
       setIsLoading(false);
     }
   };
@@ -328,7 +331,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       .replace(/\s+/g, " ");
   };
 
-  // البحث اللحظي بالاسم محلياً لتحقيق نسبة استئثار صفر وضمان سرعة فائقة
+  // البحث اللحظي بالاسم عبر قاعدة البيانات
   useEffect(() => {
     if (loginMethod !== 'name' || searchQuery.trim().length < 3) {
       setSearchResults([]);
@@ -337,24 +340,26 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     }
 
     setIsSearching(true);
-    const delayDebounce = setTimeout(() => {
+    const delayDebounce = setTimeout(async () => {
       try {
-        const queryClean = normalizeArabic(searchQuery.trim());
-        const localRegistry = JSON.parse(localStorage.getItem('cached_students_registry') || '[]');
+        const queryClean = searchQuery.trim();
         
-        const filtered = localRegistry.filter((s: any) => {
-          const studentNameNormalized = normalizeArabic(s.name || s.student_name || '');
-          return studentNameNormalized.includes(queryClean);
-        });
+        const { data, error } = await supabase
+          .from('registrations')
+          .select('student_id, name, stage, churchName, gender, competitions')
+          .ilike('name', `%${queryClean}%`)
+          .limit(15);
 
-        setSearchResults(filtered.slice(0, 15));
+        if (error) throw error;
+        
+        setSearchResults(data || []);
         setShowDropdown(true);
       } catch (err: any) {
         console.error("Local search exception:", err);
       } finally {
         setIsSearching(false);
       }
-    }, 150); // 150ms delay for ultra responsiveness
+    }, 150);
 
     return () => clearTimeout(delayDebounce);
   }, [searchQuery, loginMethod]);
@@ -372,7 +377,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     setErrors(null);
 
     try {
-      const studentIdStr = String(studentObj.id);
+      const studentIdStr = String(studentObj.student_id);
 
       const { data: submissionCheck } = await supabase
         .from('exam_submissions')
@@ -428,7 +433,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       // تمرير الداتا بنجاح تام لفتح شاشة الامتحان والأسئلة تلقائياً
       onSuccess(
         {
-          id: String(studentObj.id),
+          id: String(studentObj.student_id),
           name: studentObj.name,
           stage: studentObj.stage,
           churchName: studentObj.churchName || 'غير محدد',
@@ -704,7 +709,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                         <motion.div className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-50 max-h-48 overflow-y-auto divide-y divide-slate-100">
                           {searchResults.map((student) => (
                             <button
-                              key={student.id}
+                              key={student.student_id}
                               type="button"
                               onClick={() => handleSelectStudent(student)}
                               className="w-full text-right px-4 py-2.5 hover:bg-slate-50 flex justify-between items-center text-xs font-black"

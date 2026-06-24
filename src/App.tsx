@@ -1207,7 +1207,7 @@ function AppComponent() {
     try {
       const { data, error } = await supabase
         .from('registrations')
-        .select('id, churchName, timestamp')
+        .select('student_id, churchName, timestamp')
         .neq('name', 'SYSTEM_LOCK')
         .gt('timestamp', oneDayAgo)
         .order('timestamp', { ascending: false })
@@ -1632,9 +1632,9 @@ function AppComponent() {
         if (!error && dbMatches) {
           const merged: any[] = [...localMatches];
           dbMatches.forEach(dbP => {
-            if (!merged.some(m => m.id === dbP.id || m.name.trim() === dbP.name.trim())) {
+            if (!merged.some(m => m.id === dbP.student_id || m.name.trim() === dbP.name.trim())) {
               merged.push({
-                id: dbP.id,
+                id: dbP.student_id || dbP.id,
                 name: dbP.name,
                 churchName: dbP.churchName,
                 stage: dbP.stage,
@@ -3287,14 +3287,12 @@ function AppComponent() {
            const rowGender = row['النوع'] || row['الجنس'] || row['Gender'] || (name.startsWith('مريم') || name.endsWith('ة') ? 'أنثى' : 'ذكر');
            const customId = generateShortId();
            parsedParticipants.push({
-             id: customId,
-             serial: customId,
+             student_id: customId,
              name,
              stage,
              gender: rowGender,
              competitions: comps,
              churchName: churchName,
-             country: 'مصر',
              year: activeYear,
              timestamp: new Date().toISOString()
            });
@@ -3313,13 +3311,12 @@ function AppComponent() {
         const { error: sbErr } = await supabase
           .from('registrations')
           .upsert(parsedParticipants.map(p => ({
-            id: p.id,
+            student_id: p.student_id,
             name: p.name,
             churchName: p.churchName,
             stage: p.stage,
             gender: p.gender,
             competitions: p.competitions,
-            country: p.country,
             timestamp: p.timestamp || new Date().toISOString()
           })));
 
@@ -3673,12 +3670,12 @@ function AppComponent() {
 
     setIsDeletingDuplicates(true);
     try {
-      const idsToDelete = detectedDuplicates.map(d => d.id);
+      const idsToDelete = detectedDuplicates.map(d => d.student_id || d.id);
       
       const { error } = await supabase
         .from('registrations')
         .delete()
-        .in('id', idsToDelete);
+        .in('student_id', idsToDelete);
 
       if (error) {
         console.error("Error deleting duplicates:", error);
@@ -3814,8 +3811,8 @@ function AppComponent() {
       }
       
       const mapped: Participant[] = allData.map((p: any) => ({
-        id: p.id,
-        serial: p.id,
+        id: p.student_id || p.id,
+        serial: p.student_id || p.id,
         name: p.name || '',
         churchName: p.churchName || '',
         stage: p.stage || '',
@@ -3893,8 +3890,8 @@ function AppComponent() {
       if (error) throw error;
 
       const mapped: Participant[] = (data || []).map((p: any) => ({
-        id: p.id,
-        serial: p.id,
+        id: p.student_id || p.id,
+        serial: p.student_id || p.id,
         name: p.name || '',
         churchName: p.churchName || '',
         stage: p.stage || '',
@@ -3978,8 +3975,8 @@ function AppComponent() {
             }
           }
           return {
-            id: p.id,
-            serial: p.id,
+            id: p.student_id || p.id,
+            serial: p.student_id || p.id,
             name: p.name || '',
             churchName: p.churchName || '',
             stage: p.stage || '',
@@ -4814,12 +4811,11 @@ function AppComponent() {
           if (!dbParticipant) {
              const customId = generateShortId();
              await supabase.from('registrations').insert([{
-               id: customId,
+               student_id: customId,
                name: memberName,
                churchName,
                stage: newTeam.members[0].stage || selectedStageName,
                gender: newTeam.members[0].gender,
-               country: 'مصر',
                timestamp: new Date().toISOString()
              }]);
              if (churchName) await updateChurchSubscribers(churchName);
@@ -4938,7 +4934,7 @@ function AppComponent() {
       const { error: sbErr } = await supabase
         .from('registrations')
         .delete()
-        .eq('id', id);
+        .eq('student_id', id);
       
       if (sbErr) throw sbErr;
 
@@ -5062,8 +5058,7 @@ function AppComponent() {
       const dataToInsert = participantsList.map(name => {
          const customId = generateShortId();
          return {
-            id: customId,
-            serial: customId,
+            student_id: customId,
             name: name,
             churchName: "دير الجرنوس",
             stage: "جامعة",
@@ -5179,13 +5174,12 @@ function AppComponent() {
         const { error: sbErr } = await supabase
           .from('registrations')
           .upsert({
-            id: editingParticipant.id,
+            student_id: editingParticipant.id,
             name: updatedFields.name,
             churchName: editingParticipant.churchName || churchName,
             stage: updatedFields.stage,
             gender: updatedFields.gender,
             competitions: updatedFields.competitions || [],
-            country: editingParticipant.country || 'مصر',
             timestamp: updatedFields.timestamp
           });
         
@@ -5203,13 +5197,12 @@ function AppComponent() {
         const customId = generateShortId();
         
         const newRecord = {
-          id: customId,
+          student_id: customId,
           name: newParticipant.name,
           churchName: churchName,
           stage: newParticipant.stage,
           gender: newParticipant.gender,
           competitions: newParticipant.competitions.filter(c => c !== ''),
-          country: 'مصر',
           timestamp: new Date().toISOString()
         };
 

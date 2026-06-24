@@ -206,7 +206,7 @@ export const ResultsViewer: React.FC<{
   const fetchBulkStudents = async () => {
     setIsBulkStudentsLoading(true);
     try {
-      let query = supabase.from('registrations').select('id, name, churchName, stage, gender');
+      let query = supabase.from('registrations').select('student_id, name, churchName, stage, gender');
       
       if (bulkChurch !== 'الكل') {
         query = query.eq('churchName', bulkChurch);
@@ -221,7 +221,7 @@ export const ResultsViewer: React.FC<{
       setSelectedStudentIds([]); // Reset selected checkboxes
       
       if (data && data.length > 0) {
-        const studentIds = data.map(s => s.id);
+        const studentIds = data.map(s => s.student_id);
         const { data: scoresData, error: scoresErr } = await supabase
           .from('exam_submissions')
           .select('student_id, churchName, stage, gender, qebty_lvl1_score, qebty_lvl2_score, derasy_score, mahfouzat_score')
@@ -283,7 +283,7 @@ export const ResultsViewer: React.FC<{
     setIsBulkSubmitting(true);
     try {
       const bulkPayload = selectedStudentIds.map(id => {
-        const student = bulkStudents.find(s => s.id === id);
+        const student = bulkStudents.find(s => s.student_id === id);
         const existing = existingScores[id] || {};
         const churchNameVal = student?.churchName || existing.churchName || '';
         return {
@@ -1095,7 +1095,7 @@ export const ResultsViewer: React.FC<{
             <div className="flex gap-2">
               <button 
                 onClick={() => {
-                  const visibleIds = filteredBulkStudents.map(s => s.id);
+                  const visibleIds = filteredBulkStudents.map(s => s.student_id);
                   setSelectedStudentIds(prev => Array.from(new Set([...prev, ...visibleIds])));
                 }}
                 className="text-indigo-600 hover:underline font-black"
@@ -1148,11 +1148,11 @@ export const ResultsViewer: React.FC<{
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredBulkStudents.map((student, idx) => {
-                    const isSelected = selectedStudentIds.includes(student.id);
-                    const scores = existingScores[student.id] || {};
+                    const isSelected = selectedStudentIds.includes(student.student_id);
+                    const scores = existingScores[student.student_id] || {};
                     return (
                       <tr 
-                        key={student.id} 
+                        key={student.student_id} 
                         className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-indigo-55/35' : ''}`}
                       >
                         {/* Custom Checkbox Column [ حدد] */}
@@ -1162,9 +1162,9 @@ export const ResultsViewer: React.FC<{
                             checked={isSelected}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setSelectedStudentIds([...selectedStudentIds, student.id]);
+                                setSelectedStudentIds([...selectedStudentIds, student.student_id]);
                               } else {
-                                setSelectedStudentIds(selectedStudentIds.filter(id => id !== student.id));
+                                setSelectedStudentIds(selectedStudentIds.filter(id => id !== student.student_id));
                               }
                             }}
                             className="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-350 rounded focus:ring-indigo-500 cursor-pointer"
