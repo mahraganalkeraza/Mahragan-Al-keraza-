@@ -98,37 +98,59 @@ export function getDailyExamToken(): string {
   }
 }
 
-export function getHourlyExamToken(offsetHours: number = 0): string {
+/**
+ * Generates a unique 12-character token that remains valid for 24 hours,
+ * rolling over exactly at 10:00 PM (22:00) Cairo Time.
+ * @param offsetDays Number of days to offset the token boundary (0 for current cycle, -1 for previous cycle)
+ */
+export function getHourlyExamToken(offsetDays: number = 0): string {
   try {
-    const d = new Date();
-    if (offsetHours !== 0) {
-      d.setTime(d.getTime() + offsetHours * 60 * 60 * 1000);
-    }
-    const formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Africa/Cairo',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      hour12: false
-    });
-    const parts = formatter.formatToParts(d);
-    const year = parts.find(p => p.type === 'year')?.value || '';
-    const month = parts.find(p => p.type === 'month')?.value || '';
-    const day = parts.find(p => p.type === 'day')?.value || '';
-    const hour = parts.find(p => p.type === 'hour')?.value || '';
-    const cairoDateHour = `${year}-${month}-${day}-${hour}`;
+    // 1. Capture absolute current system time
+    const now = new Date();
 
+    // 2. Enforce Africa/Cairo timezone explicitly to avoid server-side UTC drift (e.g., Vercel/Supabase)
+    const cairoTime = new Date(now.toLocaleString("en-US", { timeZone: "Africa/Cairo" }));
+
+    // 3. Define the strict rollover hour (10:00 PM = 22:00)
+    const targetHour = 22;
+
+    // 4. Rollback the date context by 1 day if we haven't crossed 10:00 PM yet today
+    if (cairoTime.getHours() < targetHour) {
+      cairoTime.setDate(cairoTime.getDate() - 1);
+    }
+
+    // 5. Apply the days offset (replacing the old hourly offset logic)
+    if (offsetDays !== 0) {
+      cairoTime.setDate(cairoTime.getDate() + offsetDays);
+    }
+
+    // 6. Freeze the hour value to exactly 22 to guarantee token stability across the 24-hour block
+    const year = cairoTime.getFullYear();
+    const month = String(cairoTime.getMonth() + 1).padStart(2, '0');
+    const day = String(cairoTime.getDate()).padStart(2, '0');
+    const cairoDateHour = `${year}-${month}-${day}-${targetHour}`;
+
+    // 7. Hash the unified date block string with the existing secret pepper
     const secretPepper = "MahraganAlKeraza2026_SecureSalt_Hourly!!";
     return sha256(cairoDateHour + secretPepper).substring(0, 12);
   } catch (err) {
+    // Graceful fallback to prevent application crashes
     return "000000000000";
   }
 }
 
+/**
+ * Validates the incoming exam submission token against the active 24-hour cycle
+ * as well as the immediate previous 24-hour cycle to protect ongoing student sessions.
+ */
 export function validateHourlyExamToken(token: string | null): boolean {
   if (!token) return false;
+  
+  // Active token for the current 24-hour window
   const currentToken = getHourlyExamToken(0);
+  
+  // Previous token window (offset -1 day) to gracefully handle mid-exam transitions around 10:00 PM
   const previousToken = getHourlyExamToken(-1);
+  
   return token === currentToken || token === previousToken;
 }

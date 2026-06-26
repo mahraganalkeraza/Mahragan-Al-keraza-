@@ -54,18 +54,22 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         });
         setCairoTimeStr(formatterTime.format(now));
 
-        // Sync token value dynamically on hour flip
+        // Sync token value dynamically
         const currentTk = getHourlyExamToken();
         setHourlyToken(prev => prev !== currentTk ? currentTk : prev);
 
-        // Countdown to the end of the current Cairo hour
+        // Countdown to the next 10:00 PM rollover in Cairo time timezone
         const cairoString = now.toLocaleString('en-US', { timeZone: 'Africa/Cairo' });
         const cairoNow = new Date(cairoString);
         
-        const cairoNextHour = new Date(cairoString);
-        cairoNextHour.setHours(cairoNextHour.getHours() + 1, 0, 0, 0);
+        const cairoRollover = new Date(cairoString);
+        cairoRollover.setHours(22, 0, 0, 0);
         
-        const diffSeconds = Math.max(0, Math.floor((cairoNextHour.getTime() - cairoNow.getTime()) / 1000));
+        if (cairoNow.getTime() >= cairoRollover.getTime()) {
+          cairoRollover.setDate(cairoRollover.getDate() + 1);
+        }
+        
+        const diffSeconds = Math.max(0, Math.floor((cairoRollover.getTime() - cairoNow.getTime()) / 1000));
         
         const h = Math.floor(diffSeconds / 3600);
         const m = Math.floor((diffSeconds % 3600) / 60);
@@ -106,7 +110,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
           <span className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-2xl print:hidden">
             <QrCode size={28} />
           </span>
-          <h1 className="text-2xl font-black text-amber-400 print:text-black print:text-3xl">بوابة الـ QR Code الدوارة للاختبارات</h1>
+          <h1 className="text-2xl font-black text-amber-400 print:text-black print:text-3xl">الـ QRCode اليومية لبوابة الامتحانات</h1>
         </div>
         <p className="text-slate-400 text-xs font-bold print:text-slate-700">مهرجان الكرازة المرقسية - إيبارشية مغاغة والعدوة (منطقة 18)</p>
       </div>
@@ -116,7 +120,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         <div className="flex items-center gap-2">
           <Calendar size={16} className="text-amber-500 print:text-black" />
           <div>
-            <p className="text-slate-500 text-[10px] text-right print:text-slate-600">التاريخ اليومي (القاهرة)</p>
+            <p className="text-slate-500 text-[10px] text-right print:text-slate-600">التاريخ اليومي (مصر)</p>
             <p className="text-slate-200 font-black print:text-black">{cairoDateStr || 'جاري الحساب...'}</p>
           </div>
         </div>
@@ -124,7 +128,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         <div className="flex items-center gap-2">
           <Clock size={16} className="text-emerald-500 print:text-black" />
           <div>
-            <p className="text-slate-500 text-[10px] text-right print:text-slate-600">الوقت الحالي (القاهرة)</p>
+            <p className="text-slate-500 text-[10px] text-right print:text-slate-600">الوقت الحالي (مصر)</p>
             <p className="text-slate-200 font-black print:text-black">{cairoTimeStr || 'جاري الحساب...'}</p>
           </div>
         </div>
@@ -146,7 +150,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         )}
         
         <div className="mt-4 border-t border-slate-100 pt-3 text-center">
-          <p className="text-slate-400 text-[10px] font-black uppercase tracking-wider print:text-slate-500">رمز التوثيق الساعي الديناميكي</p>
+          <p className="text-slate-400 text-[10px] font-black uppercase tracking-wider print:text-slate-500">رمز الـ QRCode اليومي</p>
           <p className="text-slate-900 text-lg font-black font-mono tracking-widest mt-1 bg-slate-100 inline-block px-4 py-1.5 rounded-xl print:bg-slate-200">
             {hourlyToken}
           </p>
@@ -158,19 +162,19 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         <div className="flex items-center gap-2.5 text-right">
           <ShieldAlert className="text-amber-500 shrink-0" size={20} />
           <div>
-            <p className="text-slate-200 font-black">حماية وتحديث ذاتي كل ساعة</p>
-            <p className="text-slate-400 text-[11px] font-semibold">يتغير كود التوثيق تلقائياً في رأس كل ساعة لتأمين الاختبارات ومنع تسريب الرابط.</p>
+            <p className="text-slate-200 font-black">حماية وتحديث ذاتي يومي</p>
+            <p className="text-slate-400 text-[11px] font-semibold">يتغير كود الـ QRCode تلقائيًا يوميًا في تمام الساعة 10:00 مساءً بالتوقيت المحلي لتأمين الاختبارات ومنع تسريب الرابط.</p>
           </div>
         </div>
         <div className="bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 font-mono text-emerald-400 text-sm font-black flex flex-col items-center shrink-0 animate-pulse">
-          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">صلاحية الرمز</span>
+          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">التحديث القادم</span>
           <span>{timeRemaining || '--:--:--'}</span>
         </div>
       </div>
 
       {/* User instructions */}
       <div className="p-4 bg-amber-500/5 rounded-2xl border border-amber-500/10 text-right text-xs font-bold leading-relaxed mb-6 text-amber-300 print:text-slate-800 print:border-slate-300 print:bg-slate-50">
-        💡 <span className="font-black text-amber-400 print:text-black">تعليمات الاستخدام:</span> وجه كاميرا هاتف الطالب أو الخادم لمسح الـ QR Code لتفعيل صلاحية دخول بوابة الامتحانات فوراً. الرمز صالح لمدة ساعة ومحمي من التمرير غير المصرح به.
+        💡 <span className="font-black text-amber-400 print:text-black">تعليمات الاستخدام:</span> وجه كاميرا هاتفك لمسح الـ QR Code لتفعيل صلاحية دخول بوابة الامتحانات فورًا. الرمز صالح لمدة 24 ساعة.
       </div>
 
       {/* Actions Button */}
@@ -194,7 +198,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
           }`}
         >
           {copied ? <CheckCircle size={16} /> : <RefreshCw size={16} />}
-          {copied ? 'تم نسخ رابط التفعيل' : 'نسخ رابط التفعيل اليومي'}
+          {copied ? 'تم نسخ رابط التفعيل' : 'نسخ رابط التفعيل '}
         </button>
 
         {onClose && (
