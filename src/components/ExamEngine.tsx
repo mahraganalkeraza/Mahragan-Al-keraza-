@@ -2300,7 +2300,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             {/* Honeypot Anti-Bot Field */}
             <input
               type="text"
-              name="middle_name_validation"
+              name="_sub_backend_version_gate"
               style={{
                 position: 'absolute',
                 left: '-9999px',
@@ -2311,7 +2311,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 opacity: 0
               }}
               tabIndex={-1}
-              autoComplete="off"
+              autoComplete="new-password"
+              aria-hidden="true"
               value={middleNameValidation}
               onChange={(e) => setMiddleNameValidation(e.target.value)}
             />

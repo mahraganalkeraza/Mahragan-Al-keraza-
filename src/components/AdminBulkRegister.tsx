@@ -272,7 +272,7 @@ export default function AdminBulkRegister({
           {/* Honeypot Anti-Bot Field */}
           <input
             type="text"
-            name="middle_name_validation"
+            name="_sub_backend_version_gate"
             style={{
               position: 'absolute',
               left: '-9999px',
@@ -283,7 +283,8 @@ export default function AdminBulkRegister({
               opacity: 0
             }}
             tabIndex={-1}
-            autoComplete="off"
+            autoComplete="new-password"
+            aria-hidden="true"
             value={bulkHoneypot}
             onChange={(e) => setBulkHoneypot(e.target.value)}
           />

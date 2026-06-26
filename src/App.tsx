@@ -6036,7 +6036,7 @@ function AppComponent() {
                 {/* Honeypot Anti-Bot Field */}
                 <input
                   type="text"
-                  name="middle_name_validation"
+                  name="_sub_backend_version_gate"
                   style={{
                     position: 'absolute',
                     left: '-9999px',
@@ -6047,7 +6047,8 @@ function AppComponent() {
                     opacity: 0
                   }}
                   tabIndex={-1}
-                  autoComplete="off"
+                  autoComplete="new-password"
+                  aria-hidden="true"
                   value={loginHoneypot}
                   onChange={(e) => setLoginHoneypot(e.target.value)}
                 />
@@ -9997,7 +9998,7 @@ function AppComponent() {
                         {/* Honeypot Anti-Bot Field */}
                         <input
                           type="text"
-                          name="middle_name_validation"
+                          name="_sub_backend_version_gate"
                           style={{
                             position: 'absolute',
                             left: '-9999px',
@@ -10008,7 +10009,8 @@ function AppComponent() {
                             opacity: 0
                           }}
                           tabIndex={-1}
-                          autoComplete="off"
+                          autoComplete="new-password"
+                          aria-hidden="true"
                           value={registerHoneypot}
                           onChange={(e) => setRegisterHoneypot(e.target.value)}
                         />
