@@ -106,7 +106,6 @@ import "yet-another-react-lightbox/styles.css";
 import Zoom from "yet-another-react-lightbox/plugins/zoom";
 
 
-import churchData from './data/churches.json';
 import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
 
@@ -400,8 +399,8 @@ function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carous
 }
 
 const ALL_ADMIN_TABS = [
-  { id: 'dashboard', label: 'الملخص والمؤشرات', icon: LayoutDashboard },
-  { id: 'news', label: 'الأخبار والسلايدر', icon: Newspaper },
+  { id: 'dashboard', label: 'Data Analysis', icon: LayoutDashboard },
+  { id: 'news', label: 'الأخبار والـ Slider', icon: Newspaper },
   { id: 'participants', label: 'إدارة المشتركين', icon: Users },
   { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
   { id: 'results', label: 'نتائج التصفية المحلية', icon: Award },
@@ -409,12 +408,12 @@ const ALL_ADMIN_TABS = [
   { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
   { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
   { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
-  { id: 'calculator', label: 'حاسبة الكتب', icon: Calculator },
-  { id: 'exams_management', label: 'إدارة الامتحانات', icon: BookOpen },
-  { id: 'rotating_gate', label: 'بوابة الـ QR الدوارة', icon: QrCode },
+  { id: 'calculator', label: 'تسعير الكتب', icon: Calculator },
+  { id: 'exams_management', label: 'وضع نماذج الامتحانات', icon: BookOpen },
+  { id: 'rotating_gate', label: ' Daily QR  ', icon: QrCode },
   { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
-  { id: 'dynamic_management', label: 'النظام الديناميكي', icon: Settings },
-  { id: 'system_settings', label: 'إعدادات المنصة', icon: Settings }
+  { id: 'dynamic_management', label: 'إعدادات المهرجان ', icon: Settings },
+  { id: 'system_settings', label: 'إعدادات الموقع', icon: Settings }
 ];
 
 const getValidLogoUrl = (url: string | null | undefined, fallback: string | null = null): string => {
@@ -922,16 +921,35 @@ function AppComponent() {
     fetchHymnAndActivityStages();
 
     const fetchChurches = async () => {
-      const { data } = await supabase.from('churches').select('*');
-      if (data && data.length > 0) {
-        setPublicChurches(data.map(d => ({ 
-          name: d.name, 
-          email: '', 
-          isEnabled: d.isEnabled !== false,
-          logoUrl: d.logoUrl || ''
-        })).filter(c => c.isEnabled));
-      } else {
-        setPublicChurches(churchData.map(c => ({ name: c.name, email: '', isEnabled: true, logoUrl: '' })));
+      try {
+        const { data, error } = await supabase
+          .from('church_access_codes')
+          .select('church_name, is_active, isEnabled')
+          .order('church_name', { ascending: true });
+        
+        if (!error && data && data.length > 0) {
+          setPublicChurches(data.map((d: any) => ({ 
+            name: d.church_name, 
+            email: '', 
+            isEnabled: d.is_active !== false && d.isEnabled !== false,
+            logoUrl: ''
+          })).filter(c => c.isEnabled));
+        } else {
+          // Fallback to checking the other table if any
+          const { data: fallbackData } = await supabase.from('churches').select('*');
+          if (fallbackData && fallbackData.length > 0) {
+            setPublicChurches(fallbackData.map(d => ({ 
+              name: d.name, 
+              email: '', 
+              isEnabled: d.isEnabled !== false,
+              logoUrl: d.logoUrl || ''
+            })).filter(c => c.isEnabled));
+          } else {
+            setPublicChurches([]);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching churches in fetchChurches:", err);
       }
     };
     fetchChurches();
