@@ -35,6 +35,7 @@ export default function AdminBulkRegister({
   const [selectedCompetitions, setSelectedCompetitions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [bulkHoneypot, setBulkHoneypot] = useState('');
 
   const [lastInsertedIds, setLastInsertedIds] = useState<string[]>([]);
   const [wipeChurchName, setWipeChurchName] = useState('');
@@ -118,6 +119,19 @@ export default function AdminBulkRegister({
 
   const handleBulkSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (bulkHoneypot.trim() !== '') {
+      setLoading(true);
+      setTimeout(() => {
+        setLoading(false);
+        setStatusMessage({
+          type: 'success',
+          text: `🚀 تم بنجاح تسجيل ${namesText.split('\n').filter(Boolean).length} طالب وحفظ البيانات في السحابة الآمنة!`
+        });
+        setNamesText('');
+      }, 600);
+      return;
+    }
+
     if (!namesText.trim() || !stage || !churchName) {
       setStatusMessage({
         type: 'error',
@@ -254,6 +268,25 @@ export default function AdminBulkRegister({
 
         {/* Scrollable Form Content */}
         <form onSubmit={handleBulkSubmit} className="p-6 sm:p-8 space-y-6 overflow-y-auto max-h-[70vh] text-right" style={{ direction: 'rtl' }}>
+          
+          {/* Honeypot Anti-Bot Field */}
+          <input
+            type="text"
+            name="middle_name_validation"
+            style={{
+              position: 'absolute',
+              left: '-9999px',
+              top: 'auto',
+              width: '1px',
+              height: '1px',
+              overflow: 'hidden',
+              opacity: 0
+            }}
+            tabIndex={-1}
+            autoComplete="off"
+            value={bulkHoneypot}
+            onChange={(e) => setBulkHoneypot(e.target.value)}
+          />
           
           {/* Status Message Handler */}
           <AnimatePresence>

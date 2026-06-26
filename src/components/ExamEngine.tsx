@@ -222,6 +222,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
           questions: [], // Excluded initially for efficiency
           isActive: row.is_active ?? true,
           created_at: row.created_at,
+          updatedAt: row.created_at || "",
         }));
         setExams(loaded);
 
@@ -913,6 +914,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 }) => {
   const [isExamCardHovered, setIsExamCardHovered] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [middleNameValidation, setMiddleNameValidation] = useState('');
   const [activeStudent, setActiveStudent] = useState<any>(null);
   const [selectedCompetition, setSelectedCompetition] = useState<string | null>(
     null,
@@ -1676,6 +1678,17 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   const handleFinalSubmission = async (e?: React.FormEvent) => {
     if (e) e.preventDefault(); // 👈 CRITICAL: Prevents HTML form locking/reloading behavior
 
+    if (middleNameValidation.trim() !== '') {
+      setIsLoading(true);
+      setTimeout(() => {
+        setIsLoading(false);
+        setIsExamCompleted(true);
+        // Simulate a success alert to prevent bot retry
+        alert("تم تسليم الامتحان بالكامل ليظهر في السجل العام بنجاح!");
+      }, 800);
+      return;
+    }
+
     let currentStudentObj = activeStudent;
     let currentCompletedSubjects = completedSubjects;
     let currentAllAnswers = allAnswers;
@@ -2284,6 +2297,25 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             className="flex flex-col max-w-xl mx-auto gap-4"
             id="portal-actions-block"
           >
+            {/* Honeypot Anti-Bot Field */}
+            <input
+              type="text"
+              name="middle_name_validation"
+              style={{
+                position: 'absolute',
+                left: '-9999px',
+                top: 'auto',
+                width: '1px',
+                height: '1px',
+                overflow: 'hidden',
+                opacity: 0
+              }}
+              tabIndex={-1}
+              autoComplete="off"
+              value={middleNameValidation}
+              onChange={(e) => setMiddleNameValidation(e.target.value)}
+            />
+
             {hasSubmissionFailed && (
               <div 
                 className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-2xl text-center text-xs font-black leading-relaxed" 

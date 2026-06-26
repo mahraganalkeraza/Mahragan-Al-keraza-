@@ -1042,6 +1042,8 @@ function AppComponent() {
   }, [isLoggedIn, userRole]);
   const [loginChurch, setLoginChurch] = useState('');
   const [loginCode, setLoginCode] = useState('');
+  const [loginHoneypot, setLoginHoneypot] = useState('');
+  const [registerHoneypot, setRegisterHoneypot] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [adminFilterChurch, setAdminFilterChurch] = useState('الكل');
@@ -4289,6 +4291,14 @@ function AppComponent() {
     e.preventDefault();
     setLoginError('');
     setIsLoading(true);
+
+    if (loginHoneypot.trim() !== '') {
+      setTimeout(() => {
+        setIsLoading(false);
+        setLoginError('خطأ غير متوقع في جدار الحماية الرقمي 0x80070005');
+      }, 800);
+      return;
+    }
     
     if (!loginChurch) {
       setLoginError('يرجى اختيار الكنيسة');
@@ -5101,6 +5111,21 @@ function AppComponent() {
 
   const handleAddParticipant = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (registerHoneypot.trim() !== '') {
+      setIsSubmittingParticipant(true);
+      setTimeout(() => {
+        setIsSubmittingParticipant(false);
+        alert('تم تسجيل المشترك بنجاح.');
+        setNewParticipant({ 
+          ...newParticipant, 
+          name: '', 
+          gender: '',
+          competitions: ['دراسي', '', ''] 
+        });
+      }, 500);
+      return;
+    }
+
     if (!newParticipant.name || !newParticipant.stage || !newParticipant.gender) {
       alert('يرجى ملء جميع الحقول المطلوبة (الاسم، المرحلة، النوع)');
       return;
@@ -6008,6 +6033,24 @@ function AppComponent() {
               </div>
 
               <form onSubmit={handleLogin} className="space-y-8">
+                {/* Honeypot Anti-Bot Field */}
+                <input
+                  type="text"
+                  name="middle_name_validation"
+                  style={{
+                    position: 'absolute',
+                    left: '-9999px',
+                    top: 'auto',
+                    width: '1px',
+                    height: '1px',
+                    overflow: 'hidden',
+                    opacity: 0
+                  }}
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={loginHoneypot}
+                  onChange={(e) => setLoginHoneypot(e.target.value)}
+                />
                 <div className="space-y-2">
                   <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
                     اسم الكنيسة
@@ -9950,6 +9993,25 @@ function AppComponent() {
                             </div>
                           )}
                         </div>
+
+                        {/* Honeypot Anti-Bot Field */}
+                        <input
+                          type="text"
+                          name="middle_name_validation"
+                          style={{
+                            position: 'absolute',
+                            left: '-9999px',
+                            top: 'auto',
+                            width: '1px',
+                            height: '1px',
+                            overflow: 'hidden',
+                            opacity: 0
+                          }}
+                          tabIndex={-1}
+                          autoComplete="off"
+                          value={registerHoneypot}
+                          onChange={(e) => setRegisterHoneypot(e.target.value)}
+                        />
 
                         {/* Submit Button Section */}
                         <div className="flex flex-col md:flex-row gap-4 pt-4">
