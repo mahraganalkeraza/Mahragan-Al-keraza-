@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { generateShortId } from '../lib/utils';
 import { X, Users, CheckCircle2, AlertTriangle, HelpCircle, Loader2 } from 'lucide-react';
@@ -42,6 +42,38 @@ export default function AdminBulkRegister({
   const [wipeStage, setWipeStage] = useState('');
   const [showWipeModal, setShowWipeModal] = useState(false);
   const [wipeConfirmText, setWipeConfirmText] = useState('');
+  const [churchesList, setChurchesList] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      const fetchChurchesDirectly = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('church_access_codes')
+            .select('church_name')
+            .order('church_name', { ascending: true });
+          
+          if (!error && data) {
+            const names = data
+              .map((d: any) => d.church_name)
+              .filter((name): name is string => typeof name === 'string' && name.trim() !== '');
+            
+            const uniqueNames = Array.from(new Set(names));
+            uniqueNames.sort((a, b) => a.localeCompare(b, 'ar'));
+            setChurchesList(uniqueNames);
+          }
+        } catch (err) {
+          console.error("Error fetching churches in bulk register:", err);
+        }
+      };
+      
+      fetchChurchesDirectly();
+    }
+  }, [isOpen]);
+
+  const displayChurches = churchesList.length > 0 
+    ? churchesList 
+    : Array.from(new Set(publicChurches.map((c: any) => c.name))).sort((a, b) => a.localeCompare(b, 'ar'));
 
   const handleCheckboxChange = (comp: string) => {
     if (selectedCompetitions.includes(comp)) {
@@ -343,7 +375,7 @@ export default function AdminBulkRegister({
                 onChange={(e) => setChurchName(e.target.value)}
               >
                 <option value="">-- اختر الكنيسة --</option>
-                {Array.from(new Set(publicChurches.map((c: any) => c.name))).sort().map(church => (
+                {displayChurches.map(church => (
                   <option key={church} value={church}>{church}</option>
                 ))}
               </select>
@@ -472,7 +504,7 @@ export default function AdminBulkRegister({
                 onChange={(e) => setWipeChurchName(e.target.value)}
               >
                 <option value="">-- اختر البلد/الكنيسة --</option>
-                {Array.from(new Set(publicChurches.map((c: any) => c.name))).sort().map(church => (
+                {displayChurches.map(church => (
                   <option key={church} value={church}>{church}</option>
                 ))}
               </select>
