@@ -1483,15 +1483,25 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       );
 
       const availableExams: Exam[] = matchedExams
-        .map((row: any) => ({
-          id: row.id,
-          stage: row.stage,
-          competitionType: row.subject || row.competition_type || "",
-          model: row.model || row.model_type || "A",
-          questions: row.questions_data || [],
-          isActive: row.is_active ?? true,
-          updatedAt: row.updated_at || "",
-        }))
+        .map((row: any) => {
+          let qs = row.questions_data || [];
+          if (typeof qs === "string") {
+            try {
+              qs = JSON.parse(qs);
+            } catch (e) {
+              qs = [];
+            }
+          }
+          return {
+            id: row.id,
+            stage: row.stage,
+            competitionType: row.subject || row.competition_type || "",
+            model: row.model || row.model_type || "A",
+            questions: Array.isArray(qs) ? qs : [],
+            isActive: row.is_active ?? true,
+            updatedAt: row.updated_at || "",
+          };
+        })
         .filter((exam) => exam.isActive !== false);
 
       if (availableExams.length === 0) {
@@ -1504,22 +1514,28 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const randomModel =
         availableExams[Math.floor(Math.random() * availableExams.length)];
 
-      const shuffledQuestions = [...randomModel.questions].sort(
-        () => 0.5 - Math.random(),
-      );
-      shuffledQuestions.forEach((q) => {
-        if (q.type === "mcq") q.options.sort(() => 0.5 - Math.random());
-        if (q.type === "matching" && q.matchingPairs) {
-          (q as any).shuffledRights = q.matchingPairs
-            .map((p: any) => p.right)
-            .sort(() => 0.5 - Math.random());
-        }
-      });
+      const shuffledQuestions = [...randomModel.questions]
+        .sort(() => 0.5 - Math.random())
+        .map((origQ) => {
+          const q = { ...origQ };
+          if (q.type === "mcq" && q.options) {
+            q.options = [...q.options].sort(() => 0.5 - Math.random());
+          }
+          if (q.type === "matching" && q.matchingPairs) {
+            (q as any).shuffledRights = [...q.matchingPairs]
+              .map((p: any) => p.right)
+              .sort(() => 0.5 - Math.random());
+          }
+          return q;
+        });
 
-      randomModel.questions = shuffledQuestions;
+      const activeExamModel = {
+        ...randomModel,
+        questions: shuffledQuestions,
+      };
 
       setSelectedCompetition(competitionType);
-      setActiveExam(randomModel);
+      setActiveExam(activeExamModel);
       localStorage.setItem(`exam_start_time_${activeStudent.id}`, Date.now().toString());
 
       // DEVICE METADATA EXTRACTION & LOGGING CONSOLIDATION - Postponed to next season
@@ -2263,8 +2279,13 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
               return (
                 <button
                   key={type}
+                  type="button"
                   id={`competition-btn-${subKey}`}
-                  onClick={() => startExam(type)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startExam(type);
+                  }}
                   disabled={isLoading || isSaved}
                   className={
                     isSaved
