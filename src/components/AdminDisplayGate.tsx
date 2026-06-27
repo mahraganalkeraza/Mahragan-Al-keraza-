@@ -12,7 +12,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
   const [cairoTimeStr, setCairoTimeStr] = useState('');
   const [hourlyToken, setHourlyToken] = useState(() => getHourlyExamToken());
 
-  const qrValue = `https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/Exam_engine?gateway_token=${hourlyToken}`;
+  const qrValue = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/Exam_engine?gateway_token=73d3a5678aef';
 
   // Generate QR Code
   useEffect(() => {
@@ -152,7 +152,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         <div className="mt-4 border-t border-slate-100 pt-3 text-center">
           <p className="text-slate-400 text-[10px] font-black uppercase tracking-wider print:text-slate-500">رمز الـ QRCode اليومي</p>
           <p className="text-slate-900 text-lg font-black font-mono tracking-widest mt-1 bg-slate-100 inline-block px-4 py-1.5 rounded-xl print:bg-slate-200">
-            {hourlyToken}
+            73d3a5678aef
           </p>
         </div>
       </div>

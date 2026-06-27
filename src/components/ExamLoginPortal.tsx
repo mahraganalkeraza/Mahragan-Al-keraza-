@@ -414,18 +414,19 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         return;
       }
 
-      const { data: examRow, error: examErr } = await supabase
+      const { data: examRows, error: examErr } = await supabase
         .from('exams_pool')
         .select('id, exam_title, stage, questions_data, model_type, is_active')
         .eq('stage', studentObj.stage)
-        .eq('is_active', true)
-        .maybeSingle();
+        .eq('is_active', true);
 
-      if (examErr || !examRow) {
+      if (examErr || !examRows || examRows.length === 0) {
         setErrors(`تنبيه: لا يوجد امتحان نشط ومفتوح حالياً مخصص لمرحلة (${studentObj.stage || 'غير محددة'}).`);
         setIsLoading(false);
         return;
       }
+
+      const examRow = examRows[0];
 
       // توثيق وحفظ لوج الجهاز الملاحق - Postponed to next season
       // await logDeviceAccess(studentObj.id, studentObj.name, studentObj.stage, studentObj.churchName, examRow.id);

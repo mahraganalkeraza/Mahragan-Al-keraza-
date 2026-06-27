@@ -319,7 +319,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
 
       const { error: saveErr } = await supabase
         .from("exams_pool")
-        .insert([examPayload]);
+        .upsert([examPayload]);
 
       if (saveErr) throw saveErr;
 
