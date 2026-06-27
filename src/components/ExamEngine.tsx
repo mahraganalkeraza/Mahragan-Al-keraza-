@@ -750,7 +750,7 @@ interface QuestionCardProps {
 const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAnswer }: QuestionCardProps) => {
   return (
     <div
-      className="max-w-3xl mx-auto p-6 bg-white rounded-2xl shadow-md border border-slate-100 space-y-6 select-none animate-question-fade"
+      className="w-full max-w-full px-4 md:max-w-4xl mx-auto block relative overflow-hidden p-6 bg-white rounded-2xl shadow-md border border-slate-100 space-y-6 select-none animate-question-fade"
       id={`question-block-${q.id}`}
       key={`${q.id}-${qIdx}`}
     >
@@ -872,7 +872,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                     };
                     onAnswer(q.id, nextList);
                   }}
-                  className="px-3 py-2 border border-slate-300 focus:border-[#d4af37] focus:ring-2 focus:ring-amber-100 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all font-sans"
+                  className="w-full px-3 py-2 border border-slate-300 focus:border-[#d4af37] focus:ring-2 focus:ring-amber-100 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all font-sans"
                 >
                   <option value="">اختر المطابقة الصحيحة...</option>
                   {(q as any).shuffledRights?.map(
@@ -2447,7 +2447,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[150] overflow-y-auto bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6 portal-container" id="active-exam-viewport">
+    <div className="fixed inset-0 z-[150] overflow-y-auto overflow-x-hidden bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6 portal-container" id="active-exam-viewport">
       {/* Centered background container for the Festival Logo, with subtle blend/opacity */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
         <img
@@ -2458,7 +2458,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       </div>
 
       <div
-        className="w-full max-w-2xl relative z-10 py-4"
+        className="w-full max-w-full px-4 md:max-w-4xl mx-auto block relative overflow-hidden z-10 py-4"
         id="active-exam-questions-outer-container"
       >
         <div
