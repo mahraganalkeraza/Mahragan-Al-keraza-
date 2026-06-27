@@ -958,7 +958,6 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
           { id: 'competitions', label: 'إدراج المسابقات العامة' },
           { id: 'levels', label: 'إدخال المراحل وتخصيص مسابقاتها' },
           { id: 'activityStages', label: '  مراحل الأنشطة الأخرى' },
-          { id: 'hymnStages', label: 'مراحل الألحان' },
           { id: 'validation', label: 'فحص شيتات الأسقفية قبل الرفع' },
           { id: 'logo', label: 'شعار المهرجان السنوي' },
           { id: 'migration', label: 'الدمج والترحيل العكسي (Backup/Supabase)' },
@@ -1235,41 +1234,6 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
               <PlatformManagement />
               {/* Existing purge logic can go here if needed, but the user requested PlatformManagement */}
            </div>
-        )}
-
-        {/* TAB: HYMN STAGES */}
-        {activeTab === 'hymnStages' && (
-          <div className="space-y-8">
-            <form onSubmit={addHymnStage} className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
-              <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2"><Plus /> إضافة مرحلة الألحان (للألحان فقط)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold mb-2">اسم المرحلة</label>
-                  <input type="text" value={newHymnStageName} onChange={e => setNewHymnStageName(e.target.value)} required className="w-full p-3 rounded-lg border border-slate-200" placeholder="مثال: Nursery, Grade 3..." />
-                </div>
-              </div>
-              <button 
-                type="submit" 
-                className="mt-4 px-6 py-3 bg-primary text-white rounded-lg font-black flex items-center gap-2"
-              >
-                <Plus size={20} />
-                إضافة المرحلة
-              </button>
-            </form>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {hymnStages.map(stage => (
-                <div key={stage.id} className="p-4 border border-slate-100 rounded-xl flex items-center justify-between shadow-sm">
-                  <div>
-                    <h4 className="font-black text-lg text-slate-800">{stage.name}</h4>
-                  </div>
-                  <button onClick={() => setDeleteConfirmation({ id: stage.id, type: 'hymnStage' as any })} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors">
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
         )}
 
         {/* TAB: LOGO */}

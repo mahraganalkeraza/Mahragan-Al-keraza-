@@ -2078,7 +2078,7 @@ function AppComponent() {
     activeSubActivities.forEach(t => {
       const actType = t.activityType || t.activity_type || 'نشاط غير محدد';
       const cName = t.churchName || t.church_name || 'غير محدد';
-      const isGroup = actType === 'كورال' || actType.includes('جماعي') || t.choirLevel?.includes('جماعي') || actType === 'مسرح' || actType === 'ألحان';
+      const isGroup = actType === 'كورال' || actType.includes('جماعي') || t.choirLevel?.includes('جماعي') || actType === 'مسرح' || (actType === 'ألحان' && (t.maleCount > 0 || t.femaleCount > 0 || !t.members || t.members.length === 0 || !(t.members[0]?.name)));
 
       if (!subActivityStatsMap[actType]) {
         subActivityStatsMap[actType] = { isGroup, count: 0 };
@@ -4626,15 +4626,34 @@ function AppComponent() {
     try {
       if (type === 'ألحان') {
         const { data, error } = await supabase
-          .from('hymnStages')
-          .select('id, name')
-          .order('name', { ascending: true });
+          .from('activity_stages')
+          .select('id, activity_type, stage_name, form_type')
+          .eq('activity_type', 'ألحان')
+          .order('stage_name', { ascending: true });
         
-        if (!error && data) {
-          setHymnStages(data);
+        if (!error && data && data.length > 0) {
+          const mappedData = data.map((d: any) => ({
+            id: d.id,
+            name: d.stage_name,
+            form_type: d.form_type
+          }));
+          setHymnStages(mappedData);
           setActivityStages([]);
-        } else if (error) {
-          console.error("Error fetching hymn stages:", error);
+        } else {
+          if (error) {
+            console.error("Error fetching hymn stages from activity_stages:", error);
+          }
+          // Fallback to standard local stages for hymns with form types
+          const standardStages = [
+            { id: 'h1', name: 'ابتدائي (فردي)', form_type: 'فردي' },
+            { id: 'h2', name: 'ابتدائي (جماعي)', form_type: 'جماعي' },
+            { id: 'h3', name: 'إعدادي (فردي)', form_type: 'فردي' },
+            { id: 'h4', name: 'إعدادي (جماعي)', form_type: 'جماعي' },
+            { id: 'h5', name: 'ثانوي (فردي)', form_type: 'فردي' },
+            { id: 'h6', name: 'ثانوي (جماعي)', form_type: 'جماعي' }
+          ];
+          setHymnStages(standardStages);
+          setActivityStages([]);
         }
       } else {
         const { data, error } = await supabase
@@ -4718,7 +4737,7 @@ function AppComponent() {
     } else if (newTeam.activityType === 'كورال') {
       formType = 'جماعي';
     } else if (newTeam.activityType === 'ألحان') {
-      formType = selectedStageName.includes('فردي') ? 'فردي' : 'جماعي';
+      formType = selectedStage?.form_type || (selectedStageName.includes('فردي') ? 'فردي' : 'جماعي');
     } else if (!formType) {
       formType = 'فردي';
     }
@@ -4886,9 +4905,9 @@ function AppComponent() {
 
   const handleEditTeam = async (team: any) => {
     const sName = team.stage_name || team.choirLevel || '';
-    const isIndiv = sName.includes('فردي');
-
     const foundStage = allActivityStages.find((s: any) => s.stage_name === sName || s.name === sName);
+    const isIndiv = foundStage ? (foundStage.form_type === 'فردي') : sName.includes('فردي');
+
     const inferredActType = team.activityType || (foundStage ? foundStage.activity_type : (sName.includes('ألحان') ? 'ألحان' : (sName.includes('كورال') ? 'كورال' : (sName.includes('عزف') ? 'عزف' : 'ترنيم فردي'))));
 
     await fetchStagesForActivity(inferredActType);
@@ -10193,7 +10212,7 @@ function AppComponent() {
                               } else if (newTeam.activityType === 'كورال') {
                                 formType = 'جماعي';
                               } else if (newTeam.activityType === 'ألحان') {
-                                formType = selectedStageName.includes('فردي') ? 'فردي' : 'جماعي';
+                                formType = selectedStage?.form_type || (selectedStageName.includes('فردي') ? 'فردي' : 'جماعي');
                               } else if (!formType) {
                                 formType = 'فردي';
                               }
@@ -10380,7 +10399,7 @@ function AppComponent() {
                                 </div>
 
                                  <div className="space-y-3">
-                                  {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || t.activityType === 'ألحان' ? null : (
+                                  {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || (t.activityType === 'ألحان' && (t.maleCount > 0 || t.femaleCount > 0 || !t.members || t.members.length === 0 || !(t.members[0]?.name))) ? null : (
                                     <>
                                       <p className="text-[10px] font-black text-slate-400 uppercase">المشترك</p>
                                       <div className="flex flex-wrap gap-2">
@@ -10395,7 +10414,7 @@ function AppComponent() {
                                 </div>
 
                                 <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
-                                  {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || t.activityType === 'ألحان' ? (
+                                  {(t as any).stage_name?.includes('جماعي') || t.activityType === 'كورال' || (t.activityType === 'ألحان' && (t.maleCount > 0 || t.femaleCount > 0 || !t.members || t.members.length === 0 || !(t.members[0]?.name))) ? (
                                     <div className="flex gap-4">
                                       <span className="text-[10px] font-black text-primary">ذكور: {t.maleCount || 0}</span>
                                       <span className="text-[10px] font-black text-primary">إناث: {t.femaleCount || 0}</span>
