@@ -5835,7 +5835,7 @@ function AppComponent() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-soft font-sans selection:bg-accent/30 relative" dir="rtl">
+    <div className="min-h-screen bg-bg-soft font-sans selection:bg-accent/30 relative main-app-wrapper" dir="rtl">
       {/* Forced Remote Refresh Countdown Toast */}
       <AnimatePresence>
         {refreshCountdown !== null && (
@@ -10906,7 +10906,7 @@ function AppComponent() {
 
       <AnimatePresence>
         {showExamGateway && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/95 z-[100] flex flex-col p-0 md:p-4">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/95 z-[100] flex flex-col p-0 md:p-4 portal-container">
             <div className="bg-indigo-700 text-white p-4 flex justify-between items-center shadow-lg md:rounded-t-3xl">
               <div className="flex items-center gap-3">
                 <BookOpen size={24} className="text-accent" />

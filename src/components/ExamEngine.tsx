@@ -2447,7 +2447,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[150] overflow-y-auto bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6" id="active-exam-viewport">
+    <div className="fixed inset-0 z-[150] overflow-y-auto bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6 portal-container" id="active-exam-viewport">
       {/* Centered background container for the Festival Logo, with subtle blend/opacity */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
         <img
