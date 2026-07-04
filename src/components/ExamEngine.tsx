@@ -210,8 +210,8 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
     try {
       const { data, error } = await supabase
         .from("exams_pool")
-        .select("id, stage, subject, model_type, is_active, created_at");
-      if (error) {
+        .select("id, stage, subject, model_type, is_active, created_at, exam_title, questions_data"); 
+         if (error) {
         console.error("Error fetching exams pool:", error);
       } else if (data) {
         const loaded: Exam[] = data.map((row: any) => ({
