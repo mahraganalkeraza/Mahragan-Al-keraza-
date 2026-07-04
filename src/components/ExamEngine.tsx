@@ -788,8 +788,8 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
 
       {(q.type === "mcq" || q.type === "boolean") && (
         <div className="space-y-3 mt-4" id={`answers-grp-${q.id}`}>
-          {q.options.map((opt: string, oIndex: number) => {
-            const isSelected = currentAnswer === opt;
+            {q.options?.map((opt: string, oIndex: number) => {
+              const isSelected = currentAnswer === opt;
             return (
               <div
                 role="button"

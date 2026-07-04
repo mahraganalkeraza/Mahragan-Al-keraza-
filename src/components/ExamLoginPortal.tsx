@@ -35,7 +35,7 @@ interface ExamLoginPortalProps {
     examData: {
       id: string;
       exam_title: string;
-      questions: any;
+      questions_data: any;
       model_type: string;
     }
   ) => void;
@@ -444,7 +444,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         {
           id: examRow.id,
           exam_title: examRow.exam_title,
-          questions: examRow.questions_data,
+          questions_data: examRow.questions_data,
           model_type: examRow.model_type || 'A'
         }
       );
