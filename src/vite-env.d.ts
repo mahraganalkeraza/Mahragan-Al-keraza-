@@ -1,10 +1,19 @@
 /// <reference types="vite/client" />
-
-interface ImportMetaEnv {
-  readonly VITE_SUPABASE_URL: string;
-  readonly VITE_SUPABASE_ANON_KEY: string;
+declare module '*.jpeg' {
+  const src: string;
+  export default src;
 }
-
-interface ImportMeta {
-  readonly env: ImportMetaEnv;
+declare module '*.jpg' {
+  const src: string;
+  export default src;
+}
+declare module '*.png' {
+  const src: string;
+  export default src;
+}
+declare module '*.svg' {
+  import React = require('react');
+  export const ReactComponent: React.FC<React.SVGProps<SVGSVGElement>>;
+  const src: string;
+  export default src;
 }
