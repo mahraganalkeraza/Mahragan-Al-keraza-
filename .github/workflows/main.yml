@@ -32,10 +32,9 @@ jobs:
 
       - name: Build Project
         env:
-          # تأكد إنك ضايف المفاتيح دي في الـ GitHub Secrets عندك
-          VITE_SUPABASE_URL:  https://nrigdgdiqjdzieryjjod.supabase.co/
-          VITE_SUPABASE_ANON_KEY:  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5yaWdkZ2RpcWpkemllcnlqam9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3Njg3MTIsImV4cCI6MjA5NjM0NDcxMn0.9YMt8Vxy4lJ_7RBpjvBd9Gv9TB-AFv88U6pDoH9A3Fo 
-          # لو لسه بتستخدم Firebase، سيب دول زي ما هما
+          # تم نقل البيانات الحساسة للـ Secrets لمنع فشل الـ Build
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
@@ -56,6 +55,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-     - name: Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v3 # جرب الإصدار الثالث (مستقر أكثر حالياً)
+        uses: actions/deploy-pages@v3
