@@ -410,8 +410,8 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
           supabase.from('competition_bank').select('*').range(0, 4999),
           supabase.from('activityStages').select('*').range(0, 4999),
           supabase.from('hymnStages').select('*').range(0, 4999),
-          supabase.from('system_settings').select('*').eq('id', 'app_config').maybeSingle(),
-          supabase.from('system_settings').select('*').eq('id', 'validation').maybeSingle()
+          supabase.from('system_settings').select('*').limit(1).maybeSingle(),
+          supabase.from('system_settings').select('*').limit(1).maybeSingle()
         ]);
 
         if (!isMounted) return;
