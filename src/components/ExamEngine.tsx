@@ -255,7 +255,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
         .select("questions_data") // هنجيب العمود اللي فيه الهيكلة اللي بعتها
         .eq("stage", selectedStage)
         .eq("subject", selectedCompetition)
-        .eq("model", selectedModel)
+        .eq("model_type", selectedModel)
         .eq("is_active", true)
         .maybeSingle();
 
