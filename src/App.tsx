@@ -739,9 +739,11 @@ function AppComponent() {
     if (typeof window !== 'undefined') {
       if (
         window.location.pathname === '/exam-login' || 
+        window.location.pathname === '/exam-portal-route' || 
         window.location.search.includes('gateway_token=') ||
         window.location.hash.includes('gateway_token=') ||
-        window.location.hash.includes('/exam-login')
+        window.location.hash.includes('/exam-login') ||
+        window.location.hash.includes('/exam-portal-route')
       ) {
         return 'exam-login';
       }
@@ -5014,7 +5016,7 @@ function AppComponent() {
   const [isCheckingDevice, setIsCheckingDevice] = useState(false);
 
   const handleOpenExams = () => {
-    setIsPortalOpen(true);
+    window.open('/exam-portal-route', '_blank', 'noopener,noreferrer');
   };
 
   const handleDeleteSchedule = async (id: string) => {
@@ -5470,8 +5472,8 @@ function AppComponent() {
   const NavItem = ({ id, icon: Icon, label }: { id: string, icon: any, label: string }) => (
     <button
       onClick={() => { 
-        if (id === 'exams_portal' || id === 'exam-login') {
-          setIsPortalOpen(true);
+        if (id === 'exams_portal' || id === 'exam-login' || id === 'exams') {
+          window.open('/exam-portal-route', '_blank', 'noopener,noreferrer');
         } else {
           setActiveSection(id); 
         }
@@ -6219,7 +6221,7 @@ function AppComponent() {
               {/* Removed calculator section */}
               
               <div 
-                onClick={() => setActiveSection('exams')}
+                onClick={() => window.open('/exam-portal-route', '_blank', 'noopener,noreferrer')}
                 className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all cursor-pointer group"
               >
                 <div className="w-16 h-16 bg-coptic-gold/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">

@@ -2284,6 +2284,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    setSelectedCompetition(type);
                     startExam(type);
                   }}
                   disabled={isLoading || isSaved}
