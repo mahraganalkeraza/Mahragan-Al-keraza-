@@ -210,8 +210,8 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
     try {
       const { data, error } = await supabase
         .from("exams_pool")
-        .select("id, stage, subject, model_type, is_active, created_at, exam_title, questions_data"); 
-         if (error) {
+        .select("id, stage, subject, model_type, is_active, created_at");
+      if (error) {
         console.error("Error fetching exams pool:", error);
       } else if (data) {
         const loaded: Exam[] = data.map((row: any) => ({
@@ -247,41 +247,33 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
 
   useEffect(() => {
     const fetchQuestionsOnDemand = async () => {
-  if (selectedStage && selectedCompetition && selectedModel) {
-    setIsLoadingQuestions(true);
-    try {
-      const { data, error } = await supabase
-        .from("exams_pool")
-        .select("questions_data") // هنجيب العمود اللي فيه الهيكلة اللي بعتها
-        .eq("stage", selectedStage)
-        .eq("subject", selectedCompetition)
-        .eq("model_type", selectedModel)
-        .eq("is_active", true)
-        .maybeSingle();
+      if (selectedStage && selectedCompetition && selectedModel) {
+        setIsLoadingQuestions(true);
+        const examId = `${selectedStage}_${selectedCompetition}_${selectedModel}`;
+        try {
+          const { data, error } = await supabase
+            .from("exams_pool")
+            .select("questions_data")
+            .eq("id", examId)
+            .maybeSingle();
 
-      if (error) {
-        console.error("خطأ في الاتصال بقاعدة البيانات:", error);
-        setCurrentQuestions([]); 
-      } else if (data && data.questions_data) {
-        // التحقق من أن البيانات مصفوفة فعلاً قبل تمريرها
-        const questions = Array.isArray(data.questions_data) 
-          ? data.questions_data 
-          : JSON.parse(data.questions_data); // في حال كانت مخزنة كنص
-        
-        setCurrentQuestions(questions);
-      } else {
-        console.warn("لم يتم العثور على أسئلة لهذا الامتحان");
-        setCurrentQuestions([]);
+          if (error) {
+            console.error("Error fetching active exam questions:", error);
+            setCurrentQuestions([]);
+          } else if (data && data.questions_data) {
+            setCurrentQuestions(data.questions_data);
+          } else {
+            setCurrentQuestions([]);
+          }
+        } catch (e) {
+          console.error("Error loading questions:", e);
+          setCurrentQuestions([]);
+        } finally {
+          setIsLoadingQuestions(false);
+        }
+        setIsDirty(false);
       }
-    } catch (e) {
-      console.error("خطأ أثناء معالجة الأسئلة:", e);
-      setCurrentQuestions([]);
-    } finally {
-      setIsLoadingQuestions(false);
-      setIsDirty(false);
-    }
-  }
-};
+    };
     fetchQuestionsOnDemand();
   }, [selectedStage, selectedCompetition, selectedModel]);
 
@@ -327,7 +319,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
 
       const { error: saveErr } = await supabase
         .from("exams_pool")
-        .upsert([examPayload]);
+        .insert([examPayload]);
 
       if (saveErr) throw saveErr;
 
@@ -758,7 +750,7 @@ interface QuestionCardProps {
 const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAnswer }: QuestionCardProps) => {
   return (
     <div
-      className="w-full max-w-full px-4 md:max-w-4xl mx-auto block relative overflow-hidden p-6 bg-white rounded-2xl shadow-md border border-slate-100 space-y-6 select-none animate-question-fade"
+      className="max-w-3xl mx-auto p-6 bg-white rounded-2xl shadow-md border border-slate-100 space-y-6 select-none animate-question-fade"
       id={`question-block-${q.id}`}
       key={`${q.id}-${qIdx}`}
     >
@@ -796,8 +788,8 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
 
       {(q.type === "mcq" || q.type === "boolean") && (
         <div className="space-y-3 mt-4" id={`answers-grp-${q.id}`}>
-            {q.options?.map((opt: string, oIndex: number) => {
-              const isSelected = currentAnswer === opt;
+          {q.options.map((opt: string, oIndex: number) => {
+            const isSelected = currentAnswer === opt;
             return (
               <div
                 role="button"
@@ -880,7 +872,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                     };
                     onAnswer(q.id, nextList);
                   }}
-                  className="w-full px-3 py-2 border border-slate-300 focus:border-[#d4af37] focus:ring-2 focus:ring-amber-100 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all font-sans"
+                  className="px-3 py-2 border border-slate-300 focus:border-[#d4af37] focus:ring-2 focus:ring-amber-100 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all font-sans"
                 >
                   <option value="">اختر المطابقة الصحيحة...</option>
                   {(q as any).shuffledRights?.map(
@@ -1381,7 +1373,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (globalSettings.is_exam_locked) {
         setIsLoading(false);
-        return alert("عذراً، الامتحانات مغلقة بقرار من اللجنة المركزية 🔒");
+        return alert("عذراً، الامتحانات الإلكترونية مغلقة بالكامل بقرار سيادي من اللجنة المركزية 🔒");
       }
 
       // Get exams_pool info without devicelogs check
@@ -1491,25 +1483,15 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       );
 
       const availableExams: Exam[] = matchedExams
-        .map((row: any) => {
-          let qs = row.questions_data || [];
-          if (typeof qs === "string") {
-            try {
-              qs = JSON.parse(qs);
-            } catch (e) {
-              qs = [];
-            }
-          }
-          return {
-            id: row.id,
-            stage: row.stage,
-            competitionType: row.subject || row.competition_type || "",
-            model: row.model || row.model_type || "A",
-            questions: Array.isArray(qs) ? qs : [],
-            isActive: row.is_active ?? true,
-            updatedAt: row.updated_at || "",
-          };
-        })
+        .map((row: any) => ({
+          id: row.id,
+          stage: row.stage,
+          competitionType: row.subject || row.competition_type || "",
+          model: row.model || row.model_type || "A",
+          questions: row.questions_data || [],
+          isActive: row.is_active ?? true,
+          updatedAt: row.updated_at || "",
+        }))
         .filter((exam) => exam.isActive !== false);
 
       if (availableExams.length === 0) {
@@ -1522,28 +1504,22 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const randomModel =
         availableExams[Math.floor(Math.random() * availableExams.length)];
 
-      const shuffledQuestions = [...randomModel.questions]
-        .sort(() => 0.5 - Math.random())
-        .map((origQ) => {
-          const q = { ...origQ };
-          if (q.type === "mcq" && q.options) {
-            q.options = [...q.options].sort(() => 0.5 - Math.random());
-          }
-          if (q.type === "matching" && q.matchingPairs) {
-            (q as any).shuffledRights = [...q.matchingPairs]
-              .map((p: any) => p.right)
-              .sort(() => 0.5 - Math.random());
-          }
-          return q;
-        });
+      const shuffledQuestions = [...randomModel.questions].sort(
+        () => 0.5 - Math.random(),
+      );
+      shuffledQuestions.forEach((q) => {
+        if (q.type === "mcq") q.options.sort(() => 0.5 - Math.random());
+        if (q.type === "matching" && q.matchingPairs) {
+          (q as any).shuffledRights = q.matchingPairs
+            .map((p: any) => p.right)
+            .sort(() => 0.5 - Math.random());
+        }
+      });
 
-      const activeExamModel = {
-        ...randomModel,
-        questions: shuffledQuestions,
-      };
+      randomModel.questions = shuffledQuestions;
 
       setSelectedCompetition(competitionType);
-      setActiveExam(activeExamModel);
+      setActiveExam(randomModel);
       localStorage.setItem(`exam_start_time_${activeStudent.id}`, Date.now().toString());
 
       // DEVICE METADATA EXTRACTION & LOGGING CONSOLIDATION - Postponed to next season
@@ -1708,7 +1684,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         setIsLoading(false);
         setIsExamCompleted(true);
         // Simulate a success alert to prevent bot retry
-        alert("تم تسليم الامتحان بنجاح!");
+        alert("تم تسليم الامتحان بالكامل ليظهر في السجل العام بنجاح!");
       }, 800);
       return;
     }
@@ -2040,7 +2016,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           </div>
           <h2 className="text-3xl font-black mb-4 text-rose-700">الامتحان مغلق</h2>
           <p className="text-slate-600 font-bold mb-8">
-            عفواً، الامتحان مغلق حالياً.
+            عفواً، الامتحان مغلق حالياً بقرار من إدارة الكنترول المركزي. يرجى مراجعة المشرف الخاص بك.
           </p>
           <button
             onClick={() => {
@@ -2215,7 +2191,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 className="text-[10px] sm:text-[11px] text-gray-600 font-bold uppercase tracking-wider mt-1"
                 id="student-meta-details-sub"
               >
-                المشترك نشط بالبوابة الرقمية • كود خاص:{" "}
+                المشترك النشط بالبوابة الرقمية • كود خاص:{" "}
                 <span className="font-mono text-[#6b0311] font-black">
                   {activeStudent.id}
                 </span>
@@ -2287,13 +2263,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
               return (
                 <button
                   key={type}
-                  type="button"
                   id={`competition-btn-${subKey}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    startExam(type);
-                  }}
+                  onClick={() => startExam(type)}
                   disabled={isLoading || isSaved}
                   className={
                     isSaved
@@ -2351,9 +2322,9 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-2xl text-center text-xs font-black leading-relaxed" 
                 id="submission-fail-retry-alert"
               >
-                ⚠️ يبدو أن هناك مشكلة في الاتصال بالشبكة ولم نتمكن من تسليم الإجابات. 
+                ⚠️ يبدو أن هناك مشكلة في الاتصال بالشبكة ولم نتمكن من تسليم الإجابات برمجياً. 
                 <br />
-                لكن لا تقلق، إجاباتك محفوظة بأمان في ذاكرة جهازك .
+                لكن لا تقلق، إجاباتك محفوظة بأمان تام في ذاكرة جهازك المحلية.
                 <br />
                 يرجى الضغط على زر "إعادة المحاولة" أدناه لتسليم الإجابات مجدداً.
               </div>
@@ -2372,7 +2343,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             >
               {isLoading 
                 ? (hasSubmissionFailed ? "جاري إعادة محاولة إرسال الإجابات... ⏳" : "جاري إرسال الإجابات... ⏳") 
-                : (hasSubmissionFailed ? "إعادة تسليم الامتحان بالكامل 🔄" : "إرسال الامتحان     ")}
+                : (hasSubmissionFailed ? "إعادة تسليم الامتحان بالكامل 🔄" : "إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام")}
             </button>
 
             <button
@@ -2476,7 +2447,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[150] overflow-y-auto overflow-x-hidden bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6 portal-container" id="active-exam-viewport">
+    <div className="fixed inset-0 z-[150] overflow-y-auto bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6" id="active-exam-viewport">
       {/* Centered background container for the Festival Logo, with subtle blend/opacity */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
         <img
@@ -2487,7 +2458,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       </div>
 
       <div
-        className="w-full max-w-full px-4 md:max-w-4xl mx-auto block relative overflow-hidden z-10 py-4"
+        className="w-full max-w-2xl relative z-10 py-4"
         id="active-exam-questions-outer-container"
       >
         <div

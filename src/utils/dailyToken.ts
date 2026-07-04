@@ -145,7 +145,6 @@ export function getHourlyExamToken(offsetDays: number = 0): string {
  */
 export function validateHourlyExamToken(token: string | null): boolean {
   if (!token) return false;
-  if (token === '73d3a5678aef') return true;
   
   // Active token for the current 24-hour window
   const currentToken = getHourlyExamToken(0);

@@ -172,7 +172,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       setLastSyncTime(syncTimeStr);
     } catch (err: any) {
       console.error("Failed to sync registrations:", err);
-      setSyncError("خطأ في تحديث قاعدة البيانات  .");
+      setSyncError("خطأ في تحديث قاعدة البيانات من الخادم.");
     } finally {
       setIsSyncing(false);
     }
@@ -393,7 +393,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
       const { data: sysData } = await supabase.from('system_settings').select('is_exam_locked').eq('id', '1').maybeSingle();
       if (sysData?.is_exam_locked) {
-        setErrors("عفواً، الامتحان مغلق حالياً .");
+        setErrors("عفواً، الامتحان مغلق حالياً بقرار من إدارة الكنترول المركزي. يرجى مراجعة المشرف الخاص بك.");
         setIsLoading(false);
         return;
       }
@@ -409,24 +409,23 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       const end = gateData?.exam_end_at ? new Date(gateData.exam_end_at) : null;
 
       if ((start && now < start) || (end && now > end) || gateData?.is_exam_disabled) {
-        setErrors("عفواً، الامتحان مغلق حالياً .");
+        setErrors("عفواً، الامتحان مغلق حالياً (إما خارج نطاق الوقت المحدد أو معطل). يرجى مراجعة المشرف.");
         setIsLoading(false);
         return;
       }
 
-      const { data: examRows, error: examErr } = await supabase
+      const { data: examRow, error: examErr } = await supabase
         .from('exams_pool')
         .select('id, exam_title, stage, questions_data, model_type, is_active')
         .eq('stage', studentObj.stage)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .maybeSingle();
 
-      if (examErr || !examRows || examRows.length === 0) {
-        setErrors(`تنبيه: لا يوجد امتحان  ومفتوح حالياً مخصص لمرحلة (${studentObj.stage || 'غير محددة'}).`);
+      if (examErr || !examRow) {
+        setErrors(`تنبيه: لا يوجد امتحان نشط ومفتوح حالياً مخصص لمرحلة (${studentObj.stage || 'غير محددة'}).`);
         setIsLoading(false);
         return;
       }
-
-      const examRow = examRows[0];
 
       // توثيق وحفظ لوج الجهاز الملاحق - Postponed to next season
       // await logDeviceAccess(studentObj.id, studentObj.name, studentObj.stage, studentObj.churchName, examRow.id);
@@ -474,7 +473,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   };
 
   return (
-    <div className="fixed inset-0 overflow-y-auto z-[160] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] backdrop-blur-xl flex flex-col items-center justify-start md:justify-center p-4 md:p-8 pt-12 md:pt-8 min-h-[100dvh] font-arabic antialiased portal-container" dir="rtl">
+    <div className="fixed inset-0 overflow-y-auto z-[160] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] backdrop-blur-xl flex flex-col items-center justify-start md:justify-center p-4 md:p-8 pt-12 md:pt-8 min-h-[100dvh] font-arabic antialiased" dir="rtl">
       <img src={logo} className="absolute inset-0 w-full h-full object-cover opacity-10 mix-blend-overlay pointer-events-none blur-md" alt="" />
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -516,9 +515,9 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
             <QrCode className="text-amber-400" size={28} />
           </div>
 
-          <h1 className="text-xl md:text-2xl font-black mb-1">بوابة امتحان الأونلاين</h1>
+          <h1 className="text-xl md:text-2xl font-black mb-1">بوابة الاختبارات الإلكترونية الرقمية</h1>
           <p className="text-slate-400 text-xs font-semibold max-w-sm mx-auto">
-            مهرجان الكرازة المرقسية - وجه  الـ QR أمام كاميرا الموبيل لبدء الامتحان.
+            مهرجان الكرازة المرقسية - وجه كارت الـ QR أمام كاميرا الموبيل فوراً لبدء اللجنة.
           </p>
         </div>
 
