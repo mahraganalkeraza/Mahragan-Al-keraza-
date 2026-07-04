@@ -1,10 +1,19 @@
 import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+let supabase: any;
+try {
+  if (supabaseUrl && supabaseAnonKey) {
+    supabase = createClient(supabaseUrl, supabaseAnonKey);
+  } else {
+    console.error("Missing Supabase environment variables.");
+  }
+} catch (error) {
+  console.error("Failed to initialize Supabase client:", error);
+}
 
 function App() {
   const [examData, setExamData] = useState<any>(null);
@@ -12,6 +21,11 @@ function App() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchExamData = async () => {
+    if (!supabase) {
+      setError("لم يتم تهيئة قاعدة البيانات بشكل صحيح. يرجى التحقق من متغيرات البيئة.");
+      return;
+    }
+    
     setLoading(true);
     setError(null);
     setExamData(null);
@@ -22,28 +36,30 @@ function App() {
 
     console.log("Searching for:", { cleanStage, cleanSubject });
 
-    const { data, error } = await supabase
-      .from('exams_pool')
-      .select('id, exam_title, questions_data, stage, subject')
-      .eq('stage', cleanStage)
-      .eq('subject', cleanSubject)
-      .eq('is_active', true)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from('exams_pool')
+        .select('id, exam_title, questions_data, stage, subject')
+        .eq('stage', cleanStage)
+        .eq('subject', cleanSubject)
+        .eq('is_active', true)
+        .maybeSingle();
 
-    setLoading(false);
-
-    if (error) {
-      console.error("Supabase Error:", error);
-      setError(error.message);
-      return;
-    }
-    
-    if (!data) {
-      console.warn("لا يوجد امتحان مطابق لـ:", cleanStage, cleanSubject);
-      setError("لا يوجد امتحان مطابق.");
-    } else {
-      console.log("تم العثور على الامتحان:", data);
-      setExamData(data);
+      if (error) {
+        console.error("Supabase Error:", error);
+        setError(error.message);
+      } else if (!data) {
+        console.warn("لا يوجد امتحان مطابق لـ:", cleanStage, cleanSubject);
+        setError("لا يوجد امتحان مطابق.");
+      } else {
+        console.log("تم العثور على الامتحان:", data);
+        setExamData(data);
+      }
+    } catch (err: any) {
+      console.error("Unexpected Error:", err);
+      setError(err.message || "حدث خطأ غير متوقع.");
+    } finally {
+      setLoading(false);
     }
   };
 
