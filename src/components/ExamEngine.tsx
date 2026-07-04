@@ -247,33 +247,41 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
 
   useEffect(() => {
     const fetchQuestionsOnDemand = async () => {
-      if (selectedStage && selectedCompetition && selectedModel) {
-        setIsLoadingQuestions(true);
-        const examId = `${selectedStage}_${selectedCompetition}_${selectedModel}`;
-        try {
-          const { data, error } = await supabase
-            .from("exams_pool")
-            .select("questions_data")
-            .eq("id", examId)
-            .maybeSingle();
+  if (selectedStage && selectedCompetition && selectedModel) {
+    setIsLoadingQuestions(true);
+    try {
+      const { data, error } = await supabase
+        .from("exams_pool")
+        .select("questions_data") // هنجيب العمود اللي فيه الهيكلة اللي بعتها
+        .eq("stage", selectedStage)
+        .eq("subject", selectedCompetition)
+        .eq("model", selectedModel)
+        .eq("is_active", true)
+        .maybeSingle();
 
-          if (error) {
-            console.error("Error fetching active exam questions:", error);
-            setCurrentQuestions([]);
-          } else if (data && data.questions_data) {
-            setCurrentQuestions(data.questions_data);
-          } else {
-            setCurrentQuestions([]);
-          }
-        } catch (e) {
-          console.error("Error loading questions:", e);
-          setCurrentQuestions([]);
-        } finally {
-          setIsLoadingQuestions(false);
-        }
-        setIsDirty(false);
+      if (error) {
+        console.error("خطأ في الاتصال بقاعدة البيانات:", error);
+        setCurrentQuestions([]); 
+      } else if (data && data.questions_data) {
+        // التحقق من أن البيانات مصفوفة فعلاً قبل تمريرها
+        const questions = Array.isArray(data.questions_data) 
+          ? data.questions_data 
+          : JSON.parse(data.questions_data); // في حال كانت مخزنة كنص
+        
+        setCurrentQuestions(questions);
+      } else {
+        console.warn("لم يتم العثور على أسئلة لهذا الامتحان");
+        setCurrentQuestions([]);
       }
-    };
+    } catch (e) {
+      console.error("خطأ أثناء معالجة الأسئلة:", e);
+      setCurrentQuestions([]);
+    } finally {
+      setIsLoadingQuestions(false);
+      setIsDirty(false);
+    }
+  }
+};
     fetchQuestionsOnDemand();
   }, [selectedStage, selectedCompetition, selectedModel]);
 
