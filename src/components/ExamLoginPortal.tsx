@@ -172,7 +172,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       setLastSyncTime(syncTimeStr);
     } catch (err: any) {
       console.error("Failed to sync registrations:", err);
-      setSyncError("خطأ في تحديث قاعدة البيانات من الخادم.");
+      setSyncError("خطأ في تحديث قاعدة البيانات  .");
     } finally {
       setIsSyncing(false);
     }

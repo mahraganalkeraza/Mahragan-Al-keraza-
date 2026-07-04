@@ -1381,7 +1381,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (globalSettings.is_exam_locked) {
         setIsLoading(false);
-        return alert("عذراً، الامتحانات الإلكترونية مغلقة بالكامل بقرار سيادي من اللجنة المركزية 🔒");
+        return alert("عذراً، الامتحانات مغلقة بقرار من اللجنة المركزية 🔒");
       }
 
       // Get exams_pool info without devicelogs check
@@ -1481,46 +1481,57 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       setIsExamCompleted(false);
       setIsTerminated(false);
 
-      // Read exams from cache or fetch all exams pool once per day (Zero-Egress Strategy)
-      const allCachedPool = await fetchAllExamsAndCache();
-      const matchedExams = allCachedPool.filter(
-        (row: any) =>
-          String(row.stage).trim() === String(stage).trim() &&
-          normalizeArabic(row.subject || row.competition_type) ===
-            normalizeArabic(competitionType),
-      );
+      // Scan the Database exactly as requested in prompt instructions:
+      let activeExamData: any = null;
+      try {
+        const { data, error } = await supabase
+          .from('exams_pool')
+          .select('id, stage, subject, model_type, is_active, updated_at, exam_title, questions_data')
+          .eq('stage', stage) // التصفية حسب المرحلة
+          .eq('subject', competitionType) // التصفية حسب المادة
+          .eq('is_active', true) // التحقق من النشاط
+          .maybeSingle(); // جلب ورقة واحدة فقط
 
-      const availableExams: Exam[] = matchedExams
-        .map((row: any) => {
-          let qs = row.questions_data || [];
-          if (typeof qs === "string") {
-            try {
-              qs = JSON.parse(qs);
-            } catch (e) {
-              qs = [];
-            }
-          }
-          return {
-            id: row.id,
-            stage: row.stage,
-            competitionType: row.subject || row.competition_type || "",
-            model: row.model || row.model_type || "A",
-            questions: Array.isArray(qs) ? qs : [],
-            isActive: row.is_active ?? true,
-            updatedAt: row.updated_at || "",
-          };
-        })
-        .filter((exam) => exam.isActive !== false);
-
-      if (availableExams.length === 0) {
-        setIsLoading(false);
-        return alert(
-          `لا يوجد امتحان متاح لمرحلة ${stage} في مسابقة ${competitionType}`,
-        );
+        if (error) {
+          console.error("Database query error:", error);
+        } else {
+          activeExamData = data;
+        }
+      } catch (err) {
+        console.error("Database access error:", err);
       }
 
-      const randomModel =
-        availableExams[Math.floor(Math.random() * availableExams.length)];
+      if (!activeExamData) {
+        setIsLoading(false);
+        alert("Mission Standby"); // Report 'Mission Standby'—do not crash as requested!
+        return;
+      }
+
+      let qs = activeExamData.questions_data || [];
+      if (typeof qs === "string") {
+        try {
+          qs = JSON.parse(qs);
+        } catch (e) {
+          qs = [];
+        }
+      }
+
+      const randomModel = {
+        id: activeExamData.id || `${stage}_${competitionType}`,
+        stage: activeExamData.stage || stage,
+        competitionType: activeExamData.subject || competitionType,
+        model: activeExamData.model_type || "A",
+        questions: Array.isArray(qs) ? qs : [],
+        isActive: activeExamData.is_active ?? true,
+        updatedAt: activeExamData.updated_at || "",
+        exam_title: activeExamData.exam_title || "",
+      };
+
+      if (randomModel.questions.length === 0) {
+        setIsLoading(false);
+        alert("Mission Standby"); // If questions list is empty, also standby safely
+        return;
+      }
 
       const shuffledQuestions = [...randomModel.questions]
         .sort(() => 0.5 - Math.random())
@@ -1708,7 +1719,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         setIsLoading(false);
         setIsExamCompleted(true);
         // Simulate a success alert to prevent bot retry
-        alert("تم تسليم الامتحان بالكامل ليظهر في السجل العام بنجاح!");
+        alert("تم تسليم الامتحان بنجاح!");
       }, 800);
       return;
     }
@@ -2040,7 +2051,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           </div>
           <h2 className="text-3xl font-black mb-4 text-rose-700">الامتحان مغلق</h2>
           <p className="text-slate-600 font-bold mb-8">
-            عفواً، الامتحان مغلق حالياً بقرار من إدارة الكنترول المركزي. يرجى مراجعة المشرف الخاص بك.
+            عفواً، الامتحان مغلق حالياً.
           </p>
           <button
             onClick={() => {
@@ -2215,7 +2226,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 className="text-[10px] sm:text-[11px] text-gray-600 font-bold uppercase tracking-wider mt-1"
                 id="student-meta-details-sub"
               >
-                المشترك النشط بالبوابة الرقمية • كود خاص:{" "}
+                المشترك نشط بالبوابة الرقمية • كود خاص:{" "}
                 <span className="font-mono text-[#6b0311] font-black">
                   {activeStudent.id}
                 </span>
@@ -2351,9 +2362,9 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-2xl text-center text-xs font-black leading-relaxed" 
                 id="submission-fail-retry-alert"
               >
-                ⚠️ يبدو أن هناك مشكلة في الاتصال بالشبكة ولم نتمكن من تسليم الإجابات برمجياً. 
+                ⚠️ يبدو أن هناك مشكلة في الاتصال بالشبكة ولم نتمكن من تسليم الإجابات. 
                 <br />
-                لكن لا تقلق، إجاباتك محفوظة بأمان تام في ذاكرة جهازك المحلية.
+                لكن لا تقلق، إجاباتك محفوظة بأمان في ذاكرة جهازك .
                 <br />
                 يرجى الضغط على زر "إعادة المحاولة" أدناه لتسليم الإجابات مجدداً.
               </div>
@@ -2372,7 +2383,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             >
               {isLoading 
                 ? (hasSubmissionFailed ? "جاري إعادة محاولة إرسال الإجابات... ⏳" : "جاري إرسال الإجابات... ⏳") 
-                : (hasSubmissionFailed ? "إعادة تسليم الامتحان بالكامل 🔄" : "إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام")}
+                : (hasSubmissionFailed ? "إعادة تسليم الامتحان بالكامل 🔄" : "إرسال الامتحان     ")}
             </button>
 
             <button

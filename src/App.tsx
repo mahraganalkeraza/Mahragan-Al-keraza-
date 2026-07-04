@@ -955,13 +955,17 @@ function AppComponent() {
     fetchChurches();
 
     const fetchSettings = async () => {
-      const { data: valData } = await supabase.from('system_settings').select('*').eq('id', 'validation').maybeSingle();
-      if (valData) {
-        setValidationSettings({
-          templates: valData.templates || [],
-          ageMappings: valData.ageMappings || [],
-          rules: valData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
-        });
+      try {
+        const { data: valData } = await supabase.from('system_settings').select('*').eq('id', 'validation').maybeSingle();
+        if (valData) {
+          setValidationSettings({
+            templates: valData.templates || [],
+            ageMappings: valData.ageMappings || [],
+            rules: valData.rules || { nameLength: true, genderMatch: false, mandatoryRows: true }
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch validation settings:", err);
       }
 
       // Load master global settings
@@ -982,7 +986,11 @@ function AppComponent() {
             is_book_orders_locked: false,
             is_site_disabled: false
           };
-          await supabase.from('system_settings').upsert(defaultGlobal);
+          try {
+            await supabase.from('system_settings').upsert(defaultGlobal);
+          } catch (e) {
+            console.error("Failed to upsert default settings:", e);
+          }
           setGlobalSettings({
             is_exam_locked: false,
             is_registration_locked: false,
@@ -1005,30 +1013,47 @@ function AppComponent() {
       }
 
       // Check System Lock in registrations table
-      const { data: lockRow } = await supabase.from('registrations').select('name').eq('name', 'SYSTEM_LOCK').maybeSingle();
-      const isCurrentlyLocked = !!lockRow;
+      let isCurrentlyLocked = false;
+      try {
+        const { data: lockRow } = await supabase.from('registrations').select('name').eq('name', 'SYSTEM_LOCK').maybeSingle();
+        isCurrentlyLocked = !!lockRow;
+      } catch (e) {
+        console.error("Failed to fetch SYSTEM_LOCK registrations:", e);
+      }
 
-      const { data: ctrlData } = await supabase.from('system_settings').select('*').eq('id', 'system_controls').maybeSingle();
-      if (ctrlData) {
-        setSystemControls({
-          isRegistrationOpen: !isCurrentlyLocked,
-          isBookCalculatorOpen: ctrlData.isBookCalculatorOpen !== false
-        });
-      } else {
+      try {
+        const { data: ctrlData } = await supabase.from('system_settings').select('*').eq('id', 'system_controls').maybeSingle();
+        if (ctrlData) {
+          setSystemControls({
+            isRegistrationOpen: !isCurrentlyLocked,
+            isBookCalculatorOpen: ctrlData.isBookCalculatorOpen !== false
+          });
+        } else {
+          setSystemControls(prev => ({
+            ...prev,
+            isRegistrationOpen: !isCurrentlyLocked
+          }));
+        }
+      } catch (e) {
+        console.error("Failed to fetch system_controls settings:", e);
         setSystemControls(prev => ({
           ...prev,
           isRegistrationOpen: !isCurrentlyLocked
         }));
       }
 
-      const { data: examData } = await supabase.from('system_settings').select('*').eq('id', 'exam_config').maybeSingle();
-      if (examData) {
-        setExamConfig({
-          isExamLive: examData.isExamLive !== false,
-          churchOverrides: examData.churchOverrides || {},
-          stageOverrides: examData.stageOverrides || {},
-          autoCloseTime: examData.autoCloseTime
-        });
+      try {
+        const { data: examData } = await supabase.from('system_settings').select('*').eq('id', 'exam_config').maybeSingle();
+        if (examData) {
+          setExamConfig({
+            isExamLive: examData.isExamLive !== false,
+            churchOverrides: examData.churchOverrides || {},
+            stageOverrides: examData.stageOverrides || {},
+            autoCloseTime: examData.autoCloseTime
+          });
+        }
+      } catch (e) {
+        console.error("Failed to fetch exam_config settings:", e);
       }
     };
     fetchSettings();
@@ -2447,26 +2472,28 @@ function AppComponent() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        try {
-          const { data: schedulesData, error } = await supabase
-            .from('schedules')
-            .select('*')
-            .eq('year', activeYear);
-            
-          if (error) {
-            console.warn("Schedules table warning:", error.message);
-          } else if (schedulesData) {
-            setSchedules(schedulesData);
-          }
-        } catch (err) {
-          console.error("Non-blocking schedules fetch error caught:", err);
+        const { data: schedulesData, error } = await supabase
+          .from('schedules')
+          .select('*')
+          .eq('year', activeYear);
+          
+        if (error) {
+          console.warn("Schedules table warning:", error.message);
+        } else if (schedulesData) {
+          setSchedules(schedulesData);
         }
+      } catch (err) {
+        console.warn("Table 'schedules' might be missing, ignoring:", err);
+      }
 
-        const { data: linksData } = await supabase
+      try {
+        const { data: linksData, error } = await supabase
           .from('examLinks')
           .select('*')
           .eq('year', activeYear);
-        if (linksData) {
+        if (error) {
+          console.warn("examLinks table warning:", error.message);
+        } else if (linksData) {
           const links: Record<string, string> = {};
           linksData.forEach(d => {
             links[d.stage] = d.url;
@@ -2474,7 +2501,7 @@ function AppComponent() {
           setExamLinks(links);
         }
       } catch (err) {
-        console.error("Error fetching data from Supabase:", err);
+        console.warn("Table 'examLinks' might be missing, ignoring:", err);
       }
     };
     fetchData();
@@ -2513,8 +2540,12 @@ function AppComponent() {
     async function fetchStaticData() {
         try {
             await fetchAllChurchParticipants();
-            
-            // News
+        } catch (error) {
+            console.error("Error fetching church participants:", error);
+        }
+        
+        // News
+        try {
             const { data: newsData } = await supabase
               .from('news')
               .select('*')
@@ -2522,8 +2553,12 @@ function AppComponent() {
               .order('timestamp', { ascending: false })
               .limit(10);
             if (newsData) setNews(newsData as News[]);
+        } catch (error) {
+            console.warn("Table 'news' might be missing, ignoring:", error);
+        }
 
-            // Carousel
+        // Carousel
+        try {
             const { data: carouselData } = await supabase
               .from('carousel')
               .select('*')
@@ -2531,22 +2566,38 @@ function AppComponent() {
             if (carouselData) {
               setCarouselItems((carouselData as CarouselItem[]).sort((a, b) => (a.order || 0) - (b.order || 0)));
             }
+        } catch (error) {
+            console.warn("Table 'carousel' might be missing, ignoring:", error);
+        }
 
+        try {
             await fetchBooksFromSupabase();
+        } catch (error) {
+            console.error("Error fetching books:", error);
+        }
 
-            // Settings
+        // Settings
+        try {
             const { data: footerData } = await supabase.from('system_settings').select('*').eq('id', 'footer').maybeSingle();
             if (footerData && footerData.details) setSiteSettings(footerData.details as SiteSettings);
+        } catch (error) {
+            console.error("Error fetching footer settings:", error);
+        }
 
+        try {
             const { data: aboutData } = await supabase.from('system_settings').select('*').eq('id', 'about').maybeSingle();
             if (aboutData && aboutData.details) setAboutContent(aboutData.details as AboutContent);
+        } catch (error) {
+            console.error("Error fetching about settings:", error);
+        }
 
+        try {
             const { data: examData } = await supabase.from('system_settings').select('*').eq('id', 'exam_config').maybeSingle();
             if (examData && examData.details) {
                 // ... update exam config if needed ...
             }
         } catch (error) {
-            console.error("Supabase load static data error:", error);
+            console.error("Error fetching exam config settings:", error);
         }
     }
     fetchStaticData();
