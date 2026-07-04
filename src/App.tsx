@@ -2512,7 +2512,8 @@ function AppComponent() {
 
     async function fetchStaticData() {
         try {
-            await fetchAllChurchParticipants();
+            // 🚨 EMERGENCY FIX: Removed await fetchAllChurchParticipants() from automatic fetch to prevent Supabase Egress Explosion.
+            // It is now lazy-loaded via fetchLargeData manually.
             
             // News
             const { data: newsData } = await supabase
@@ -4269,23 +4270,28 @@ function AppComponent() {
     }
   };
 
+  // 🚨 EMERGENCY FIX: Removed automatic fetchLargeData (Mission Standby) to stop Supabase Egress Explosion.
+  // It is now strictly lazy-loaded and will ONLY execute when the user clicks the explicit UI button.
   useEffect(() => {
-    fetchLargeData(false);
+    // fetchLargeData(false); 
   }, [userRole, churchName, activeYear, isLoggedIn]);
 
+  // 🚨 EMERGENCY FIX: Added strict if (data) checks to prevent re-execution if data is already present.
+  // Dependencies reduced to prevent infinite loops on filter changes. Fetches trigger on mount/tab-switch ONLY.
   useEffect(() => {
     if (!isLoggedIn) return;
     if (activeSection === 'admin_dashboard') {
       if (adminActiveTab === 'dashboard') {
-        fetchTeamsPage(true, true);
-        fetchOrdersPage(true, true);
+        if (activityTeams.length === 0) fetchTeamsPage(true, true);
+        if (orders.length === 0) fetchOrdersPage(true, true);
       }
-      if (adminActiveTab === 'participants') fetchParticipantsPage(true, true, participantSearch);
+      if (adminActiveTab === 'participants' && participants.length === 0) fetchParticipantsPage(true, true, participantSearch);
       if (adminActiveTab === 'results' && results.length === 0) fetchResultsPage(true, true);
       if (adminActiveTab === 'orders' && orders.length === 0) fetchOrdersPage(true, true);
       if (adminActiveTab === 'activity_teams' && activityTeams.length === 0) fetchTeamsPage(true, true, teamSearch);
     }
-  }, [adminActiveTab, activeSection, isLoggedIn, activeYear, partChurchFilter, partStageFilter, partCompFilter, globalChurchFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminActiveTab, activeSection, isLoggedIn, activeYear]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
