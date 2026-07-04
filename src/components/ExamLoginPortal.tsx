@@ -76,24 +76,19 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
   // Gate check for Daily Rotating Gate
   const [gateAccessGranted, setGateAccessGranted] = useState(false);
-  const [isQrScanned, setIsQrScanned] = useState(() => {
-    return typeof window !== 'undefined' && sessionStorage.getItem('isQrScanned') === 'true';
-  });
 
   useEffect(() => {
-    let providedToken = new URLSearchParams(window.location.search).get('gateway_token') || new URLSearchParams(window.location.search).get('token');
+    let providedToken = new URLSearchParams(window.location.search).get('gateway_token');
     
     // Support hash-routed query parameters
     if (!providedToken && window.location.hash.includes('?')) {
       const hashQuery = window.location.hash.split('?')[1];
-      providedToken = new URLSearchParams(hashQuery).get('gateway_token') || new URLSearchParams(hashQuery).get('token');
+      providedToken = new URLSearchParams(hashQuery).get('gateway_token');
     }
 
     if (providedToken) {
       if (validateHourlyExamToken(providedToken)) {
         localStorage.setItem('gate_access_granted_hourly', providedToken);
-        sessionStorage.setItem('isQrScanned', 'true');
-        setIsQrScanned(true);
         setGateAccessGranted(true);
       } else {
         // Scenario B: Expired token in URL
@@ -101,8 +96,6 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         localStorage.removeItem('gate_access_granted');
         localStorage.removeItem('gateway_exam_token');
         localStorage.removeItem('active_student_session');
-        sessionStorage.removeItem('isQrScanned');
-        setIsQrScanned(false);
         setGateAccessGranted(false);
         alert("عفواً، انتهت صلاحية رمز الدخول.");
         if (onClose) onClose();
@@ -112,20 +105,15 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       const storedToken = localStorage.getItem('gate_access_granted_hourly');
       if (storedToken && validateHourlyExamToken(storedToken)) {
         setGateAccessGranted(true);
-        if (sessionStorage.getItem('isQrScanned') === 'true') {
-          setIsQrScanned(true);
-        } else {
-          setIsQrScanned(false);
-        }
       } else {
         // Scenario B: Missing token / Direct shortcut access
         localStorage.removeItem('gate_access_granted_hourly');
         localStorage.removeItem('gate_access_granted');
         localStorage.removeItem('gateway_exam_token');
         localStorage.removeItem('active_student_session');
-        sessionStorage.removeItem('isQrScanned');
-        setIsQrScanned(false);
         setGateAccessGranted(false);
+        alert("عفواً، انتهت صلاحية رمز الدخول.");
+        if (onClose) onClose();
       }
     }
   }, [onClose]);
@@ -535,24 +523,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         </div>
 
         <div className="p-6">
-          {!isQrScanned ? (
-            <div className="text-center py-10 px-4 space-y-6 flex flex-col items-center">
-              <div className="w-20 h-20 bg-amber-50 border border-amber-200 rounded-full flex items-center justify-center animate-pulse text-amber-500">
-                <QrCode size={40} />
-              </div>
-              <h2 className="text-xl font-black text-amber-600">تنبيه أمني: مطلوب مسح الـ QR Code</h2>
-              <p className="text-slate-600 text-sm font-bold leading-relaxed max-w-sm text-center">
-                برجاء مسح رمز الاستجابة السريعة (QR Code) المطبوع على ورقة الأسئلة الورقية الخاصة بك أولاً للدخول للجنة الامتحان.
-              </p>
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black rounded-xl hover:shadow-lg transition-all text-sm"
-              >
-                العودة للرئيسية
-              </button>
-            </div>
-          ) : !gateAccessGranted ? (
+          {!gateAccessGranted ? (
             <div className="text-center py-10 px-4 space-y-6 flex flex-col items-center">
               <div className="w-20 h-20 bg-red-50 border border-red-200 rounded-full flex items-center justify-center animate-bounce text-red-500">
                 <Lock size={40} />
