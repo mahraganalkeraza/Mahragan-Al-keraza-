@@ -35,7 +35,7 @@ interface ExamLoginPortalProps {
     examData: {
       id: string;
       exam_title: string;
-      questions_data: any;
+      questions: any;
       model_type: string;
     }
   ) => void;
@@ -393,7 +393,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
       const { data: sysData } = await supabase.from('system_settings').select('is_exam_locked').eq('id', '1').maybeSingle();
       if (sysData?.is_exam_locked) {
-        setErrors("عفواً، الامتحان مغلق حالياً بقرار من إدارة الكنترول المركزي. يرجى مراجعة المشرف الخاص بك.");
+        setErrors("عفواً، الامتحان مغلق حالياً .");
         setIsLoading(false);
         return;
       }
@@ -409,7 +409,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       const end = gateData?.exam_end_at ? new Date(gateData.exam_end_at) : null;
 
       if ((start && now < start) || (end && now > end) || gateData?.is_exam_disabled) {
-        setErrors("عفواً، الامتحان مغلق حالياً (إما خارج نطاق الوقت المحدد أو معطل). يرجى مراجعة المشرف.");
+        setErrors("عفواً، الامتحان مغلق حالياً .");
         setIsLoading(false);
         return;
       }
@@ -444,7 +444,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         {
           id: examRow.id,
           exam_title: examRow.exam_title,
-          questions_data: examRow.questions_data,
+          questions: examRow.questions_data,
           model_type: examRow.model_type || 'A'
         }
       );
