@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { getHourlyExamToken } from '../utils/dailyToken';
 import { QrCode, Printer, RefreshCw, Clock, Calendar, CheckCircle, ShieldAlert } from 'lucide-react';
+import logo from '../by-logo.jpeg';
 
 export default function AdminDisplayGate({ onClose, isInline = false }: { onClose?: () => void; isInline?: boolean }) {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
@@ -11,7 +12,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
   const [cairoTimeStr, setCairoTimeStr] = useState('');
   const [hourlyToken, setHourlyToken] = useState(() => getHourlyExamToken());
 
-  const qrValue = `https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/exam-portal-route?gateway_token=${hourlyToken}`;
+  const qrValue = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/Exam_engine?gateway_token=73d3a5678aef';
 
   // Generate QR Code
   useEffect(() => {
@@ -151,7 +152,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         <div className="mt-4 border-t border-slate-100 pt-3 text-center">
           <p className="text-slate-400 text-[10px] font-black uppercase tracking-wider print:text-slate-500">رمز الـ QRCode اليومي</p>
           <p className="text-slate-900 text-lg font-black font-mono tracking-widest mt-1 bg-slate-100 inline-block px-4 py-1.5 rounded-xl print:bg-slate-200">
-            {hourlyToken}
+            73d3a5678aef
           </p>
         </div>
       </div>
@@ -215,18 +216,16 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
 
   if (isInline) {
     return (
-      <div className="w-full flex justify-center p-2 text-slate-100" dir="rtl">
+      <div className="w-full flex justify-center p-2 text-slate-100 font-arabic" dir="rtl">
         {content}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 flex flex-col items-center justify-center relative overflow-hidden" dir="rtl">
-      {/* Premium Ambient Background */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-amber-500/15 via-slate-950/90 to-slate-950 pointer-events-none z-0" />
-      <div className="absolute inset-0 opacity-[0.03] bg-[linear-gradient(to_right,#808080_1px,transparent_1px),linear-gradient(to_bottom,#808080_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none z-0" />
-      
+    <div className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8 flex flex-col items-center justify-center font-arabic relative" dir="rtl">
+      {/* Background decoration */}
+      <img src={logo} className="absolute inset-0 w-full h-full object-cover opacity-5 mix-blend-overlay pointer-events-none blur-sm" alt="" />
       {content}
     </div>
   );

@@ -1,8 +1,6 @@
 {
-  "name": "بوابة امتحانات مهرجان الكرازة",
-  "description": "بوابة مخصصة لتوليد وعرض الـ QRCode اليومية لتأمين وتسهيل دخول لجان اختبارات مهرجان الكرازة المرقسية بإيبارشية مغاغة والعدوة.",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "name": "Remix: Mahragan Al-Keraza 2026",
+  "description": "Official portal for St. Mark’s Servant Festival 2026, featuring a book order calculator, registration, and exam schedules.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

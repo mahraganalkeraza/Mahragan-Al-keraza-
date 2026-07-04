@@ -1,13 +1,227 @@
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;700;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;700&family=Inter:wght@400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap');
 @import "tailwindcss";
 
+   /*ألوان الموقع الرئيسية */
 @theme {
-  --font-sans: "Cairo", "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Tajawal", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-cairo: "Cairo", sans-serif;
+  --color-primary: #800000;
+  --color-accent: #D4AF37;
+  --color-bg-soft: #F3F4F6;
+  
+  /* حافظ على الالوان كده عشان تظهر في الطباعة تمام */
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  
+  --color-stone-50: #fafaf9;
+  --color-stone-100: #f5f5f4;
+}
+
+@keyframes admin-pulse-glow {
+  0%, 100% { box-shadow: 0 0 15px rgba(30, 58, 138, 0.6); }
+  50% { box-shadow: 0 0 25px rgba(30, 58, 138, 0.9); }
 }
 
 @layer base {
   body {
-    font-family: var(--font-sans);
+    @apply bg-bg-soft text-slate-900 antialiased;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
+
+@layer utilities {
+  .font-arabic {
+    font-family: 'Tajawal', sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  .glass {
+    @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-xl;
+  }
+  .glass-dark {
+    @apply bg-black/10 backdrop-blur-md border border-white/10 shadow-xl;
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #800000;
+    border-radius: 10px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #D4AF37;
+  }
+}
+
+.coptic-pattern {
+  background-image: radial-gradient(#D4AF37 0.5px, transparent 0.5px);
+  background-size: 10px 10px;
+}
+
+/* كود لتغيير إطار كل الزراير في الموقع */
+button {
+  border: 2px solid #D4AF37 !important; /* لون ذهبي للإطار */
+  color: #dfab02; /* شلنا ال !important علشان Tailwind يشتغل */
+  font-weight: bold;
+}
+
+button:hover {
+  background-color: #000000 !important; 
+  color: #ffffff !important; 
+}
+
+button.quick-access-card {
+  background-color: #006064 !important; /* Dark Teal, override global */
+  color: #ffffff !important;            /* White, override global */
+  border: 1px solid #004d40 !important;
+  transition: all 0.3s ease !important;
+  font-family: var(--font-cairo) !important;
+  border-radius: 1rem !important; /* Matches rounded-2xl */
+  padding: 1.5rem !important;     /* Matches p-6 */
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  text-align: center !important;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+button.quick-access-card:hover {
+  filter: brightness(0.9);
+  background-color: #006064 !important; /* Keep original background color */
+  color: #ffff00 !important;            /* Very bright yellow to stay visible */
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+button.quick-access-card:active {
+  filter: brightness(0.8);
+  background-color: #006064 !important;
+  color: #ffff00 !important;
+  box-shadow: inset 0 4px 6px 0 rgba(0, 0, 0, 0.25) !important;
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 20mm 15mm 20mm 15mm; /* Protects top, bottom, and sides */
+  }
+  
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Target the main print wrapper/container */
+  .print-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    transform: scale(0.98); /* Slightly scale down to ensure 100% safety closure */
+    transform-origin: top left;
+  }
+
+  /* Prevent row breaking mid-text if printing tables or lists */
+  tr, .result-row {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .analytics-report-container {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm !important;
+  }
+}
+
+@keyframes qFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-question-fade {
+  animation: qFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* 1. Global Wrapper Fix (Prevent Horizontal Scrolling & White Spaces) */
+.main-app-wrapper {
+  overflow-x: hidden !important;
+  width: 100%;
+  max-width: 100vw;
+}
+
+/* Ensure body and html prevent side overflow on mobile devices */
+html, body {
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100vw;
+}
+
+/* 2. Flex/Grid Split Screen Layout Adjustment (Mobile vs Desktop) */
+.responsive-split-layout {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+@media (min-width: 1024px) {
+  .responsive-split-layout {
+    flex-direction: row !important;
+  }
+}
+
+.responsive-split-half {
+  width: 100% !important;
+}
+
+@media (min-width: 1024px) {
+  .responsive-split-half {
+    width: 50% !important;
+  }
+}
+
+/* 3. Exam Portal Engine Container (Exam_Engine / iframe wrapper) */
+.portal-container {
+  width: 100% !important;
+  max-width: 100% !important;
+  left: 0 !important;
+  right: 0 !important;
+  position: relative !important;
+}
+
+/* Additional layout resets for absolute full-screen wrappers on mobile */
+@media (max-width: 768px) {
+  .portal-container {
+    padding: 10px !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+  }
+  
+  /* Ensure children elements are sized fluidly without clipped paddings */
+  .portal-container > * {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+
