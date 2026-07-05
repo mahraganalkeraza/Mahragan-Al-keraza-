@@ -304,22 +304,26 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
   const handleSaveExam = async (isAuto = false) => {
     try {
       if (!selectedStage || !selectedCompetition || !selectedModel) return;
+
       const examId = `${selectedStage}_${selectedCompetition}_${selectedModel}`;
 
+      // 1. تنظيف البيانات من المسافات الزائدة لتجنب أي أخطاء تطابق
       const examPayload = {
         id: examId,
-        exam_title: selectedCompetition,
-        stage: selectedStage,
-        subject: selectedCompetition,
+        exam_title: selectedCompetition.trim(),
+        stage: selectedStage.trim(),
+        subject: selectedCompetition.trim(),
         model_type: selectedModel,
         questions_data: currentQuestions,
         is_active: true,
-        model: selectedModel
+        model: selectedModel,
+        updated_at: new Date().toISOString() // تحديث تاريخ التعديل
       };
 
+      // 2. استخدام upsert وهو الحل السحري لمشكلة الـ 23505
       const { error: saveErr } = await supabase
         .from("exams_pool")
-        .insert([examPayload]);
+        .upsert(examPayload, { onConflict: 'id' }); // إخبار سوبابايس: لو الـ ID موجود، حدّثه!
 
       if (saveErr) throw saveErr;
 
@@ -342,10 +346,13 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
         ];
       });
 
-      if (!isAuto) alert("تم الحفظ بنجاح");
+      if (!isAuto) {
+        console.log("Mission Accomplished: Exam saved/updated successfully!");
+        alert("تم حفظ الامتحان بنجاح.");
+      }
     } catch (error: any) {
-      console.error("Error saving exam :", error);
-      if (!isAuto) alert("حدث خطأ أثناء الحفظ  : " + error.message);
+      console.error("Critical Failure:", error.message);
+      if (!isAuto) alert("فشلت عملية الحفظ: " + error.message);
     }
   };
 
