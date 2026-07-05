@@ -5761,6 +5761,24 @@ function AppComponent() {
     );
   }
 
+  if (showExamGateway) {
+    return (
+      <div className="w-full min-h-screen bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] relative z-[9999]" dir="rtl">
+        <LiveExamGateway 
+          setCurrentScreen={(screen) => {
+            if (screen === 'student-exam') {
+              setShowExamGateway(false);
+              setIsPortalOpen(true);
+              setActiveSection('exam-login');
+            }
+          }}
+          setCurrentStudent={() => {}}
+          setActiveExam={() => {}}
+        />
+      </div>
+    );
+  }
+
   if (activeSection === 'exam-login' || activeSection === 'student-exam' || isPortalOpen) {
     return (
       <ExamLoginPortal 
@@ -10892,7 +10910,7 @@ function AppComponent() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {showExamGateway && (
+        {false && showExamGateway && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/95 z-[100] flex flex-col p-0 md:p-4">
             <div className="bg-indigo-700 text-white p-4 flex justify-between items-center shadow-lg md:rounded-t-3xl">
               <div className="flex items-center gap-3">
