@@ -79,7 +79,7 @@ import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
 import { ExamLoginPortal } from './components/ExamLoginPortal';
 import AdminDisplayGate from './components/AdminDisplayGate';
-import { getDailyExamToken } from './utils/dailyToken';
+import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
 import { supabase } from './lib/supabaseClient';
 import { getCustomActivities } from './utils/activitiesService';
 import { getDeviceFingerprint } from './lib/deviceTracking';
@@ -760,6 +760,37 @@ function AppComponent() {
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
   
+  // Standalone useEffect for Silent Guard (Checking QR rollover)
+  useEffect(() => {
+    const checkTokenRollover = () => {
+      const cachedToken = localStorage.getItem('gate_access_granted_hourly');
+      if (cachedToken) {
+        const isValid = validateHourlyExamToken(cachedToken);
+        if (!isValid) {
+          console.log("Silent Guard: Token expired. Clearing token and resetting login state.");
+          // Clear the stored token from storage
+          localStorage.removeItem('gate_access_granted_hourly');
+          localStorage.removeItem('gate_access_granted');
+          localStorage.removeItem('gateway_exam_token');
+          localStorage.removeItem('active_student_session');
+          localStorage.removeItem('active_student_id');
+          
+          // Reset the login state to false to naturally return the user to the QR scanner screen
+          setIsLoggedIn(false);
+          setShowExamGateway(false);
+          setIsPortalOpen(true);
+          setActiveSection('exam-login');
+        }
+      }
+    };
+
+    // Run immediately on mount
+    checkTokenRollover();
+
+    const interval = setInterval(checkTokenRollover, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     console.log("Current User Role:", userRole);
   }, [userRole]);
