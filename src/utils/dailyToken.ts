@@ -146,11 +146,9 @@ export function getHourlyExamToken(offsetDays: number = 0): string {
 export function validateHourlyExamToken(token: string | null): boolean {
   if (!token) return false;
   
-  // Active token for the current 24-hour window
+  // Active token for the current 24-hour window ONLY
   const currentToken = getHourlyExamToken(0);
   
-  // Previous token window (offset -1 day) to gracefully handle mid-exam transitions around 10:00 PM
-  const previousToken = getHourlyExamToken(-1);
-  
-  return token === currentToken || token === previousToken;
+  // التطابق يتم مع كود اليوم فقط، ولا يتم السماح بالكود القديم
+  return token === currentToken;
 }
