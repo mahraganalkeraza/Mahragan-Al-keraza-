@@ -184,9 +184,9 @@ export const ResultsViewer: React.FC<{
   useEffect(() => {
     const loadFilterOptions = async () => {
       try {
-        const { data: churchesData } = await supabase.from('churches').select('name');
+        const { data: churchesData } = await supabase.from('church_access_codes').select('church_name');
         if (churchesData) {
-          setChurchOptions(Array.from(new Set(churchesData.map((c: any) => c.name).filter(Boolean))).sort() as string[]);
+          setChurchOptions(Array.from(new Set(churchesData.map((c: any) => c.church_name).filter(Boolean))).sort() as string[]);
         }
         
         const { data: stagesData } = await supabase.from('registrations').select('stage');
@@ -253,9 +253,9 @@ export const ResultsViewer: React.FC<{
   const getColumnArabicName = (col: string) => {
     switch (col) {
       case 'qebty_lvl1_score': return 'قبطي مستوى أول';
-      case 'qebty_lvl2_score': return 'قبطي مستوى ثاني';
-      case 'derasy_score': return 'التحصيل الدراسي (أونلاين)';
-      case 'mahfouzat_score': return 'المحفوظات';
+      case 'qebty_lvl2_score': return 'قبطي مستوى ثان';
+      case 'derasy_score': return 'دراسي';
+      case 'mahfouzat_score': return 'محفوظات';
       default: return col;
     }
   };
@@ -780,7 +780,7 @@ export const ResultsViewer: React.FC<{
               <option value="دراسي">دراسي</option>
               <option value="محفوظات">محفوظات</option>
               <option value="قبطي مستوى أول">قبطي مستوى أول</option>
-              <option value="قبطي مستوى ثاني">قبطي مستوى ثاني</option>
+              <option value="قبطي مستوى ثان">قبطي مستوى ثان</option>
             </select>
           </div>
         </div>
@@ -1014,10 +1014,10 @@ export const ResultsViewer: React.FC<{
                   onChange={(e) => setSelectedColumn(e.target.value)}
                   className="w-full px-3 py-2.5 bg-white border border-indigo-200 rounded-xl text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm cursor-pointer"
                 >
-                  <option value="qebty_lvl1_score">قبطي مستوى أول (Paper Level 1)</option>
-                  <option value="qebty_lvl2_score">قبطي مستوى ثاني (Paper Level 2)</option>
-                  <option value="derasy_score">التحصيل الدراسي (Emergency Online Override)</option>
-                  <option value="mahfouzat_score">المحفوظات (Emergency Online Override)</option>
+                  <option value="qebty_lvl1_score">قبطي مستوى أول</option>
+                  <option value="qebty_lvl2_score">قبطي مستوى ثان</option>
+                  <option value="derasy_score">دراسي</option>
+                  <option value="mahfouzat_score">محفوظات</option>
                 </select>
               </div>
 
@@ -1407,7 +1407,7 @@ export const ResultsViewer: React.FC<{
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1">قبطي مستوى ثاني</label>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">قبطي مستوى ثان</label>
                     <input 
                       type="number"
                       min="0"

@@ -6090,7 +6090,6 @@ function AppComponent() {
                     <option value="مسئول">دخول مسئول (Admin)</option>
                     {Array.from(new Set([
                       ...dbChurches,
-                      ...Object.keys(CHURCH_CREDENTIALS),
                       ...publicChurches.map(c => c.name)
                     ])).sort().map(church => (
                       <option key={church} value={church}>{church}</option>
@@ -6438,8 +6437,8 @@ function AppComponent() {
                   onChange={(e) => setGlobalCompetitionFilter(e.target.value)}
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
                 >
-                  <option value="الكل">كل المسابقات / الأنشطة</option>
-                  {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني', 'ألحان مستوى أول', 'ألحان مستوى ثاني', 'كشافة', 'رياضية', 'إبتكارات هندسية', 'فنون تشكيلية', 'مسرح'].map(c => (
+                  <option value="الكل">كل المسابقات</option>
+                  {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثان'].map(c => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
@@ -7283,7 +7282,7 @@ function AppComponent() {
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                     >
                       <option value="الكل">مسابقة (الكل)</option>
-                      {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني', 'ألحان مستوى أول', 'ألحان مستوى ثاني', 'كشافة', 'رياضية', 'إبتكارات هندسية', 'فنون تشكيلية', 'مسرح'].map(c => (
+                      {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثان'].map(c => (
                         <option key={c} value={c}>{c}</option>
                       ))}
                     </select>
@@ -8070,7 +8069,10 @@ function AppComponent() {
                         >
                           <option value="">-- اختر من القائمة --</option>
                           {granularTargetType === 'church' ? (
-                            Object.keys(CHURCH_CREDENTIALS || {}).sort().map(church => (
+                            Array.from(new Set([
+                              ...dbChurches,
+                              ...publicChurches.map(c => c.name)
+                            ])).sort().map(church => (
                               <option key={church} value={church}>{church}</option>
                             ))
                           ) : (
