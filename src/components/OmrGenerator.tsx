@@ -231,52 +231,35 @@ const createOMRSheetElement = async (
   tableContainer.style.top = '75mm';
   tableContainer.style.left = '18mm';
   tableContainer.style.right = '12mm'; 
-  tableContainer.style.display = 'flex';
-  tableContainer.style.flexDirection = 'column';
-
-  let maxCols = 2;
-  if (numQuestions > 60) maxCols = 3;
-  if (numQuestions <= 20) maxCols = 1;
-
-  const rowCount = Math.ceil(numQuestions / maxCols);
+  
+  const layoutWrapper = document.createElement('div');
+  layoutWrapper.className = 'flex flex-row justify-between w-full';
+  layoutWrapper.dir = 'rtl';
+  
+  const columnsWrapper = document.createElement('div');
+  columnsWrapper.className = 'flex flex-row gap-8 md:gap-12';
+  
+  const questionsPerColumn = 10;
+  const numColumns = Math.ceil(numQuestions / questionsPerColumn);
+  const rowsInColumn = Math.min(numQuestions, questionsPerColumn);
+  
   const availableHeightMm = 110; 
-  const rowHeight = Math.min(availableHeightMm / rowCount, 12);
+  const rowHeight = Math.min(availableHeightMm / rowsInColumn, 12);
 
-  for (let r = 0; r < rowCount; r++) {
-      const rowDiv = document.createElement('div');
-      rowDiv.style.height = `${rowHeight}mm`;
-      rowDiv.style.display = 'flex';
-      rowDiv.style.flexDirection = 'row-reverse';
-      rowDiv.style.alignItems = 'center';
-      rowDiv.style.justifyContent = 'space-between';
+  for (let c = 0; c < numColumns; c++) {
+      const colDiv = document.createElement('div');
+      colDiv.className = 'flex flex-col space-y-2';
       
-      const tmWrap = document.createElement('div');
-      tmWrap.style.width = '6mm';
-      tmWrap.style.display = 'flex';
-      tmWrap.style.justifyContent = 'flex-end';
+      const startQ = c * questionsPerColumn + 1;
+      const endQ = Math.min((c + 1) * questionsPerColumn, numQuestions);
       
-      const tm = document.createElement('div');
-      tm.style.width = '6mm';
-      tm.style.height = '3.5mm';
-      tm.style.backgroundColor = 'black';
-      tmWrap.appendChild(tm);
-      rowDiv.appendChild(tmWrap);
-      
-      const qWrap = document.createElement('div');
-      qWrap.style.flex = '1';
-      qWrap.style.display = 'flex';
-      qWrap.style.flexDirection = 'row-reverse';
-      qWrap.style.justifyContent = 'space-around';
-      qWrap.style.marginRight = '10mm';
-
-      for (let c = 0; c < maxCols; c++) {
-          const q = r * maxCols + c + 1;
+      for (let q = startQ; q <= endQ; q++) {
           const qContainer = document.createElement('div');
           qContainer.style.display = 'flex';
           qContainer.style.alignItems = 'center';
           qContainer.style.direction = 'ltr';
           qContainer.style.gap = '8px';
-          qContainer.style.visibility = q <= numQuestions ? 'visible' : 'hidden'; 
+          qContainer.style.height = `${rowHeight}mm`;
           
           const qNum = document.createElement('span');
           qNum.innerText = `${q}.`;
@@ -300,11 +283,34 @@ const createOMRSheetElement = async (
               bubble.innerText = opt;
               qContainer.appendChild(bubble);
           });
-          qWrap.appendChild(qContainer);
+          colDiv.appendChild(qContainer);
       }
-      rowDiv.appendChild(qWrap);
-      tableContainer.appendChild(rowDiv);
+      columnsWrapper.appendChild(colDiv);
   }
+  
+  const tmColumn = document.createElement('div');
+  tmColumn.className = 'flex flex-col space-y-2';
+  
+  for (let r = 0; r < rowsInColumn; r++) {
+      const tmWrap = document.createElement('div');
+      tmWrap.style.height = `${rowHeight}mm`;
+      tmWrap.style.width = '6mm';
+      tmWrap.style.display = 'flex';
+      tmWrap.style.alignItems = 'center';
+      tmWrap.style.justifyContent = 'flex-end';
+      
+      const tm = document.createElement('div');
+      tm.style.width = '6mm';
+      tm.style.height = '3.5mm';
+      tm.style.backgroundColor = 'black';
+      
+      tmWrap.appendChild(tm);
+      tmColumn.appendChild(tmWrap);
+  }
+  
+  layoutWrapper.appendChild(tmColumn);
+  layoutWrapper.appendChild(columnsWrapper);
+  tableContainer.appendChild(layoutWrapper);
   
   wrapper.appendChild(tableContainer);
   document.body.appendChild(wrapper);
@@ -664,7 +670,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
           </div>
           <div>
             <h2 className="text-2xl font-black text-slate-800">البابل شيت والكيو أر</h2>
-            <p className="text-slate-500 font-bold mt-1">توليد أوراق الامتحانات وبطاقات التعريف الرقمية للمشتركين</p>
+            <p className="text-slate-500 font-bold mt-1">استخراج أوراق الامتحانات والكود للمشتركين</p>
           </div>
         </div>
         
@@ -772,7 +778,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
                 />
               </div>
               <div className="flex-[2] text-sm font-bold text-indigo-500 leading-relaxed">
-                 ورقة A5 عالية الدقة، تحتوي على 4 نقاط معايرة ميكانيكية وQR كود مدمج للتعرف الفوري على هوية المتسابق. 
+                 ورقة A5 عالية الدقة، تحتوي على 4 نقاط معايرة QR كود مدمج للتعرف الفوري على هوية المتسابق. 
                  <span className="block mt-1 text-xs text-indigo-400 opacity-80">* مخصص لمرحلة إعدادي فما فوق فقط.</span>
               </div>
            </div>
@@ -783,8 +789,8 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
              <QrCode size={24} />
            </div>
            <div>
-             <h4 className="font-black text-emerald-800">توليد بطاقات تعريف المسابقين (QR Cards)</h4>
-             <p className="text-sm font-bold text-emerald-600 mt-1">توليد ملف PDF جاهز للطباعة يحتوي على شبكة من الكروت التعريفية. كل كارت يحتوي على QR كود يحمل هوية الطالب المشفرة لاستخدامها في بوابة الامتحانات.</p>
+             <h4 className="font-black text-emerald-800">استخراج أكواد المسابقين (QR Cards)</h4>
+             <p className="text-sm font-bold text-emerald-600 mt-1">استخراج ملف PDF جاهز للطباعة يحتوي على شبكة  تحتوي على QR كود يحمل هوية الطالب المشفرة لاستخدامها في بوابة الامتحانات.</p>
              <div className="flex gap-4 mt-3">
                 <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-700/60 bg-emerald-700/10 px-2 py-0.5 rounded-full">
                   <CheckCircle2 size={10}/> Grid 4x5
@@ -808,7 +814,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
           <div className="flex justify-between items-center text-sm font-black text-slate-500">
             <span className="flex items-center gap-2 text-primary">
               <Loader2 className="animate-spin" size={16} /> 
-              جاري معالجة البيانات وتوليد الملفات... 
+              جاري معالجة البيانات واستخراج الملفات... 
             </span>
             <span> {progress.current} من {progress.total}</span>
           </div>
@@ -819,7 +825,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
           className={`w-full text-white p-5 rounded-2xl font-black flex items-center justify-center gap-3 transition-all shadow-xl hover:-translate-y-1 ${mode === 'omr' ? 'bg-indigo-600 hover:shadow-indigo-200' : 'bg-emerald-600 hover:shadow-emerald-200'}`}
         >
           <Download size={24} /> 
-          {mode === 'omr' ? 'بناء وتحميل كراسات البابل شيت' : 'استخراج وتوليد كروت الـ QR للمتسابقين'}
+          {mode === 'omr' ? 'بناء وتحميل أوراق البابل شيت' : 'واستخراج كروت الـ QR للمتسابقين'}
         </button>
       )}
     </div>
