@@ -128,7 +128,11 @@ export function getHourlyExamToken(offsetDays: number = 0): string {
     const year = cairoTime.getFullYear();
     const month = String(cairoTime.getMonth() + 1).padStart(2, '0');
     const day = String(cairoTime.getDate()).padStart(2, '0');
-    const cairoDateHour = `${year}-${month}-${day}-${targetHour}`;
+    
+    // Retrieve the manual seed modifier if present to bypass or alter the 24-hour token seed
+    const manualSeed = typeof window !== 'undefined' ? (localStorage.getItem('manual_seed_modifier') || '') : '';
+    
+    const cairoDateHour = `${year}-${month}-${day}-${targetHour}${manualSeed}`;
 
     // 7. Hash the unified date block string with the existing secret pepper
     const secretPepper = "MahraganAlKeraza2026_SecureSalt_Hourly!!";

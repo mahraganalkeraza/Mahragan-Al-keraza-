@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { getHourlyExamToken } from '../utils/dailyToken';
 import { QrCode, Printer, RefreshCw, Clock, Calendar, CheckCircle, ShieldAlert } from 'lucide-react';
 import logo from '../by-logo.jpeg';
+import { supabase } from '../lib/supabaseClient';
 
 export default function AdminDisplayGate({ onClose, isInline = false }: { onClose?: () => void; isInline?: boolean }) {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
@@ -13,6 +14,106 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
   const [hourlyToken, setHourlyToken] = useState(() => getHourlyExamToken());
 
   const qrValue = `https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/Exam_engine?gateway_token=${hourlyToken}`;
+
+  const [isLocked, setIsLocked] = useState(false);
+  const [isUpdatingLock, setIsUpdatingLock] = useState(false);
+  const [isRegeneratingToken, setIsRegeneratingToken] = useState(false);
+
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        const { data: sysData } = await supabase
+          .from('system_settings')
+          .select('is_exam_locked')
+          .eq('id', '1')
+          .maybeSingle();
+        if (sysData) {
+          setIsLocked(!!sysData.is_exam_locked);
+        }
+
+        const { data: seedRow } = await supabase
+          .from('system_settings')
+          .select('*')
+          .eq('id', 'manual_seed_modifier')
+          .maybeSingle();
+        if (seedRow) {
+          const seedVal = seedRow.content || (seedRow.details && seedRow.details.seed) || '';
+          localStorage.setItem('manual_seed_modifier', seedVal);
+          setHourlyToken(getHourlyExamToken());
+        }
+      } catch (err) {
+        console.error("Failed to load initial lock/seed status in AdminDisplayGate:", err);
+      }
+    };
+
+    fetchInitialData();
+  }, []);
+
+  const handleToggleLock = async () => {
+    setIsUpdatingLock(true);
+    const targetState = !isLocked;
+    try {
+      // 1. Update database
+      const { error } = await supabase
+        .from('system_settings')
+        .update({ is_exam_locked: targetState })
+        .eq('id', '1');
+
+      if (error) {
+        throw error;
+      }
+
+      // 2. Update local state
+      setIsLocked(targetState);
+      localStorage.setItem('portal_locked_by_admin', targetState ? 'true' : 'false');
+      
+      if (targetState) {
+        // If locked, clear student sessions immediately
+        localStorage.removeItem('gate_access_granted_hourly');
+        localStorage.removeItem('gate_access_granted');
+        localStorage.removeItem('gateway_exam_token');
+        localStorage.removeItem('active_student_session');
+        localStorage.removeItem('active_student_id');
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(`خطأ أثناء تحديث حالة البوابة: ${err.message || err}`);
+    } finally {
+      setIsUpdatingLock(false);
+    }
+  };
+
+  const handleForceRegenerateQR = async () => {
+    setIsRegeneratingToken(true);
+    try {
+      const newSeed = String(Date.now());
+      
+      // 1. Update database manual_seed_modifier
+      const { error } = await supabase
+        .from('system_settings')
+        .upsert({
+          id: 'manual_seed_modifier',
+          content: newSeed,
+          details: { seed: newSeed }
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      // 2. Save locally
+      localStorage.setItem('manual_seed_modifier', newSeed);
+      
+      // 3. Force recalculation of token
+      const newToken = getHourlyExamToken();
+      setHourlyToken(newToken);
+    } catch (err: any) {
+      console.error(err);
+      alert(`خطأ أثناء إعادة توليد الرمز: ${err.message || err}`);
+    } finally {
+      setIsRegeneratingToken(false);
+    }
+  };
 
   // Generate QR Code
   useEffect(() => {
@@ -154,6 +255,63 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
           <p className="text-slate-900 text-lg font-black font-mono tracking-widest mt-1 bg-slate-100 inline-block px-4 py-1.5 rounded-xl print:bg-slate-200">
             {hourlyToken}
           </p>
+        </div>
+      </div>
+
+      {/* Control Panel: Emergency Lock & Force Regeneration */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 mb-6 text-right space-y-4 print:hidden">
+        <h3 className="text-sm font-black text-slate-200 flex items-center gap-2 border-b border-slate-800 pb-2">
+          ⚙️ لوحة التحكم الفوري للبوابة والـ QR
+        </h3>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Button One: Emergency Lock */}
+          <div className="space-y-2">
+            <label className="text-[11px] font-black text-slate-400 block">التحكم في غلق البوابة الطارئ:</label>
+            <button
+              type="button"
+              onClick={handleToggleLock}
+              disabled={isUpdatingLock}
+              className={`w-full py-3 px-4 rounded-xl font-bold text-white transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 text-sm ${
+                isLocked 
+                  ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-900/25' 
+                  : 'bg-red-600 hover:bg-red-700 shadow-red-950/50'
+              }`}
+            >
+              {isUpdatingLock ? (
+                <RefreshCw className="animate-spin text-white" size={18} />
+              ) : isLocked ? (
+                <>🔓 فتح بوابة الامتحانات للكل</>
+              ) : (
+                <>🔒 غلق البوابة</>
+              )}
+            </button>
+            <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
+              {isLocked 
+                ? '🔴 البوابة مغلقة حالياً بالكامل. تم تسجيل خروج كافة الطلاب ومنع دخول أي لجان.' 
+                : '🟢 البوابة نشطة ومتاحة للجان المصرح لها من خلال رمز الـ QR اليومي.'}
+            </p>
+          </div>
+
+          {/* Button Two: Force Regeneration */}
+          <div className="space-y-2">
+            <label className="text-[11px] font-black text-slate-400 block">تغيير وتحديث كود الدخول اليومي:</label>
+            <button
+              type="button"
+              onClick={handleForceRegenerateQR}
+              disabled={isRegeneratingToken}
+              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/25 disabled:opacity-50 text-sm"
+            >
+              {isRegeneratingToken ? (
+                <RefreshCw className="animate-spin text-white" size={18} />
+              ) : (
+                <>🔄 QR جديد</>
+              )}
+            </button>
+            <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
+              يؤدي الضغط على هذا الزر إلى توليد رمز تشفيري ساعي جديد وتغيير الـ QR كود فوراً وتحديثه في قواعد البيانات.
+            </p>
+          </div>
         </div>
       </div>
 

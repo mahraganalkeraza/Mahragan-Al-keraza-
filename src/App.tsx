@@ -760,15 +760,39 @@ function AppComponent() {
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
 
   
-  // Standalone useEffect for Silent Guard (Checking QR rollover)
+  // Standalone useEffect for Silent Guard (Checking QR rollover, emergency lock, and seed modifier)
   useEffect(() => {
-    const checkTokenRollover = () => {
-      const cachedToken = localStorage.getItem('gate_access_granted_hourly');
-      if (cachedToken) {
-        const isValid = validateHourlyExamToken(cachedToken);
-        if (!isValid) {
-          console.log("Silent Guard: Token expired. Clearing token and resetting login state.");
-          // Clear the stored token from storage
+    const checkTokenAndLock = async () => {
+      try {
+        // 1. Fetch global lock state and seed modifier from database
+        const [lockRes, seedRes] = await Promise.all([
+          supabase.from('system_settings').select('is_exam_locked').eq('id', '1').maybeSingle(),
+          supabase.from('system_settings').select('*').eq('id', 'manual_seed_modifier').maybeSingle()
+        ]);
+
+        const isLocked = lockRes.data ? !!lockRes.data.is_exam_locked : false;
+        
+        // Update globalSettings state optimistically for UI sync
+        setGlobalSettings(prev => ({ ...prev, is_exam_locked: isLocked }));
+        localStorage.setItem('portal_locked_by_admin', isLocked ? 'true' : 'false');
+
+        if (seedRes.data) {
+          const seedVal = seedRes.data.content || (seedRes.data.details && seedRes.data.details.seed) || '';
+          const currentSeed = localStorage.getItem('manual_seed_modifier') || '';
+          if (seedVal !== currentSeed) {
+            console.log("Silent Guard: Seed modifier updated, synchronizing.");
+            localStorage.setItem('manual_seed_modifier', seedVal);
+          }
+        }
+
+        const cachedToken = localStorage.getItem('gate_access_granted_hourly');
+        const isTokenInvalid = cachedToken ? !validateHourlyExamToken(cachedToken) : false;
+
+        // If either the portal is locked or the token is expired/invalid
+        if (isLocked || isTokenInvalid) {
+          console.log("Silent Guard: Kick-out triggered. Lock status:", isLocked, "Token invalid:", isTokenInvalid);
+          
+          // Clear the stored tokens and session from storage
           localStorage.removeItem('gate_access_granted_hourly');
           localStorage.removeItem('gate_access_granted');
           localStorage.removeItem('gateway_exam_token');
@@ -781,13 +805,15 @@ function AppComponent() {
           setIsPortalOpen(true);
           setActiveSection('exam-login');
         }
+      } catch (err) {
+        console.error("Error in Silent Guard:", err);
       }
     };
 
     // Run immediately on mount
-    checkTokenRollover();
+    checkTokenAndLock();
 
-    const interval = setInterval(checkTokenRollover, 30000); // Check every 30 seconds
+    const interval = setInterval(checkTokenAndLock, 30000); // Check every 30 seconds
     return () => clearInterval(interval);
   }, []);
 

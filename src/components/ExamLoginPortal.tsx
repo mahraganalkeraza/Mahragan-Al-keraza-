@@ -76,8 +76,53 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
   // Gate check for Daily Rotating Gate
   const [gateAccessGranted, setGateAccessGranted] = useState(false);
+  const [isPortalLockedByAdmin, setIsPortalLockedByAdmin] = useState(() => {
+    return localStorage.getItem('portal_locked_by_admin') === 'true';
+  });
 
   useEffect(() => {
+    const checkEmergencyLockAndSeed = async () => {
+      try {
+        const [lockRes, seedRes] = await Promise.all([
+          supabase.from('system_settings').select('is_exam_locked').eq('id', '1').maybeSingle(),
+          supabase.from('system_settings').select('*').eq('id', 'manual_seed_modifier').maybeSingle()
+        ]);
+
+        if (lockRes.data) {
+          const isLocked = !!lockRes.data.is_exam_locked;
+          setIsPortalLockedByAdmin(isLocked);
+          localStorage.setItem('portal_locked_by_admin', isLocked ? 'true' : 'false');
+          if (isLocked) {
+            setGateAccessGranted(false);
+            // Clear credentials
+            localStorage.removeItem('gate_access_granted_hourly');
+            localStorage.removeItem('gate_access_granted');
+            localStorage.removeItem('gateway_exam_token');
+            localStorage.removeItem('active_student_session');
+            localStorage.removeItem('active_student_id');
+          }
+        }
+
+        if (seedRes.data) {
+          const seedVal = seedRes.data.content || (seedRes.data.details && seedRes.data.details.seed) || '';
+          localStorage.setItem('manual_seed_modifier', seedVal);
+        }
+      } catch (err) {
+        console.error("Failed to check global lock/seed in Portal:", err);
+      }
+    };
+
+    checkEmergencyLockAndSeed();
+    const interval = setInterval(checkEmergencyLockAndSeed, 15000); // Check every 15 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (localStorage.getItem('portal_locked_by_admin') === 'true') {
+      setGateAccessGranted(false);
+      return;
+    }
+
     let providedToken = new URLSearchParams(window.location.search).get('gateway_token');
     
     // Support hash-routed query parameters
@@ -572,14 +617,18 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         </div>
 
         <div className="p-6">
-          {!gateAccessGranted ? (
+          {!gateAccessGranted || isPortalLockedByAdmin ? (
             <div className="text-center py-10 px-4 space-y-6 flex flex-col items-center">
               <div className="w-20 h-20 bg-red-50 border border-red-200 rounded-full flex items-center justify-center animate-bounce text-red-500">
                 <Lock size={40} />
               </div>
-              <h2 className="text-xl font-black text-red-600">البوابة مغلقة حالياً</h2>
+              <h2 className="text-xl font-black text-red-600">
+                {isPortalLockedByAdmin ? "عفوًا تم غلق بوابة الأونلاين من قبل لجنة المهرجان" : "البوابة مغلقة حالياً"}
+              </h2>
               <p className="text-slate-600 text-sm font-bold leading-relaxed max-w-sm">
-                عذراً، البوابة مغلقة. برجاء مسح الـ QR Code المعتمد الساعي من مقر اللجنة لتفعيل الدخول.
+                {isPortalLockedByAdmin 
+                  ? "عفوًا تم غلق بوابة الأونلاين من قبل لجنة المهرجان" 
+                  : "عذراً، البوابة مغلقة. برجاء مسح الـ QR Code المعتمد الساعي من مقر اللجنة لتفعيل الدخول."}
               </p>
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-500 font-bold max-w-sm">
                 تنبيه: يتغير رمز الدخول الخاص بالبوابة تلقائياً كل ساعة (ساعي ديناميكي متزامن) لتأمين الاختبارات ومنع التمرير غير المصرح به.
