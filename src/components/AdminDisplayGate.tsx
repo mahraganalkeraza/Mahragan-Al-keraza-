@@ -24,20 +24,12 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
       try {
         const { data: sysData } = await supabase
           .from('system_settings')
-          .select('is_exam_locked')
-          .eq('id', '1')
+          .select('is_exam_locked, content')
+          .eq('id', 1)
           .maybeSingle();
         if (sysData) {
           setIsLocked(!!sysData.is_exam_locked);
-        }
-
-        const { data: seedRow } = await supabase
-          .from('system_settings')
-          .select('*')
-          .eq('id', 'manual_seed_modifier')
-          .maybeSingle();
-        if (seedRow) {
-          const seedVal = seedRow.content || (seedRow.details && seedRow.details.seed) || '';
+          const seedVal = sysData.content || '';
           localStorage.setItem('manual_seed_modifier', seedVal);
           setHourlyToken(getHourlyExamToken());
         }
@@ -57,7 +49,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
       const { error } = await supabase
         .from('system_settings')
         .update({ is_exam_locked: targetState })
-        .eq('id', '1');
+        .eq('id', 1);
 
       if (error) {
         throw error;
@@ -88,14 +80,11 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
     try {
       const newSeed = String(Date.now());
       
-      // 1. Update database manual_seed_modifier
+      // 1. Update database content field on row 1 to modify the active seed
       const { error } = await supabase
         .from('system_settings')
-        .upsert({
-          id: 'manual_seed_modifier',
-          content: newSeed,
-          details: { seed: newSeed }
-        });
+        .update({ content: newSeed })
+        .eq('id', 1);
 
       if (error) {
         throw error;

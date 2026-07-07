@@ -764,20 +764,21 @@ function AppComponent() {
   useEffect(() => {
     const checkTokenAndLock = async () => {
       try {
-        // 1. Fetch global lock state and seed modifier from database
-        const [lockRes, seedRes] = await Promise.all([
-          supabase.from('system_settings').select('is_exam_locked').eq('id', '1').maybeSingle(),
-          supabase.from('system_settings').select('*').eq('id', 'manual_seed_modifier').maybeSingle()
-        ]);
+        // 1. Fetch global lock state and seed modifier from database row with id: 1
+        const { data: sysData } = await supabase
+          .from('system_settings')
+          .select('is_exam_locked, content')
+          .eq('id', 1)
+          .maybeSingle();
 
-        const isLocked = lockRes.data ? !!lockRes.data.is_exam_locked : false;
+        const isLocked = sysData ? !!sysData.is_exam_locked : false;
         
         // Update globalSettings state optimistically for UI sync
         setGlobalSettings(prev => ({ ...prev, is_exam_locked: isLocked }));
         localStorage.setItem('portal_locked_by_admin', isLocked ? 'true' : 'false');
 
-        if (seedRes.data) {
-          const seedVal = seedRes.data.content || (seedRes.data.details && seedRes.data.details.seed) || '';
+        if (sysData) {
+          const seedVal = sysData.content || '';
           const currentSeed = localStorage.getItem('manual_seed_modifier') || '';
           if (seedVal !== currentSeed) {
             console.log("Silent Guard: Seed modifier updated, synchronizing.");

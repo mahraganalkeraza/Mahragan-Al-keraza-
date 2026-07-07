@@ -83,13 +83,14 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   useEffect(() => {
     const checkEmergencyLockAndSeed = async () => {
       try {
-        const [lockRes, seedRes] = await Promise.all([
-          supabase.from('system_settings').select('is_exam_locked').eq('id', '1').maybeSingle(),
-          supabase.from('system_settings').select('*').eq('id', 'manual_seed_modifier').maybeSingle()
-        ]);
+        const { data: sysData } = await supabase
+          .from('system_settings')
+          .select('is_exam_locked, content')
+          .eq('id', 1)
+          .maybeSingle();
 
-        if (lockRes.data) {
-          const isLocked = !!lockRes.data.is_exam_locked;
+        if (sysData) {
+          const isLocked = !!sysData.is_exam_locked;
           setIsPortalLockedByAdmin(isLocked);
           localStorage.setItem('portal_locked_by_admin', isLocked ? 'true' : 'false');
           if (isLocked) {
@@ -101,10 +102,8 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
             localStorage.removeItem('active_student_session');
             localStorage.removeItem('active_student_id');
           }
-        }
 
-        if (seedRes.data) {
-          const seedVal = seedRes.data.content || (seedRes.data.details && seedRes.data.details.seed) || '';
+          const seedVal = sysData.content || '';
           localStorage.setItem('manual_seed_modifier', seedVal);
         }
       } catch (err) {
