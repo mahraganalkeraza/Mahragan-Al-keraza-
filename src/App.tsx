@@ -793,18 +793,25 @@ function AppComponent() {
         if (isLocked || isTokenInvalid) {
           console.log("Silent Guard: Kick-out triggered. Lock status:", isLocked, "Token invalid:", isTokenInvalid);
           
-          // Clear the stored tokens and session from storage
+          // Clear only student/exam specific tokens and session from storage (Isolated Cache Clearing)
           localStorage.removeItem('gate_access_granted_hourly');
           localStorage.removeItem('gate_access_granted');
           localStorage.removeItem('gateway_exam_token');
           localStorage.removeItem('active_student_session');
           localStorage.removeItem('active_student_id');
           
-          // Reset the login state to false to naturally return the user to the QR scanner screen
-          setIsLoggedIn(false);
-          setShowExamGateway(false);
-          setIsPortalOpen(true);
-          setActiveSection('exam-login');
+          // Only redirect if the user is currently accessing the student exam views (Targeted View Redirection)
+          const isCurrentlyInStudentPortal = 
+            showExamGateway || 
+            isPortalOpen || 
+            activeSection === 'exam-login' || 
+            activeSection === 'student-exam';
+
+          if (isCurrentlyInStudentPortal) {
+            setShowExamGateway(false);
+            setIsPortalOpen(true);
+            setActiveSection('exam-login');
+          }
         }
       } catch (err) {
         console.error("Error in Silent Guard:", err);
