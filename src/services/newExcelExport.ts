@@ -1,9 +1,10 @@
-import ExcelJS from 'exceljs';
-import { saveAs } from 'file-saver';
 import { supabase } from '../lib/supabaseClient';
 
 export const generateMasterExcel = async (participants: any[], churchName: string | null = null) => {
   try {
+    const ExcelJS = (await import('exceljs')).default;
+    const { saveAs } = await import('file-saver');
+
     const isAdmin = !churchName;
     console.log(`Exporting for ${isAdmin ? 'Admin' : churchName}`);
 
@@ -64,6 +65,8 @@ export const generateMasterExcel = async (participants: any[], churchName: strin
 
 
 export const downloadMasterTemplate = async () => {
+    const ExcelJS = (await import('exceljs')).default;
+    const { saveAs } = await import('file-saver');
     const workbook = new ExcelJS.Workbook();
     const ws = workbook.addWorksheet('Template');
     ws.columns = [
@@ -89,6 +92,8 @@ export const exportOnlineResultsExcel = async (results: any[]) => {
             return;
         }
 
+        const ExcelJS = (await import('exceljs')).default;
+        const { saveAs } = await import('file-saver');
         const workbook = new ExcelJS.Workbook();
         const ws = workbook.addWorksheet('Online Results');
 

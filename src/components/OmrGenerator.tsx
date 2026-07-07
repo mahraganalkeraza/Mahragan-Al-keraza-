@@ -127,8 +127,8 @@ const createOMRSheetElement = async (
   rawChurches?: any[]
 ) => {
   const wrapper = document.createElement('div');
-  wrapper.style.width = '148mm';
-  wrapper.style.height = '210mm';
+  wrapper.style.width = '210mm';
+  wrapper.style.height = '297mm';
   wrapper.style.backgroundColor = 'white';
   wrapper.style.position = 'fixed'; // offscreen
   wrapper.style.top = '-9999px';
@@ -136,6 +136,10 @@ const createOMRSheetElement = async (
   wrapper.style.boxSizing = 'border-box';
   wrapper.style.fontFamily = 'Arial, sans-serif';
   wrapper.style.zIndex = '-9999';
+
+  const style = document.createElement('style');
+  style.innerHTML = `@media print { @page { size: A4 portrait; margin: 0; } }`;
+  wrapper.appendChild(style);
 
   // 4 Corner Anchor Points (Timing Marks) - black squares 8mm
   const anchorSize = '8mm';
@@ -212,14 +216,14 @@ const createOMRSheetElement = async (
   const nameTitle = document.createElement('h2');
   nameTitle.innerText = student.name;
   nameTitle.style.margin = '0 0 5px 0';
-  nameTitle.style.fontSize = '32px';
+  nameTitle.style.fontSize = '20px';
   nameTitle.style.fontWeight = 'bold';
   infoBlock.appendChild(nameTitle);
 
   const stageChurch = document.createElement('h4');
   stageChurch.innerText = `${student.churchName} - ${student.stage}`;
   stageChurch.style.margin = '0';
-  stageChurch.style.fontSize = '20px';
+  stageChurch.style.fontSize = '16px';
   stageChurch.style.color = '#333';
   infoBlock.appendChild(stageChurch);
   
@@ -229,11 +233,11 @@ const createOMRSheetElement = async (
   const tableContainer = document.createElement('div');
   tableContainer.style.position = 'absolute';
   tableContainer.style.top = '75mm';
-  tableContainer.style.left = '18mm';
-  tableContainer.style.right = '12mm'; 
+  tableContainer.style.left = '30mm';
+  tableContainer.style.right = '30mm'; 
   
   const layoutWrapper = document.createElement('div');
-  layoutWrapper.className = 'flex flex-row justify-between w-full';
+  layoutWrapper.className = 'flex flex-row justify-center gap-12 w-full max-w-[150mm] mx-auto';
   layoutWrapper.dir = 'rtl';
   
   const columnsWrapper = document.createElement('div');
@@ -269,7 +273,7 @@ const createOMRSheetElement = async (
           qNum.style.textAlign = 'right';
           qContainer.appendChild(qNum);
 
-          ['A', 'B', 'C', 'D'].forEach(opt => {
+          ['أ', 'ب', 'ج'].forEach(opt => {
               const bubble = document.createElement('div');
               bubble.style.width = '24px';
               bubble.style.height = '24px';
@@ -278,7 +282,7 @@ const createOMRSheetElement = async (
               bubble.style.display = 'flex';
               bubble.style.alignItems = 'center';
               bubble.style.justifyContent = 'center';
-              bubble.style.fontSize = '12px';
+              bubble.style.fontSize = '8px';
               bubble.style.fontWeight = 'bold';
               bubble.innerText = opt;
               qContainer.appendChild(bubble);
@@ -594,7 +598,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
 
     for (let batchIndex = 0; batchIndex < totalBatchesNum; batchIndex++) {
       const batchList = students.slice(batchIndex * BATCH_SIZE, (batchIndex + 1) * BATCH_SIZE);
-      const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a5' });
+      const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
 
       for (let j = 0; j < batchList.length; j++) {
         const student = batchList[j];
@@ -602,7 +606,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
           const domElement = await createOMRSheetElement(student, numQuestions, churchLogos, rawChurches);
           const canvas = await html2canvas(domElement, { scale: 3, useCORS: true, allowTaint: true });
           const imgData = canvas.toDataURL('image/jpeg', 0.95);
-          doc.addImage(imgData, 'JPEG', 0, 0, 148, 210);
+          doc.addImage(imgData, 'JPEG', 0, 0, 210, 297);
           document.body.removeChild(domElement);
         } catch (e) {
           console.error('Error generating OMR page:', e);

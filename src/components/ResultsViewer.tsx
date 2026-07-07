@@ -16,7 +16,8 @@ import {
   Compass,
   Send,
   Users,
-  Search
+  Search,
+  Download
 } from 'lucide-react';
 import { AdminHonorsEngine } from './AdminHonorsEngine';
 import { supabase } from '../utils/supabaseClient';
@@ -37,6 +38,7 @@ export const ResultsViewer: React.FC<{
 
   // Advanced PDF Generation States
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [pdfProgress, setPdfProgress] = useState(0);
   const [pdfStatus, setPdfStatus] = useState('');
   const [honorsRanks, setHonorsRanks] = useState<Record<string, { rank: number; colorClass: string, percentage: number, title: string }>>({});
@@ -126,7 +128,7 @@ export const ResultsViewer: React.FC<{
     try {
       let query = supabase
         .from('exam_submissions')
-        .select('student_id, name, churchName, stage, derasy_score, mahfouzat_score, qebty_lvl1_score, qebty_lvl2_score, status, is_published, submitted_at, gender');
+        .select('student_id, name, churchName, stage, derasy_score, mahfouzat_score, qebty_lvl1_score, qebty_lvl2_score, status, is_published, submitted_at, gender, submission_type, detailed_answers');
       
       if (!isAdmin && activeUserChurch) {
         query = query.eq('is_published', true).eq('churchName', activeUserChurch);
@@ -157,7 +159,8 @@ export const ResultsViewer: React.FC<{
             submissionStatus: sbRow.status || (sbRow.is_published ? 'منشور' : 'مسودة'),
             timestamp: sbRow.submitted_at || sbRow.created_at || null,
             gender: sbRow.gender || '',
-            submissionType: 'online',
+            submissionType: sbRow.submission_type || 'online',
+            detailed_answers: sbRow.detailed_answers || null,
           };
         });
 
@@ -475,6 +478,251 @@ export const ResultsViewer: React.FC<{
     }, 400);
   };
 
+  const handleExportToExcel = async () => {
+    if (!results || results.length === 0) {
+      alert("لا توجد نتائج لتصديرها.");
+      return;
+    }
+    setIsExportingExcel(true);
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = await import('file-saver');
+
+      const workbook = new ExcelJS.Workbook();
+      const ws = workbook.addWorksheet('نتائج التصفية المحلية OMR');
+
+      // Enable Right-to-Left representation for Arabic institutional reports
+      ws.views = [{ rightToLeft: true }];
+
+      // Helper function to format answer values cleanly for the sheet
+      const formatAnswerValue = (ans: any): string => {
+        if (ans === undefined || ans === null || ans === '') return '';
+        if (typeof ans === 'number') {
+          const letters = ['أ', 'ب', 'ج', 'د', 'هـ'];
+          return letters[ans] || String(ans);
+        }
+        if (typeof ans === 'string') {
+          const s = ans.trim().toUpperCase();
+          if (s === 'A') return 'أ';
+          if (s === 'B') return 'ب';
+          if (s === 'C') return 'ج';
+          if (s === 'D') return 'د';
+          return ans;
+        }
+        if (typeof ans === 'object') {
+          return JSON.stringify(ans);
+        }
+        return String(ans);
+      };
+
+      // Determine the maximum number of questions dynamically across all filtered student submissions
+      let maxQuestionsCount = 0;
+      results.forEach(row => {
+        if (row.detailed_answers && Array.isArray(row.detailed_answers)) {
+          maxQuestionsCount = Math.max(maxQuestionsCount, row.detailed_answers.length);
+        }
+      });
+      if (maxQuestionsCount === 0) {
+        maxQuestionsCount = 20; // Default fallback to Q1-Q20 standard columns
+      }
+
+      // Configure Base Columns
+      const columns = [
+        { header: 'كود الطالب / رقم الطالب', key: 'student_id', width: 22 },
+        { header: 'اسم الطالب', key: 'student_name', width: 30 },
+        { header: 'الكنيسة', key: 'church_name', width: 25 },
+        { header: 'المرحلة', key: 'stage', width: 20 },
+        { header: 'بيانات الـ QR', key: 'qr_data', width: 22 },
+        { header: 'الدرجة الكلية', key: 'total_score', width: 15 },
+        { header: 'إجمالي الأسئلة', key: 'total_questions', width: 15 },
+        { header: 'الإجابات الصحيحة', key: 'correct_answers', width: 15 },
+        { header: 'الإجابات الخاطئة', key: 'wrong_answers', width: 15 },
+        { header: 'غير مجاب', key: 'unanswered', width: 15 },
+      ];
+
+      // Dynamically append Q1-QN columns
+      for (let i = 1; i <= maxQuestionsCount; i++) {
+        columns.push({
+          header: `س${i} (Q${i})`,
+          key: `q${i}`,
+          width: 12
+        });
+      }
+
+      ws.columns = columns;
+
+      // Construct Mapped Rows
+      const mappedRows = results.map(row => {
+        const hasDetails = row.detailed_answers && Array.isArray(row.detailed_answers) && row.detailed_answers.length > 0;
+        
+        let totalQuestions: string | number = "N/A";
+        let correctCount: string | number = "N/A";
+        let wrongCount: string | number = "N/A";
+        let blankCount: string | number = "N/A";
+
+        if (hasDetails && row.detailed_answers) {
+          totalQuestions = row.detailed_answers.length;
+          correctCount = row.detailed_answers.filter(a => a.pts > 0).length;
+          blankCount = row.detailed_answers.filter(a => a.ans === undefined || a.ans === null || a.ans === '').length;
+          wrongCount = row.detailed_answers.filter(a => a.pts === 0 && a.ans !== undefined && a.ans !== null && a.ans !== '').length;
+        }
+
+        const rowData: any = {
+          student_id: row.id || "N/A",
+          student_name: row.studentName || "N/A",
+          church_name: row.churchName || "N/A",
+          stage: row.stage || "عام",
+          qr_data: row.id || "N/A",
+          total_score: row.academicScore ?? 0,
+          total_questions: totalQuestions,
+          correct_answers: correctCount,
+          wrong_answers: wrongCount,
+          unanswered: blankCount,
+        };
+
+        for (let i = 1; i <= maxQuestionsCount; i++) {
+          if (hasDetails && row.detailed_answers && row.detailed_answers[i - 1]) {
+            rowData[`q${i}`] = formatAnswerValue(row.detailed_answers[i - 1].ans);
+          } else {
+            rowData[`q${i}`] = "N/A";
+          }
+        }
+
+        return rowData;
+      });
+
+      ws.addRows(mappedRows);
+
+      // Apply Professional Header Styling (Bold font, light gray pattern fill, taller height)
+      const headerRow = ws.getRow(1);
+      headerRow.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF1E293B' } };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF1F5F9' } // Light slate gray background (slate-100)
+      };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      headerRow.height = 28;
+
+      // Apply Center Alignment to all Student records
+      ws.eachRow((r, rowNumber) => {
+        if (rowNumber > 1) {
+          r.alignment = { vertical: 'middle', horizontal: 'center' };
+          // Apply subtle border gridlines for high polished presentation
+          r.eachCell((cell) => {
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+              left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+              bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+              right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+            };
+          });
+        }
+      });
+
+      // Export workbook to raw binary stream & trigger save dialog
+      const buffer = await workbook.xlsx.writeBuffer();
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, "-");
+      const fileName = `Exam_Results_Local_Filtered_${timestamp}.xlsx`;
+      
+      saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileName);
+    } catch (err: any) {
+      console.error("Error exporting local results to Excel:", err);
+      alert("حدث خطأ أثناء تصدير ملف الإكسل: " + (err.message || err));
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  // Download OMR bubble sheet Excel template in the specified RTL 6-column schema
+  const handleDownloadOmrTemplate = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const { saveAs } = await import('file-saver');
+
+      const workbook = new ExcelJS.Workbook();
+      const ws = workbook.addWorksheet('نموذج رصد بابل شيت');
+
+      // Enable Right-to-Left representation for Arabic institutional reports
+      ws.views = [{ rightToLeft: true }];
+
+      // Define RTL columns precisely as requested (Right to Left):
+      // 1. كود الطالب (Student ID)
+      // 2. اسم المخدوم / الطالب (Name)
+      // 3. الكنيسة (Church)
+      // 4. المرحلة / المستوى (Level)
+      // 5. مسابقة الدراسي فقط (Score)
+      // 6. الحالة - غائب/حاضر/إلخ (Status)
+      ws.columns = [
+        { header: 'كود الطالب', key: 'student_id', width: 22 },
+        { header: 'اسم المخدوم / الطالب', key: 'name', width: 32 },
+        { header: 'الكنيسة', key: 'church', width: 25 },
+        { header: 'المرحلة / المستوى', key: 'level', width: 22 },
+        { header: 'مسابقة الدراسي فقط', key: 'score', width: 22 },
+        { header: 'الحالة - غائب/حاضر/إلخ', key: 'status', width: 22 }
+      ];
+
+      // Add a couple of realistic placeholder rows
+      ws.addRow({
+        student_id: '101',
+        name: 'جرجس سمير فايز',
+        church: 'العذراء مريم',
+        level: 'ثالثة ورابعة',
+        score: 95,
+        status: 'حاضر'
+      });
+      ws.addRow({
+        student_id: '102',
+        name: 'مارينا مجدي عادل',
+        church: 'العذراء مريم',
+        level: 'خامسة وسادسة',
+        score: 88,
+        status: 'حاضر'
+      });
+      ws.addRow({
+        student_id: '103',
+        name: 'كيرلس عماد وجيه',
+        church: 'العذراء مريم',
+        level: 'ثالثة ورابعة',
+        score: 0,
+        status: 'غائب'
+      });
+
+      // Style Header Row (bold, background color, center alignment)
+      const headerRow = ws.getRow(1);
+      headerRow.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF1E293B' } };
+      headerRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF1F5F9' }
+      };
+      headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+      headerRow.height = 28;
+
+      // Style Data Rows
+      ws.eachRow((r, rowNumber) => {
+        if (rowNumber > 1) {
+          r.alignment = { vertical: 'middle', horizontal: 'center' };
+          r.eachCell((cell) => {
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+              left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+              bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+              right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+            };
+          });
+        }
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const fileName = `OMR_BubbleSheet_Template.xlsx`;
+      saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileName);
+    } catch (err: any) {
+      console.error('Error generating template:', err);
+      alert('حدث خطأ أثناء تحميل النموذج: ' + err.message);
+    }
+  };
+
   // Upload bubble sheet results from Excel
   const handleEmergencyToggle = () => {
     console.log("Emergency path triggered by admin");
@@ -498,41 +746,51 @@ export const ResultsViewer: React.FC<{
           return;
         }
 
-        // Expected Excel columns: student_name, church_name, stage, derasy_score, mahfouzat_score, qebty_lvl1_score, qebty_lvl2_score
+        // Expected RTL Excel columns:
+        // 1. Student ID (كود الطالب)
+        // 2. Name (اسم المخدوم / الطالب)
+        // 3. Church (الكنيسة)
+        // 4. Level (المرحلة / المستوى)
+        // 5. Score (مسابقة الدراسي فقط - represents the Academic/Study Contest score ONLY)
+        // 6. Status (الحالة - غائب/حاضر/إلخ)
         const submissionsToInsert = json.map((row: any) => {
-          const studentName = row.student_name || row['الاسم'] || row['اسم الطالب'] || '';
-          const churchName = row.church_name || row['الكنيسة'] || row['الكنيسة/البلد'] || '';
-          const stage = row.stage || row.stage_name || row['المرحلة'] || 'عام';
-          const gender = row.gender || row['النوع'] || 'ذكر';
-          const derasy = row.derasy_score !== undefined ? Number(row.derasy_score) : null;
-          const mahfouzat = row.mahfouzat_score !== undefined ? Number(row.mahfouzat_score) : null;
-          const qebtyL1 = row.qebty_lvl1_score !== undefined ? Number(row.qebty_lvl1_score) : null;
-          const qebtyL2 = row.qebty_lvl2_score !== undefined ? Number(row.qebty_lvl2_score) : null;
+          // Robust checking for Arabic/English headers
+          const studentIdInput = row['كود الطالب'] || row['Student ID'] || row['student_id'] || row['كود'] || row['رقم الطالب'] || '';
+          const studentId = studentIdInput ? String(studentIdInput).trim() : `bubble-${Math.random().toString(36).substring(2, 11)}`;
 
-          const studentId = `bubble-${Math.random().toString(36).substring(2, 11)}`;
+          const studentName = row['اسم المخدوم / الطالب'] || row['الاسم'] || row['اسم الطالب'] || row['اسم المخدوم'] || row['student_name'] || row['Name'] || '';
+          const churchName = row['الكنيسة'] || row['church_name'] || row['Church'] || row['الكنيسة/البلد'] || '';
+          const stage = row['المرحلة / المستوى'] || row['المرحلة'] || row['المستوى'] || row['Level'] || row['stage'] || 'عام';
+          
+          // CRITICAL NOTE: The Score column represents Academic/Study Contest score ONLY
+          const scoreVal = row['مسابقة الدراسي فقط'] || row['مسابقة الدراسي'] || row['الدرجة'] || row['درجة الدراسي'] || row['derasy_score'] || row['score'] || row['Score'] || 0;
+          const derasy = scoreVal !== undefined && scoreVal !== '' ? Number(scoreVal) : 0;
+
+          const statusText = row['الحالة - غائب/حاضر/إلخ'] || row['الحالة'] || row['Status'] || row['status'] || 'حاضر';
 
           return {
             student_id: studentId,
             name: studentName,
             churchName: churchName,
             stage: stage,
-            gender: gender,
+            gender: 'ذكر', // Default gender value
             derasy_score: derasy,
-            mahfouzat_score: mahfouzat,
-            qebty_lvl1_score: qebtyL1,
-            qebty_lvl2_score: qebtyL2,
+            mahfouzat_score: null, // Treat purely as academic score, other parts null
+            qebty_lvl1_score: null,
+            qebty_lvl2_score: null,
             is_published: true,
-            status: 'completed',
+            status: statusText === 'غائب' ? 'absent' : 'completed',
+            submission_type: 'bubble_sheet',
             submitted_at: new Date().toISOString()
           };
-        }).filter(item => item.student_id && item.churchName);
+        }).filter(item => item.student_id && item.name);
 
         if (submissionsToInsert.length === 0) {
-          alert('لم يتم العثور على أي صفوف صالحة. تأكد من وجود أعمدة (الاسم) و(الكنيسة/البلد) و(المرحلة).');
+          alert('لم يتم العثور على أي صفوف صالحة. تأكد من وجود كود الطالب واسم المخدوم.');
           return;
         }
 
-        console.log("Payload to Supabase (bubble sheet):", submissionsToInsert);
+        console.log("Payload to Supabase (bubble sheet alignment):", submissionsToInsert);
 
         const { error } = await supabase
           .from('exam_submissions')
@@ -663,6 +921,14 @@ export const ResultsViewer: React.FC<{
             <p className="text-xs text-slate-500 font-bold">رصد نتائج امتحانات المهرجان بمختلف التقنيات (تصحيح ورقي، بابل شيت، أونلاين)</p>
           </div>
           <div className="flex flex-wrap gap-2 w-full md:w-auto shrink-0 animate-fade-in">
+            <button 
+              onClick={handleDownloadOmrTemplate}
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-black transition-all shadow-sm cursor-pointer"
+              title="تحميل نموذج ملف Excel المخصص للبابل شيت OMR"
+            >
+              <Download size={14} />
+              تحميل نموذج بابل شيت (Excel)
+            </button>
             {/* File upload input hidden */}
             <label className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black cursor-pointer transition-all shadow-sm">
               <Upload size={14} />
@@ -712,15 +978,26 @@ export const ResultsViewer: React.FC<{
           </h4>
           <div className="flex flex-wrap items-center gap-3 self-stretch md:self-auto justify-between md:justify-end">
             {results.length > 0 && (
-              <button 
-                onClick={handleAdvancedExportPDF}
-                disabled={isGeneratingPDF}
-                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-                title="تصدير كشف النتائج كملف PDF"
-              >
-                <FileSpreadsheet size={15} />
-                <span>تصدير تقرير PDF متعدد الصفحات (Landscape) 📑</span>
-              </button>
+              <>
+                <button 
+                  onClick={handleExportToExcel}
+                  disabled={isExportingExcel}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  title="تصدير كشف النتائج كملف Excel مخصص (OMR)"
+                >
+                  <FileSpreadsheet size={15} />
+                  <span>{isExportingExcel ? 'جاري تصدير Excel...' : 'تصدير كشف Excel (OMR) 📊'}</span>
+                </button>
+                <button 
+                  onClick={handleAdvancedExportPDF}
+                  disabled={isGeneratingPDF}
+                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  title="تصدير كشف النتائج كملف PDF"
+                >
+                  <FileSpreadsheet size={15} />
+                  <span>تصدير تقرير PDF متعدد الصفحات (Landscape) 📑</span>
+                </button>
+              </>
             )}
             <div className="flex items-center gap-2">
               <button 
@@ -844,16 +1121,13 @@ export const ResultsViewer: React.FC<{
                             <div className="flex gap-2 items-center flex-wrap">
                               <button 
                                 onClick={() => handleResetRow(row.id!)}
-                                title="إعادة الامتحان وتصفير محتواه"
+                                title="إعادة الامتحان"
                                 className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-all border border-rose-100"
                               >
                                 <RefreshCcw size={14} />
                               </button>
                               
-                              <button onClick={handleEmergencyToggle} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all" title="أيقونة البوصلة">
-                                <Compass className="w-5 h-5 text-indigo-500" />
-                              </button>
-
+                            
                               <button className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black transition-all">
                                 تعديل الدرجات
                               </button>
@@ -1067,7 +1341,7 @@ export const ResultsViewer: React.FC<{
               </span>
               <input
                 type="text"
-                placeholder="🔍 ابحث عن اسم الطالب هنا للرصد السريع والتصفية اللحظية..."
+                placeholder="🔍 ابحث عن اسم الطالب هنا للرصد السريع ..."
                 value={bulkSearchQuery}
                 onChange={(e) => setBulkSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-10 py-3 bg-white border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-2xl text-xs font-black outline-none shadow-sm transition-all text-slate-800 placeholder-slate-400"
@@ -1199,7 +1473,7 @@ export const ResultsViewer: React.FC<{
                               دراسي: {scores.derasy_score !== undefined && scores.derasy_score !== null ? scores.derasy_score : '-'}
                             </span>
                             <span className="px-2 py-0.5 rounded text-[10px] font-black bg-purple-50 text-purple-700 border border-purple-105">
-                              محفظات: {scores.mahfouzat_score !== undefined && scores.mahfouzat_score !== null ? scores.mahfouzat_score : '-'}
+                              محفوظات: {scores.mahfouzat_score !== undefined && scores.mahfouzat_score !== null ? scores.mahfouzat_score : '-'}
                             </span>
                           </div>
                         </td>
@@ -1368,7 +1642,7 @@ export const ResultsViewer: React.FC<{
                 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1">التحصيل الدراسي</label>
+                    <label className="block text-xs font-bold text-slate-500 mb-1"> دراسي</label>
                     <input 
                       type="number"
                       min="0"
@@ -1601,8 +1875,8 @@ export const ResultsViewer: React.FC<{
 
                 {/* Page Footer */}
                 <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 border-t border-slate-200 pt-3 mt-4">
-                  <p>مركز الدعم التكنولوجي والكنترول الرئيسي - مهرجان الكرازة المرقسية</p>
-                  <p className="text-indigo-650 font-black">تصميم ذكي متعدد الصفحات • كشف نتائج رسمي معتمد 10mm</p>
+                  <p>   الكنترول - مهرجان الكرازة المرقسية</p>
+                  <p className="text-indigo-650 font-black">    • كشف النتائج   10mm</p>
                 </div>
               </div>
             );
@@ -1621,7 +1895,7 @@ export const ResultsViewer: React.FC<{
                 <FileSpreadsheet className="text-indigo-600 animate-pulse" size={28} />
               </div>
 
-              <h4 className="text-lg font-black text-slate-900 mb-2">تصدير التقرير والنتائج كـ PDF</h4>
+              <h4 className="text-lg font-black text-slate-900 mb-2">تصدير  النتائج كـ PDF</h4>
               <p className="text-xs text-slate-500 font-bold mb-6 line-clamp-2 min-h-[2.5rem]">{pdfStatus}</p>
 
               {/* Progress Slider Bar */}
@@ -1633,7 +1907,7 @@ export const ResultsViewer: React.FC<{
               </div>
 
               <div className="flex items-center justify-between w-full text-[10px] font-black text-slate-400 px-1">
-                <span>جاري البناء...</span>
+                <span>جاري التنزيل...</span>
                 <span className="text-indigo-600">{pdfProgress}%</span>
               </div>
             </div>
