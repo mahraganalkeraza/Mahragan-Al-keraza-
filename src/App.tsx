@@ -1503,6 +1503,28 @@ function AppComponent() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [carouselItems, setCarouselItems] = useState<CarouselItem[]>([]);
   const [publicChurches, setPublicChurches] = useState<{name: string, email: string, logoUrl?: string}[]>([]);
+  const [churchOptions, setChurchOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    const fetchChurchOptions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('church_access_codes')
+          .select('church_name')
+          .order('church_name', { ascending: true });
+        
+        if (!error && data) {
+          const uniqueNames = Array.from(
+            new Set(data.map((d: any) => d.church_name).filter(Boolean))
+          ) as string[];
+          setChurchOptions(uniqueNames);
+        }
+      } catch (err) {
+        console.error("Error fetching church options:", err);
+      }
+    };
+    fetchChurchOptions();
+  }, []);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxImages, setLightboxImages] = useState<{src: string}[]>([]);
@@ -6801,12 +6823,15 @@ function AppComponent() {
                   <div className="flex flex-col gap-2">
                     <label className="text-[10px] font-black text-slate-400 uppercase">تصفية حسب الكنيسة</label>
                     <select 
-                      value={globalChurchFilter}
-                      onChange={(e) => setGlobalChurchFilter(e.target.value)}
+                      value={globalChurchFilter === 'الكل' ? '' : globalChurchFilter}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setGlobalChurchFilter(val === '' || val === 'all' ? 'الكل' : val);
+                      }}
                       className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary font-bold shadow-sm"
                     >
-                      <option value="الكل">عرض الكل</option>
-                      {Array.from(new Set(publicChurches.map((c: any) => c.name))).sort().map(church => (
+                      <option value="">عرض الكل</option>
+                      {churchOptions.map(church => (
                         <option key={church} value={church}>{church}</option>
                       ))}
                     </select>
