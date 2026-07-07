@@ -564,7 +564,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
       }
 
       if (mode === 'omr') {
-        students = students.filter(s => /إعدادي|اعدادي|إعدادى|اعدادى|ثانوي|ثانوى|خريجين|جامعة|جامعه/i.test(s.stage));
+        students = students.filter(s => /|خدام وإعداد الخدام|إعدادي|اعدادي|إعدادى|اعدادى|ثانوي|ثانوى|خريجون|جامعة|جامعه/i.test(s.stage));
       }
 
       // Sort alphabetically by name
