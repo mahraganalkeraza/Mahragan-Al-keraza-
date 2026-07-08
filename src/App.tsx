@@ -1637,6 +1637,128 @@ function AppComponent() {
   const [participantDuplicateWarning, setParticipantDuplicateWarning] = useState<string | null>(null);
   const [isCheckingParticipantDuplicate, setIsCheckingParticipantDuplicate] = useState(false);
 
+  // Helper to normalize Arabic names for smarter matching (typos, hamzas, etc.)
+  const normalizeArabic = (text: string): string => {
+    if (!text) return '';
+    return text
+      .replace(/[أإآا]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/ى/g, 'ي')
+      .replace(/ئ/g, 'ي')
+      .replace(/ؤ/g, 'و')
+      .replace(/[\u064B-\u0652]/g, '') // Remove diacritics
+      .trim()
+      .replace(/\s+/g, ' ');
+  };
+
+  // Helper to compute Levenshtein Distance
+  const getLevenshteinDistance = (s1: string, s2: string): number => {
+    const len1 = s1.length;
+    const len2 = s2.length;
+    const matrix: number[][] = [];
+
+    for (let i = 0; i <= len1; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1, // deletion
+          matrix[i][j - 1] + 1, // insertion
+          matrix[i - 1][j - 1] + cost // substitution
+        );
+      }
+    }
+    return matrix[len1][len2];
+  };
+
+  // Check name similarity using Arabic normalization & Levenshtein & word overlap
+  const checkNameSimilarity = (name1: string, name2: string): { similarity: number, matches: boolean } => {
+    const norm1 = normalizeArabic(name1);
+    const norm2 = normalizeArabic(name2);
+    
+    if (norm1 === norm2) {
+      return { similarity: 1.0, matches: true };
+    }
+
+    const words1 = norm1.split(' ');
+    const words2 = norm2.split(' ');
+    
+    const commonWords = words1.filter(w => words2.includes(w));
+    const overlapRatio = commonWords.length / Math.min(words1.length, words2.length);
+
+    const maxLen = Math.max(norm1.length, norm2.length);
+    if (maxLen === 0) return { similarity: 1.0, matches: true };
+    const distance = getLevenshteinDistance(norm1, norm2);
+    const levSim = 1.0 - distance / maxLen;
+
+    // Matches if Levenshtein similarity is >= 0.78 OR high word overlap (at least 2 words match and 66% overlap)
+    const isSimilar = levSim >= 0.78 || (commonWords.length >= 2 && overlapRatio >= 0.66);
+
+    return {
+      similarity: Math.max(levSim, overlapRatio),
+      matches: isSimilar
+    };
+  };
+
+  // Handle onBlur of the name input field in registration form
+  const handleNameBlur = async () => {
+    const trimmedName = newParticipant.name ? newParticipant.name.trim() : '';
+    if (!trimmedName || trimmedName.length < 3 || !churchName) {
+      return;
+    }
+
+    if (editingParticipant && editingParticipant.name.trim() === trimmedName) {
+      return;
+    }
+
+    setIsCheckingParticipantDuplicate(true);
+    try {
+      const { data, error } = await supabase
+        .from('registrations')
+        .select('name, stage')
+        .eq('churchName', churchName);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        // First look for exact duplicate
+        const exactDuplicate = data.find(item => item.name.trim() === trimmedName);
+        if (exactDuplicate) {
+          setParticipantDuplicateWarning(
+            `تنبيه: هذا الاسم مسجل بالفعل في كنيستك للمرحلة: ${exactDuplicate.stage || 'غير محددة'}.`
+          );
+          return;
+        }
+
+        // Look for similar duplicate
+        const similarName = data.find(item => {
+          const simResult = checkNameSimilarity(trimmedName, item.name);
+          return simResult.matches && item.name.trim() !== trimmedName;
+        });
+
+        if (similarName) {
+          setParticipantDuplicateWarning(
+            `⚠️ تنبيه: الاسم المُدخل متشابه جداً مع الاسم المسجل مسبقاً "${similarName.name}" (مرحلة: ${similarName.stage || 'غير محددة'}). يرجى التأكد من الاسم ثلاثياً لتجنب التكرار.`
+          );
+        } else {
+          setParticipantDuplicateWarning(null);
+        }
+      } else {
+        setParticipantDuplicateWarning(null);
+      }
+    } catch (err) {
+      console.warn("Error running similarity check onBlur:", err);
+    } finally {
+      setIsCheckingParticipantDuplicate(false);
+    }
+  };
+
   useEffect(() => {
     const trimmedName = newParticipant.name ? newParticipant.name.trim() : '';
     if (!trimmedName || trimmedName.length < 3 || !churchName) {
@@ -1657,17 +1779,32 @@ function AppComponent() {
       try {
         const { data, error } = await supabase
           .from('registrations')
-          .select('stage')
-          .eq('churchName', churchName)
-          .eq('name', trimmedName)
-          .limit(1)
-          .maybeSingle();
+          .select('name, stage')
+          .eq('churchName', churchName);
 
-        if (data) {
-          const pStage = data.stage || 'غير محددة';
-          setParticipantDuplicateWarning(
-            `تنبيه: يوجد مشترك مسجل بالفعل بنفس هذا الاسم في كنيستك للمرحلة: ${pStage}. يرجى توخي الحذر والتأكد من الاسم ثلاثياً لتجنب التكرار.`
-          );
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          const exactDuplicate = data.find(item => item.name.trim() === trimmedName);
+          if (exactDuplicate) {
+            setParticipantDuplicateWarning(
+              `تنبيه: هذا الاسم مسجل بالفعل في كنيستك للمرحلة: ${exactDuplicate.stage || 'غير محددة'}.`
+            );
+            return;
+          }
+
+          const similarName = data.find(item => {
+            const simResult = checkNameSimilarity(trimmedName, item.name);
+            return simResult.matches && item.name.trim() !== trimmedName;
+          });
+
+          if (similarName) {
+            setParticipantDuplicateWarning(
+              `⚠️ تنبيه: الاسم المُدخل متشابه جداً مع الاسم المسجل مسبقاً "${similarName.name}" (مرحلة: ${similarName.stage || 'غير محددة'}). يرجى التأكد من الاسم ثلاثياً لتجنب التكرار.`
+            );
+          } else {
+            setParticipantDuplicateWarning(null);
+          }
         } else {
           setParticipantDuplicateWarning(null);
         }
@@ -9997,6 +10134,7 @@ function AppComponent() {
                                 placeholder="أدخل الاسم الثلاثي"
                                 value={newParticipant.name}
                                 onChange={e => setNewParticipant({...newParticipant, name: e.target.value})}
+                                onBlur={handleNameBlur}
                                 className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none"
                                 required
                               />
