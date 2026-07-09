@@ -205,6 +205,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
   const [selectedModel, setSelectedModel] = useState("A");
   const [currentQuestions, setCurrentQuestions] = useState<Question[]>([]);
   const [isDirty, setIsDirty] = useState(false);
+  const isCopticFont = selectedCompetition && selectedCompetition.includes("قبطي");
 
   const fetchExamsPool = async () => {
     try {
@@ -445,7 +446,7 @@ const { error: saveErr } = await supabase
                     setCurrentQuestions(newQ);
                     setIsDirty(true);
                   }}
-                  className="w-full px-4 py-2 border rounded-xl bg-white"
+                  className={`w-full px-4 py-2 border rounded-xl bg-white ${isCopticFont ? "coptic-text text-lg" : ""}`}
                 />
               </div>
               <div className="flex gap-4">
@@ -530,7 +531,7 @@ const { error: saveErr } = await supabase
                         setIsDirty(true);
                       }}
                       disabled={q.type === "boolean"}
-                      className="flex-1 px-4 py-2 border rounded-xl bg-white"
+                      className={`flex-1 px-4 py-2 border rounded-xl bg-white ${isCopticFont ? "coptic-text text-lg" : ""}`}
                     />
                     {q.type === "mcq" && q.options.length > 1 && (
                       <button
@@ -585,7 +586,7 @@ const { error: saveErr } = await supabase
                         setCurrentQuestions(newQ);
                         setIsDirty(true);
                       }}
-                      className="flex-1 px-4 py-2 border rounded-xl bg-white"
+                      className={`flex-1 px-4 py-2 border rounded-xl bg-white ${isCopticFont ? "coptic-text text-lg" : ""}`}
                     />
                     <div className="text-slate-300 font-bold">↔</div>
                     <input
@@ -599,7 +600,7 @@ const { error: saveErr } = await supabase
                         setCurrentQuestions(newQ);
                         setIsDirty(true);
                       }}
-                      className="flex-1 px-4 py-2 border rounded-xl bg-white"
+                      className={`flex-1 px-4 py-2 border rounded-xl bg-white ${isCopticFont ? "coptic-text text-lg" : ""}`}
                     />
                     <button
                       onClick={() => {
@@ -645,7 +646,7 @@ const { error: saveErr } = await supabase
                     setIsDirty(true);
                   }}
                   placeholder="الإجابة المتوقعة..."
-                  className="w-full px-4 py-2 border rounded-xl bg-white"
+                  className={`w-full px-4 py-2 border rounded-xl bg-white ${isCopticFont ? "coptic-text text-lg" : ""}`}
                 />
               </div>
             )}
