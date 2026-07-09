@@ -425,19 +425,19 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       // تنظيف المرحلة
       const cleanStage = studentObj.stage ? studentObj.stage.trim() : ''; 
 
-      // --- Check 1: Anti-Cheat ---
+     // --- Check 1: Anti-Cheat (تعديل ذكي لحماية المسابقة الحالية فقط) ---
       const { data: submissionCheck } = await supabase
         .from('exam_submissions')
-        .select('student_id')
+        .select('*') // بنجيب السطر كله عشان نشوف الأعمدة
         .eq('student_id', studentIdStr)
         .maybeSingle();
 
-      if (submissionCheck) {
-        setErrors("عفواً، لقد قمت بدخول هذا الامتحان مسبقاً!");
+      // لو الطالب له سطر قديم، بنشيك هل العمود بتاع المسابقة الحالية دي بالذات جواه بيانات؟
+      if (submissionCheck && submissionCheck[competitionType] !== null) {
+        setErrors("عفواً، لقد قمت بتقديم هذه المسابقة مسبقاً! يمكنك دخول المسابقات الأخرى المتاحة.");
         setIsLoading(false);
         return;
       }
-
       // --- Check 2: Global Lock ---
       const { data: sysData } = await supabase
         .from('system_settings')
@@ -446,7 +446,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         .maybeSingle();
 
       if (sysData?.is_exam_locked) {
-        setErrors("المهمة مغلقة حالياً من الإدارة العامة.");
+        setErrors("المهمة مغلقة حالياً من اللجنة المركزية.");
         setIsLoading(false);
         return;
       }
