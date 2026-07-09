@@ -923,6 +923,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   const [isScanning, setIsScanning] = useState(false);
   const [middleNameValidation, setMiddleNameValidation] = useState('');
   const [activeStudent, setActiveStudent] = useState<any>(null);
+  const [completedExams, setCompletedExams] = useState<string[]>([]);
+  const [examsPool, setExamsPool] = useState<any[]>([]);
   const [selectedCompetition, setSelectedCompetition] = useState<string | null>(
     null,
   );
@@ -1080,6 +1082,38 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       }
     }
   }, []);
+
+  // Load completed exams and exams pool when active student changes
+  useEffect(() => {
+    const fetchStudentSubmissionsAndExams = async () => {
+      if (activeStudent?.id) {
+        try {
+          const { data: userSubmissions, error: subError } = await supabase
+            .from("exam_submissions")
+            .select("exam_id")
+            .eq("student_id", activeStudent.id);
+          
+          if (!subError && userSubmissions) {
+            const completedIds = userSubmissions.map(s => s.exam_id).filter(Boolean);
+            setCompletedExams(completedIds);
+          }
+        } catch (e) {
+          console.error("Error fetching student submissions:", e);
+        }
+      } else {
+        setCompletedExams([]);
+      }
+      
+      try {
+        const pool = await fetchAllExamsAndCache();
+        setExamsPool(pool);
+      } catch (e) {
+        console.error("Error loading exams pool:", e);
+      }
+    };
+    
+    fetchStudentSubmissionsAndExams();
+  }, [activeStudent?.id]);
 
   // Add another useEffect to load/save completedSubjects and allAnswers to localStorage per-student
   useEffect(() => {
@@ -1261,71 +1295,59 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       let studentData: any = null;
 
-      if (studentObj) {
-        studentData = {
-          id: studentObj.student_id,
-          studentName:
-            studentObj.name ||
-            studentObj.student_name ||
-            studentNameFromPayload ||
-            "طالب",
-          churchName:
-            studentObj.churchName ||
-            studentObj.church ||
-            studentObj.church_name ||
-            studentObj.church_Name ||
-            "غير محدد",
-          church_name:
-            studentObj.church_name ||
-            studentObj.churchName ||
-            studentObj.church ||
-            studentObj.church_Name ||
-            "غير محدد",
-          church_Name:
-            studentObj.church_Name ||
-            studentObj.church_name ||
-            studentObj.churchName ||
-            studentObj.church ||
-            "غير محدد",
-          stage: studentObj.stage || "عام",
-          gender: studentObj.gender || "",
-          coptic_level: studentObj.coptic_level ?? null,
-          enrolled_subjects:
-            (studentObj.competitions || studentObj.enrolled_subjects) ?? null,
-        };
-      } else {
-        // Fallback for manual bypass
-        const manualName = prompt("برجاء إدخال اسم الطالب (مثال: مينا كمال):", "");
-        const manualChurch = prompt("برجاء إدخال البلد / الكنيسة:", "");
-        const manualStage = prompt("برجاء إدخال المرحلة (مثال: إبتدائي، إعدادي):", "");
-
-        if (manualName && manualChurch && manualStage) {
-          studentData = {
-            id: studentId,
-            studentName: manualName,
-            churchName: manualChurch,
-            church_name: manualChurch,
-            church_Name: manualChurch,
-            stage: manualStage,
-            isManual: true,
-          };
-        } else {
-          setIsLoading(false);
-          return;
-        }
+      if (!studentObj) {
+        setIsLoading(false);
+        return alert("عفواً، هذا الكود غير مسجل بمهرجان هذا العام.");
       }
 
-      // Check existing submission scores on Supabase
-      // const { data: existingSub } = await supabase
-        // .from("exam_submissions")
-        // .select("*")
-        // .eq("student_id", studentData.id)
-        // .maybeSingle();
+      studentData = {
+        id: studentObj.student_id,
+        studentName:
+          studentObj.name ||
+          studentObj.student_name ||
+          studentNameFromPayload ||
+          "طالب",
+        churchName:
+          studentObj.churchName ||
+          studentObj.church ||
+          studentObj.church_name ||
+          studentObj.church_Name ||
+          "غير محدد",
+        church_name:
+          studentObj.church_name ||
+          studentObj.churchName ||
+          studentObj.church ||
+          studentObj.church_Name ||
+          "غير محدد",
+        church_Name:
+          studentObj.church_Name ||
+          studentObj.church_name ||
+          studentObj.churchName ||
+          studentObj.church ||
+          "غير محدد",
+        stage: studentObj.stage || "عام",
+        gender: studentObj.gender || "",
+        coptic_level: studentObj.coptic_level ?? null,
+        enrolled_subjects:
+          (studentObj.competitions || studentObj.enrolled_subjects) ?? null,
+      };
 
-      // if (existingSub) {
-        // setIsLoading(false);
-         //return alert("عفوًا، سبق للطالب الخضوع للامتحان وإرسال الإجابات.");
-       //}
+      // Query the exam_submissions table to fetch ALL records belonging to this specific studentId
+      const { data: userSubmissions, error: subError } = await supabase
+        .from("exam_submissions")
+        .select("exam_id")
+        .eq("student_id", studentData.id);
+
+      if (subError) {
+        console.warn("Error fetching student submissions:", subError);
+      }
+
+      if (userSubmissions) {
+        const completedIds = userSubmissions.map(s => s.exam_id).filter(Boolean);
+        setCompletedExams(completedIds);
+      } else {
+        setCompletedExams([]);
+      }
 
       // Lock-in student profile
       setSelectedCompetition(null);
@@ -1488,6 +1510,12 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           normalizeArabic(row.subject || row.competition_type) ===
             normalizeArabic(competitionType),
       );
+
+      const hasExamBeenSubmitted = matchedExams.some((exam: any) => completedExams.includes(String(exam.id)));
+      if (hasExamBeenSubmitted) {
+        setIsLoading(false);
+        return alert("عذراً، لقد قمت بدخول هذا الامتحان وإرسال الإجابات مسبقاً! 🔒");
+      }
 
       const availableExams: Exam[] = matchedExams
         .map((row: any) => ({
@@ -1919,6 +1947,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         return; // Stop execution if database fails
       }
 
+      const submittedExamId = activeExam?.id || "unknown";
+      if (submittedExamId && submittedExamId !== "unknown") {
+        setCompletedExams(prev => [...prev, String(submittedExamId)]);
+      }
+
       // DO NOT clear React state, localStorage or navigate away BEFORE the above block resolves
 
       // Clean up local storage trace for this specific student
@@ -2267,34 +2300,49 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 );
               }
 
+              const matchingExam = examsPool.find(
+                (row: any) =>
+                  String(row.stage).trim() === String(activeStudent.stage || "عام").trim() &&
+                  normalizeArabic(row.subject || row.competition_type) ===
+                    normalizeArabic(type) &&
+                  (row.is_active ?? true) !== false
+              );
+              const currentExamId = matchingExam ? String(matchingExam.id) : null;
+              const isExamInCompletedExams = currentExamId ? completedExams.includes(currentExamId) : false;
+              const isSubmitted = isExamInCompletedExams || isSaved;
+
+              if (isSubmitted) {
+                return (
+                  <button
+                    key={type}
+                    id={`competition-btn-${subKey}`}
+                    disabled={true}
+                    className="p-5 rounded-xl border border-slate-300 bg-slate-100 opacity-70 cursor-not-allowed transition-all text-center flex flex-col justify-between w-full"
+                  >
+                    <h5 className="font-black text-xl mb-1 text-slate-500">
+                      {type}
+                    </h5>
+                    <span className="text-xs text-slate-600 font-bold block mt-3 bg-slate-200 border border-slate-300 px-3 py-1.5 rounded-xl text-center font-sans">
+                      🔒 Submitted Successfully
+                    </span>
+                  </button>
+                );
+              }
+
               return (
                 <button
                   key={type}
                   id={`competition-btn-${subKey}`}
                   onClick={() => startExam(type)}
-                  disabled={isLoading || isSaved}
-                  className={
-                    isSaved
-                      ? "p-5 rounded-xl border border-emerald-300 bg-emerald-50 opacity-80 cursor-not-allowed transition-all"
-                      : "bg-gradient-to-br from-amber-400 to-yellow-500 rounded-xl p-5 shadow-lg transform hover:-translate-y-1 transition-all duration-300 cursor-pointer border border-amber-300"
-                  }
+                  disabled={isLoading}
+                  className="bg-gradient-to-br from-amber-400 to-yellow-500 rounded-xl p-5 shadow-lg transform hover:-translate-y-1 transition-all duration-300 cursor-pointer border border-amber-300 text-center flex flex-col justify-between w-full"
                 >
-                  <h5
-                    className={
-                      isSaved ? "font-black text-xl mb-1 text-emerald-800" : "text-[#4a000b] font-black text-xl mb-1"
-                    }
-                  >
+                  <h5 className="text-[#4a000b] font-black text-xl mb-1">
                     {type}
                   </h5>
-                  {isSaved ? (
-                    <span className="text-xs text-emerald-600 font-bold block mt-3 bg-emerald-100 border border-emerald-200 px-3 py-1.5 rounded-xl text-center">
-                      تم الحفظ بنجاح ✅
-                    </span>
-                  ) : (
-                    <span className="text-[#6b0311]/80 font-medium text-sm block">
-                      اضغط هنا لبدء الاختبار
-                    </span>
-                  )}
+                  <span className="text-[#6b0311]/80 font-medium text-sm block">
+                    اضغط هنا لبدء الاختبار
+                  </span>
                 </button>
               );
             })}
