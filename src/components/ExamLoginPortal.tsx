@@ -538,13 +538,6 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           (examSubjectStr && submissionCheck.exam_id.includes(examSubjectStr))
         );
       });
-
-      if (hasTakenThisCompetition) {
-        setErrors("عفواً، لقد قمت بتقديم هذه المسابقة مسبقاً! يمكنك دخول المسابقات الأخرى المتاحة.");
-        setIsLoading(false);
-        return; // 🛑 فرامل! إيقاف نهائي ومنع تشغيل الـ onSuccess
-      }
-
       // ========================================================
       // 🎉 3️⃣ تمرير البيانات بنجاح وتشغيل الامتحان بالنموذج العشوائي
       // ========================================================

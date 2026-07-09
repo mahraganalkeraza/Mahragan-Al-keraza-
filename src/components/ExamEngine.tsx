@@ -745,6 +745,13 @@ export const isStudentEnrolledInCompetition = (
   });
 };
 
+const isCopticText = (text: any): boolean => {
+  if (typeof text !== "string") return false;
+  // Detect standard Coptic/Greek unicode range
+  const regex = /[\u2C80-\u2CFF\u0370-\u03FF]/;
+  return regex.test(text);
+};
+
 interface QuestionCardProps {
   q: any;
   qIdx: number;
@@ -788,7 +795,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
         )}
       </div>
 
-      <h2 className="text-xl font-bold text-slate-800 leading-relaxed font-sans">
+      <h2 className={`text-xl font-bold text-slate-800 leading-relaxed ${isCopticText(q.text) ? 'coptic-text' : 'font-sans'}`}>
         {q.text}
       </h2>
 
@@ -796,6 +803,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
         <div className="space-y-3 mt-4" id={`answers-grp-${q.id}`}>
           {q.options.map((opt: string, oIndex: number) => {
             const isSelected = currentAnswer === opt;
+            const optionIsCoptic = isCopticText(opt);
             return (
               <div
                 role="button"
@@ -825,7 +833,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                   >
                     {isSelected && <Check size={12} className="stroke-[3px]" />}
                   </div>
-                  <span className="text-sm sm:text-base leading-relaxed">{opt}</span>
+                  <span className={`text-sm sm:text-base leading-relaxed ${optionIsCoptic ? 'coptic-text' : ''}`}>{opt}</span>
                 </div>
               </div>
             );
@@ -840,7 +848,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
           placeholder="اكتب إجابتك هنا بوضوح ودقة..."
           value={currentAnswer || ""}
           onChange={(e) => onAnswer(q.id, e.target.value)}
-          className="w-full px-4 py-3.5 border-2 border-slate-200 focus:border-[#d4af37] focus:ring-4 focus:ring-amber-100 rounded-xl bg-slate-50 hover:bg-slate-50/50 focus:bg-white outline-none font-bold text-slate-850 transition-all font-sans"
+          className={`w-full px-4 py-3.5 border-2 border-slate-200 focus:border-[#d4af37] focus:ring-4 focus:ring-amber-100 rounded-xl bg-slate-50 hover:bg-slate-50/50 focus:bg-white outline-none font-bold text-slate-850 transition-all ${isCopticText(currentAnswer) ? 'coptic-text' : 'font-sans'}`}
         />
       )}
 
@@ -852,6 +860,8 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
           {q.matchingPairs.map((pair: any, pIdx: number) => {
             const currentListAnswers = currentAnswer || {};
             const isPairSelected = !!currentListAnswers[pIdx];
+            const leftIsCoptic = isCopticText(pair.left);
+            const selectedValIsCoptic = isCopticText(currentListAnswers[pIdx]);
             return (
               <div
                 key={pIdx}
@@ -862,7 +872,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                 }`}
                 id={`matching-pair-${q.id}-${pIdx}`}
               >
-                <span className="font-bold text-slate-700 text-sm">
+                <span className={`font-bold text-slate-700 text-sm ${leftIsCoptic ? 'coptic-text' : ''}`}>
                   {pair.left}
                 </span>
                 <span className="text-slate-400 text-center hidden sm:block font-black">
@@ -878,12 +888,12 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                     };
                     onAnswer(q.id, nextList);
                   }}
-                  className="px-3 py-2 border border-slate-300 focus:border-[#d4af37] focus:ring-2 focus:ring-amber-100 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all font-sans"
+                  className={`px-3 py-2 border border-slate-300 focus:border-[#d4af37] focus:ring-2 focus:ring-amber-100 rounded-lg bg-white font-bold text-xs text-slate-700 outline-none transition-all ${selectedValIsCoptic ? 'coptic-text' : 'font-sans'}`}
                 >
                   <option value="">اختر المطابقة الصحيحة...</option>
                   {(q as any).shuffledRights?.map(
                     (rItem: string, rIdx: number) => (
-                      <option key={rIdx} value={rItem}>
+                      <option key={rIdx} value={rItem} className={isCopticText(rItem) ? 'coptic-text' : ''}>
                         {rItem}
                       </option>
                     ),
