@@ -1918,31 +1918,47 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                          (Number(finalQebtyLvl2Score) || 0);
 
       // تأكد أولاً إن متغير اسم الطالب ممسوك من الشاشة أو من بيانات الدخول (مثلاً: studentData.name أو userProfile.name)
-      const studentName = currentStudentPayload?.name || "مخدوم غير مسجل";
-// 1️⃣ أولاً: بنحدد إحنا في أنهي امتحان حالياً وبنجهز كائن التحديث للخانة بتاعته بس
+    const studentName = currentStudentPayload?.name || "مخدوم غير مسجل";
+
+      // 1️⃣ أولاً: جلب الـ exam_id القديم المتسجل في السيرفر حالياً (لو موجود)
+      const { data: oldSubmission } = await supabase
+        .from('exam_submissions')
+        .select('exam_id')
+        .eq('student_id', currentStudentPayload?.id)
+        .maybeSingle();
+
+      const oldExamId = oldSubmission?.exam_id ? oldSubmission.exam_id.trim() : "";
+      const currentExamId = (activeExam?.id || primaryExamId || "unknown").trim();
+
+      // 2️⃣ ثانياً: دمج الـ ID الجديد مع القديم بذكاء وعمل تراكم (عشان ميمسحوش بعض)
+      let combinedExamId = currentExamId;
+      if (oldExamId && oldExamId !== "unknown") {
+        combinedExamId = oldExamId.includes(currentExamId) 
+          ? oldExamId 
+          : `${oldExamId} + ${currentExamId}`;
+      }
+
+      // 3️⃣ ثالثاً: بناء الـ Payload الذكي باستخدام الـ combinedExamId المدموج
       let scoreUpdatePayload: any = {
         name: studentName,
         churchName: currentStudentPayload?.church,
         stage: currentStudentPayload?.stage,
         gender: currentStudentPayload?.gender,
         detailed_answers: JSON.parse(selectedAnswers || "[]"),
-        exam_id: activeExam?.id || primaryExamId || "unknown",
+        exam_id: combinedExamId, // 🔥 السحر هنا: بقى يشيل القديم + الجديد مع بعض!
         is_published: true,
         duration_seconds: calculatedDurationInSeconds,
         status: "completed",
         submitted_at: new Date().toISOString()
       };
 
-      // 2️⃣ ثانياً: بنشوف إيه الدرجة اللي جاية مش بصفر ونحطها في خانتها بالظبط
-      // وبكدة الـ Payload مش هيبقى فيه الخانات التانية خالص، فمستحيل يتمسحوا من السيرفر!
+      // 4️⃣ رابعاً: دمج درجات المسابقة الحالية
       if (finalDerasyScore > 0) scoreUpdatePayload.derasy_score = finalDerasyScore;
       if (finalMahfouzatScore > 0) scoreUpdatePayload.mahfouzat_score = finalMahfouzatScore;
       if (finalQebtyLvl1Score > 0) scoreUpdatePayload.qebty_lvl1_score = finalQebtyLvl1Score;
       if (finalQebtyLvl2Score > 0) scoreUpdatePayload.qebty_lvl2_score = finalQebtyLvl2Score;
 
-      // 3️⃣ ثالثاً: تشغيل اللوجيك المشروط (لو الطالب ملوش سجل يعمل Insert، ولو ليه يعمل Update للخانة بس)
-      
-      // أ) نشيك الأول هل الطالب له سطر في الجدول؟
+      // 5️⃣ خامساً: اللوجيك المشروط اللي بيحدد Insert أو Update (بتاعك زي ما هو)
       const { data: checkCheck } = await supabase
         .from('exam_submissions')
         .select('student_id')
@@ -1965,7 +1981,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           .eq('student_id', currentStudentPayload?.id);
       }
 
-      // 4️⃣ رابعاً: فحص الأخطاء كالمعتاد
+      // 6️⃣ سادساً: فحص الأخطاء كالمعتاد
       if (dbResult.error) {
         console.error("Supabase Error:", dbResult.error.message);
         alert(`فشل إرسال الإجابات لقاعدة البيانات: ${dbResult.error.message}`);
@@ -1973,12 +1989,12 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         setIsLoading(false);
         return;
       }
-      console.log("تم الحفظ بنجاح  !");
-     const submittedExamId = activeExam?.id || "unknown";
+
+      console.log("تم الحفظ بنجاح !");
+      const submittedExamId = activeExam?.id || "unknown";
       if (submittedExamId && submittedExamId !== "unknown") {
         setCompletedExams(prev => [...prev, String(submittedExamId)]);
       }
-
       // DO NOT clear React state, localStorage or navigate away BEFORE the above block resolves
 
       // Clean up local storage trace for this specific student
