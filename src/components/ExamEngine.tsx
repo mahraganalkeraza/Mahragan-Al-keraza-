@@ -162,9 +162,9 @@ const fetchAllExamsAndCache = async (): Promise<any[]> => {
 
 interface Question {
   id: string;
-  type: "mcq" | "boolean" | "matching" | "fill";
+  type: "mcq" | "boolean" | "matching" | "fill" | "multi_select";
   text: string;
-  options: string[];
+  options: any[];
   matchingPairs?: { left: string; right: string }[];
   correctAnswers: string[];
   points: number;
@@ -294,7 +294,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
         id: Date.now().toString(),
         type: "mcq",
         text: "",
-        options: [""],
+        options: [{ text: "", score: 0 }],
         correctAnswers: [],
         points: 1,
       },
@@ -467,102 +467,196 @@ const { error: saveErr } = await supabase
                       } else if (e.target.value === "fill") {
                         newQ[qIndex].options = [];
                         newQ[qIndex].correctAnswers = [""];
+                      } else if (e.target.value === "multi_select") {
+                        newQ[qIndex].options = [{ text: "", score: 0 }];
+                        newQ[qIndex].correctAnswers = [];
+                      } else if (e.target.value === "mcq") {
+                        newQ[qIndex].options = [{ text: "", score: 0 }];
+                        newQ[qIndex].correctAnswers = [];
                       }
                       setCurrentQuestions(newQ);
                       setIsDirty(true);
                     }}
                     className="w-full px-3 py-2 border rounded-lg bg-white"
                   >
-                    <option value="mcq">اختيار من متعدد</option>
+                    <option value="mcq">اختيار من متعدد (Single Choice)</option>
+                    <option value="multi_select">اختيار متعدد (Multiple Selection)</option>
                     <option value="boolean">صح وخطأ</option>
                     <option value="matching">توصيل</option>
                     <option value="fill">أكمل</option>
                   </select>
                 </div>
-                <div className="w-20">
-                  <label className="text-xs font-black mb-1 block">
-                    الدرجة
-                  </label>
-                  <input
-                    type="number"
-                    value={q.points}
-                    onChange={(e) => {
-                      const newQ = [...currentQuestions];
-                      newQ[qIndex].points = Number(e.target.value);
-                      setCurrentQuestions(newQ);
-                      setIsDirty(true);
-                    }}
-                    className="w-full px-3 py-2 border rounded-lg text-center bg-white"
-                  />
-                </div>
+
+                {/* 🎯 شرط إظهار خانة الدرجة فقط للأنواع المختارة */}
+                {(q.type === 'mcq' || q.type === 'multi_select' || q.type === 'boolean') && (
+                  <div className="w-20">
+                    <label className="text-xs font-black mb-1 block">
+                      الدرجة
+                    </label>
+                    <input
+                      type="number"
+                      value={q.points}
+                      onChange={(e) => {
+                        const newQ = [...currentQuestions];
+                        newQ[qIndex].points = Number(e.target.value);
+                        setCurrentQuestions(newQ);
+                        setIsDirty(true);
+                      }}
+                      className="w-full px-3 py-2 border rounded-lg text-center bg-white"
+                    />
+                  </div>
+                )}
               </div>
             </div>
-
-            {(q.type === "mcq" || q.type === "boolean") && (
+            {q.type === "boolean" && (
               <div className="space-y-3">
                 <label className="text-xs font-black mb-2 block text-slate-400">
                   الخيارات (حدد الإجابة الصحيحة)
                 </label>
-                {q.options?.map((opt, optIndex) => (
-                  <div key={optIndex} className="flex gap-3 items-center">
-                    <input
-                      type="radio"
-                      name={`correct_${q.id}`}
-                      checked={q.correctAnswers.includes(opt)}
-                      onChange={() => {
-                        const newQ = [...currentQuestions];
-                        newQ[qIndex].correctAnswers = [opt];
-                        setCurrentQuestions(newQ);
-                        setIsDirty(true);
-                      }}
-                      className="w-5 h-5 accent-indigo-600"
-                    />
-                    <input
-                      type="text"
-                      value={opt}
-                      onChange={(e) => {
-                        const newQ = [...currentQuestions];
-                        const oldVal = newQ[qIndex].options[optIndex];
-                        newQ[qIndex].options[optIndex] = e.target.value;
-                        if (newQ[qIndex].correctAnswers.includes(oldVal)) {
-                          newQ[qIndex].correctAnswers = [e.target.value];
-                        }
-                        setCurrentQuestions(newQ);
-                        setIsDirty(true);
-                      }}
-                      disabled={q.type === "boolean"}
-                      className={`flex-1 px-4 py-2 border rounded-xl bg-white ${isCopticFont ? "coptic-text text-lg" : ""}`}
-                    />
-                    {q.type === "mcq" && q.options.length > 1 && (
-                      <button
-                        onClick={() => {
+                {q.options?.map((opt, optIndex) => {
+                  const optText = typeof opt === "object" && opt !== null ? (opt.text || "") : String(opt);
+                  return (
+                    <div key={optIndex} className="flex gap-3 items-center">
+                      <input
+                        type="radio"
+                        name={`correct_${q.id}`}
+                        checked={q.correctAnswers.includes(optText)}
+                        onChange={() => {
                           const newQ = [...currentQuestions];
-                          newQ[qIndex].options = newQ[qIndex].options.filter(
-                            (_, i) => i !== optIndex,
-                          );
+                          newQ[qIndex].correctAnswers = [optText];
                           setCurrentQuestions(newQ);
                           setIsDirty(true);
                         }}
-                        className="p-2 text-red-500"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {q.type === "mcq" && (
-                  <button
-                    onClick={() => {
-                      const newQ = [...currentQuestions];
-                      newQ[qIndex].options.push("");
-                      setCurrentQuestions(newQ);
-                      setIsDirty(true);
-                    }}
-                    className="text-indigo-600 text-xs font-black flex items-center gap-1 mt-4"
-                  >
-                    <Plus size={14} /> إضافة خيار جديد
-                  </button>
-                )}
+                        className="w-5 h-5 accent-indigo-600"
+                      />
+                      <input
+                        type="text"
+                        value={optText}
+                        disabled={true}
+                        className={`flex-1 px-4 py-2 border rounded-xl bg-slate-50 text-slate-500 ${isCopticFont ? "coptic-text text-lg" : ""}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {(q.type === "mcq" || q.type === "multi_select") && (
+              <div className="space-y-3">
+                <label className="text-xs font-black mb-2 block text-slate-400">
+                  الخيارات (اكتب الخيارات والدرجة لكل خيار)
+                </label>
+                {q.options?.map((opt, optIndex) => {
+                  const optText = typeof opt === "object" && opt !== null ? (opt.text || "") : String(opt);
+                  const optScore = typeof opt === "object" && opt !== null ? (opt.score || 0) : 0;
+                  const isCorrect = q.correctAnswers.includes(optText);
+
+                  return (
+                    <div key={optIndex} className="flex gap-3 items-center flex-wrap sm:flex-nowrap">
+                      {q.type === "mcq" ? (
+                        <input
+                          type="radio"
+                          name={`correct_${q.id}`}
+                          checked={isCorrect}
+                          onChange={() => {
+                            const newQ = [...currentQuestions];
+                            newQ[qIndex].correctAnswers = [optText];
+                            setCurrentQuestions(newQ);
+                            setIsDirty(true);
+                          }}
+                          className="w-5 h-5 accent-indigo-600 shrink-0"
+                        />
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={isCorrect}
+                          onChange={(e) => {
+                            const newQ = [...currentQuestions];
+                            if (e.target.checked) {
+                              if (!newQ[qIndex].correctAnswers.includes(optText)) {
+                                newQ[qIndex].correctAnswers.push(optText);
+                              }
+                            } else {
+                              newQ[qIndex].correctAnswers = newQ[qIndex].correctAnswers.filter(
+                                (x: string) => x !== optText
+                              );
+                            }
+                            setCurrentQuestions(newQ);
+                            setIsDirty(true);
+                          }}
+                          className="w-5 h-5 accent-indigo-600 rounded shrink-0"
+                        />
+                      )}
+                      <input
+                        type="text"
+                        value={optText}
+                        placeholder="نص الخيار..."
+                        onChange={(e) => {
+                          const newQ = [...currentQuestions];
+                          const oldVal = optText;
+                          const newVal = e.target.value;
+                          
+                          newQ[qIndex].options[optIndex] = { text: newVal, score: optScore };
+                          
+                          const correctIdx = newQ[qIndex].correctAnswers.indexOf(oldVal);
+                          if (correctIdx !== -1) {
+                            newQ[qIndex].correctAnswers[correctIdx] = newVal;
+                          }
+                          setCurrentQuestions(newQ);
+                          setIsDirty(true);
+                        }}
+                        className={`flex-1 px-4 py-2 border rounded-xl bg-white ${isCopticFont ? "coptic-text text-lg" : ""}`}
+                      />
+                      
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs font-black text-slate-400">الدرجة:</span>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={optScore}
+                          onChange={(e) => {
+                            const newQ = [...currentQuestions];
+                            newQ[qIndex].options[optIndex] = { text: optText, score: Number(e.target.value) };
+                            setCurrentQuestions(newQ);
+                            setIsDirty(true);
+                          }}
+                          className="w-20 px-2 py-2 border rounded-xl text-center bg-white font-bold"
+                        />
+                      </div>
+
+                      {q.options.length > 1 && (
+                        <button
+                          onClick={() => {
+                            const newQ = [...currentQuestions];
+                            newQ[qIndex].options = newQ[qIndex].options.filter(
+                              (_, i) => i !== optIndex,
+                            );
+                            newQ[qIndex].correctAnswers = newQ[qIndex].correctAnswers.filter(
+                              (x: string) => x !== optText
+                            );
+                            setCurrentQuestions(newQ);
+                            setIsDirty(true);
+                          }}
+                          className="p-2 text-red-500 shrink-0"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+                
+                <button
+                  onClick={() => {
+                    const newQ = [...currentQuestions];
+                    newQ[qIndex].options.push({ text: "", score: 0 });
+                    setCurrentQuestions(newQ);
+                    setIsDirty(true);
+                  }}
+                  className="text-indigo-600 text-xs font-black flex items-center gap-1 mt-4"
+                >
+                  <Plus size={14} /> إضافة خيار جديد
+                </button>
               </div>
             )}
 
@@ -779,6 +873,11 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
             اختيار من متعدد
           </span>
         )}
+        {q.type === "multi_select" && (
+          <span className="text-xs text-slate-400 font-bold bg-slate-100 px-3 py-1.5 rounded-full font-sans">
+            اختيار متعدد الإجابات (Checkboxes)
+          </span>
+        )}
         {q.type === "boolean" && (
           <span className="text-xs text-slate-400 font-bold bg-slate-100 px-3 py-1.5 rounded-full font-sans">
             صح وخطأ
@@ -800,20 +899,42 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
         {q.text}
       </h2>
 
-      {(q.type === "mcq" || q.type === "boolean") && (
+      {(q.type === "mcq" || q.type === "multi_select" || q.type === "boolean") && (
         <div className="space-y-3 mt-4" id={`answers-grp-${q.id}`}>
-          {q.options.map((opt: string, oIndex: number) => {
-            const isSelected = currentAnswer === opt;
-            const optionIsCoptic = isCopticText(opt);
+          {q.options.map((optVal: any, oIndex: number) => {
+            const optText = typeof optVal === "object" && optVal !== null ? (optVal.text || "") : String(optVal);
+            const isSelected = q.type === "multi_select"
+              ? (Array.isArray(currentAnswer) ? currentAnswer.includes(optText) : false)
+              : (currentAnswer === optText);
+            const optionIsCoptic = isCopticText(optText);
+
+            const handleToggle = () => {
+              if (q.type === "multi_select") {
+                let nextAnswer: string[];
+                if (Array.isArray(currentAnswer)) {
+                  if (currentAnswer.includes(optText)) {
+                    nextAnswer = currentAnswer.filter((x: string) => x !== optText);
+                  } else {
+                    nextAnswer = [...currentAnswer, optText];
+                  }
+                } else {
+                  nextAnswer = [optText];
+                }
+                onAnswer(q.id, nextAnswer);
+              } else {
+                onAnswer(q.id, optText);
+              }
+            };
+
             return (
               <div
                 role="button"
                 tabIndex={0}
                 key={oIndex}
-                onClick={() => onAnswer(q.id, opt)}
+                onClick={handleToggle}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
-                    onAnswer(q.id, opt);
+                    handleToggle();
                   }
                 }}
                 className={`w-full text-right p-4 rounded-xl border-2 cursor-pointer transition-all duration-150 ease-in-out flex items-center justify-between transform hover:scale-[1.01] active:scale-[0.99] outline-none ${
@@ -824,9 +945,13 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                 id={`label-${q.id}-${oIndex}`}
               >
                 <div className="flex items-center gap-3">
-                  {/* Custom radio circular indicator */}
+                  {/* Circular radio for MCQ/Boolean, Square checkbox with rounded-md for Multi Selection */}
                   <div
-                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-150 shrink-0 ${
+                    className={`w-5 h-5 flex items-center justify-center transition-all duration-150 shrink-0 ${
+                      q.type === "multi_select"
+                        ? "rounded-md border-2"
+                        : "rounded-full border-2"
+                    } ${
                       isSelected
                         ? "border-[#d4af37] bg-[#d4af37] text-white"
                         : "border-slate-300 bg-white"
@@ -834,7 +959,7 @@ const QuestionCard = React.memo(({ q, qIdx, totalQuestions, currentAnswer, onAns
                   >
                     {isSelected && <Check size={12} className="stroke-[3px]" />}
                   </div>
-                  <span className={`text-sm sm:text-base leading-relaxed ${optionIsCoptic ? 'coptic-text' : ''}`}>{opt}</span>
+                  <span className={`text-sm sm:text-base leading-relaxed ${optionIsCoptic ? 'coptic-text' : ''}`}>{optText}</span>
                 </div>
               </div>
             );
@@ -1536,27 +1661,17 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         .eq('student_id', String(activeStudent.id))
         .maybeSingle();
 
-      const hasTakenThisCompetition = submissionCheck && submissionCheck.exam_id && (
-        matchedExams.some((exam: any) => {
-          const examIdStr = String(exam.id).trim();
-          const examTitleStr = exam.exam_title ? String(exam.exam_title).trim() : "";
-          const examSubjectStr = exam.subject ? String(exam.subject).trim() : "";
+      // 🛡️ الفحص الأكثر حزماً (يمنع الدخول للمسابقة التي تم تسليمها فقط)
+      const targetComp = (competitionType || "").trim();
+      const hasTakenThisCompetition =
+        submissionCheck &&
+        submissionCheck.exam_id &&
+        String(submissionCheck.exam_id).trim().includes(targetComp);
 
-          return (
-            submissionCheck.exam_id.includes(examIdStr) ||
-            (examTitleStr && submissionCheck.exam_id.includes(examTitleStr)) ||
-            (examSubjectStr && submissionCheck.exam_id.includes(examSubjectStr))
-          );
-        }) ||
-        submissionCheck.exam_id.includes(competitionType) ||
-        (SCORE_FIELD_MAP[competitionType] && submissionCheck.exam_id.includes(SCORE_FIELD_MAP[competitionType]))
-      );
-
-      const hasExamBeenSubmitted = matchedExams.some((exam: any) => completedExams.includes(String(exam.id)));
-
-      if (hasTakenThisCompetition || hasExamBeenSubmitted) {
+      // 🔥 الفرامل الحازمة:
+      if (hasTakenThisCompetition) {
+        setErrors("لقد قمت بتقديم هذه المسابقة مسبقاً ولا يمكنك الدخول إليها مرة أخرى.");
         setIsLoading(false);
-        setErrors("عفواً، لقد قمت بتقديم هذه المسابقة مسبقاً! يمكنك دخول المسابقات الأخرى المتاحة.");
         return;
       }
 
@@ -1586,7 +1701,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         () => 0.5 - Math.random(),
       );
       shuffledQuestions.forEach((q) => {
-        if (q.type === "mcq") q.options.sort(() => 0.5 - Math.random());
+        if (q.type === "mcq" || q.type === "multi_select") q.options.sort(() => 0.5 - Math.random());
         if (q.type === "matching" && q.matchingPairs) {
           (q as any).shuffledRights = q.matchingPairs
             .map((p: any) => p.right)
@@ -1675,7 +1790,36 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (!stdAns) return;
 
-      if (q.type === "mcq" || q.type === "boolean" || q.type === "fill") {
+      if (q.type === "multi_select") {
+        const selectedList = Array.isArray(stdAns) ? stdAns : [];
+        q.options.forEach((opt: any) => {
+          const optText = typeof opt === "object" && opt !== null ? (opt.text || "") : String(opt);
+          const optScore = typeof opt === "object" && opt !== null ? Number(opt.score || 0) : 0;
+          if (selectedList.some((s: string) => normalizeArabic(s) === normalizeArabic(optText))) {
+            totalScore += optScore;
+          }
+        });
+      } else if (q.type === "mcq") {
+        const selectedText = String(stdAns);
+        let foundScore = null;
+        q.options.forEach((opt: any) => {
+          const optText = typeof opt === "object" && opt !== null ? (opt.text || "") : String(opt);
+          const optScore = typeof opt === "object" && opt !== null ? Number(opt.score || 0) : 0;
+          if (normalizeArabic(optText) === normalizeArabic(selectedText)) {
+            if (typeof opt === "object" && opt !== null && "score" in opt) {
+              foundScore = optScore;
+            }
+          }
+        });
+        if (foundScore !== null) {
+          totalScore += foundScore;
+        } else {
+          const correctAns = q.correctAnswers?.[0];
+          if (normalizeArabic(selectedText) === normalizeArabic(String(correctAns))) {
+            totalScore += q.points;
+          }
+        }
+      } else if (q.type === "boolean" || q.type === "fill") {
         if (
           normalizeArabic(String(stdAns)) ===
           normalizeArabic(String(correctAns))
@@ -1862,7 +2006,42 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 const question = questionsList.find((qu: any) => qu.id === qid);
                 if (question) {
                   const correctAns = question.correctAnswers?.[0];
-                  if (question.type === "mcq" || question.type === "boolean") {
+                  if (question.type === "mcq") {
+                    compactAns =
+                      question.options?.indexOf(val) !== -1
+                        ? question.options?.indexOf(val)
+                        : val;
+                    let foundScore = null;
+                    question.options?.forEach((opt: any) => {
+                      const optText = typeof opt === "object" && opt !== null ? (opt.text || "") : String(opt);
+                      const optScore = typeof opt === "object" && opt !== null ? Number(opt.score || 0) : 0;
+                      if (normalizeArabic(optText) === normalizeArabic(String(val))) {
+                        if (typeof opt === "object" && opt !== null && "score" in opt) {
+                          foundScore = optScore;
+                        }
+                      }
+                    });
+                    if (foundScore !== null) {
+                      calculatedPts = foundScore;
+                    } else {
+                      if (
+                        normalizeArabic(String(val)) ===
+                        normalizeArabic(String(correctAns))
+                      ) {
+                        calculatedPts = Number(question.points) || 0;
+                      }
+                    }
+                  } else if (question.type === "multi_select") {
+                    compactAns = val;
+                    const selectedList = Array.isArray(val) ? val : [];
+                    question.options?.forEach((opt: any) => {
+                      const optText = typeof opt === "object" && opt !== null ? (opt.text || "") : String(opt);
+                      const optScore = typeof opt === "object" && opt !== null ? Number(opt.score || 0) : 0;
+                      if (selectedList.some((s: string) => normalizeArabic(s) === normalizeArabic(optText))) {
+                        calculatedPts += optScore;
+                      }
+                    });
+                  } else if (question.type === "boolean") {
                     compactAns =
                       question.options?.indexOf(val) !== -1
                         ? question.options?.indexOf(val)

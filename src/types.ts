@@ -103,9 +103,9 @@ export interface Result {
 
 export interface Question {
   id: string;
-  type: 'mcq' | 'boolean' | 'matching' | 'fill';
+  type: 'mcq' | 'boolean' | 'matching' | 'fill' | 'multi_select';
   text: string;
-  options: string[];
+  options: any[];
   matchingPairs?: { left: string, right: string }[];
   correctAnswers: string[];
   points: number;
