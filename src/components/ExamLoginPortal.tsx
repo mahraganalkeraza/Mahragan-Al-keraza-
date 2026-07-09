@@ -489,7 +489,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       console.log("Cleaned Student Competitions (Normalized):", compNames);
 
       // الفلترة الذكية (تقارن النص بعد تنظيفه تماماً من عيوب الياء والألف والمسافات)
-      const examRow = activeExams?.find(exam => {
+      const matchedExams = activeExams?.filter(exam => {
         const normalizedExamSubject = normalizeArabic(exam.subject);
         const normalizedExamTitle = normalizeArabic(exam.exam_title);
         
@@ -499,20 +499,59 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           (comp && normalizedExamSubject && normalizedExamSubject.includes(comp)) || 
           (comp && normalizedExamTitle && normalizedExamTitle.includes(comp))
         );
-      });
+      }) || [];
 
-      if (!examRow) {
+      if (matchedExams.length === 0) {
         console.warn("No match found between student competitions and available exams.");
         setErrors(`Mission Standby: لا يوجد امتحان نشط ومطابق لمرحلة ومسابقة المتدرب (${cleanStage}).`);
         setIsLoading(false);
         return;
       }
 
-     // الـ Deploy الناجح!
-      console.log("Success! Launching Exam:", examRow);
+      // اختيار نموذج عشوائي تماماً (A أو B أو C)
+      const randomIndex = Math.floor(Math.random() * matchedExams.length);
+      const selectedExamRow = matchedExams[randomIndex];
+
+      console.log(`🎯 تم اختيار النموذج [${selectedExamRow.model_type}] عشوائياً للطالب!`);
+
+      // ========================================================
+      // 🔒 لوجيك منع إعادة دخول نفس المسابقة مسبقاً (Anti-Cheat) 🔒
+      // ========================================================
+      setIsLoading(true);
+
+      // 1️⃣ استدعاء السيرفر لقراءة عمود الـ exam_id التراكمي للطالب ده
+      const { data: submissionCheck } = await supabase
+        .from('exam_submissions')
+        .select('exam_id')
+        .eq('student_id', String(studentObj.student_id))
+        .maybeSingle();
+
+      // 2️⃣ تشخيص لو الطالب دخل أي نموذج من النماذج المطابقة للمسابقة دي قبل كدة
+      const hasTakenThisCompetition = submissionCheck && submissionCheck.exam_id && matchedExams.some(exam => {
+        const examIdStr = String(exam.id).trim();
+        const examTitleStr = exam.exam_title ? String(exam.exam_title).trim() : "";
+        const examSubjectStr = exam.subject ? String(exam.subject).trim() : "";
+
+        return (
+          submissionCheck.exam_id.includes(examIdStr) ||
+          (examTitleStr && submissionCheck.exam_id.includes(examTitleStr)) ||
+          (examSubjectStr && submissionCheck.exam_id.includes(examSubjectStr))
+        );
+      });
+
+      if (hasTakenThisCompetition) {
+        setErrors("عفواً، لقد قمت بتقديم هذه المسابقة مسبقاً! يمكنك دخول المسابقات الأخرى المتاحة.");
+        setIsLoading(false);
+        return; // 🛑 فرامل! إيقاف نهائي ومنع تشغيل الـ onSuccess
+      }
+
+      // ========================================================
+      // 🎉 3️⃣ تمرير البيانات بنجاح وتشغيل الامتحان بالنموذج العشوائي
+      // ========================================================
+      console.log("Success! Launching Exam:", selectedExamRow);
       onSuccess(
         {
-          id: String(studentObj.student_id),          // للملفات اللي بتقرأ .id
+          id: String(studentObj.student_id),
           name: studentObj.name,
           stage: studentObj.stage,
           churchName: studentObj.churchName || 'غير محدد',
@@ -520,10 +559,10 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           competitions: studentObj.competitions
         },
         {
-          id: examRow.id,
-          exam_title: examRow.exam_title,
-          questions_data: examRow.questions_data,
-          model_type: examRow.model_type || 'A'
+          id: selectedExamRow.id,
+          exam_title: selectedExamRow.exam_title,
+          questions_data: selectedExamRow.questions_data,
+          model_type: selectedExamRow.model_type || 'A'
         }
       );
 
