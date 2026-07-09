@@ -521,11 +521,12 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         return;
       }
 
-      // الـ Deploy الناجح!
+     // الـ Deploy الناجح!
       console.log("Success! Launching Exam:", examRow);
       onSuccess(
         {
-          id: String(studentObj.student_id),
+          id: String(studentObj.student_id),          // للملفات اللي بتقرأ .id
+          student_id: String(studentObj.student_id), // 🔥 تأمين: للملفات اللي بتقرأ .student_id
           name: studentObj.name,
           stage: studentObj.stage,
           churchName: studentObj.churchName || 'غير محدد',
