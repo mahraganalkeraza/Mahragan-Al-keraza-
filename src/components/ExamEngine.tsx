@@ -942,6 +942,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
   const [examSecondsLeft, setExamSecondsLeft] = useState(900); // 15 mins default timer
+  const [errors, setErrors] = useState<string | null>(null);
 
   const [isExamCompleted, setIsExamCompleted] = useState(false);
   const [isAlreadyExamined, setIsAlreadyExamined] = useState(false);
@@ -1413,6 +1414,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     try {
       if (!activeStudent) return;
       setIsLoading(true);
+      setErrors(null);
 
       const stage = activeStudent.stage || "عام";
 
@@ -1527,10 +1529,35 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             normalizeArabic(competitionType),
       );
 
+      // Fetch cumulative submission check from the server to avoid local caching bypasses
+      const { data: submissionCheck } = await supabase
+        .from('exam_submissions')
+        .select('exam_id')
+        .eq('student_id', String(activeStudent.id))
+        .maybeSingle();
+
+      const hasTakenThisCompetition = submissionCheck && submissionCheck.exam_id && (
+        matchedExams.some((exam: any) => {
+          const examIdStr = String(exam.id).trim();
+          const examTitleStr = exam.exam_title ? String(exam.exam_title).trim() : "";
+          const examSubjectStr = exam.subject ? String(exam.subject).trim() : "";
+
+          return (
+            submissionCheck.exam_id.includes(examIdStr) ||
+            (examTitleStr && submissionCheck.exam_id.includes(examTitleStr)) ||
+            (examSubjectStr && submissionCheck.exam_id.includes(examSubjectStr))
+          );
+        }) ||
+        submissionCheck.exam_id.includes(competitionType) ||
+        (SCORE_FIELD_MAP[competitionType] && submissionCheck.exam_id.includes(SCORE_FIELD_MAP[competitionType]))
+      );
+
       const hasExamBeenSubmitted = matchedExams.some((exam: any) => completedExams.includes(String(exam.id)));
-      if (hasExamBeenSubmitted) {
+
+      if (hasTakenThisCompetition || hasExamBeenSubmitted) {
         setIsLoading(false);
-        return alert("عذراً، لقد قمت بدخول هذا الامتحان وإرسال الإجابات مسبقاً! 🔒");
+        setErrors("عفواً، لقد قمت بتقديم هذه المسابقة مسبقاً! يمكنك دخول المسابقات الأخرى المتاحة.");
+        return;
       }
 
       const availableExams: Exam[] = matchedExams
@@ -2291,6 +2318,13 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 </span>
               </p>
             </div>
+
+            {errors && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-750 px-4 py-3 rounded-xl mb-6 text-sm font-black text-center flex items-center justify-center gap-2" id="gateway-errors-banner">
+                <span className="text-rose-600">⚠️</span>
+                <span>{errors}</span>
+              </div>
+            )}
 
           <div
             className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto mb-8"

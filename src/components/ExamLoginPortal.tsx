@@ -421,132 +421,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     setErrors(null);
     
     try {
-      const studentIdStr = String(studentObj.student_id).trim();
-      // تنظيف المرحلة
-      const cleanStage = studentObj.stage ? studentObj.stage.trim() : ''; 
-
-      // --- Check 2: Global Lock ---
-      const { data: sysData } = await supabase
-        .from('system_settings')
-        .select('is_exam_locked')
-        .eq('id', '1')
-        .maybeSingle();
-
-      if (sysData?.is_exam_locked) {
-        setErrors("المهمة مغلقة حالياً من اللجنة المركزية.");
-        setIsLoading(false);
-        return;
-      }
-
-      // --- Check 3: Granular Controls (إصلاح خطأ الـ 400) ---
-      const { data: gateData } = await supabase
-        .from('granular_controls')
-        .select('is_exam_disabled, exam_start_at, exam_end_at')
-        .eq('target_name', cleanStage) // استخدام المرحلة المنظفة
-        .maybeSingle();
-
-      if (gateData) {
-        if (gateData.is_exam_disabled) {
-          setErrors("الامتحان معطل حالياً لهذه المرحلة.");
-          setIsLoading(false);
-          return;
-        }
-        const now = new Date();
-        const start = gateData.exam_start_at ? new Date(gateData.exam_start_at) : null;
-        const end = gateData.exam_end_at ? new Date(gateData.exam_end_at) : null;
-        if ((start && now < start) || (end && now > end)) {
-          setErrors("عفواً، الامتحان خارج نطاق الوقت المحدد المسموح به.");
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      // --- Check 4 & 5: Retrieval & Advanced Arabic Matching ---
-      const { data: activeExams, error: examErr } = await supabase
-        .from('exams_pool')
-        .select('id, exam_title, stage, subject, questions_data, model_type, is_active')
-        .eq('stage', cleanStage) // الفلترة بالمرحلة الصحيحة
-        .eq('is_active', true);
-
-      if (examErr) {
-        console.error("Database Error:", examErr);
-        setErrors("Mission Standby: حدث خطأ أثناء الاتصال بقاعدة البيانات.");
-        setIsLoading(false);
-        return;
-      }
-
-      // تجهيز وتنظيف مسابقات الطالب (تفكيك الـ JSON أو الـ Array أو الـ String)
-      let compNames: string[] = [];
-      if (studentObj.competitions) {
-        try {
-          const parsed = typeof studentObj.competitions === 'string' ? JSON.parse(studentObj.competitions) : studentObj.competitions;
-          compNames = Array.isArray(parsed) ? parsed.map(c => normalizeArabic(typeof c === 'string' ? c : (c.activity || c.competition || c.name || ''))) : [normalizeArabic(typeof parsed === 'string' ? parsed : (parsed.activity || parsed.competition || parsed.name || ''))];
-        } catch {
-          compNames = [normalizeArabic(studentObj.competitions)];
-        }
-      }
-
-      console.log("Cleaned Student Competitions (Normalized):", compNames);
-
-      // الفلترة الذكية (تقارن النص بعد تنظيفه تماماً من عيوب الياء والألف والمسافات)
-      const matchedExams = activeExams?.filter(exam => {
-        const normalizedExamSubject = normalizeArabic(exam.subject);
-        const normalizedExamTitle = normalizeArabic(exam.exam_title);
-        
-        return compNames.some(comp => 
-          (comp && normalizedExamSubject && comp === normalizedExamSubject) || 
-          (comp && normalizedExamTitle && comp === normalizedExamTitle) || 
-          (comp && normalizedExamSubject && normalizedExamSubject.includes(comp)) || 
-          (comp && normalizedExamTitle && normalizedExamTitle.includes(comp))
-        );
-      }) || [];
-
-      if (matchedExams.length === 0) {
-        console.warn("No match found between student competitions and available exams.");
-        setErrors(`Mission Standby: لا يوجد امتحان نشط ومطابق لمرحلة ومسابقة المتدرب (${cleanStage}).`);
-        setIsLoading(false);
-        return;
-      }
-
-      // اختيار نموذج عشوائي تماماً (A أو B أو C)
-      const randomIndex = Math.floor(Math.random() * matchedExams.length);
-      const selectedExamRow = matchedExams[randomIndex];
-
-      console.log(`🎯 تم اختيار النموذج [${selectedExamRow.model_type}] عشوائياً للطالب!`);
-
-      // ========================================================
-      // 🔒 لوجيك منع إعادة دخول نفس المسابقة مسبقاً (Anti-Cheat) 🔒
-      // ========================================================
-      setIsLoading(true);
-
-      // 1️⃣ استدعاء السيرفر لقراءة عمود الـ exam_id التراكمي للطالب ده
-      const { data: submissionCheck } = await supabase
-        .from('exam_submissions')
-        .select('exam_id')
-        .eq('student_id', String(studentObj.student_id))
-        .maybeSingle();
-
-      // 2️⃣ تشخيص لو الطالب دخل أي نموذج من النماذج المطابقة للمسابقة دي قبل كدة
-      const hasTakenThisCompetition = submissionCheck && submissionCheck.exam_id && matchedExams.some(exam => {
-        const examIdStr = String(exam.id).trim();
-        const examTitleStr = exam.exam_title ? String(exam.exam_title).trim() : "";
-        const examSubjectStr = exam.subject ? String(exam.subject).trim() : "";
-
-        return (
-          submissionCheck.exam_id.includes(examIdStr) ||
-          (examTitleStr && submissionCheck.exam_id.includes(examTitleStr)) ||
-          (examSubjectStr && submissionCheck.exam_id.includes(examSubjectStr))
-        );
-      });
-      // 2️⃣ ثانياً: الشرط المانع (الحارس) تحت الكود ده مباشرة
-      if (hasTakenThisCompetition) {
-        setErrors("عفواً، لقد قمت بتقديم هذه المسابقة مسبقاً! يمكنك دخول المسابقات الأخرى المتاحة.");
-        setIsLoading(false);
-        return; // 🛑 فرامل!
-      }
-
-      // 3️⃣ ثالثاً: الـ onSuccess لتشغيل الامتحان
-      console.log("Success! Launching Exam:", selectedExamRow);
+      console.log("Success! Proceeding directly to the competition choices dashboard (cards screen).");
       onSuccess(
         {
           id: String(studentObj.student_id),
@@ -556,34 +431,8 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           gender: studentObj.gender || 'ذكر',
           competitions: studentObj.competitions
         },
-        {
-          id: selectedExamRow.id,
-          exam_title: selectedExamRow.exam_title,
-          questions_data: selectedExamRow.questions_data,
-          model_type: selectedExamRow.model_type || 'A'
-        }
+        null
       );
-      // ========================================================
-      // 🎉 3️⃣ تمرير البيانات بنجاح وتشغيل الامتحان بالنموذج العشوائي
-      // ========================================================
-      console.log("Success! Launching Exam:", selectedExamRow);
-      onSuccess(
-        {
-          id: String(studentObj.student_id),
-          name: studentObj.name,
-          stage: studentObj.stage,
-          churchName: studentObj.churchName || 'غير محدد',
-          gender: studentObj.gender || 'ذكر',
-          competitions: studentObj.competitions
-        },
-        {
-          id: selectedExamRow.id,
-          exam_title: selectedExamRow.exam_title,
-          questions_data: selectedExamRow.questions_data,
-          model_type: selectedExamRow.model_type || 'A'
-        }
-      );
-
     } catch (error) {
       console.error("Critical Failure in Launch Pipeline:", error);
       setErrors("Mission Standby: حدث خطأ غير متوقع في نظام التشغيل.");
