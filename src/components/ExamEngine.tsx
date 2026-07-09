@@ -1973,55 +1973,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         setIsLoading(false);
         return;
       }
-
       console.log("تم الحفظ بنجاح  !");
-      // 2️⃣ ثانياً: بناء الـ Payload الذكي (الدمج)
-      const submissionPayload = {
-        student_id: currentStudentPayload?.id,
-        name: studentName,
-        churchName: currentStudentPayload?.church,
-        stage: currentStudentPayload?.stage,
-        gender: currentStudentPayload?.gender,
-        
-        // الـ اللوجيك السحري: لو المسابقة الحالية هي اللي بتمتحن، خد درجتها الجديدة. 
-        // لو مش هي، وله درجة قديمة متسجلة في الداتابيز، نزل القديمة زي ما هي ومتصفرهاش!
-        derasy_score: finalDerasyScore !== undefined && finalDerasyScore !== null && finalDerasyScore !== 0 
-          ? finalDerasyScore 
-          : (existingRecord?.derasy_score ?? null),
-          
-        mahfouzat_score: finalMahfouzatScore !== undefined && finalMahfouzatScore !== null && finalMahfouzatScore !== 0 
-          ? finalMahfouzatScore 
-          : (existingRecord?.mahfouzat_score ?? null),
-          
-        qebty_lvl1_score: finalQebtyLvl1Score !== undefined && finalQebtyLvl1Score !== null && finalQebtyLvl1Score !== 0 
-          ? finalQebtyLvl1Score 
-          : (existingRecord?.qebty_lvl1_score ?? null),
-          
-        qebty_lvl2_score: finalQebtyLvl2Score !== undefined && finalQebtyLvl2Score !== null && finalQebtyLvl2Score !== 0 
-          ? finalQebtyLvl2Score 
-          : (existingRecord?.qebty_lvl2_score ?? null),
-
-        detailed_answers: JSON.parse(selectedAnswers || "[]"),
-        exam_id: activeExam?.id || primaryExamId || "unknown",
-        is_published: true,
-        duration_seconds: calculatedDurationInSeconds,
-        status: "completed",
-        submitted_at: new Date().toISOString()
-      };
-
-      // 3️⃣ ثالثاً: استخدام الـ upsert مع تحديد شرط التعارض على الـ student_id
-      const { error: subErr } = await supabase
-        .from('exam_submissions')
-        .upsert(submissionPayload, { onConflict: 'student_id' }); // 👈 السحر هنا (تحديث بدل إضافة)
-
-      if (subErr) {
-        console.error("Supabase rejected upsert:", subErr.message);
-        alert(`فشل إرسال الإجابات لقاعدة البيانات: ${subErr.message}`);
-        setHasSubmissionFailed(true);
-        setIsLoading(false);
-        return; // Stop execution if database fails
-      }
-      const submittedExamId = activeExam?.id || "unknown";
+     const submittedExamId = activeExam?.id || "unknown";
       if (submittedExamId && submittedExamId !== "unknown") {
         setCompletedExams(prev => [...prev, String(submittedExamId)]);
       }
