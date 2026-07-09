@@ -1316,16 +1316,16 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       }
 
       // Check existing submission scores on Supabase
-      const { data: existingSub } = await supabase
-        .from("exam_submissions")
-        .select("*")
-        .eq("student_id", studentData.id)
-        .maybeSingle();
+      // const { data: existingSub } = await supabase
+        // .from("exam_submissions")
+        // .select("*")
+        // .eq("student_id", studentData.id)
+        // .maybeSingle();
 
-      if (existingSub) {
-        setIsLoading(false);
-        return alert("عفوًا، سبق للطالب الخضوع للامتحان وإرسال الإجابات.");
-      }
+      // if (existingSub) {
+        // setIsLoading(false);
+         //return alert("عفوًا، سبق للطالب الخضوع للامتحان وإرسال الإجابات.");
+       //}
 
       // Lock-in student profile
       setSelectedCompetition(null);
