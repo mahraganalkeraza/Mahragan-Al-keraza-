@@ -425,19 +425,6 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       // تنظيف المرحلة
       const cleanStage = studentObj.stage ? studentObj.stage.trim() : ''; 
 
-     // --- Check 1: Anti-Cheat (تعديل ذكي لحماية المسابقة الحالية فقط) ---
-      const { data: submissionCheck } = await supabase
-        .from('exam_submissions')
-        .select('*') // بنجيب السطر كله عشان نشوف الأعمدة
-        .eq('student_id', studentIdStr)
-        .maybeSingle();
-
-      // لو الطالب له سطر قديم، بنشيك هل العمود بتاع المسابقة الحالية دي بالذات جواه بيانات؟
-      if (submissionCheck && submissionCheck[competitionType] !== null) {
-        setErrors("عفواً، لقد قمت بتقديم هذه المسابقة مسبقاً! يمكنك دخول المسابقات الأخرى المتاحة.");
-        setIsLoading(false);
-        return;
-      }
       // --- Check 2: Global Lock ---
       const { data: sysData } = await supabase
         .from('system_settings')
@@ -526,7 +513,6 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       onSuccess(
         {
           id: String(studentObj.student_id),          // للملفات اللي بتقرأ .id
-          student_id: String(studentObj.student_id), // 🔥 تأمين: للملفات اللي بتقرأ .student_id
           name: studentObj.name,
           stage: studentObj.stage,
           churchName: studentObj.churchName || 'غير محدد',
