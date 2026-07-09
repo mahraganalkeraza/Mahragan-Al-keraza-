@@ -1920,17 +1920,39 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       // تأكد أولاً إن متغير اسم الطالب ممسوك من الشاشة أو من بيانات الدخول (مثلاً: studentData.name أو userProfile.name)
       const studentName = currentStudentPayload?.name || "مخدوم غير مسجل";
 
-      // قبل سطر الـ insert مباشرة، ندمج الـ name جوة الـ payload المبعوت
+     // 1️⃣ أولاً: جلب السجل الحالي للطالب من سوبابايس (لو موجود) عشان نحافظ على درجات المسابقات التانية
+      const { data: existingRecord } = await supabase
+        .from('exam_submissions')
+        .select('derasy_score, mahfouzat_score, qebty_lvl1_score, qebty_lvl2_score')
+        .eq('student_id', currentStudentPayload?.id)
+        .maybeSingle();
+
+      // 2️⃣ ثانياً: بناء الـ Payload الذكي (الدمج)
       const submissionPayload = {
         student_id: currentStudentPayload?.id,
         name: studentName,
         churchName: currentStudentPayload?.church,
         stage: currentStudentPayload?.stage,
         gender: currentStudentPayload?.gender,
-        derasy_score: finalDerasyScore,
-        mahfouzat_score: finalMahfouzatScore,
-        qebty_lvl1_score: finalQebtyLvl1Score,
-        qebty_lvl2_score: finalQebtyLvl2Score,
+        
+        // الـ اللوجيك السحري: لو المسابقة الحالية هي اللي بتمتحن، خد درجتها الجديدة. 
+        // لو مش هي، وله درجة قديمة متسجلة في الداتابيز، نزل القديمة زي ما هي ومتصفرهاش!
+        derasy_score: finalDerasyScore !== undefined && finalDerasyScore !== null && finalDerasyScore !== 0 
+          ? finalDerasyScore 
+          : (existingRecord?.derasy_score ?? null),
+          
+        mahfouzat_score: finalMahfouzatScore !== undefined && finalMahfouzatScore !== null && finalMahfouzatScore !== 0 
+          ? finalMahfouzatScore 
+          : (existingRecord?.mahfouzat_score ?? null),
+          
+        qebty_lvl1_score: finalQebtyLvl1Score !== undefined && finalQebtyLvl1Score !== null && finalQebtyLvl1Score !== 0 
+          ? finalQebtyLvl1Score 
+          : (existingRecord?.qebty_lvl1_score ?? null),
+          
+        qebty_lvl2_score: finalQebtyLvl2Score !== undefined && finalQebtyLvl2Score !== null && finalQebtyLvl2Score !== 0 
+          ? finalQebtyLvl2Score 
+          : (existingRecord?.qebty_lvl2_score ?? null),
+
         detailed_answers: JSON.parse(selectedAnswers || "[]"),
         exam_id: activeExam?.id || primaryExamId || "unknown",
         is_published: true,
@@ -1939,19 +1961,18 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         submitted_at: new Date().toISOString()
       };
 
-      // Push record directly to Supabase - using the exam_submissions table
+      // 3️⃣ ثالثاً: استخدام الـ upsert مع تحديد شرط التعارض على الـ student_id
       const { error: subErr } = await supabase
         .from('exam_submissions')
-        .insert(submissionPayload);
+        .upsert(submissionPayload, { onConflict: 'student_id' }); // 👈 السحر هنا (تحديث بدل إضافة)
 
       if (subErr) {
-        console.error("Supabase rejected insertion:", subErr.message);
+        console.error("Supabase rejected upsert:", subErr.message);
         alert(`فشل إرسال الإجابات لقاعدة البيانات: ${subErr.message}`);
         setHasSubmissionFailed(true);
         setIsLoading(false);
         return; // Stop execution if database fails
       }
-
       const submittedExamId = activeExam?.id || "unknown";
       if (submittedExamId && submittedExamId !== "unknown") {
         setCompletedExams(prev => [...prev, String(submittedExamId)]);
