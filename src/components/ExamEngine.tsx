@@ -320,11 +320,10 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
         updated_at: new Date().toISOString() // تحديث تاريخ التعديل
       };
 
-      // 2. استخدام upsert وهو الحل السحري لمشكلة الـ 23505
-      const { error: saveErr } = await supabase
-        .from("exams_pool")
-        .upsert(examPayload, { onConflict: 'id' }); // إخبار سوبابايس: لو الـ ID موجود، حدّثه!
-
+      // ✅ التعديل السحري الجديد: أخبر سوبابايس أن التحديث يتم فقط لو تطابق الطالب مع نفس المسابقة
+const { error: saveErr } = await supabase
+  .from("exams_pool")
+  .upsert(examPayload, { onConflict: 'student_id,exam_id' }); // 👈 دمجنا الحقلين معاً لمنع مسح المسابقات الأخرى
       if (saveErr) throw saveErr;
 
       setIsDirty(false);
@@ -1402,7 +1401,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (globalSettings.is_exam_locked) {
         setIsLoading(false);
-        return alert("عذراً، الامتحانات الإلكترونية مغلقة بالكامل بقرار سيادي من اللجنة المركزية 🔒");
+        return alert("عذراً، الامتحانات الإلكترونية مغلقة بالكامل بقرار من اللجنة المركزية 🔒");
       }
 
       // Get exams_pool info without devicelogs check
@@ -1443,7 +1442,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       if (!isStudentEnrolledInCompetition(activeStudent, competitionType)) {
         setIsLoading(false);
         return alert(
-          "عذراً، أنت غير مسجل في هذه المسابقة. يرجى مراجعة اللجنة التنظيمية.",
+          "عذراً، أنت غير مسجل في هذه المسابقة. يرجى مراجعة اللجنة .",
         );
       }
 
