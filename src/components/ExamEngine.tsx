@@ -1919,14 +1919,62 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       // تأكد أولاً إن متغير اسم الطالب ممسوك من الشاشة أو من بيانات الدخول (مثلاً: studentData.name أو userProfile.name)
       const studentName = currentStudentPayload?.name || "مخدوم غير مسجل";
+// 1️⃣ أولاً: بنحدد إحنا في أنهي امتحان حالياً وبنجهز كائن التحديث للخانة بتاعته بس
+      let scoreUpdatePayload: any = {
+        name: studentName,
+        churchName: currentStudentPayload?.church,
+        stage: currentStudentPayload?.stage,
+        gender: currentStudentPayload?.gender,
+        detailed_answers: JSON.parse(selectedAnswers || "[]"),
+        exam_id: activeExam?.id || primaryExamId || "unknown",
+        is_published: true,
+        duration_seconds: calculatedDurationInSeconds,
+        status: "completed",
+        submitted_at: new Date().toISOString()
+      };
 
-     // 1️⃣ أولاً: جلب السجل الحالي للطالب من سوبابايس (لو موجود) عشان نحافظ على درجات المسابقات التانية
-      const { data: existingRecord } = await supabase
+      // 2️⃣ ثانياً: بنشوف إيه الدرجة اللي جاية مش بصفر ونحطها في خانتها بالظبط
+      // وبكدة الـ Payload مش هيبقى فيه الخانات التانية خالص، فمستحيل يتمسحوا من السيرفر!
+      if (finalDerasyScore > 0) scoreUpdatePayload.derasy_score = finalDerasyScore;
+      if (finalMahfouzatScore > 0) scoreUpdatePayload.mahfouzat_score = finalMahfouzatScore;
+      if (finalQebtyLvl1Score > 0) scoreUpdatePayload.qebty_lvl1_score = finalQebtyLvl1Score;
+      if (finalQebtyLvl2Score > 0) scoreUpdatePayload.qebty_lvl2_score = finalQebtyLvl2Score;
+
+      // 3️⃣ ثالثاً: تشغيل اللوجيك المشروط (لو الطالب ملوش سجل يعمل Insert، ولو ليه يعمل Update للخانة بس)
+      
+      // أ) نشيك الأول هل الطالب له سطر في الجدول؟
+      const { data: checkCheck } = await supabase
         .from('exam_submissions')
-        .select('derasy_score, mahfouzat_score, qebty_lvl1_score, qebty_lvl2_score')
+        .select('student_id')
         .eq('student_id', currentStudentPayload?.id)
         .maybeSingle();
 
+      let dbResult;
+
+      if (!checkCheck) {
+        // لو الطالب جديد تماماً.. بنعمل INSERT لأول مرة
+        scoreUpdatePayload.student_id = currentStudentPayload?.id;
+        dbResult = await supabase
+          .from('exam_submissions')
+          .insert(scoreUpdatePayload);
+      } else {
+        // 🔥 لو الطالب موجود قبل كدة.. بنعمل UPDATE للخانة الجديدة بس ومبنلمسش القديم!
+        dbResult = await supabase
+          .from('exam_submissions')
+          .update(scoreUpdatePayload)
+          .eq('student_id', currentStudentPayload?.id);
+      }
+
+      // 4️⃣ رابعاً: فحص الأخطاء كالمعتاد
+      if (dbResult.error) {
+        console.error("Supabase Error:", dbResult.error.message);
+        alert(`فشل إرسال الإجابات لقاعدة البيانات: ${dbResult.error.message}`);
+        setHasSubmissionFailed(true);
+        setIsLoading(false);
+        return;
+      }
+
+      console.log("تم الحفظ بنجاح  !");
       // 2️⃣ ثانياً: بناء الـ Payload الذكي (الدمج)
       const submissionPayload = {
         student_id: currentStudentPayload?.id,
