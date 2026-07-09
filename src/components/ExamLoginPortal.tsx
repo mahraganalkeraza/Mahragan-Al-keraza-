@@ -538,6 +538,31 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           (examSubjectStr && submissionCheck.exam_id.includes(examSubjectStr))
         );
       });
+      // 2️⃣ ثانياً: الشرط المانع (الحارس) تحت الكود ده مباشرة
+      if (hasTakenThisCompetition) {
+        setErrors("عفواً، لقد قمت بتقديم هذه المسابقة مسبقاً! يمكنك دخول المسابقات الأخرى المتاحة.");
+        setIsLoading(false);
+        return; // 🛑 فرامل!
+      }
+
+      // 3️⃣ ثالثاً: الـ onSuccess لتشغيل الامتحان
+      console.log("Success! Launching Exam:", selectedExamRow);
+      onSuccess(
+        {
+          id: String(studentObj.student_id),
+          name: studentObj.name,
+          stage: studentObj.stage,
+          churchName: studentObj.churchName || 'غير محدد',
+          gender: studentObj.gender || 'ذكر',
+          competitions: studentObj.competitions
+        },
+        {
+          id: selectedExamRow.id,
+          exam_title: selectedExamRow.exam_title,
+          questions_data: selectedExamRow.questions_data,
+          model_type: selectedExamRow.model_type || 'A'
+        }
+      );
       // ========================================================
       // 🎉 3️⃣ تمرير البيانات بنجاح وتشغيل الامتحان بالنموذج العشوائي
       // ========================================================
