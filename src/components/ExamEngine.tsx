@@ -323,7 +323,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
       // ✅ التعديل السحري الجديد: أخبر سوبابايس أن التحديث يتم فقط لو تطابق الطالب مع نفس المسابقة
 const { error: saveErr } = await supabase
   .from("exams_pool")
-  .upsert(examPayload, { onConflict: 'student_id,exam_id' }); // 👈 دمجنا الحقلين معاً لمنع مسح المسابقات الأخرى
+  .upsert(examPayload, { onConflict: 'id' }); 
       if (saveErr) throw saveErr;
 
       setIsDirty(false);
@@ -1331,23 +1331,29 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           (studentObj.competitions || studentObj.enrolled_subjects) ?? null,
       };
 
-      // Query the exam_submissions table to fetch ALL records belonging to this specific studentId
-      const { data: userSubmissions, error: subError } = await supabase
+      // 1. بنجيب السطر الفريد والوحيد للطالب من جدول الإرسال
+      const { data: userSubmission, error: subError } = await supabase
         .from("exam_submissions")
-        .select("exam_id")
-        .eq("student_id", studentData.id);
+        .select("*") // بنجيب كل الأعمدة (المسابقات) للسطر ده
+        .eq("student_id", studentData.id)
+        .maybeSingle(); // لأنه سطر واحد فقط لكل طالب
 
       if (subError) {
         console.warn("Error fetching student submissions:", subError);
       }
 
-      if (userSubmissions) {
-        const completedIds = userSubmissions.map(s => s.exam_id).filter(Boolean);
-        setCompletedExams(completedIds);
+      if (userSubmission) {
+        // 2. بنشوف إيه الأسماء بتاعة الخانات (المسابقات) اللي قيمتها مش فاضية (يعني حلها قبل كده)
+        // بنلف على كل الخانات، ولو الخانة مش null ومش الـ IDs الأساسية، بنعتبرها مسابقة مخلصة
+        const completedIds = Object.keys(userSubmission).filter(key => {
+          const ignoredFields = ['id', 'student_id', 'created_at', 'updated_at'];
+          return !ignoredFields.includes(key) && userSubmission[key] !== null;
+        });
+
+        setCompletedExams(completedIds); // هيرجع array بأسماء الخانات المخلصة مثلاً: ['alhan']
       } else {
         setCompletedExams([]);
       }
-
       // Lock-in student profile
       setSelectedCompetition(null);
       setActiveExam(null);
