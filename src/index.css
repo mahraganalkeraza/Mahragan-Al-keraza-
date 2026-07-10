@@ -174,3 +174,8 @@ button.quick-access-card:active {
   animation: qFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* أضف هذا الشرط في ملف الـ CSS الأساسي */
+body:has(.coptic-exam-active) {
+  font-family: 'AbraamFont', sans-serif !important;
+}
+

@@ -1697,24 +1697,33 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const randomModel =
         availableExams[Math.floor(Math.random() * availableExams.length)];
 
-      const shuffledQuestions = [...randomModel.questions].sort(
-        () => 0.5 - Math.random(),
-      );
-      shuffledQuestions.forEach((q) => {
-  // 1️⃣ حماية اللخبطة: التأكد أننا نتعامل مع نسخ وليس مراجع مباشرة إذا لزم الأمر
-  if (q.type === "mcq" || q.type === "multi_select") {
-    if (Array.isArray(q.options)) {
-      q.options = [...q.options].sort(() => 0.5 - Math.random());
-    }
-  }
+      let shuffledQuestions = [...randomModel.questions];
+      const isCoptic = competitionType?.includes("قبطي") || randomModel?.competitionType?.includes("قبطي");
 
-  // 2️⃣ منطق التوصيل: سليم، لكن تأكد أن الـ matchingPairs هيكلها ثابت
-  if (q.type === "matching" && q.matchingPairs) {
-    (q as any).shuffledRights = [...q.matchingPairs] // استخدام نسخة جديدة
-      .map((p: any) => p.right)
-      .sort(() => 0.5 - Math.random());
-  }
-});
+      if (!isCoptic) {
+        shuffledQuestions = shuffledQuestions.sort(() => 0.5 - Math.random());
+      }
+
+      shuffledQuestions.forEach((q) => {
+        // 1️⃣ حماية اللخبطة: التأكد أننا نتعامل مع نسخ وليس مراجع مباشرة إذا لزم الأمر
+        if (!isCoptic) {
+          if (q.type === "mcq" || q.type === "multi_select") {
+            if (Array.isArray(q.options)) {
+              q.options = [...q.options].sort(() => 0.5 - Math.random());
+            }
+          }
+        }
+
+        // 2️⃣ منطق التوصيل: سليم، لكن تأكد أن الـ matchingPairs هيكلها ثابت
+        if (q.type === "matching" && q.matchingPairs) {
+          const rights = [...q.matchingPairs].map((p: any) => p.right);
+          if (!isCoptic) {
+            (q as any).shuffledRights = rights.sort(() => 0.5 - Math.random());
+          } else {
+            (q as any).shuffledRights = rights;
+          }
+        }
+      });
 
       randomModel.questions = shuffledQuestions;
 
