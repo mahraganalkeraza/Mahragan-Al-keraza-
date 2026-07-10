@@ -58,7 +58,8 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  .coptic-text {
+  .coptic-text,
+  .coptic-text * {
     font-family: 'AbraamFont', sans-serif !important;
   }
   .glass {
