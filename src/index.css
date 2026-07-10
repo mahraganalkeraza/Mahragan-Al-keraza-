@@ -8,6 +8,13 @@
   font-style: normal;
 }
 
+@font-face {
+  font-family: 'AbraamFont';
+  src: url('./assets/fonts/ABRAAM_0.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
    /*ألوان الموقع الرئيسية */
 @theme {
   --font-sans: "Tajawal", "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -52,7 +59,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
   .coptic-text {
-    font-family: 'Abraam', sans-serif !important;
+    font-family: 'AbraamFont', sans-serif !important;
   }
   .glass {
     @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-xl;

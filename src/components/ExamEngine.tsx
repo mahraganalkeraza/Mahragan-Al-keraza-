@@ -1698,7 +1698,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         availableExams[Math.floor(Math.random() * availableExams.length)];
 
       let shuffledQuestions = [...randomModel.questions];
-      const isCoptic = competitionType?.includes("قبطي") || randomModel?.competitionType?.includes("قبطي");
+      const isCoptic = ["قبطي مستوى أول", "قبطي مستوى ثاني"].includes(competitionType);
 
       if (!isCoptic) {
         shuffledQuestions = shuffledQuestions.sort(() => 0.5 - Math.random());
@@ -2792,8 +2792,10 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     transition: 'all 0.5s ease-in-out',
   };
 
+  const isCopticActive = ["قبطي مستوى أول", "قبطي مستوى ثاني"].includes(selectedCompetition || "");
+
   return (
-    <div className="fixed inset-0 z-[250] overflow-y-auto bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6" id="active-exam-viewport">
+    <div className={`fixed inset-0 z-[250] overflow-y-auto bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6 ${isCopticActive ? "coptic-text coptic-exam-active" : ""}`} id="active-exam-viewport">
       {/* Centered background container for the Festival Logo, with subtle blend/opacity */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
         <img
