@@ -1701,13 +1701,20 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         () => 0.5 - Math.random(),
       );
       shuffledQuestions.forEach((q) => {
-        if (q.type === "mcq" || q.type === "multi_select") q.options.sort(() => 0.5 - Math.random());
-        if (q.type === "matching" && q.matchingPairs) {
-          (q as any).shuffledRights = q.matchingPairs
-            .map((p: any) => p.right)
-            .sort(() => 0.5 - Math.random());
-        }
-      });
+  // 1️⃣ حماية اللخبطة: التأكد أننا نتعامل مع نسخ وليس مراجع مباشرة إذا لزم الأمر
+  if (q.type === "mcq" || q.type === "multi_select") {
+    if (Array.isArray(q.options)) {
+      q.options = [...q.options].sort(() => 0.5 - Math.random());
+    }
+  }
+
+  // 2️⃣ منطق التوصيل: سليم، لكن تأكد أن الـ matchingPairs هيكلها ثابت
+  if (q.type === "matching" && q.matchingPairs) {
+    (q as any).shuffledRights = [...q.matchingPairs] // استخدام نسخة جديدة
+      .map((p: any) => p.right)
+      .sort(() => 0.5 - Math.random());
+  }
+});
 
       randomModel.questions = shuffledQuestions;
 
@@ -2034,10 +2041,18 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                   } else if (question.type === "multi_select") {
                     compactAns = val;
                     const selectedList = Array.isArray(val) ? val : [];
+                    
                     question.options?.forEach((opt: any) => {
                       const optText = typeof opt === "object" && opt !== null ? (opt.text || "") : String(opt);
                       const optScore = typeof opt === "object" && opt !== null ? Number(opt.score || 0) : 0;
-                      if (selectedList.some((s: string) => normalizeArabic(s) === normalizeArabic(optText))) {
+                      
+                      // 🎯 التعديل هنا: فكك من الـ normalizeArabic لو النص قبطي
+                      // بنقارن النص مباشرة أو بنستخدم trim() بس
+                      const isMatch = selectedList.some((s: string) => 
+                        String(s).trim() === String(optText).trim()
+                      );
+
+                      if (isMatch) {
                         calculatedPts += optScore;
                       }
                     });
