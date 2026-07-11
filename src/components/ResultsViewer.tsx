@@ -1647,6 +1647,7 @@ export const ResultsViewer: React.FC<{
                       type="number"
                       min="0"
                       max="100"
+                      step="0.5"
                       value={manualForm.derasy_score}
                       onChange={(e) => setManualForm({...manualForm, derasy_score: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 p-3 rounded-2xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1659,6 +1660,7 @@ export const ResultsViewer: React.FC<{
                       type="number"
                       min="0"
                       max="100"
+                      step="0.5"
                       value={manualForm.mahfouzat_score}
                       onChange={(e) => setManualForm({...manualForm, mahfouzat_score: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 p-3 rounded-2xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1674,6 +1676,7 @@ export const ResultsViewer: React.FC<{
                       type="number"
                       min="0"
                       max="100"
+                      step="0.5"
                       value={manualForm.qebty_lvl1_score}
                       onChange={(e) => setManualForm({...manualForm, qebty_lvl1_score: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 p-3 rounded-2xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1686,6 +1689,7 @@ export const ResultsViewer: React.FC<{
                       type="number"
                       min="0"
                       max="100"
+                      step="0.5"
                       value={manualForm.qebty_lvl2_score}
                       onChange={(e) => setManualForm({...manualForm, qebty_lvl2_score: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 p-3 rounded-2xl text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"

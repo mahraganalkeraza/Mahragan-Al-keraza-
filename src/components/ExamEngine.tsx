@@ -433,8 +433,11 @@ const { error: saveErr } = await supabase
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="md:col-span-2">
-                <label className="text-xs font-black mb-1 block">
-                  رأس السؤال
+                <label className="text-xs font-black mb-1 block flex items-center justify-between">
+                  <span>رأس السؤال</span>
+                  <span className="text-indigo-600 font-extrabold bg-indigo-50/80 px-2.5 py-0.5 rounded-full text-[11px] shadow-sm">
+                    الدرجة المحددة: {q.points}
+                  </span>
                 </label>
                 <input
                   type="text"
@@ -487,25 +490,24 @@ const { error: saveErr } = await supabase
                   </select>
                 </div>
 
-                {/* 🎯 شرط إظهار خانة الدرجة فقط للأنواع المختارة */}
-                {(q.type === 'mcq' || q.type === 'multi_select' || q.type === 'boolean') && (
-                  <div className="w-20">
-                    <label className="text-xs font-black mb-1 block">
-                      الدرجة
-                    </label>
-                    <input
-                      type="number"
-                      value={q.points}
-                      onChange={(e) => {
-                        const newQ = [...currentQuestions];
-                        newQ[qIndex].points = Number(e.target.value);
-                        setCurrentQuestions(newQ);
-                        setIsDirty(true);
-                      }}
-                      className="w-full px-3 py-2 border rounded-lg text-center bg-white"
-                    />
-                  </div>
-                )}
+                {/* 🎯 خانة الدرجة لكل أنواع الأسئلة */}
+                <div className="w-20">
+                  <label className="text-xs font-black mb-1 block">
+                    الدرجة
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={q.points}
+                    onChange={(e) => {
+                      const newQ = [...currentQuestions];
+                      newQ[qIndex].points = parseFloat(e.target.value) || 0;
+                      setCurrentQuestions(newQ);
+                      setIsDirty(true);
+                    }}
+                    className="w-full px-3 py-2 border rounded-lg text-center bg-white"
+                  />
+                </div>
               </div>
             </div>
             {q.type === "boolean" && (
@@ -612,11 +614,11 @@ const { error: saveErr } = await supabase
                         <span className="text-xs font-black text-slate-400">الدرجة:</span>
                         <input
                           type="number"
-                          step="0.1"
+                          step="0.5"
                           value={optScore}
                           onChange={(e) => {
                             const newQ = [...currentQuestions];
-                            newQ[qIndex].options[optIndex] = { text: optText, score: Number(e.target.value) };
+                            newQ[qIndex].options[optIndex] = { text: optText, score: parseFloat(e.target.value) || 0 };
                             setCurrentQuestions(newQ);
                             setIsDirty(true);
                           }}
