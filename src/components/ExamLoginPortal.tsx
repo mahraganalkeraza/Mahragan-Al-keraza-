@@ -465,7 +465,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-xl bg-white/95 rounded-2xl shadow-[0_20px_50px_rgba(212,175,55,0.25)] border border-amber-500/20 overflow-hidden relative z-10"
+        className="gateway-card w-full max-w-xl bg-white/95 rounded-2xl shadow-[0_20px_50px_rgba(212,175,55,0.25)] border border-amber-500/20 overflow-hidden relative z-10"
       >
         {/* الهيدر العلوي */}
         <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white relative text-center">
@@ -608,7 +608,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                       قارئ استمارات الـ QR كود النشط:
                     </div>
                     
-                    <div className="relative w-full aspect-video min-h-[220px] bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center">
+                    <div className="camera-preview-box relative w-full aspect-video min-h-[220px] bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center">
                       {/* The QR reader div - must remain in DOM */}
                       <div 
                         id="qr-reader" 
