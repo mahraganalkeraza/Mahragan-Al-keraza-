@@ -5987,7 +5987,7 @@ function AppComponent() {
 
   if (showExamGateway) {
     return (
-      <div className="gateway-page-wrapper w-full min-h-screen bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] relative z-[9999]" dir="rtl">
+      <div className="w-full min-h-screen bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] relative z-[9999]" dir="rtl">
         <LiveExamGateway 
           setCurrentScreen={(screen) => {
             if (screen === 'student-exam') {

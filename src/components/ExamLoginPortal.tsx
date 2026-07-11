@@ -460,12 +460,12 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   };
 
   return (
-    <div className="gateway-page-wrapper fixed inset-0 overflow-y-auto z-[160] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] backdrop-blur-xl flex flex-col items-center justify-start md:justify-center p-4 md:p-8 pt-12 md:pt-8 min-h-[100dvh] font-arabic antialiased" dir="rtl">
+    <div className="fixed inset-0 overflow-y-auto z-[160] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] backdrop-blur-xl flex flex-col items-center justify-start md:justify-center p-4 md:p-8 pt-12 md:pt-8 min-h-[100dvh] font-arabic antialiased" dir="rtl">
       <img src={logo} className="absolute inset-0 w-full h-full object-cover opacity-10 mix-blend-overlay pointer-events-none blur-md" alt="" />
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="gateway-card w-full max-w-xl bg-white/95 rounded-2xl shadow-[0_20px_50px_rgba(212,175,55,0.25)] border border-amber-500/20 overflow-hidden relative z-10"
+        className="w-full max-w-xl bg-white/95 rounded-2xl shadow-[0_20px_50px_rgba(212,175,55,0.25)] border border-amber-500/20 overflow-hidden relative z-10"
       >
         {/* الهيدر العلوي */}
         <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white relative text-center">
@@ -608,7 +608,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                       قارئ استمارات الـ QR كود النشط:
                     </div>
                     
-                    <div className="camera-preview-box relative w-full aspect-video min-h-[220px] bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center">
+                    <div className="relative w-full aspect-video min-h-[220px] bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center">
                       {/* The QR reader div - must remain in DOM */}
                       <div 
                         id="qr-reader" 
