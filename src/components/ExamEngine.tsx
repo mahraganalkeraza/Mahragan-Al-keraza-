@@ -2478,7 +2478,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   if (activeStudent && !selectedCompetition) {
     return (
       <div
-        className="fixed inset-0 z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] min-h-screen w-full overflow-y-auto pt-12 sm:pt-16 pb-12 px-4 sm:px-6 flex flex-col items-center font-arabic antialiased"
+        className="gateway-page-wrapper fixed inset-0 z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] min-h-screen w-full overflow-y-auto pt-12 sm:pt-16 pb-12 px-4 sm:px-6 flex flex-col items-center font-arabic antialiased"
         id="student-selection-outer-container"
       >
         <h1 className="text-amber-400 font-extrabold text-3xl sm:text-4xl drop-shadow-md mb-8 text-center text-balance mt-4">

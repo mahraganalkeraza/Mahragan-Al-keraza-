@@ -187,3 +187,20 @@ body:has(.coptic-exam-active) {
   font-family: 'AbraamFont', sans-serif !important;
 }
 
+/* Gateway/Scanning Page Layout Overrides */
+.gateway-page-wrapper {
+  height: auto !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  padding-bottom: 80px !important;
+}
+
+html, body {
+  overflow-y: auto !important;
+  height: auto !important;
+  min-height: 100% !important;
+}
+

@@ -45,7 +45,6 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
   // طريقة الدخول الافتراضية والآمنة للكل هي الـ QR كود
   const [loginMethod, setLoginMethod] = useState<'code' | 'name'>('code');
   const [academicCode, setAcademicCode] = useState('');
-  const [manualCode, setManualCode] = useState('');
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
   
   // وضع الطوارئ الخاص بك (مغلق افتراضياً ولا يفتح إلا بـ 5 ضغطات والرقم السري 101096)
@@ -460,21 +459,8 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     await processScannedCode(academicCode);
   };
 
-  const handleManualCodeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!manualCode.trim()) {
-      setErrors("يرجى إدخال كود الطالب أولاً.");
-      return;
-    }
-    await processScannedCode(manualCode);
-  };
-
   return (
-    <div 
-      className="fixed inset-0 overflow-y-auto z-[160] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] backdrop-blur-xl flex flex-col items-center justify-start md:justify-center p-4 md:p-8 pt-12 md:pt-8 font-arabic antialiased" 
-      style={{ overflowY: 'auto', height: 'auto', minHeight: '100vh' }}
-      dir="rtl"
-    >
+    <div className="gateway-page-wrapper fixed inset-0 overflow-y-auto z-[160] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] backdrop-blur-xl flex flex-col items-center justify-start md:justify-center p-4 md:p-8 pt-12 md:pt-8 min-h-[100dvh] font-arabic antialiased" dir="rtl">
       <img src={logo} className="absolute inset-0 w-full h-full object-cover opacity-10 mix-blend-overlay pointer-events-none blur-md" alt="" />
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -614,34 +600,6 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                       <span>تم حظر صلاحية الكاميرا. يرجى السماح بتشغيل الكاميرا من إعدادات المتصفح أو كتابة الكود يدوياً بالأسفل للحل فورا.</span>
                     </div>
                   )}
-
-                  {/* إدخال كود الطالب يدوياً */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-sm space-y-2">
-                    <label className="block text-xs font-black text-slate-700">
-                      أو أدخل كود الطالب يدوياً
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        pattern="\d*"
-                        inputMode="numeric"
-                        maxLength={15}
-                        value={manualCode}
-                        onChange={(e) => setManualCode(e.target.value.replace(/\D/g, ''))}
-                        placeholder="أدخل الرقم الأكاديمي للطالب..."
-                        className="flex-1 px-4 py-2.5 bg-white border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 rounded-xl transition-all text-right font-black text-sm text-slate-950 shadow-inner outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleManualCodeSubmit}
-                        disabled={isLoading || !manualCode.trim()}
-                        className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 active:bg-amber-700 text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-md cursor-pointer shrink-0"
-                      >
-                        <CheckCircle size={14} />
-                        <span>تحقق وإدخال</span>
-                      </button>
-                    </div>
-                  </div>
 
                   {/* الكاميرا الحية لمسح الكيورآر */}
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-2">
