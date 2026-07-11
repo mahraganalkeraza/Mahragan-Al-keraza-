@@ -6988,7 +6988,7 @@ function AppComponent() {
                       onClick={() => generateMasterExcel(allChurchParticipants, userRole === 'admin' ? null : churchName)}
                       className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-md active:scale-95"
                     >
-                      <Download size={14} /> التصدير الشامل (Excel)
+                      <Download size={14} />  تحميل بيانات المشتركين (Excel)
                     </button>
                   </div>
                 </div>

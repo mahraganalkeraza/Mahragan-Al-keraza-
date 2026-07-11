@@ -673,7 +673,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
             {mode === 'omr' ? <FileScan size={32} /> : <QrCode size={32} />}
           </div>
           <div>
-            <h2 className="text-2xl font-black text-slate-800">البابل شيت والكيو أر</h2>
+            <h2 className="text-2xl font-black text-slate-800"> Bubble Sheet & QRCodes</h2>
             <p className="text-slate-500 font-bold mt-1">استخراج أوراق الامتحانات والكود للمشتركين</p>
           </div>
         </div>

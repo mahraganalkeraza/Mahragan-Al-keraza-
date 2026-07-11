@@ -2674,11 +2674,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-2xl text-center text-xs font-black leading-relaxed" 
                 id="submission-fail-retry-alert"
               >
-                ⚠️ يبدو أن هناك مشكلة في الاتصال بالشبكة ولم نتمكن من تسليم الإجابات برمجياً. 
+                ⚠️ يبدو أن هناك مشكلة في الاتصال بالشبكة ولم نتمكن من تسليم الإجابات. 
                 <br />
-                لكن لا تقلق، إجاباتك محفوظة بأمان تام في ذاكرة جهازك المحلية.
+                   إجاباتك محفوظة بأمان  في ذاكرة جهازك .
                 <br />
-                يرجى الضغط على زر "إعادة المحاولة" أدناه لتسليم الإجابات مجدداً.
+                يرجى الضغط على زر "إعادة المحاولة" أدناه لتسليم الإجابات مجددًا.
               </div>
             )}
 
