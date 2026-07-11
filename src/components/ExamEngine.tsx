@@ -1813,7 +1813,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         q.options.forEach((opt: any) => {
           const optText = typeof opt === "object" && opt !== null ? (opt.text || "") : String(opt);
           const optScore = typeof opt === "object" && opt !== null ? Number(opt.score || 0) : 0;
-          if (selectedList.some((s: string) => normalizeArabic(s) === normalizeArabic(optText))) {
+          const isMatch = selectedList.some((s: string) => 
+            String(s).trim() === String(optText).trim() ||
+            normalizeArabic(s) === normalizeArabic(optText)
+          );
+          if (isMatch) {
             totalScore += optScore;
           }
         });
@@ -2052,15 +2056,15 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                   } else if (question.type === "multi_select") {
                     compactAns = val;
                     const selectedList = Array.isArray(val) ? val : [];
+                    calculatedPts = 0; // Reset to ensure we sum individual option scores
                     
                     question.options?.forEach((opt: any) => {
                       const optText = typeof opt === "object" && opt !== null ? (opt.text || "") : String(opt);
                       const optScore = typeof opt === "object" && opt !== null ? Number(opt.score || 0) : 0;
                       
-                      // 🎯 التعديل هنا: فكك من الـ normalizeArabic لو النص قبطي
-                      // بنقارن النص مباشرة أو بنستخدم trim() بس
                       const isMatch = selectedList.some((s: string) => 
-                        String(s).trim() === String(optText).trim()
+                        String(s).trim() === String(optText).trim() ||
+                        normalizeArabic(s) === normalizeArabic(optText)
                       );
 
                       if (isMatch) {
