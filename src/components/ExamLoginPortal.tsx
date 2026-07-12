@@ -112,8 +112,6 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     };
 
     checkEmergencyLockAndSeed();
-    const interval = setInterval(checkEmergencyLockAndSeed, 15000); // Check every 15 seconds
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {

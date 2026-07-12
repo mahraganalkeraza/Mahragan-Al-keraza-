@@ -820,9 +820,6 @@ function AppComponent() {
 
     // Run immediately on mount
     checkTokenAndLock();
-
-    const interval = setInterval(checkTokenAndLock, 30000); // Check every 30 seconds
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {

@@ -170,6 +170,11 @@ async function queueSubmissionInIndexedDB(request) {
 
 // Delta Sync Centralized Fetch Handler
 async function handleRosterSync() {
+  // Trigger processing any pending offline queue items upon user-initiated Sync action
+  if (typeof processQueue === 'function') {
+    processQueue().catch(err => console.error('[SW Sync] Roster sync queue run error:', err));
+  }
+
   try {
     let lastTimestamp = await getMeta('last_sync_timestamp');
     if (!lastTimestamp) {
@@ -371,6 +376,3 @@ async function processQueue() {
     isRetrying = false;
   }
 }
-
-// Background sync trigger loop every 20 seconds
-setInterval(processQueue, 20000);
