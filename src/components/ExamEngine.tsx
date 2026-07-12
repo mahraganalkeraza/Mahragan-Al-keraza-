@@ -2330,7 +2330,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
   if (isGateChecking) {
     return (
-      <div className="fixed inset-0 z-[250] bg-[#4a000b] flex flex-col items-center justify-center p-4 text-center">
+      <div className="relative min-h-screen w-full overflow-x-hidden overflow-y-auto z-[250] bg-[#4a000b] flex flex-col items-center justify-center p-4 text-center">
         <div className="animate-spin rounded-full h-16 w-16 border-4 border-amber-100 border-t-amber-500 mx-auto mb-6"></div>
         <p className="text-white font-bold text-xl">جاري التحقق من صلاحيات اللجنة...</p>
       </div>
@@ -2339,7 +2339,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
   if (isExamBlocked) {
     return (
-      <div className="fixed inset-0 z-[250] bg-[#4a000b] flex flex-col items-center justify-center p-4 text-center">
+      <div className="relative min-h-screen w-full overflow-x-hidden overflow-y-auto z-[250] bg-[#4a000b] flex flex-col items-center justify-center p-4 text-center">
         <div className="bg-white p-12 rounded-3xl max-w-lg shadow-xl shadow-rose-900/50">
           <div className="w-20 h-20 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6">
             <ShieldX size={48} />
@@ -2366,7 +2366,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   if (isExamCompleted) {
     return (
       <div
-        className="fixed inset-0 z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] min-h-screen w-full overflow-y-auto flex flex-col items-center justify-center p-4 sm:p-6 font-arabic antialiased"
+        className="relative min-h-screen w-full overflow-x-hidden overflow-y-auto z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] flex flex-col items-center justify-center p-4 sm:p-6 font-arabic antialiased"
         id="exam-completed-outer-container"
       >
         <div
@@ -2418,7 +2418,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   if (isTerminated) {
     return (
       <div
-        className="fixed inset-0 z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] min-h-screen w-full overflow-y-auto flex flex-col items-center justify-center p-4 sm:p-6 font-arabic antialiased"
+        className="relative min-h-screen w-full overflow-x-hidden overflow-y-auto z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] flex flex-col items-center justify-center p-4 sm:p-6 font-arabic antialiased"
         id="exam-terminated-outer-container"
       >
         <div
@@ -2478,7 +2478,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   if (activeStudent && !selectedCompetition) {
     return (
       <div
-        className="fixed inset-0 z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] min-h-screen w-full overflow-y-auto pt-12 sm:pt-16 pb-12 px-4 sm:px-6 flex flex-col items-center font-arabic antialiased"
+        className="relative min-h-screen w-full overflow-x-hidden overflow-y-auto z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] pt-12 sm:pt-16 pb-12 px-4 sm:px-6 flex flex-col items-center font-arabic antialiased"
         id="student-selection-outer-container"
       >
         <h1 className="text-amber-400 font-extrabold text-3xl sm:text-4xl drop-shadow-md mb-8 text-center text-balance mt-4">
@@ -2720,7 +2720,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   if (isLoading) {
     return (
       <div
-        className="fixed inset-0 z-[250] bg-[#4a000b] flex flex-col items-center justify-center p-4 text-center"
+        className="relative min-h-screen w-full overflow-x-hidden overflow-y-auto z-[250] bg-[#4a000b] flex flex-col items-center justify-center p-4 text-center"
         id="live-loader-outer-container"
       >
         <div className="w-full max-w-lg" id="loader-card">
@@ -2751,7 +2751,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   ) {
     return (
       <div
-        className="fixed inset-0 z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] min-h-screen w-full overflow-y-auto flex flex-col items-center justify-center p-4 sm:p-6 font-arabic antialiased"
+        className="relative min-h-screen w-full overflow-x-hidden overflow-y-auto z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] flex flex-col items-center justify-center p-4 sm:p-6 font-arabic antialiased"
         id="no-exam-questions-outer-container"
       >
         <div
@@ -2801,7 +2801,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   const isCopticActive = ["قبطي مستوى أول", "قبطي مستوى ثاني"].includes(selectedCompetition || "");
 
   return (
-    <div className={`fixed inset-0 z-[250] overflow-y-auto bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6 ${isCopticActive ? "coptic-text coptic-exam-active" : ""}`} id="active-exam-viewport">
+    <div className={`relative min-h-screen w-full overflow-x-hidden overflow-y-auto z-[250] bg-gradient-to-br from-[#6b0311] via-[#4a000b] to-[#2b0005] select-none flex items-center justify-center p-3 sm:p-6 ${isCopticActive ? "coptic-text coptic-exam-active" : ""}`} id="active-exam-viewport">
       {/* Centered background container for the Festival Logo, with subtle blend/opacity */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
         <img

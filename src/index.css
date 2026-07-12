@@ -81,16 +81,6 @@
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: #D4AF37;
   }
-  /* Safari/iOS fix for large rounded corners (rounded-3xl) to prevent visual glitches/clipping during scroll */
-  .safari-rounded-fix,
-  .rounded-3xl {
-    -webkit-backface-visibility: hidden;
-    backface-visibility: hidden;
-    transform: translate3d(0, 0, 0);
-    -webkit-mask-image: -webkit-radial-gradient(white, black);
-    isolation: isolate;
-    will-change: transform;
-  }
 }
 
 .coptic-pattern {
@@ -196,4 +186,21 @@ button.quick-access-card:active {
 body:has(.coptic-exam-active) {
   font-family: 'AbraamFont', sans-serif !important;
 }
+
+/* Fix camera viewport library elements from pushing the layout horizontally */
+#qr-reader, 
+#qr-reader * {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+#qr-reader video,
+#qr-reader canvas {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  object-fit: cover !important;
+  border-radius: 0.75rem !important;
+}
+
 
