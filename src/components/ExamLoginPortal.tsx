@@ -162,42 +162,70 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     }
   }, [onClose]);
 
-  // مزامنة الداتا مرة واحدة من السيرفر للحفاظ على كفاءة الخادم
+  // مزامنة الداتا مرة واحدة من السيرفر للحفاظ على كفاءة الباندويث ودعم التحديث الجزئي (Delta Sync)
   const syncRegistrations = async (forceRefetch = false) => {
     setIsSyncing(true);
     setSyncError(null);
     try {
-      if (!forceRefetch) {
-        const cached = localStorage.getItem('cached_students_registry');
-        if (cached) {
+      // 1. تحميل الكاش المحلي الحالي إن وجد
+      const cached = localStorage.getItem('cached_students_registry');
+      let existingStudents: any[] = [];
+      if (cached) {
+        try {
           const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setCachedRegistry(parsed);
-            const timeCached = localStorage.getItem('cached_students_registry_time');
-            setLastSyncTime(timeCached || 'محلي مسبق');
-            setIsSyncing(false);
-            return;
+          if (Array.isArray(parsed)) {
+            existingStudents = parsed;
           }
+        } catch (e) {
+          console.error("Failed to parse local students registry cache:", e);
         }
       }
 
-      // تحميل كافة المشتركين بشكل مجزأ لتلافي تخطي حدود الباندويث أو مشاكل السيرفر
-      let allRegistrations: any[] = [];
+      // إذا لم يطلب المستخدم تحديثاً إجبارياً وكان الكاش ممتلئاً، نعرضه مباشرة وننهي المزامنة فوراً لتوفير الباندويث
+      if (!forceRefetch && existingStudents.length > 0) {
+        setCachedRegistry(existingStudents);
+        const timeCached = localStorage.getItem('cached_students_registry_time');
+        setLastSyncTime(timeCached || 'محلي مسبق');
+        setIsSyncing(false);
+        return;
+      }
+
+      // 2. تفعيل المزامنة الجزئية (Delta Sync) باستخدام حقل updated_at لتقليص حجم البيانات المستهلكة
+      const lastSyncTimestamp = localStorage.getItem('cached_students_last_sync_timestamp');
+      let newOrUpdatedRows: any[] = [];
       let page = 0;
       const pageSize = 1000;
       let hasMore = true;
+      let useDelta = !!lastSyncTimestamp && existingStudents.length > 0;
 
       while (hasMore) {
-        const { data, error } = await supabase
+        let query = supabase
           .from('registrations')
-          .select('student_id, name, stage, churchName, gender, competitions')
+          .select('student_id, name, stage, churchName, gender, competitions, updated_at')
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
-        if (error) throw error;
+        if (useDelta && lastSyncTimestamp) {
+          query = query.gt('updated_at', lastSyncTimestamp);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          // في حال حدوث خطأ بسبب المزامنة الجزئية (مثل عدم وجود العمود)، يتم التراجع تلقائياً للمزامنة الكاملة
+          if (useDelta) {
+            console.warn("Delta sync failed, falling back to full sync:", error);
+            useDelta = false;
+            page = 0;
+            newOrUpdatedRows = [];
+            continue;
+          }
+          throw error;
+        }
+
         if (!data || data.length === 0) {
           hasMore = false;
         } else {
-          allRegistrations = [...allRegistrations, ...data];
+          newOrUpdatedRows = [...newOrUpdatedRows, ...data];
           if (data.length < pageSize) {
             hasMore = false;
           } else {
@@ -206,9 +234,41 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         }
       }
 
-      const cleaned = allRegistrations.filter((r: any) => r.name !== 'SYSTEM_LOCK');
+      // 3. دمج البيانات الجديدة/المحدثة مع الكاش الحالي لحفظ البنية وتجنب التكرار
+      let mergedRegistry = [...existingStudents];
+      if (newOrUpdatedRows.length > 0) {
+        const studentMap = new Map<string, any>();
+        existingStudents.forEach((s: any) => {
+          if (s && s.student_id) studentMap.set(String(s.student_id).trim(), s);
+        });
 
+        newOrUpdatedRows.forEach((s: any) => {
+          if (s && s.student_id) {
+            // تجاهل سجلات قفل النظام من الدخول للكاش
+            if (s.name !== 'SYSTEM_LOCK') {
+              studentMap.set(String(s.student_id).trim(), s);
+            }
+          }
+        });
+
+        mergedRegistry = Array.from(studentMap.values());
+      } else if (existingStudents.length === 0) {
+        mergedRegistry = [];
+      }
+
+      const cleaned = mergedRegistry.filter((r: any) => r && r.name !== 'SYSTEM_LOCK');
+
+      // 4. حفظ الكاش وتحديث البصمة الزمنية لآخر مزامنة ناجحة
       localStorage.setItem('cached_students_registry', JSON.stringify(cleaned));
+      
+      let latestTimestamp = lastSyncTimestamp || new Date(0).toISOString();
+      newOrUpdatedRows.forEach((r: any) => {
+        if (r.updated_at && r.updated_at > latestTimestamp) {
+          latestTimestamp = r.updated_at;
+        }
+      });
+      localStorage.setItem('cached_students_last_sync_timestamp', latestTimestamp);
+
       const syncTimeStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) + ' - ' + new Date().toLocaleDateString('ar-EG');
       localStorage.setItem('cached_students_registry_time', syncTimeStr);
       
@@ -236,16 +296,37 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     try {
       const codeCleaned = codeStr.trim();
       
-      const { data: studentObj, error } = await supabase
-        .from('registrations')
-        .select('student_id, name, stage, churchName, gender, competitions')
-        .eq('student_id', codeCleaned)
-        .maybeSingle();
+      // 🌟 التميز وتوفير الاستهلاك: البحث في الكاش المحلي أولاً قبل التواصل مع السيرفر
+      let studentObj = cachedRegistry.find((s: any) => s && String(s.student_id).trim() === codeCleaned);
+      
+      if (!studentObj) {
+        const cached = localStorage.getItem('cached_students_registry');
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+              studentObj = parsed.find((s: any) => s && String(s.student_id).trim() === codeCleaned);
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
 
-      if (error || !studentObj) {
-        setErrors("لم نتمكن من العثور على الكود المسحوب، يرجى الاستعانة بمسؤول اللجنة للتأكد.");
-        setIsLoading(false);
-        return;
+      if (!studentObj) {
+        // بديل أخير: جلب هذا الطالب الفردي فقط لتوفير الباندويث وحماية السقف المجاني
+        const { data: fetchedStudent, error } = await supabase
+          .from('registrations')
+          .select('student_id, name, stage, churchName, gender, competitions')
+          .eq('student_id', codeCleaned)
+          .maybeSingle();
+
+        if (error || !fetchedStudent) {
+          setErrors("لم نتمكن من العثور على الكود المسحوب، يرجى الاستعانة بمسؤول اللجنة للتأكد.");
+          setIsLoading(false);
+          return;
+        }
+        studentObj = fetchedStudent;
       }
 
       await triggerActiveExamLaunch(studentObj);

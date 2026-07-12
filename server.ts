@@ -1,9 +1,11 @@
 import express from "express";
+import compression from "compression";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 
 async function startServer() {
   const app = express();
+  app.use(compression());
   app.use(express.json({ limit: '50mb' }));
   
   // Health check endpoint to verify network fetches

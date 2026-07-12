@@ -1422,14 +1422,31 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       const normalizedId = studentId.toLowerCase();
 
-      // Query standard Supabase registrations table first
-      const { data: studentObj, error: fetchErr } = await supabase
-        .from("registrations")
-        .select("*")
-        .eq("student_id", normalizedId)
-        .maybeSingle();
+      // 🌟 التميز وتوفير الاستهلاك: البحث في الكاش المحلي أولاً قبل التواصل مع السيرفر
+      let studentObj: any = null;
+      const cached = localStorage.getItem('cached_students_registry');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            studentObj = parsed.find((s: any) => s && String(s.student_id).toLowerCase() === normalizedId);
+          }
+        } catch (e) {
+          console.error("Failed to parse cached registry in ExamEngine:", e);
+        }
+      }
 
-      if (fetchErr) throw fetchErr;
+      if (!studentObj) {
+        // بديل أخير: جلب هذا الطالب الفردي فقط لتوفير الباندويث وحماية السقف المجاني
+        const { data: fetchedStudent, error: fetchErr } = await supabase
+          .from("registrations")
+          .select("*")
+          .eq("student_id", normalizedId)
+          .maybeSingle();
+
+        if (fetchErr) throw fetchErr;
+        studentObj = fetchedStudent;
+      }
 
       let studentData: any = null;
 
