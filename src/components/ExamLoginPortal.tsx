@@ -167,7 +167,28 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     setIsSyncing(true);
     setSyncError(null);
     try {
-      // 1. تحميل الكاش المحلي الحالي إن وجد
+      // 1. محاولة جلب البيانات من بوابة الخدمة الموحدة (التي يراقبها الـ Service Worker)
+      try {
+        const url = forceRefetch ? '/api/roster?sync=true' : '/api/roster';
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          if (data && Array.isArray(data.roster)) {
+            setCachedRegistry(data.roster);
+            localStorage.setItem('cached_students_registry', JSON.stringify(data.roster));
+            if (data.syncTime) {
+              setLastSyncTime(data.syncTime);
+              localStorage.setItem('cached_students_registry_time', data.syncTime);
+            }
+            setIsSyncing(false);
+            return;
+          }
+        }
+      } catch (swError) {
+        console.warn("Service Worker roster gateway not ready or failed, falling back to direct query:", swError);
+      }
+
+      // 2. البديل المباشر: تحميل الكاش المحلي الحالي إن وجد
       const cached = localStorage.getItem('cached_students_registry');
       let existingStudents: any[] = [];
       if (cached) {
@@ -190,7 +211,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         return;
       }
 
-      // 2. تفعيل المزامنة الجزئية (Delta Sync) باستخدام حقل updated_at لتقليص حجم البيانات المستهلكة
+      // 3. تفعيل المزامنة الجزئية (Delta Sync) باستخدام حقل updated_at لتقليص حجم البيانات المستهلكة
       const lastSyncTimestamp = localStorage.getItem('cached_students_last_sync_timestamp');
       let newOrUpdatedRows: any[] = [];
       let page = 0;
@@ -234,7 +255,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         }
       }
 
-      // 3. دمج البيانات الجديدة/المحدثة مع الكاش الحالي لحفظ البنية وتجنب التكرار
+      // دمج البيانات الجديدة/المحدثة مع الكاش الحالي لحفظ البنية وتجنب التكرار
       let mergedRegistry = [...existingStudents];
       if (newOrUpdatedRows.length > 0) {
         const studentMap = new Map<string, any>();
@@ -258,7 +279,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
       const cleaned = mergedRegistry.filter((r: any) => r && r.name !== 'SYSTEM_LOCK');
 
-      // 4. حفظ الكاش وتحديث البصمة الزمنية لآخر مزامنة ناجحة
+      // حفظ الكاش وتحديث البصومة الزمنية لآخر مزامنة ناجحة
       localStorage.setItem('cached_students_registry', JSON.stringify(cleaned));
       
       let latestTimestamp = lastSyncTimestamp || new Date(0).toISOString();

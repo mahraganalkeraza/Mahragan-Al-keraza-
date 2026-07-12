@@ -9,11 +9,15 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'service-worker.js',
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-able-icon.png'],
-      workbox: {
+      injectRegister: 'auto',
+      injectManifest: {
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6MB
       },
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-able-icon.png'],
       manifest: {
         name: 'منصة إدارة الأنشطة والمسابقات', // الاسم الكامل للبرنامج
         short_name: 'إدارة الأنشطة',          // الاسم اللي هيظهر تحت الأيقونة في الشاشة
