@@ -1699,38 +1699,61 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       const randomModel =
         availableExams[Math.floor(Math.random() * availableExams.length)];
 
-      let shuffledQuestions = [...randomModel.questions];
-      const isCoptic = ["قبطي مستوى أول", "قبطي مستوى ثاني"].includes(competitionType);
+      // 🎲 Fisher-Yates Shuffle Algorithm
+      const shuffleArray = (array: any[]) => {
+        const arr = [...array];
+        for (let i = arr.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          const temp = arr[i];
+          arr[i] = arr[j];
+          arr[j] = temp;
+        }
+        return arr;
+      };
+
+      // 🛡️ Deep copy the selected model to avoid mutating the global shared cached pool
+      const examCopy = JSON.parse(JSON.stringify(randomModel)) as Exam;
+
+      let shuffledQuestions = [...examCopy.questions];
+      
+      // Strict Check for Coptic Exams
+      const isCoptic =
+        ["قبطي مستوى أول", "قبطي مستوى ثاني"].includes(competitionType) ||
+        (competitionType || "").toLowerCase().includes("coptic") ||
+        (competitionType || "").includes("قبطي") ||
+        (examCopy as any).category === "coptic" ||
+        (examCopy as any).subject === "قبطي" ||
+        (examCopy as any).competitionType === "قبطي";
 
       if (!isCoptic) {
-        shuffledQuestions = shuffledQuestions.sort(() => 0.5 - Math.random());
+        shuffledQuestions = shuffleArray(shuffledQuestions);
       }
 
       shuffledQuestions.forEach((q) => {
-        // 1️⃣ حماية اللخبطة: التأكد أننا نتعامل مع نسخ وليس مراجع مباشرة إذا لزم الأمر
+        // 1️⃣ Shuffle Options for MCQs and Multi-Select (Only for Non-Coptic Exams)
         if (!isCoptic) {
           if (q.type === "mcq" || q.type === "multi_select") {
             if (Array.isArray(q.options)) {
-              q.options = [...q.options].sort(() => 0.5 - Math.random());
+              q.options = shuffleArray(q.options);
             }
           }
         }
 
-        // 2️⃣ منطق التوصيل: سليم، لكن تأكد أن الـ matchingPairs هيكلها ثابت
+        // 2️⃣ Shuffled rights for Matching logic
         if (q.type === "matching" && q.matchingPairs) {
-          const rights = [...q.matchingPairs].map((p: any) => p.right);
+          const rights = q.matchingPairs.map((p: any) => p.right);
           if (!isCoptic) {
-            (q as any).shuffledRights = rights.sort(() => 0.5 - Math.random());
+            (q as any).shuffledRights = shuffleArray(rights);
           } else {
             (q as any).shuffledRights = rights;
           }
         }
       });
 
-      randomModel.questions = shuffledQuestions;
+      examCopy.questions = shuffledQuestions;
 
       setSelectedCompetition(competitionType);
-      setActiveExam(randomModel);
+      setActiveExam(examCopy);
       localStorage.setItem(`exam_start_time_${activeStudent.id}`, Date.now().toString());
 
       // DEVICE METADATA EXTRACTION & LOGGING CONSOLIDATION - Postponed to next season
