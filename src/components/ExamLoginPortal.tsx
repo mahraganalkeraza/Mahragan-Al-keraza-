@@ -882,7 +882,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
               <form 
                 onSubmit={(e) => {
                   e.preventDefault();
-                  if (passwordInput === '101096') {
+                  if (passwordInput === '111155') {
                     setIsAdminUnlocked(true);
                     setLoginMethod('name');
                     setShowPasswordModal(false);
