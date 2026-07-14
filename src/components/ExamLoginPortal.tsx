@@ -880,16 +880,40 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
               </div>
 
               <form 
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  if (passwordInput === '111155') {
-                    setIsAdminUnlocked(true);
-                    setLoginMethod('name');
-                    setShowPasswordModal(false);
-                    setPasswordInput('');
-                    setPasswordError('');
-                  } else {
-                    setPasswordError('رمز المرور غير صحيح! يرجى المحاولة مرة أخرى.');
+                  try {
+                    // جلب الباسورد الحالي مباشرة من السيرفر لضمان عدم الكاش
+                    const { data, error } = await supabase
+                      .from('system_settings')
+                      .select('admin_password')
+                      .single();
+
+                    if (error) throw error;
+
+                    const currentServerPassword = data?.admin_password || '111155'; // '111155' كقيمة احتياطية
+
+                    if (passwordInput === currentServerPassword) {
+                      setIsAdminUnlocked(true);
+                      setLoginMethod('name');
+                      setShowPasswordModal(false);
+                      setPasswordInput('');
+                      setPasswordError('');
+                    } else {
+                      setPasswordError('رمز المرور غير صحيح! يرجى المحاولة مرة أخرى.');
+                    }
+                  } catch (err) {
+                    console.error("خطأ أثناء التحقق من رمز المرور:", err);
+                    // في حال انقطاع النت أو حدوث خطأ، نقارنه محلياً بالباسورد الجديد كدعم احتياطي (Fallback)
+                    if (passwordInput === '111155') {
+                      setIsAdminUnlocked(true);
+                      setLoginMethod('name');
+                      setShowPasswordModal(false);
+                      setPasswordInput('');
+                      setPasswordError('');
+                    } else {
+                      setPasswordError('حدث خطأ في الشبكة أو رمز المرور غير صحيح.');
+                    }
                   }
                 }}
                 className="space-y-4"
