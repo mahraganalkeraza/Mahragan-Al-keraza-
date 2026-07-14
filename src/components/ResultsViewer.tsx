@@ -832,6 +832,36 @@ export const ResultsViewer: React.FC<{
           return;
         }
 
+        // Extract all student IDs from the uploaded file
+        const studentIds = json.map((row: any) => {
+          const studentIdInput = row['كود الطالب'] || row['Student ID'] || row['student_id'] || row['كود'] || row['رقم الطالب'] || '';
+          return studentIdInput ? String(studentIdInput).trim() : '';
+        }).filter(Boolean);
+
+        // Fetch real names and other details of these students from registrations table
+        const studentMap: Record<string, { name: string; churchName: string; stage: string; gender: string }> = {};
+        if (studentIds.length > 0) {
+          const { data: studentsList, error: fetchError } = await supabase
+            .from('registrations')
+            .select('student_id, name, churchName, stage, gender')
+            .in('student_id', studentIds);
+
+          if (fetchError) {
+            console.error("Error fetching real student names:", fetchError);
+          } else if (studentsList) {
+            studentsList.forEach((student: any) => {
+              if (student.student_id) {
+                studentMap[student.student_id] = {
+                  name: student.name || '',
+                  churchName: student.churchName || '',
+                  stage: student.stage || 'عام',
+                  gender: student.gender || 'ذكر'
+                };
+              }
+            });
+          }
+        }
+
         // Expected RTL Excel columns:
         // 1. Student ID (كود الطالب)
         // 2. Name (اسم المخدوم / الطالب)
@@ -844,9 +874,12 @@ export const ResultsViewer: React.FC<{
           const studentIdInput = row['كود الطالب'] || row['Student ID'] || row['student_id'] || row['كود'] || row['رقم الطالب'] || '';
           const studentId = studentIdInput ? String(studentIdInput).trim() : `bubble-${Math.random().toString(36).substring(2, 11)}`;
 
-          const studentName = row['اسم المخدوم / الطالب'] || row['الاسم'] || row['اسم الطالب'] || row['اسم المخدوم'] || row['student_name'] || row['Name'] || '';
-          const churchName = row['الكنيسة'] || row['church_name'] || row['Church'] || row['الكنيسة/البلد'] || '';
-          const stage = row['المرحلة / المستوى'] || row['المرحلة'] || row['المستوى'] || row['Level'] || row['stage'] || 'عام';
+          // Look up real name, fall back to Excel row Name column
+          const dbStudent = studentMap[studentId];
+          const studentName = dbStudent?.name || row['اسم المخدوم / الطالب'] || row['الاسم'] || row['اسم الطالب'] || row['اسم المخدوم'] || row['student_name'] || row['Name'] || '';
+          const churchName = dbStudent?.churchName || row['الكنيسة'] || row['church_name'] || row['Church'] || row['الكنيسة/البلد'] || '';
+          const stage = dbStudent?.stage || row['المرحلة / المستوى'] || row['المرحلة'] || row['المستوى'] || row['Level'] || row['stage'] || 'عام';
+          const gender = dbStudent?.gender || 'ذكر';
           
           // CRITICAL NOTE: The Score column represents Academic/Study Contest score ONLY
           const scoreVal = row['مسابقة الدراسي فقط'] || row['مسابقة الدراسي'] || row['الدرجة'] || row['درجة الدراسي'] || row['derasy_score'] || row['score'] || row['Score'] || 0;
@@ -859,7 +892,7 @@ export const ResultsViewer: React.FC<{
             name: studentName,
             churchName: churchName,
             stage: stage,
-            gender: 'ذكر', // Default gender value
+            gender: gender,
             derasy_score: derasy,
             mahfouzat_score: null, // Treat purely as academic score, other parts null
             qebty_lvl1_score: null,
