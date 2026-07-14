@@ -17,7 +17,9 @@ import {
   Send,
   Users,
   Search,
-  Download
+  Download,
+  Lock,
+  EyeOff
 } from 'lucide-react';
 import { AdminHonorsEngine } from './AdminHonorsEngine';
 import { supabase } from '../utils/supabaseClient';
@@ -35,6 +37,9 @@ export const ResultsViewer: React.FC<{
 }> = ({ results: resultsProp, onReset: onResetProp, isAdmin, hideNames, userChurch }) => {
   const [supabaseSubmissions, setSupabaseSubmissions] = useState<Result[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [resultsPublished, setResultsPublished] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(true);
+  const [isPublishLoading, setIsPublishLoading] = useState(false);
 
   // Advanced PDF Generation States
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -187,8 +192,32 @@ export const ResultsViewer: React.FC<{
   };
 
   useEffect(() => {
-    fetchSubmissionsFromSupabase();
-  }, [activeUserChurch, isAdmin]);
+    const checkPublishAndFetchData = async () => {
+      try {
+        setIsCheckingStatus(true);
+        // 1. فحص حالة النشر من الداتابيز
+        const { data: settings } = await supabase
+          .from('system_settings')
+          .select('results_published')
+          .eq('id', '1')
+          .maybeSingle();
+
+        const isPublished = settings?.results_published || false;
+        setResultsPublished(isPublished);
+
+        // 2. إذا كانت معلنة، أو كان المستخدم الحالي Admin، يتم جلب البيانات كالمعتاد
+        if (isPublished || isAdmin) {
+          await fetchSubmissionsFromSupabase();
+        }
+      } catch (err) {
+        console.error("Error checking status & fetching:", err);
+      } finally {
+        setIsCheckingStatus(false);
+      }
+    };
+
+    checkPublishAndFetchData();
+  }, [isAdmin, activeUserChurch]);
 
   // Load distinct options for bulk score filters
   useEffect(() => {
@@ -941,6 +970,26 @@ export const ResultsViewer: React.FC<{
     }
   };
 
+  const handleTogglePublish = async (publishState: boolean) => {
+    setIsPublishLoading(true);
+    try {
+      const { error } = await supabase
+        .from('system_settings')
+        .update({ results_published: publishState })
+        .eq('id', '1');
+
+      if (error) throw error;
+
+      setResultsPublished(publishState);
+      alert(publishState ? "تم إعلان النتائج بنجاح لجميع الكنائس! 🚀" : "تم حجب النتائج بنجاح عن الكنائس. 🔒");
+    } catch (err: any) {
+      console.error("Error updating publish status:", err);
+      alert("حدث خطأ أثناء تعديل حالة الإعلان: " + err.message);
+    } finally {
+      setIsPublishLoading(false);
+    }
+  };
+
   const handlePublishChurchResults = async (churchName: string) => {
     try {
       setIsLoading(true);
@@ -961,6 +1010,24 @@ export const ResultsViewer: React.FC<{
       setIsLoading(false);
     }
   };
+
+  if (isCheckingStatus) {
+    return <div className="text-center p-12 text-slate-500 font-bold font-arabic" dir="rtl">جاري تحميل البيانات...</div>;
+  }
+
+  if (!resultsPublished && !isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 bg-white rounded-3xl shadow-sm border border-slate-100 text-center max-w-md mx-auto my-12 font-arabic" dir="rtl">
+        <div className="p-4 bg-amber-50 rounded-full text-amber-500 mb-4 border border-amber-100">
+          <Lock size={40} className="animate-pulse" />
+        </div>
+        <h3 className="text-lg font-black text-slate-800 mb-2">النتائج قيد المراجعة</h3>
+        <p className="text-xs text-slate-500 leading-relaxed font-bold">
+          سلام المسيح .. يجرى حاليًا رصد ومراجعة درجات المخدومين. انتظروا إعلان النتائج رسميًا قريبًا جدًا!
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -1015,14 +1082,29 @@ export const ResultsViewer: React.FC<{
               <Award size={14} />
               {showBulkScoreDashboard ? "العودة لجدول النتائج 📋" : "رصد الدرجات الجماعي ⚡"}
             </button>
-            <button 
-              onClick={handlePublishResults}
-              disabled={isLoading}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all shadow-sm disabled:opacity-50"
-            >
-              <Megaphone size={14} />
-              إعلان النتائج للكنائس
-            </button>
+            {!resultsPublished ? (
+              <button
+                onClick={() => handleTogglePublish(true)}
+                disabled={isPublishLoading}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl text-xs font-black transition-all shadow-sm cursor-pointer"
+              >
+                <Megaphone size={14} />
+                {isPublishLoading ? "جاري الإعلان..." : "إعلان النتائج للكنائس"}
+              </button>
+            ) : (
+              <button
+                onClick={() => handleTogglePublish(false)}
+                disabled={isPublishLoading}
+                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white rounded-xl text-xs font-black transition-all shadow-sm cursor-pointer"
+              >
+                <EyeOff size={14} />
+                {isPublishLoading ? "جاري الحجب..." : "تراجع / حجب النتائج عن الكنائس"}
+              </button>
+            )}
+
+            <span className={`flex items-center justify-center px-3 py-2.5 rounded-xl text-[10px] font-black ${resultsPublished ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
+              {resultsPublished ? "● النتائج حالياً: معلنة للكنائس" : "● النتائج حالياً: محجوبة"}
+            </span>
           </div>
         </div>
       )}
