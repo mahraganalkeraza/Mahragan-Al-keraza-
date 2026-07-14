@@ -45,6 +45,13 @@ export const ResultsViewer: React.FC<{
   const [currentPage, setCurrentPage] = useState(1);
   const [activeTab, setActiveTab] = useState<'all' | 'online' | 'bubble_sheet' | 'paper'>('all');
   const [showManualModal, setShowManualModal] = useState(false);
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [tempScores, setTempScores] = useState({
+    darasy: 0,
+    mahfoudat: 0,
+    qebty1: 0,
+    qebty2: 0
+  });
 
   // Bulk Score Entry States
   const [showBulkScoreDashboard, setShowBulkScoreDashboard] = useState(false);
@@ -416,6 +423,56 @@ export const ResultsViewer: React.FC<{
     } catch (err: any) {
       console.error('Error in reset operation:', err);
       alert('حدث خطأ أثناء إعادة فتح الامتحان: ' + err.message);
+    }
+  };
+
+  const handleStartEdit = (row: any) => {
+    setEditingRowId(row.id);
+    setTempScores({
+      darasy: row.derasy_score || 0,
+      mahfoudat: row.mahfouzat_score || 0,
+      qebty1: row.qebty_lvl1_score || 0,
+      qebty2: row.qebty_lvl2_score || 0
+    });
+  };
+
+  const handleSaveScores = async (rowId: string) => {
+    try {
+      const { error } = await supabase
+        .from('exam_submissions')
+        .update({
+          derasy_score: tempScores.darasy,
+          mahfouzat_score: tempScores.mahfoudat,
+          qebty_lvl1_score: tempScores.qebty1,
+          qebty_lvl2_score: tempScores.qebty2,
+        })
+        .eq('student_id', rowId);
+
+      if (error) throw error;
+
+      setSupabaseSubmissions(prev => prev.map(r => {
+        if (r.id === rowId) {
+          const d = Number(tempScores.darasy);
+          const m = Number(tempScores.mahfoudat);
+          const q1 = Number(tempScores.qebty1);
+          const q2 = Number(tempScores.qebty2);
+          return {
+            ...r,
+            derasy_score: d,
+            mahfouzat_score: m,
+            qebty_lvl1_score: q1,
+            qebty_lvl2_score: q2,
+            academicScore: d + m + q1 + q2
+          };
+        }
+        return r;
+      }));
+
+      setEditingRowId(null);
+      alert("تم تحديث الدرجات بنجاح!");
+    } catch (err: any) {
+      console.error("Error updating scores:", err);
+      alert("حدث خطأ أثناء حفظ الدرجات: " + err.message);
     }
   };
 
@@ -1113,33 +1170,115 @@ export const ResultsViewer: React.FC<{
                             {honorData.title} ({honorData.percentage.toFixed(1)}%)
                           </div>
                         )}
-                        {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
-                      </td>
-                      {isAdmin && (
-                        <td className="p-4 border-l border-slate-50">
-                          {hasScore && (
-                            <div className="flex gap-2 items-center flex-wrap">
-                              <button 
-                                onClick={() => handleResetRow(row.id!)}
-                                title="إعادة الامتحان"
-                                className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-all border border-rose-100"
-                              >
-                                <RefreshCcw size={14} />
-                              </button>
-                              
-                            
-                              <button className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black transition-all">
-                                تعديل الدرجات
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      )}
+                       {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
+</td>
+{isAdmin && (
+  <td className="p-4 border-l border-slate-50">
+    {hasScore && (
+      <div className="flex gap-2 items-center flex-wrap">
+        {/* زر إعادة الامتحان */}
+        <button 
+          onClick={() => handleResetRow(row.id!)}
+          title="إعادة الامتحان"
+          className="p-2 bg-rose-50 text-rose-600 rounded-lg hover:bg-rose-100 transition-all border border-rose-100"
+        >
+          <RefreshCcw size={14} />
+        </button>
+        
+        {/* هنا الشرط السحري: لو السطر في وضع التعديل اعرض أزرار الحفظ والإلغاء */}
+        {editingRowId === row.id ? (
+          <>
+            <button 
+              onClick={() => handleSaveScores(row.id!)}
+              className="px-3 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black transition-all"
+            >
+              حفظ
+            </button>
+            <button 
+              onClick={() => setEditingRowId(null)}
+              className="px-3 py-1 bg-slate-400 hover:bg-slate-500 text-white rounded-lg text-[10px] font-black transition-all"
+            >
+              إلغاء
+            </button>
+          </>
+        ) : (
+          /* لو السطر في الوضع العادي اعرض زرار تعديل الدرجات */
+          <button 
+            onClick={() => handleStartEdit(row)}
+            className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black transition-all"
+          >
+            تعديل الدرجات
+          </button>
+        )}
+      </div>
+    )}
+  </td>
+)}
                       {allHeaders.map((header, idx) => {
                         if (header === 'المرحلة') {
                           return (
                             <td key={idx} className="p-4 font-bold whitespace-nowrap border-l border-slate-50 text-slate-700 text-right">
                               {row.stage}
+                            </td>
+                          );
+                        }
+
+                        // Edit Mode inputs for score columns
+                        if (editingRowId === row.id) {
+                          if (header === 'دراسي') {
+                            return (
+                              <td key={idx} className="p-4 whitespace-nowrap border-l border-slate-50 text-right">
+                                <input
+                                  type="number"
+                                  value={tempScores.darasy}
+                                  onChange={(e) => setTempScores({ ...tempScores, darasy: Number(e.target.value) })}
+                                  className="w-16 p-1 border border-amber-300 rounded text-center text-black focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                              </td>
+                            );
+                          }
+                          if (header === 'محفوظات') {
+                            return (
+                              <td key={idx} className="p-4 whitespace-nowrap border-l border-slate-50 text-right">
+                                <input
+                                  type="number"
+                                  value={tempScores.mahfoudat}
+                                  onChange={(e) => setTempScores({ ...tempScores, mahfoudat: Number(e.target.value) })}
+                                  className="w-16 p-1 border border-amber-300 rounded text-center text-black focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                              </td>
+                            );
+                          }
+                          if (header === 'قبطي 1') {
+                            return (
+                              <td key={idx} className="p-4 whitespace-nowrap border-l border-slate-50 text-right">
+                                <input
+                                  type="number"
+                                  value={tempScores.qebty1}
+                                  onChange={(e) => setTempScores({ ...tempScores, qebty1: Number(e.target.value) })}
+                                  className="w-16 p-1 border border-amber-300 rounded text-center text-black focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                              </td>
+                            );
+                          }
+                          if (header === 'قبطي 2') {
+                            return (
+                              <td key={idx} className="p-4 whitespace-nowrap border-l border-slate-50 text-right">
+                                <input
+                                  type="number"
+                                  value={tempScores.qebty2}
+                                  onChange={(e) => setTempScores({ ...tempScores, qebty2: Number(e.target.value) })}
+                                  className="w-16 p-1 border border-amber-300 rounded text-center text-black focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                              </td>
+                            );
+                          }
+                        }
+                        if (header === 'الدرجة الكلية' && editingRowId === row.id) {
+                          const currentTotal = Number(tempScores.darasy) + Number(tempScores.mahfoudat) + Number(tempScores.qebty1) + Number(tempScores.qebty2);
+                          return (
+                            <td key={idx} className="p-4 font-bold whitespace-nowrap border-l border-slate-50 text-indigo-600 font-black text-lg text-right">
+                              {currentTotal}
                             </td>
                           );
                         }
@@ -1876,7 +2015,6 @@ export const ResultsViewer: React.FC<{
                     </tbody>
                   </table>
                 </div>
-
                 {/* Page Footer */}
                 <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 border-t border-slate-200 pt-3 mt-4">
                   <p>   الكنترول - مهرجان الكرازة المرقسية</p>
