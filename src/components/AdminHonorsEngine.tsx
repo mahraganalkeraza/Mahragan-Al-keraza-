@@ -77,19 +77,20 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
   const { studentRanks, exportData } = useMemo(() => {
     if (!isOpen || !results || results?.length === 0) return { studentRanks: {}, exportData: [] };
 
-    const grouped: Record<string, Record<string, { result: Result, percentage: number }[]>> = {};
+    // 1. تجميع كافة الطلاب حسب الكنيسة والمرحلة
+    const grouped: Record<string, Record<string, { result: Result; percentage: number; score: number; maxScore: number; subject: string }[]>> = {};
 
     const validResults = (results || []).filter(r => r && (r.academicScore !== undefined || r.derasy_score !== undefined || r.score !== undefined || r.data));
-    const totalCount = validResults?.length || 0;
 
     validResults.forEach(r => {
       const stage = r.academicScore !== undefined ? r.stage : r.data?.['دراسي'] || r.stage;
       const church = r.churchName || 'غير محدد';
-      
       const stWeights = weights[stage] || {};
+      
       let bestPercentage = 0;
-
-      const scores: Record<string, number> = {};
+      let bestScore = 0;
+      let bestMaxScore = 0;
+      let bestSubject = '';
 
       for (const subj of systemSubjects) {
         let score = 0;
@@ -101,70 +102,139 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
 
         score = Number(score) || 0;
         const maxScore = Number(stWeights[subj]) || 0;
+        
         if (maxScore > 0 && score > 0) {
           const perc = (score / maxScore) * 100;
           if (perc > bestPercentage) {
             bestPercentage = perc;
+            bestScore = score;
+            bestMaxScore = maxScore;
+            bestSubject = subj;
           }
         }
       }
 
-      if (bestPercentage >= minThreshold) {
+      if (bestMaxScore > 0) {
         if (!grouped[church]) grouped[church] = {};
         if (!grouped[church][stage]) grouped[church][stage] = [];
-        grouped[church][stage].push({ result: r, percentage: bestPercentage });
+        grouped[church][stage].push({
+          result: r,
+          percentage: bestPercentage,
+          score: bestScore,
+          maxScore: bestMaxScore,
+          subject: bestSubject
+        });
       }
     });
 
-    const sRanks: Record<string, { rank: number; colorClass: string, percentage: number, title: string }> = {};
+    const sRanks: Record<string, { rank: number; colorClass: string; percentage: number; title: string }> = {};
     const eData: any[] = [];
 
+    // 2. تطبيق الترتيب النسبي بناءً على النسبة المئوية المكافئة لخصم الدرجات
     Object.keys(grouped).forEach(church => {
       Object.keys(grouped[church]).forEach(stage => {
         const students = grouped[church][stage] || [];
-        const uniqueValues = Array.from(new Set((students || []).map(s => s?.percentage))).sort((a, b) => b - a);
+        if (students.length === 0) return;
 
-        students.forEach((s) => {
-          if (!s) return;
-          const rank = uniqueValues.indexOf(s.percentage) + 1;
-          if (rank <= 3) {
-            const isTied = (students || []).filter(x => x?.percentage === s?.percentage)?.length > 1;
-            
-            let color = '';
-            let rankName = '';
-            if (rank === 1) { color = 'bg-green-200'; rankName = 'أول'; }
-            if (rank === 2) { color = 'bg-yellow-200'; rankName = 'ثاني'; }
-            if (rank === 3) { color = 'bg-orange-100'; rankName = 'ثالث'; }
-            
-            const title = `مركز ${rankName}${isTied ? ' مكرر' : ''}`;
+        // إيجاد أعلى نسبة مئوية تم تحقيقها في المجموعة
+        const maxPercentageInGroup = Math.max(...students.map(s => s.percentage));
 
-            if (s.result?.id) {
-              sRanks[s.result.id] = { rank, colorClass: color, percentage: s.percentage, title };
+        // هل يوجد من حصل على الدرجة النهائية (100%)؟
+        const hasPerfectScore = maxPercentageInGroup >= 100;
+
+        // تصفية الطلاب المؤهلين (الذين حققوا الحد الأدنى للتكريم)
+        const qualifiedStudents = students.filter(s => s.percentage >= minThreshold);
+
+        qualifiedStudents.forEach(s => {
+          // حساب النسبة المئوية التي تعادل "درجة واحدة" من المجموع الكلي لمسابقة هذا الطالب
+          const singlePointPercentage = (1 / s.maxScore) * 100;
+
+          let rank = 0;
+
+          if (hasPerfectScore) {
+            // الحالة الأولى: يوجد مركز أول حقيقي جاب 100%
+            const diffPercentage = 100 - s.percentage;
+
+            if (diffPercentage === 0) {
+              rank = 1; // الأول: جاب 100% كاملة
+            } else if (diffPercentage <= singlePointPercentage + 0.01) { 
+              rank = 2; // الثاني: ناقص درجة واحدة أو أقل (مع سماحية بسيطة لتقريب الكسور)
+            } else if (diffPercentage <= (singlePointPercentage * 2) + 0.01) {
+              rank = 3; // الثالث: ناقص درجتين أو أقل
             }
-            
-            eData.push({
-               'الكود': s.result?.id || '',
-               'الاسم': s.result?.studentName || '',
-               'الكنيسة': church,
-               'المرحلة': stage,
-               'النسبة المئوية (%)': parseFloat((s.percentage || 0).toFixed(2)),
-               'المركز': title,
-               'رقم المركز': rank
-            });
+          } else {
+            // الحالة الثانية: أعلى واحد مش جايب 100% (ترتيب نسبي)
+            // نقارن نسبة الطالب بالنسبة المئوية القصوى المحققة في الكنيسة والمرحلة
+            const diffPercentage = maxPercentageInGroup - s.percentage;
+
+            if (diffPercentage === 0) {
+              rank = 1; // الأول نسبياً: صاحب أعلى نسبة مئوية
+            } else if (diffPercentage <= singlePointPercentage + 0.01) {
+              rank = 2; // الثاني نسبياً: يقل عن الأول بما يعادل درجة واحدة أو أقل
+            } else if (diffPercentage <= (singlePointPercentage * 2) + 0.01) {
+              rank = 3; // الثالث نسبياً: يقل عن الأول بما يعادل درجتين أو أقل
+            }
+          }
+
+          if (rank >= 1 && rank <= 3) {
+            assignRank(s, rank, church, stage);
           }
         });
       });
     });
 
-    // Sort Export Data: Church -> Stage -> Rank
+    // دالة مساعدة لتسجيل المراكز والتصدير
+    function assignRank(s: any, rank: number, church: string, stage: string) {
+      let color = '';
+      let rankName = '';
+      if (rank === 1) { color = 'bg-green-200'; rankName = 'أول'; }
+      if (rank === 2) { color = 'bg-yellow-200'; rankName = 'ثاني'; }
+      if (rank === 3) { color = 'bg-orange-100'; rankName = 'ثالث'; }
+
+      const title = `مركز ${rankName}`;
+
+      if (s.result?.id) {
+        sRanks[s.result.id] = { rank, colorClass: color, percentage: s.percentage, title };
+      }
+
+      eData.push({
+        'الكود': s.result?.id || '',
+        'الاسم': s.result?.studentName || '',
+        'الكنيسة': church,
+        'المرحلة': stage,
+        'المسابقة الأعلى': s.subject,
+        'الدرجة الفعلية': s.score,
+        'الدرجة الكلية للمسابقة': s.maxScore,
+        'النسبة المئوية (%)': parseFloat((s.percentage || 0).toFixed(2)),
+        'المركز': title,
+        'رقم المركز': rank
+      });
+    }
+
+    // إضافة كلمة "مكرر" ديناميكياً للمراكز المتطابقة
+    eData.forEach(item => {
+      const duplicates = eData.filter(
+        x => x['الكنيسة'] === item['الكنيسة'] && 
+             x['المرحلة'] === item['المرحلة'] && 
+             x['رقم المركز'] === item['رقم المركز']
+      );
+      if (duplicates.length > 1) {
+        item['المركز'] = `${item['المركز']} مكرر`;
+        if (sRanks[item['الكود']]) {
+          sRanks[item['الكود']].title = `${sRanks[item['الكود']].title} مكرر`;
+        }
+      }
+    });
+
+    // ترتيب البيانات للتصدير
     eData.sort((a, b) => {
-       if (a['الكنيسة'] !== b['الكنيسة']) return a['الكنيسة'].localeCompare(b['الكنيسة']);
-       if (a['المرحلة'] !== b['المرحلة']) return a['المرحلة'].localeCompare(b['المرحلة']);
-       return a['رقم المركز'] - b['رقم المركز'];
+      if (a['الكنيسة'] !== b['الكنيسة']) return a['الكنيسة'].localeCompare(b['الكنيسة']);
+      if (a['المرحلة'] !== b['المرحلة']) return a['المرحلة'].localeCompare(b['المرحلة']);
+      return a['رقم المركز'] - b['رقم المركز'];
     });
 
     return { studentRanks: sRanks, exportData: eData };
-  }, [results, weights, minThreshold, isOpen]);
+  }, [results, weights, minThreshold, isOpen, systemSubjects]);
 
   useEffect(() => {
     if (onHonorsUpdate) {
@@ -190,7 +260,6 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
     document.body.removeChild(link);
   };
 
-  // If enabled is false (e.g., church user), don't render.
   if (!enabled) return null;
 
   return (
@@ -291,5 +360,4 @@ export const AdminHonorsEngine: React.FC<{ results: Result[], enabled?: boolean,
       )}
     </div>
   );
-}
-
+};
