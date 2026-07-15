@@ -46,7 +46,7 @@ export const ResultsViewer: React.FC<{
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [pdfProgress, setPdfProgress] = useState(0);
   const [pdfStatus, setPdfStatus] = useState('');
-  const [honorsRanks, setHonorsRanks] = useState<Record<string, { rank: number; colorClass: string, percentage: number, title: string }>>({});
+  const [honorsRanks, setHonorsRanks] = useState<Record<string, { rank: number; colorClass: string; percentage: number; title: string; subject: string }>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [activeTab, setActiveTab] = useState<'all' | 'online' | 'bubble_sheet' | 'paper'>('all');
   const [showManualModal, setShowManualModal] = useState(false);
@@ -1301,17 +1301,11 @@ export const ResultsViewer: React.FC<{
                   };
                   
                   const hasScore = row.academicScore !== undefined && row.academicScore !== null;
-                  const honorData = row.id ? honorsRanks[row.id] : null;
-                  const rowClass = honorData ? honorData.colorClass : 'hover:bg-slate-50 transition-colors';
+                  const rowClass = 'hover:bg-slate-50 transition-colors';
 
                   return (
                     <tr key={row.id || index} className={rowClass}>
                       <td className="p-4 font-bold text-slate-400 text-sm whitespace-nowrap border-l border-slate-50 relative">
-                        {honorData && (
-                          <div className="absolute top-1 right-2 text-[9px] font-black bg-white/50 px-1 py-0.5 rounded text-slate-700 border border-black/10">
-                            {honorData.title} ({honorData.percentage.toFixed(1)}%)
-                          </div>
-                        )}
                        {(currentPage - 1) * ITEMS_PER_PAGE + index + 1}
 </td>
 {isAdmin && (
@@ -1466,6 +1460,49 @@ export const ResultsViewer: React.FC<{
                               <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${bgClass}`}>
                                 {statusVal}
                               </span>
+                            </td>
+                          );
+                        }
+
+                        const subjectMapping: Record<string, string> = {
+                          'دراسي': 'دراسي',
+                          'محفوظات': 'محفوظات',
+                          'قبطي 1': 'قبطي مستوى أول',
+                          'قبطي 2': 'قبطي مستوى ثاني'
+                        };
+
+                        if (subjectMapping[header]) {
+                          const currentSubject = subjectMapping[header];
+                          const scoreVal = rowData[header];
+                          const scoreNum = Number(scoreVal) || 0;
+                          
+                          const rank = (row.id && scoreNum > 0) ? honorsRanks[`${row.id}_${currentSubject}`] : null;
+                          const cellBg = rank ? rank.colorClass : '';
+                          
+                          let cupEmoji = '';
+                          if (rank) {
+                            if (rank.rank === 1) cupEmoji = '🏆';
+                            else if (rank.rank === 2) cupEmoji = '🥈';
+                            else if (rank.rank === 3) cupEmoji = '🥉';
+                          }
+
+                          return (
+                            <td 
+                              key={idx} 
+                              className={`p-4 font-bold whitespace-nowrap border-l border-slate-50 text-right transition-colors ${cellBg || 'text-slate-700'}`}
+                            >
+                              <div className="flex items-center justify-between gap-2 min-w-[80px]">
+                                <span>{scoreVal !== undefined && scoreVal !== null ? scoreVal : '-'}</span>
+                                {rank && (
+                                  <span 
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black bg-white/80 border border-black/5 shadow-sm text-slate-800"
+                                    title={`${rank.title} (${rank.percentage.toFixed(1)}%)`}
+                                  >
+                                    <span>{cupEmoji}</span>
+                                    <span>{rank.title.replace('مركز ', '')}</span>
+                                  </span>
+                                )}
+                              </div>
                             </td>
                           );
                         }

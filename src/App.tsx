@@ -1289,7 +1289,7 @@ function AppComponent() {
     try {
       const { data, error } = await supabase
         .from('registrations')
-        .select('student_id, churchName, timestamp')
+        .select('id, student_id, churchName, timestamp')
         .neq('name', 'SYSTEM_LOCK')
         .gt('timestamp', oneDayAgo)
         .order('timestamp', { ascending: false })
@@ -1298,7 +1298,7 @@ function AppComponent() {
       if (!error && data) {
         data.forEach((item: any) => {
           tempNotifs.push({
-            id: `reg-${item.id}`,
+            id: `reg-${item.id || item.student_id || Math.random()}`,
             sourceTable: 'registrations',
             churchName: item.churchName || 'كنيسة غير معروفة',
             message: `كنيسة ${item.churchName || 'كنيسة غير معروفة'} تقوم بالتسجيل في الأنشطة`,
