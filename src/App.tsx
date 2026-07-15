@@ -7470,6 +7470,7 @@ function AppComponent() {
                 )}
 
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 mb-6 flex flex-col md:flex-row items-end gap-4 shadow-sm">
+                  {/* 1. فلتر الكنيسة */}
                   {userRole === 'admin' && (
                     <div className="flex-1 w-full flex flex-col gap-1.5">
                       <label className="text-[10px] font-black text-slate-400">البلد/الكنيسة</label>
@@ -7486,6 +7487,7 @@ function AppComponent() {
                     </div>
                   )}
 
+                  {/* 2. فلتر المرحلة */}
                   <div className="flex-1 w-full flex flex-col gap-1.5">
                     <label className="text-[10px] font-black text-slate-400">المرحلة</label>
                     <select 
@@ -7494,10 +7496,15 @@ function AppComponent() {
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                     >
                       <option value="الكل">كل المراحل</option>
-                      {dynamicLevels.map(l => <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>{typeof l === 'string' ? l : l.name}</option>)}
+                      {dynamicLevels.map(l => (
+                        <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>
+                          {typeof l === 'string' ? l : l.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
+                  {/* 3. فلتر المسابقة */}
                   <div className="flex-1 w-full flex flex-col gap-1.5">
                     <label className="text-[10px] font-black text-slate-400">المسابقة</label>
                     <select 
@@ -7512,94 +7519,118 @@ function AppComponent() {
                     </select>
                   </div>
 
+                  {/* 4. البحث بالاسم */}
                   <div className="flex-2 w-full flex flex-col gap-1.5 relative">
                     <label className="text-[10px] font-black text-slate-400">البحث بالاسم</label>
                     <div className="relative">
                       <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                       <input 
                         type="text"
-                        placeholder="ابحث بالاسم..."
+                        placeholder="ابحث بالاسم واضغط Enter..."
                         className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                         value={participantSearch}
                         onChange={(e) => setParticipantSearch(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && fetchParticipantsPage(true, true, participantSearch)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            fetchParticipantsPage(true, true, participantSearch);
+                          }
+                        }}
                       />
                     </div>
                   </div>
 
+                  {/* 5. زر بحث */}
                   <button 
                     onClick={() => fetchParticipantsPage(true, true, participantSearch)}
                     className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black shadow-md hover:bg-slate-800 transition-colors w-full md:w-auto mt-2 md:mt-0"
                   >
-                    تطبيق 
+                    بحث
                   </button>
                 </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="bg-white text-[10px] font-black text-slate-500 uppercase">
+                          <th className="p-4 border-b border-slate-100">كود المخدوم</th>
+                          <th className="p-4 border-b border-slate-100">الاسم</th>
+                          <th className="p-4 border-b border-slate-100">النوع</th>
+                          <th className="p-4 border-b border-slate-100">الكنيسة</th>
+                          <th className="p-4 border-b border-slate-100">المرحلة</th>
+                          <th className="p-4 border-b border-slate-100">المسابقات</th>
+                          <th className="p-4 border-b border-slate-100 text-center">الإجراءات</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredParticipantsList
+                          .slice((participantPageCount - 1) * 20, participantPageCount * 20)
+                          .map(p => (
+                            <tr key={p.id} className="bg-white hover:bg-slate-50 transition-colors">
+                              
+                              {/* 1. كود المخدوم */}
+                              <td className="p-4 font-mono text-slate-500 bg-slate-50/50 rounded-md text-right text-xs">
+                                {p.id}
+                              </td>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right border-collapse">
-                    <thead>
-                      <tr className="bg-white text-[10px] font-black text-slate-500 uppercase">
-                        <th className="p-4 border-b border-slate-100">الاسم</th>
-                        <th className="p-4 border-b border-slate-100">النوع</th>
-                        <th className="p-4 border-b border-slate-100">الكنيسة</th>
-                        <th className="p-4 border-b border-slate-100">المرحلة</th>
-                        <th className="p-4 border-b border-slate-100">المسابقات</th>
-                        <th className="p-4 border-b border-slate-100 text-center">الإجراءات</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filteredParticipantsList
-                        .slice((participantPageCount - 1) * 20, participantPageCount * 20)
-                        .map(p => (
-                          <tr key={p.id} className="bg-white hover:bg-slate-50 transition-colors">
-                            <td className="p-4 font-bold text-slate-800 text-sm">{p.name}</td>
-                            <td className="p-4 text-slate-600 text-xs">{p.gender || '--'}</td>
-                            <td className="p-4 text-slate-600 text-xs">{p.churchName}</td>
-                            <td className="p-4 text-slate-600 text-xs">{p.stage}</td>
-                            <td className="p-4">
-                              <div className="flex flex-wrap gap-1">
-                                {(p.competitions || []).map((c, i) => (
-                                  <span key={i} className="px-2 py-0.5 bg-primary/5 text-primary rounded-full text-[9px] font-black">
-                                    {c}
-                                  </span>
-                                ))}
-                              </div>
-                            </td>
-                            <td className="p-4">
-                              <div className="flex items-center justify-center gap-2">
-                                <button 
-                                  onClick={() => handleResetExam(p.id, p.name)}
-                                  className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
-                                  title="إعادة فتح الامتحان"
-                                >
-                                  <RotateCcw size={18} />
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    setActiveSection('registration');
-                                    handleEditParticipant(p);
-                                  }}
-                                  className="p-2 text-slate-400 hover:text-coptic-blue transition-colors"
-                                  title="تعديل"
-                                >
-                                  <Pencil size={18} />
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    confirmAndDeleteParticipant(p.id);
-                                  }}
-                                  className="p-2 text-slate-400 hover:text-coptic-red transition-colors"
-                                  title="حذف"
-                                >
-                                  <Trash2 size={18} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
+                              {/* 2. الاسم */}
+                              <td className="p-4 font-bold text-slate-800 text-sm">{p.name}</td>
+
+                              {/* 3. النوع */}
+                              <td className="p-4 text-slate-600 text-xs">{p.gender || '--'}</td>
+
+                              {/* 4. الكنيسة */}
+                              <td className="p-4 text-slate-600 text-xs">{p.churchName}</td>
+
+                              {/* 5. المرحلة */}
+                              <td className="p-4 text-slate-600 text-xs">{p.stage}</td>
+
+                              {/* 6. المسابقات */}
+                              <td className="p-4">
+                                <div className="flex flex-wrap gap-1">
+                                  {(p.competitions || []).map((c, i) => (
+                                    <span key={i} className="px-2 py-0.5 bg-primary/5 text-primary rounded-full text-[9px] font-black">
+                                      {c}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+
+                              {/* 7. الإجراءات */}
+                              <td className="p-4">
+                                <div className="flex items-center justify-center gap-2">
+                                  <button 
+                                    onClick={() => handleResetExam(p.id, p.name)}
+                                    className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
+                                    title="إعادة فتح الامتحان"
+                                  >
+                                    <RotateCcw size={18} />
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      setActiveSection('registration');
+                                      handleEditParticipant(p);
+                                    }}
+                                    className="p-2 text-slate-400 hover:text-coptic-blue transition-colors"
+                                    title="تعديل"
+                                  >
+                                    <Pencil size={18} />
+                                  </button>
+                                  <button 
+                                    onClick={() => {
+                                      confirmAndDeleteParticipant(p.id);
+                                    }}
+                                    className="p-2 text-slate-400 hover:text-coptic-red transition-colors"
+                                    title="حذف"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                </div>
+                              </td>
+
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
 
                 <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
                   <PaginationComponent 

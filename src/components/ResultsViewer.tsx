@@ -95,6 +95,7 @@ export const ResultsViewer: React.FC<{
   const ITEMS_PER_PAGE = 20;
 
   const [searchName, setSearchName] = useState('');
+  const [searchChurch, setSearchChurch] = useState('');
   const [filterStage, setFilterStage] = useState('الكل');
   const [filterCompetition, setFilterCompetition] = useState('الكل');
 
@@ -373,12 +374,18 @@ export const ResultsViewer: React.FC<{
       list = list.filter(r => r.studentName?.toLowerCase().includes(sLower));
     }
 
-    // 2. Filter by Stage
+    // 2. Filter by Church Name
+    if (searchChurch.trim() !== '') {
+      const cLower = searchChurch.toLowerCase();
+      list = list.filter(r => r.churchName?.toLowerCase().includes(cLower));
+    }
+
+    // 3. Filter by Stage
     if (filterStage !== 'الكل') {
       list = list.filter(r => r.stage === filterStage);
     }
 
-    // 3. Filter by Competition/Exam Category
+    // 4. Filter by Competition/Exam Category
     if (filterCompetition !== 'الكل') {
       list = list.filter(r => {
         return r.academicScore !== null && r.academicScore !== undefined;
@@ -386,7 +393,7 @@ export const ResultsViewer: React.FC<{
     }
 
     return list;
-  }, [supabaseSubmissions, isAdmin, activeUserChurch, searchName, filterStage, filterCompetition]);
+  }, [supabaseSubmissions, isAdmin, activeUserChurch, searchName, searchChurch, filterStage, filterCompetition]);
 
   const results = filteredResults;
 
@@ -1184,8 +1191,9 @@ export const ResultsViewer: React.FC<{
           </div>
         </div>
 
-        {/* Real-time Filter Controls (3 filters) */}
+        {/* Real-time Filter Controls (4 filters) */}
         <div className="bg-slate-50 p-5 rounded-2xl border border-slate-150 mb-6 flex flex-col md:flex-row gap-4 text-right" dir="rtl" id="results-realtime-filters">
+          {/* 1. فلتر البحث بالاسم */}
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-black text-slate-500 mb-1.5">البحث بالاسم</label>
             <input 
@@ -1199,6 +1207,23 @@ export const ResultsViewer: React.FC<{
               className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 shadow-sm"
             />
           </div>
+
+          {/* 2. فلتر البحث بالكنيسة */}
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-black text-slate-500 mb-1.5">البحث بالكنيسة</label>
+            <input 
+              type="text"
+              placeholder="ابحث باسم الكنيسة..."
+              value={searchChurch}
+              onChange={(e) => {
+                setSearchChurch(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 shadow-sm"
+            />
+          </div>
+
+          {/* 3. تصفية بالمرحلة */}
           <div className="w-full md:w-52">
             <label className="block text-xs font-black text-slate-500 mb-1.5">تصفية بالمرحلة</label>
             <select
@@ -1215,6 +1240,8 @@ export const ResultsViewer: React.FC<{
               ))}
             </select>
           </div>
+
+          {/* 4. تصفية بالمسابقة */}
           <div className="w-full md:w-52">
             <label className="block text-xs font-black text-slate-500 mb-1.5">تصفية بالمسابقة</label>
             <select
