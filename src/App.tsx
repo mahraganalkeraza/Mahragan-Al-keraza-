@@ -1123,6 +1123,75 @@ function AppComponent() {
   const [resultsFilterGrade, setResultsFilterGrade] = useState('الكل');
   const [isScanning, setIsScanning] = useState(false);
 
+  // 1. Verify Auth Version with Server on Initialization (Strict Session Invalidation Check)
+  useEffect(() => {
+    const checkAuthVersionAndInvalidate = async () => {
+      try {
+        const response = await fetch('/api/auth-version');
+        if (!response.ok) return;
+        const resData = await response.json();
+        
+        if (resData && resData.auth_version) {
+          const serverVersion = String(resData.auth_version);
+          const cachedVersion = localStorage.getItem('cached_auth_version');
+          
+          const hasActiveSession = !!localStorage.getItem('church_session') || 
+                                   !!localStorage.getItem('userProfileCache') || 
+                                   !!localStorage.getItem('gate_access_granted_hourly') || 
+                                   !!localStorage.getItem('gate_access_granted');
+                                   
+          if (hasActiveSession) {
+            if (!cachedVersion) {
+              // Lock in the current server version on first run
+              localStorage.setItem('cached_auth_version', serverVersion);
+            } else if (cachedVersion !== serverVersion) {
+              console.warn(`[Security Alert] Auth version mismatch! Client cached: ${cachedVersion}, Server current: ${serverVersion}`);
+              
+              // Clear everything
+              localStorage.clear();
+              sessionStorage.clear();
+              
+              // Clear cookies
+              const cookies = document.cookie.split(";");
+              for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i];
+                const eqPos = cookie.indexOf("=");
+                const name = eqPos > -1 ? cookie.substring(0, eqPos) : cookie;
+                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+              }
+              
+              alert("تنبيه أمني: تم تحديث رموز أو صلاحيات الدخول للنظام. يرجى إعادة تسجيل الدخول لتنشيط جلستك آمنًا.");
+              window.location.reload();
+            }
+          } else {
+            // Keep the cached version in sync anyway
+            localStorage.setItem('cached_auth_version', serverVersion);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to verify auth version against server:", err);
+      }
+    };
+    
+    checkAuthVersionAndInvalidate();
+  }, []);
+
+  // 2. Automated Service Worker Update-Check on Route/Section Change
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration().then((registration) => {
+        if (registration) {
+          registration.update().then(() => {
+            if (registration.waiting) {
+              // Force hard refresh if a waiting worker is detected
+              registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+            }
+          }).catch(err => console.warn("SW update call failed:", err));
+        }
+      });
+    }
+  }, [activeSection, adminActiveTab]);
+
   const handleScanSuccess = async (decodedText: string) => {
     setIsScanning(false);
     // 1. Fetch student data by ID
@@ -4563,7 +4632,19 @@ function AppComponent() {
         role: 'admin' 
       }));
       localStorage.setItem('userProfileCache', JSON.stringify(adminProfile));
-      setIsLoading(false);
+      
+      // Sync auth version on successful admin login
+      fetch('/api/auth-version')
+        .then(res => res.json())
+        .then(resData => {
+          if (resData && resData.auth_version) {
+            localStorage.setItem('cached_auth_version', String(resData.auth_version));
+          }
+        })
+        .catch(err => console.error("Error setting initial auth version:", err))
+        .finally(() => {
+          setIsLoading(false);
+        });
       return;
     }
 
@@ -4612,6 +4693,16 @@ function AppComponent() {
         role: 'servant' 
       }));
       localStorage.setItem('userProfileCache', JSON.stringify(profile));
+
+      // Sync auth version on successful church login
+      fetch('/api/auth-version')
+        .then(res => res.json())
+        .then(resData => {
+          if (resData && resData.auth_version) {
+            localStorage.setItem('cached_auth_version', String(resData.auth_version));
+          }
+        })
+        .catch(err => console.error("Error setting initial auth version:", err));
 
     } catch (err: any) {
       console.error('Login error:', err);

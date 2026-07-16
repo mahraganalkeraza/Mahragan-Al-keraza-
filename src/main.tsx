@@ -5,11 +5,21 @@ import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
 // كود إجباري لتحديث المتصفح تلقائياً عند نزول نسخة جديدة
-const CURRENT_VERSION = "v1.2.0-church-lock"; // المبرمج يغير الرقم ده مع كل رفعة
+const CURRENT_VERSION = "v1.2.1-security-lock"; // المبرمج يغير الرقم ده مع كل رفعة
 
 if (localStorage.getItem("app_version") !== CURRENT_VERSION) {
   localStorage.setItem("app_version", CURRENT_VERSION);
   window.location.reload(); // بيعمل ريفريش إجباري للمتصفح ويمسح الكاش تلقائياً
+}
+
+if ('serviceWorker' in navigator) {
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
+  });
 }
 
 createRoot(document.getElementById('root')!).render(

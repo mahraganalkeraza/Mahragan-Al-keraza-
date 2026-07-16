@@ -879,41 +879,42 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                 <p className="text-[11px] text-slate-400 mt-1">يرجى إدخال الرقم السري المخصص لتفعيل البحث بالاسم للجان الطوارئ</p>
               </div>
 
-              <form 
+               <form 
                 onSubmit={async (e) => {
                   e.preventDefault();
                   try {
-                    // جلب الباسورد الحالي مباشرة من السيرفر لضمان عدم الكاش
-                    const { data, error } = await supabase
-                      .from('system_settings')
-                      .select('admin_password')
-                      .single();
+                    // التحقق من الرقم السري عبر السيرفر بشكل آمن وبدون أي تحقق محلي
+                    const response = await fetch('/api/verify-gate-password', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({ password: passwordInput })
+                    });
 
-                    if (error) throw error;
+                    if (!response.ok) {
+                      throw new Error('فشل الاتصال بخادم التحقق');
+                    }
 
-                    const currentServerPassword = data?.admin_password || '111155'; // '111155' كقيمة احتياطية
+                    const resData = await response.json();
 
-                    if (passwordInput === currentServerPassword) {
+                    if (resData.success) {
                       setIsAdminUnlocked(true);
                       setLoginMethod('name');
                       setShowPasswordModal(false);
                       setPasswordInput('');
                       setPasswordError('');
+                      
+                      // حفظ إصدار الصلاحيات الحالي في الكاش لضمان توافق الجلسة
+                      if (resData.auth_version) {
+                        localStorage.setItem('cached_auth_version', String(resData.auth_version));
+                      }
                     } else {
                       setPasswordError('رمز المرور غير صحيح! يرجى المحاولة مرة أخرى.');
                     }
                   } catch (err) {
                     console.error("خطأ أثناء التحقق من رمز المرور:", err);
-                    // في حال انقطاع النت أو حدوث خطأ، نقارنه محلياً بالباسورد الجديد كدعم احتياطي (Fallback)
-                    if (passwordInput === '111155') {
-                      setIsAdminUnlocked(true);
-                      setLoginMethod('name');
-                      setShowPasswordModal(false);
-                      setPasswordInput('');
-                      setPasswordError('');
-                    } else {
-                      setPasswordError('حدث خطأ في الشبكة أو رمز المرور غير صحيح.');
-                    }
+                    setPasswordError('حدث خطأ في الاتصال بالخادم، يرجى التحقق من الشبكة وإعادة المحاولة.');
                   }
                 }}
                 className="space-y-4"

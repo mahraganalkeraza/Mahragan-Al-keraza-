@@ -12,6 +12,12 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 // Database constants
 const DB_NAME = 'gateway-pwa-db';
 const DB_VERSION = 1;
