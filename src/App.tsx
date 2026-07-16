@@ -78,6 +78,7 @@ import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
 import { ExamLoginPortal } from './components/ExamLoginPortal';
+import { TemplateExcelExporter } from './components/TemplateExcelExporter';
 import AdminDisplayGate from './components/AdminDisplayGate';
 import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
 import { supabase } from './lib/supabaseClient';
@@ -413,6 +414,7 @@ const ALL_ADMIN_TABS = [
   { id: 'rotating_gate', label: ' Daily QR  ', icon: QrCode },
   { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
   { id: 'dynamic_management', label: 'إعدادات المهرجان ', icon: Settings },
+  { id: 'official_templates', label: 'تصدير القوالب الرسمية', icon: FileSpreadsheet },
   { id: 'system_settings', label: 'إعدادات الموقع', icon: Settings }
 ];
 
@@ -8205,6 +8207,16 @@ function AppComponent() {
                 </div>
                 )}
               </div>
+            )}
+
+            {adminActiveTab === 'official_templates' && (
+              <section className="space-y-8">
+                <TemplateExcelExporter 
+                  participants={allChurchParticipants} 
+                  userChurch={churchName} 
+                  isAdmin={userRole === 'admin'} 
+                />
+              </section>
             )}
 
             {adminActiveTab === 'system_settings' && (
