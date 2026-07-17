@@ -88,13 +88,34 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     }
   }, [isAdmin, userChurch]);
 
-  // Get unique churches from participants
-  const churchOptions = useMemo(() => {
-    const list = Array.from(new Set(participants.map(p => p.churchName || p.charchName || 'كنيسة غير معروفة')))
-      .filter(Boolean)
-      .sort();
-    return list;
-  }, [participants]);
+  const [churchOptions, setChurchOptions] = useState<string[]>([]);
+
+  // Fetch unique sorted list of churches directly from database on mount
+  useEffect(() => {
+    const fetchChurches = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('church_access_codes')
+          .select('church_name')
+          .order('church_name', { ascending: true });
+        
+        if (error) {
+          console.error("Error fetching church options:", error);
+          return;
+        }
+        
+        if (data) {
+          const uniqueNames = Array.from(
+            new Set(data.map((d: any) => d.church_name).filter(Boolean))
+          ) as string[];
+          setChurchOptions(uniqueNames);
+        }
+      } catch (err) {
+        console.error("Error in fetchChurches:", err);
+      }
+    };
+    fetchChurches();
+  }, []);
 
   // Helper: map stage to template details
   const getTemplateForStage = (stage: string): { templateName: string; displayName: string; category: 'primary' | 'prep_servants' | 'special' } => {
@@ -123,10 +144,15 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     }
   };
 
-  // Organize and filter participants
+ // Organize and filter participants (Only honored participants)
   const filteredParticipants = useMemo(() => {
-    if (selectedChurch === 'الكل') return participants;
-    return participants.filter(p => (p.churchName || p.charchName) === selectedChurch);
+    // 1. نقوم أولاً بتصفية المشتركين ليحتوي الحقل فقط على المكرمين
+    // تذكر تغيير p.isHonored للاسم الصحيح للحقل لديك في الـ database (مثلاً: p.honored أو p.is_honored)
+    const honoredOnly = participants.filter(p => p.isHonored === true || p.isMokaram === true);
+
+    // 2. نقوم بالتصفية بناءً على الكنيسة المختارة
+    if (selectedChurch === 'الكل') return honoredOnly;
+    return honoredOnly.filter(p => (p.churchName || p.charchName) === selectedChurch);
   }, [participants, selectedChurch]);
 
   // Count students by template category
@@ -345,16 +371,19 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
       const JSZip = (await import('jszip')).default;
       const mainZip = new JSZip();
 
-      // Group students by church
+     // Group students by church (Only honored)
       const groupedChurches: Record<string, any[]> = {};
-      participants.forEach(p => {
+      // نقوم بفلترة المصفوفة الكاملة للمكرمين فقط قبل تقسيمهم على الكنائس
+      const honoredAll = participants.filter(p => p.isHonored === true || p.isMokaram === true);
+      
+      honoredAll.forEach(p => {
         const cName = p.churchName || p.charchName || 'كنيسة غير معروفة';
         if (!groupedChurches[cName]) {
           groupedChurches[cName] = [];
         }
         groupedChurches[cName].push(p);
       });
-
+      
       const churchNames = Object.keys(groupedChurches).sort();
       
       if (churchNames.length === 0) {

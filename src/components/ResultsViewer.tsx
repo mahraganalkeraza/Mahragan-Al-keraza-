@@ -33,8 +33,9 @@ export const ResultsViewer: React.FC<{
   onReset?: (id: string) => void,
   isAdmin?: boolean,
   hideNames?: boolean,
-  userChurch?: string
-}> = ({ results: resultsProp, onReset: onResetProp, isAdmin, hideNames, userChurch }) => {
+  userChurch?: string,
+  honorsRanks?: Record<string, { rank: number; colorClass: string; percentage: number; title: string; subject: string }>
+}> = ({ results: resultsProp, onReset: onResetProp, isAdmin, hideNames, userChurch, honorsRanks: propHonorsRanks }) => {
   const [supabaseSubmissions, setSupabaseSubmissions] = useState<Result[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [resultsPublished, setResultsPublished] = useState(false);
@@ -47,6 +48,16 @@ export const ResultsViewer: React.FC<{
   const [pdfProgress, setPdfProgress] = useState(0);
   const [pdfStatus, setPdfStatus] = useState('');
   const [honorsRanks, setHonorsRanks] = useState<Record<string, { rank: number; colorClass: string; percentage: number; title: string; subject: string }>>({});
+  
+  // Merge prop honors matrix with the local honors matrix state
+  const mergedHonorsRanks = propHonorsRanks || honorsRanks;
+
+  const getCupEmoji = (rank?: number) => {
+    if (rank === 1) return '🏆';
+    if (rank === 2) return '🥈';
+    if (rank === 3) return '🥉';
+    return '';
+  };
   const [currentPage, setCurrentPage] = useState(1);
   const [activeTab, setActiveTab] = useState<'all' | 'online' | 'bubble_sheet' | 'paper'>('all');
   const [showManualModal, setShowManualModal] = useState(false);
@@ -1071,9 +1082,8 @@ export const ResultsViewer: React.FC<{
 
   return (
     <div className="space-y-8">
-      {/* Honors Engine (Admin Only) */}
-      <AdminHonorsEngine results={results} enabled={isAdmin} onHonorsUpdate={setHonorsRanks} />
-
+     {/* جعل المحرك يعمل دائماً لتستفيد منه الكنائس، وتمرير صلاحية الأدمن ليرى الواجهة فقط */}
+      <AdminHonorsEngine results={results} isAdmin={isAdmin} onHonorsUpdate={setHonorsRanks} />
       {/* Admin Action Bar (Only visible if isAdmin is true) */}
       {isAdmin && (
         <div className="bg-gradient-to-r from-slate-50 to-slate-100/50 p-6 border border-slate-200 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm font-arabic text-right animate-fade-in" dir="rtl" id="admin-actions-bar">
@@ -1476,14 +1486,15 @@ export const ResultsViewer: React.FC<{
                           const scoreVal = rowData[header];
                           const scoreNum = Number(scoreVal) || 0;
                           
-                          const rank = (row.id && scoreNum > 0) ? honorsRanks[`${row.id}_${currentSubject}`] : null;
-                          const cellBg = rank ? rank.colorClass : '';
+                          const uniqueRankKey = row.id ? `${row.id}_${currentSubject}` : '';
+                          const honorInfo = (uniqueRankKey && scoreNum > 0) ? mergedHonorsRanks?.[uniqueRankKey] : null;
+                          const cellBg = honorInfo ? honorInfo.colorClass : '';
                           
                           let cupEmoji = '';
-                          if (rank) {
-                            if (rank.rank === 1) cupEmoji = '🏆';
-                            else if (rank.rank === 2) cupEmoji = '🥈';
-                            else if (rank.rank === 3) cupEmoji = '🥉';
+                          if (honorInfo) {
+                            if (honorInfo.rank === 1) cupEmoji = '🏆';
+                            else if (honorInfo.rank === 2) cupEmoji = '🥈';
+                            else if (honorInfo.rank === 3) cupEmoji = '🥉';
                           }
 
                           return (
@@ -1491,15 +1502,15 @@ export const ResultsViewer: React.FC<{
                               key={idx} 
                               className={`p-4 font-bold whitespace-nowrap border-l border-slate-50 text-right transition-colors ${cellBg || 'text-slate-700'}`}
                             >
-                              <div className="flex items-center justify-between gap-2 min-w-[80px]">
+                              <div className="flex flex-col items-center justify-center gap-1 min-w-[80px]">
                                 <span>{scoreVal !== undefined && scoreVal !== null ? scoreVal : '-'}</span>
-                                {rank && (
+                                {honorInfo && (
                                   <span 
-                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black bg-white/80 border border-black/5 shadow-sm text-slate-800"
-                                    title={`${rank.title} (${rank.percentage.toFixed(1)}%)`}
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black bg-white/95 border border-black/5 shadow-sm text-slate-800 whitespace-nowrap mt-1"
+                                    title={`${honorInfo.title} (${honorInfo.percentage?.toFixed(1) || 0}%)`}
                                   >
                                     <span>{cupEmoji}</span>
-                                    <span>{rank.title.replace('مركز ', '')}</span>
+                                    <span>{honorInfo.title}</span>
                                   </span>
                                 )}
                               </div>
@@ -2159,21 +2170,81 @@ export const ResultsViewer: React.FC<{
                               {row.stage || 'عام'}
                             </td>
                             {/* score derasy */}
-                            <td className="p-2 text-center border-l border-slate-200">
-                              {d}
-                            </td>
+                            {(() => {
+                              const keyDerasy = row.id ? `${row.id}_دراسي` : '';
+                              const honorDerasy = (keyDerasy && d > 0) ? mergedHonorsRanks?.[keyDerasy] : null;
+                              const cellBg = honorDerasy ? honorDerasy.colorClass : '';
+                              return (
+                                <td className={`p-2 text-center border-l border-slate-200 transition-colors ${cellBg}`}>
+                                  <div className="flex flex-col items-center justify-center gap-0.5">
+                                    <span>{d}</span>
+                                    {honorDerasy && (
+                                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-black bg-white/90 border border-black/5 shadow-xs text-slate-800 whitespace-nowrap">
+                                        <span>{getCupEmoji(honorDerasy.rank)}</span>
+                                        <span>{honorDerasy.title}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            })()}
                             {/* score mahfouzat */}
-                            <td className="p-2 text-center border-l border-slate-200">
-                              {m}
-                            </td>
+                            {(() => {
+                              const keyMahfouzat = row.id ? `${row.id}_محفوظات` : '';
+                              const honorMahfouzat = (keyMahfouzat && m > 0) ? mergedHonorsRanks?.[keyMahfouzat] : null;
+                              const cellBg = honorMahfouzat ? honorMahfouzat.colorClass : '';
+                              return (
+                                <td className={`p-2 text-center border-l border-slate-200 transition-colors ${cellBg}`}>
+                                  <div className="flex flex-col items-center justify-center gap-0.5">
+                                    <span>{m}</span>
+                                    {honorMahfouzat && (
+                                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-black bg-white/90 border border-black/5 shadow-xs text-slate-800 whitespace-nowrap">
+                                        <span>{getCupEmoji(honorMahfouzat.rank)}</span>
+                                        <span>{honorMahfouzat.title}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            })()}
                             {/* score qebty 1 */}
-                            <td className="p-2 text-center border-l border-slate-200">
-                              {q1}
-                            </td>
+                            {(() => {
+                              const keyQebty1 = row.id ? `${row.id}_قبطي مستوى أول` : '';
+                              const honorQebty1 = (keyQebty1 && q1 > 0) ? mergedHonorsRanks?.[keyQebty1] : null;
+                              const cellBg = honorQebty1 ? honorQebty1.colorClass : '';
+                              return (
+                                <td className={`p-2 text-center border-l border-slate-200 transition-colors ${cellBg}`}>
+                                  <div className="flex flex-col items-center justify-center gap-0.5">
+                                    <span>{q1}</span>
+                                    {honorQebty1 && (
+                                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-black bg-white/90 border border-black/5 shadow-xs text-slate-800 whitespace-nowrap">
+                                        <span>{getCupEmoji(honorQebty1.rank)}</span>
+                                        <span>{honorQebty1.title}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            })()}
                             {/* score qebty 2 */}
-                            <td className="p-2 text-center border-l border-slate-200">
-                              {q2}
-                            </td>
+                            {(() => {
+                              const keyQebty2 = row.id ? `${row.id}_قبطي مستوى ثاني` : '';
+                              const honorQebty2 = (keyQebty2 && q2 > 0) ? mergedHonorsRanks?.[keyQebty2] : null;
+                              const cellBg = honorQebty2 ? honorQebty2.colorClass : '';
+                              return (
+                                <td className={`p-2 text-center border-l border-slate-200 transition-colors ${cellBg}`}>
+                                  <div className="flex flex-col items-center justify-center gap-0.5">
+                                    <span>{q2}</span>
+                                    {honorQebty2 && (
+                                      <span className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[8px] font-black bg-white/90 border border-black/5 shadow-xs text-slate-800 whitespace-nowrap">
+                                        <span>{getCupEmoji(honorQebty2.rank)}</span>
+                                        <span>{honorQebty2.title}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            })()}
                             {/* Total score */}
                             <td className="p-2 text-center border-l border-slate-200 font-black text-xs text-indigo-700 bg-indigo-50/10">
                               {total}

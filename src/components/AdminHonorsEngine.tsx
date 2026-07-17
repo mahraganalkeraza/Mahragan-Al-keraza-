@@ -10,12 +10,11 @@ interface WeightsMap {
   };
 }
 
-// تعيين نوع الـ Type ليرسل المخطط الموحد (طالب + مادة) لترتيب مستقل مائة بالمائة
 export const AdminHonorsEngine: React.FC<{ 
   results: Result[], 
-  enabled?: boolean, 
+  isAdmin?: boolean, 
   onHonorsUpdate?: (ranks: Record<string, { rank: number; colorClass: string; percentage: number; title: string; subject: string }>) => void 
-}> = ({ results, enabled = true, onHonorsUpdate }) => {
+}> = ({ results, isAdmin = false, onHonorsUpdate }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [weights, setWeights] = useState<WeightsMap>({});
   const [minThreshold, setMinThreshold] = useState<number>(90);
@@ -24,11 +23,10 @@ export const AdminHonorsEngine: React.FC<{
   const [systemStages, setSystemStages] = useState<string[]>([]);
   const [systemSubjects, setSystemSubjects] = useState<string[]>([]);
 
+  // تعديل 1: تحميل الإعدادات فوراً وتلقائياً عند تشغيل المكون بغض النظر عن حالة القسم مفتوح أم مغلق
   useEffect(() => {
-    if (isOpen) {
-      loadSettings();
-    }
-  }, [isOpen]);
+    loadSettings();
+  }, []);
 
   const loadSettings = async () => {
     setIsLoading(true);
@@ -38,13 +36,11 @@ export const AdminHonorsEngine: React.FC<{
         supabase.from('stage_competitions').select('stage_name'),
         supabase.from('competition_bank').select('name')
       ]);
-
       if (weightsSnap.data) {
         const data = weightsSnap.data.details || {};
         if (data.weights) setWeights(data.weights);
         if (data.minThreshold !== undefined) setMinThreshold(data.minThreshold);
       }
-
       setSystemStages(stagesSnap.data?.map(d => d.stage_name).filter(Boolean) as string[] || []);
       setSystemSubjects(bankSnap.data?.map(d => d.name).filter(Boolean) as string[] || []);
     } catch (e) {
@@ -80,11 +76,10 @@ export const AdminHonorsEngine: React.FC<{
   };
 
   const { studentRanksBySubj, exportData } = useMemo(() => {
-    if (!isOpen || !results || results?.length === 0) return { studentRanksBySubj: {}, exportData: [] };
+    // تعديل 2: حذف شرط !isOpen لضمان استمرار عملية حساب التكريم حتى لو كان الكومبوننت مغلقاً
+    if (!results || results?.length === 0) return { studentRanksBySubj: {}, exportData: [] };
 
-    // هيكلة البيانات: الكنيسة -> المرحلة -> المسابقة -> الطلاب المشتركين فيها
     const grouped: Record<string, Record<string, Record<string, { result: Result; percentage: number; score: number; maxScore: number }[]>>> = {};
-
     const validResults = (results || []).filter(r => r && (r.academicScore !== undefined || r.derasy_score !== undefined || r.score !== undefined || r.data));
 
     validResults.forEach(r => {
@@ -105,11 +100,9 @@ export const AdminHonorsEngine: React.FC<{
 
         if (maxScore > 0 && score > 0) {
           const perc = (score / maxScore) * 100;
-
           if (!grouped[church]) grouped[church] = {};
           if (!grouped[church][stage]) grouped[church][stage] = {};
           if (!grouped[church][stage][subj]) grouped[church][stage][subj] = [];
-
           grouped[church][stage][subj].push({
             result: r,
             percentage: perc,
@@ -129,11 +122,9 @@ export const AdminHonorsEngine: React.FC<{
       if (rank === 1) { color = 'bg-green-200'; rankName = 'أول'; }
       if (rank === 2) { color = 'bg-yellow-200'; rankName = 'ثاني'; }
       if (rank === 3) { color = 'bg-orange-100'; rankName = 'ثالث'; }
-
       const title = `مركز ${rankName}`;
 
       if (s.result?.id) {
-        // التعيين المدمج (طالب + مادة) لمنع التداخل نهائياً
         const uniqueRankKey = `${s.result.id}_${subject}`;
         sRanksSubj[uniqueRankKey] = { rank, colorClass: color, percentage: s.percentage, title, subject };
       }
@@ -152,20 +143,16 @@ export const AdminHonorsEngine: React.FC<{
       });
     }
 
-    // هنا تكمن معالجة فصل التقييم بنسبة 100% لكل مادة على حدة
     Object.keys(grouped).forEach(church => {
       Object.keys(grouped[church]).forEach(stage => {
         Object.keys(grouped[church][stage]).forEach(subject => {
           const students = grouped[church][stage][subject] || [];
           if (students.length === 0) return;
 
-          // حساب أعلى نسبة مئوية تم تحقيقها في هذه المادة تحديداً
           const maxPercentageInSubj = Math.max(...students.map(s => s.percentage));
           const hasPerfectScore = maxPercentageInSubj >= 100;
 
-          // تصفية الطلاب الذين تخطوا الحد الأدنى لهذه المادة فقط
           const qualifiedStudents = students.filter(s => s.percentage >= minThreshold);
-
           qualifiedStudents.forEach(s => {
             const singlePointPercentage = (1 / s.maxScore) * 100;
             let rank = 0;
@@ -173,14 +160,13 @@ export const AdminHonorsEngine: React.FC<{
             if (hasPerfectScore) {
               const diffPercentage = 100 - s.percentage;
               if (diffPercentage === 0) {
-                rank = 1; // 20 من 20 (أو الدرجة النهائية للمادة) تأخذ مركز أول فوراً دون النظر لأي مادة أخرى!
+                rank = 1;
               } else if (diffPercentage <= singlePointPercentage + 0.01) {
-                rank = 2; // يقل درجة واحدة
+                rank = 2;
               } else if (diffPercentage <= (singlePointPercentage * 2) + 0.01) {
-                rank = 3; // يقل درجتين
+                rank = 3;
               }
             } else {
-              // إذا كان أعلى مجموع في هذه المادة أقل من 100%
               if (maxPercentageInSubj >= minThreshold) {
                 const diffPercentage = maxPercentageInSubj - s.percentage;
                 if (diffPercentage === 0) {
@@ -201,7 +187,6 @@ export const AdminHonorsEngine: React.FC<{
       });
     });
 
-    // إضافة "مكرر"
     eData.forEach(item => {
       const duplicates = eData.filter(
         x => x['الكنيسة'] === item['الكنيسة'] && 
@@ -230,7 +215,8 @@ export const AdminHonorsEngine: React.FC<{
       studentRanksBySubj: sRanksSubj, 
       exportData: eData 
     };
-  }, [results, weights, minThreshold, isOpen, systemSubjects]);
+    // تعديل 3: إزالة isOpen من مصفوفة التبعيات الخاصة بالـ useMemo لمنع إعادة تصفير الحسابات عند غلق الواجهة
+  }, [results, weights, minThreshold, systemSubjects]);
 
   useEffect(() => {
     if (onHonorsUpdate) {
@@ -238,24 +224,19 @@ export const AdminHonorsEngine: React.FC<{
     }
   }, [studentRanksBySubj, onHonorsUpdate]);
 
-  // تعديل التصدير ليكون ملف XLSX حقيقي بالكامل
   const exportExcel = () => {
     if (exportData.length === 0) {
       alert('لا توجد بيانات لمكرمين مستوفين الشروط!');
       return;
     }
-    // إنشاء كتاب عمل جديد (Workbook)
     const wb = XLSX.utils.book_new();
-    // تحويل البيانات إلى ورقة عمل (Worksheet)
     const ws = XLSX.utils.json_to_sheet(exportData);
-    // إضافة ورقة العمل إلى كتاب العمل
     XLSX.utils.book_append_sheet(wb, ws, "المكرمين والأوائل");
-    
-    // كتابة الملف الثنائي وتحميله بصيغة .xlsx حقيقية
     XLSX.writeFile(wb, `Honors_Leaderboard_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  if (!enabled) return null;
+  // This ensures the calculations and onHonorsUpdate still run silently in the background for churches, but hides the UI panel
+  if (!isAdmin) return null;
 
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mb-8">
