@@ -1083,7 +1083,7 @@ export const ResultsViewer: React.FC<{
   return (
     <div className="space-y-8">
      {/* جعل المحرك يعمل دائماً لتستفيد منه الكنائس، وتمرير صلاحية الأدمن ليرى الواجهة فقط */}
-      <AdminHonorsEngine results={results} isAdmin={isAdmin} onHonorsUpdate={setHonorsRanks} />
+      <AdminHonorsEngine results={supabaseSubmissions} isAdmin={isAdmin} onHonorsUpdate={setHonorsRanks} />
       {/* Admin Action Bar (Only visible if isAdmin is true) */}
       {isAdmin && (
         <div className="bg-gradient-to-r from-slate-50 to-slate-100/50 p-6 border border-slate-200 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm font-arabic text-right animate-fade-in" dir="rtl" id="admin-actions-bar">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { Result } from '../types';
 import { Save, Download, Award, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
@@ -13,7 +13,7 @@ interface WeightsMap {
 export const AdminHonorsEngine: React.FC<{ 
   results: Result[], 
   isAdmin?: boolean, 
-  onHonorsUpdate?: (ranks: Record<string, { rank: number; colorClass: string; percentage: number; title: string; subject: string }>) => void 
+  onHonorsUpdate?: (ranks: Record<string, any>) => void 
 }> = ({ results, isAdmin = false, onHonorsUpdate }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [weights, setWeights] = useState<WeightsMap>({});
@@ -42,7 +42,11 @@ export const AdminHonorsEngine: React.FC<{
         if (data.minThreshold !== undefined) setMinThreshold(data.minThreshold);
       }
       setSystemStages(stagesSnap.data?.map(d => d.stage_name).filter(Boolean) as string[] || []);
-      setSystemSubjects(bankSnap.data?.map(d => d.name).filter(Boolean) as string[] || []);
+      
+      const dbSubjects = bankSnap.data?.map(d => d.name).filter(Boolean) as string[] || [];
+      const coreSubjects = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
+      const mergedSubjects = Array.from(new Set([...coreSubjects, ...dbSubjects]));
+      setSystemSubjects(mergedSubjects);
     } catch (e) {
       console.error('Failed to load honors config', e);
     }
@@ -218,11 +222,23 @@ export const AdminHonorsEngine: React.FC<{
     // تعديل 3: إزالة isOpen من مصفوفة التبعيات الخاصة بالـ useMemo لمنع إعادة تصفير الحسابات عند غلق الواجهة
   }, [results, weights, minThreshold, systemSubjects]);
 
+  const lastDispatchedRef = useRef<string>('');
+
   useEffect(() => {
     if (onHonorsUpdate) {
-      onHonorsUpdate(studentRanksBySubj);
+      // Avoid dispatching empty object if settings are still loading
+      if (isLoading) return;
+
+      // If we have results but no weights are loaded yet, do not dispatch empty
+      if (results && results.length > 0 && Object.keys(weights).length === 0) return;
+
+      const currentStr = JSON.stringify(studentRanksBySubj);
+      if (currentStr !== lastDispatchedRef.current) {
+        lastDispatchedRef.current = currentStr;
+        onHonorsUpdate(studentRanksBySubj);
+      }
     }
-  }, [studentRanksBySubj, onHonorsUpdate]);
+  }, [studentRanksBySubj, onHonorsUpdate, isLoading, weights, results]);
 
   const exportExcel = () => {
     if (exportData.length === 0) {
