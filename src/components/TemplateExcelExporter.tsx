@@ -185,31 +185,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     }
 
     if (!loaded) {
-      // Create a clean worksheet that mimics the official template layout
-      ws = workbook.addWorksheet("تسجيل مشتركين");
-      
-      // Add row headers
-      const headers = [
-        "الاسم", "الموبايل", "النوع", "اليوم", "الشهر", "السنة",
-        "المرحلة/المسابقة 1", "المرحلة/المسابقة 2", "المرحلة/المسابقة 3", "المرحلة/المسابقة 4",
-        "المرحلة/المسابقة 5", "المرحلة/المسابقة 6", "المرحلة/المسابقة 7", "المرحلة/المسابقة 8"
-      ];
-      
-      headers.forEach((h, colIndex) => {
-        const cell = ws.getCell(1, colIndex + 1);
-        cell.value = h;
-        cell.font = { bold: true, name: 'Arial', size: 11 };
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFF2F2F2' }
-        };
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      });
-
-      // Dummy validation column Z to match system validation
-      ws.getCell('Z1').value = "التحقق من البيانات";
-      ws.getCell('Z1').font = { bold: true };
+      throw new Error(`خطأ حرج: تعذر تحميل الملف الفعلي للقالب المعتمد المرفوع من المستخدم: "${templateName}". النظام مبرمج للعمل كمحقن بيانات فقط ولا يمكنه إنشاء قالب برمجي لتجنب فقدان صيغ التحقق والتنسيقات المعتمدة للوزارة.`);
     }
 
     // Row writing starts at Row Index 2 (0-indexed) which is Row 3 in ExcelJS

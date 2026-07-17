@@ -5924,41 +5924,85 @@ function AppComponent() {
                   لا توجد كتب مضافة حالياً بحاسبة الكتب
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 text-xs font-black text-slate-500 uppercase">
-                        <th className="p-4 border-b border-slate-100 whitespace-nowrap">المرحلة</th>
-                        <th className="p-4 border-b border-slate-100 whitespace-nowrap">المادة</th>
-                        <th className="p-4 border-b border-slate-100 whitespace-nowrap">سعر الوحدة</th>
-                        <th className="p-4 border-b border-slate-100 text-center whitespace-nowrap">الكمية المطلوبة</th>
-                        <th className="p-4 border-b border-slate-100 whitespace-nowrap">الإجمالي</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {[...calculatorSettings].sort((a, b) => sortStages(a.stage, b.stage) || a.material.localeCompare(b.material)).map(setting => {
+                <>
+                  {/* Desktop View Table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 text-xs font-black text-slate-500 uppercase">
+                          <th className="p-4 border-b border-slate-100 whitespace-nowrap">المرحلة</th>
+                          <th className="p-4 border-b border-slate-100 whitespace-nowrap">المادة</th>
+                          <th className="p-4 border-b border-slate-100 whitespace-nowrap">سعر الوحدة</th>
+                          <th className="p-4 border-b border-slate-100 text-center whitespace-nowrap">الكمية المطلوبة</th>
+                          <th className="p-4 border-b border-slate-100 whitespace-nowrap">الإجمالي</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {[...calculatorSettings].sort((a, b) => sortStages(a.stage, b.stage) || a.material.localeCompare(b.material)).map(setting => {
+                          const detail = viewingOrder.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
+                          const quantity = detail ? Number(detail.quantity) : 0;
+                          const subtotal = quantity * setting.price;
+                          return (
+                            <tr key={setting.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-4 font-bold text-slate-800 text-sm whitespace-nowrap">{setting.stage}</td>
+                              <td className="p-4 font-bold text-slate-600 text-sm whitespace-nowrap">{setting.material}</td>
+                              <td className="p-4 font-black text-slate-400 text-sm whitespace-nowrap">{setting.price} ج.م</td>
+                              <td className="p-4 text-center whitespace-nowrap">
+                                {quantity > 0 ? (
+                                  <span className="inline-block px-3 py-1 bg-coptic-blue/10 text-coptic-blue rounded-lg font-black">{quantity}</span>
+                                ) : (
+                                  <span className="text-slate-300 font-bold">-</span>
+                                )}
+                              </td>
+                              <td className="p-4 font-black text-coptic-red whitespace-nowrap">{subtotal} ج.م</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Cards View */}
+                  <div className="block md:hidden space-y-3 text-right">
+                    {[...calculatorSettings]
+                      .sort((a, b) => sortStages(a.stage, b.stage) || a.material.localeCompare(b.material))
+                      .filter(setting => {
+                        const detail = viewingOrder.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
+                        return detail && Number(detail.quantity) > 0; // only show requested items in mobile list to save space
+                      })
+                      .map(setting => {
                         const detail = viewingOrder.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
                         const quantity = detail ? Number(detail.quantity) : 0;
                         const subtotal = quantity * setting.price;
                         return (
-                          <tr key={setting.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="p-4 font-bold text-slate-800 text-sm whitespace-nowrap">{setting.stage}</td>
-                            <td className="p-4 font-bold text-slate-600 text-sm whitespace-nowrap">{setting.material}</td>
-                            <td className="p-4 font-black text-slate-400 text-sm whitespace-nowrap">{setting.price} ج.م</td>
-                            <td className="p-4 text-center whitespace-nowrap">
-                              {quantity > 0 ? (
-                                <span className="inline-block px-3 py-1 bg-coptic-blue/10 text-coptic-blue rounded-lg font-black">{quantity}</span>
-                              ) : (
-                                <span className="text-slate-300 font-bold">-</span>
-                              )}
-                            </td>
-                            <td className="p-4 font-black text-coptic-red whitespace-nowrap">{subtotal} ج.م</td>
-                          </tr>
+                          <div key={setting.id} className="bg-slate-50 border border-slate-100 rounded-2xl p-3 shadow-sm flex flex-col gap-2">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <span className="inline-block px-2 py-0.5 bg-blue-50 text-coptic-blue rounded-lg text-[10px] font-bold mb-1">
+                                  {setting.stage}
+                                </span>
+                                <h6 className="font-bold text-slate-800 text-xs">{setting.material}</h6>
+                              </div>
+                              <span className="font-black text-coptic-red text-sm">{subtotal} ج.م</span>
+                            </div>
+                            <div className="flex justify-between items-center text-[11px] text-slate-500 font-bold border-t border-slate-100 pt-2">
+                              <span>سعر الوحدة: <span className="font-black text-slate-700">{setting.price} ج.م</span></span>
+                              <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg font-black">الكمية: {quantity}</span>
+                            </div>
+                          </div>
                         );
                       })}
-                    </tbody>
-                  </table>
-                </div>
+                    {[...calculatorSettings]
+                      .filter(setting => {
+                        const detail = viewingOrder.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
+                        return !detail || Number(detail.quantity) === 0;
+                      }).length === calculatorSettings.length && (
+                        <div className="py-6 text-center text-slate-400 font-bold text-xs">
+                          لم يتم طلب أي كتب في هذا الطلب
+                        </div>
+                      )}
+                  </div>
+                </>
               )}
             </div>
             
@@ -7640,7 +7684,8 @@ function AppComponent() {
                     بحث
                   </button>
                 </div>
-                  <div className="overflow-x-auto">
+                  {/* Desktop View Table */}
+                  <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-right border-collapse">
                       <thead>
                         <tr className="bg-white text-[10px] font-black text-slate-500 uppercase">
@@ -7725,6 +7770,80 @@ function AppComponent() {
                     </table>
                   </div>
 
+                  {/* Mobile Cards View */}
+                  <div className="block md:hidden space-y-4">
+                    {filteredParticipantsList
+                      .slice((participantPageCount - 1) * 20, participantPageCount * 20)
+                      .map(p => (
+                        <div key={p.id} className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-3 text-right">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-mono font-bold mb-1">
+                                {p.id}
+                              </span>
+                              <h5 className="font-bold text-slate-900 text-sm">{p.name}</h5>
+                            </div>
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              p.gender === 'أنثى' ? 'bg-pink-50 text-pink-600' : 'bg-blue-50 text-blue-600'
+                            }`}>
+                              {p.gender || 'ذكر'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                            <div className="bg-slate-50/50 p-2 rounded-xl">
+                              <span className="block text-[10px] text-slate-400 font-bold mb-0.5">الكنيسة</span>
+                              <span className="font-bold text-slate-700">{p.churchName}</span>
+                            </div>
+                            <div className="bg-slate-50/50 p-2 rounded-xl">
+                              <span className="block text-[10px] text-slate-400 font-bold mb-0.5">المرحلة</span>
+                              <span className="font-bold text-slate-700">{p.stage}</span>
+                            </div>
+                          </div>
+
+                          {p.competitions && p.competitions.length > 0 && (
+                            <div className="space-y-1">
+                              <span className="block text-[10px] text-slate-400 font-bold">المسابقات المسجلة:</span>
+                              <div className="flex flex-wrap gap-1">
+                                {p.competitions.map((c, i) => (
+                                  <span key={i} className="px-2 py-0.5 bg-primary/5 text-primary rounded-full text-[9px] font-black">
+                                    {c}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="pt-2 border-t border-slate-50 flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => handleResetExam(p.id, p.name)}
+                              className="px-3 py-1.5 text-xs text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-xl transition-all font-black flex items-center gap-1 cursor-pointer"
+                            >
+                              <RotateCcw size={14} />
+                              إعادة فتح الامتحان
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setActiveSection('registration');
+                                handleEditParticipant(p);
+                              }}
+                              className="p-2 text-slate-500 bg-slate-50 hover:bg-slate-100 rounded-xl transition-all"
+                              title="تعديل"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button 
+                              onClick={() => confirmAndDeleteParticipant(p.id)}
+                              className="p-2 text-red-500 bg-red-50 hover:bg-red-100 rounded-xl transition-all"
+                              title="حذف"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+
                 <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
                   <PaginationComponent 
                     currentPage={participantPageCount}
@@ -7775,53 +7894,108 @@ function AppComponent() {
                     </button>
                   </div>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right border-collapse">
-                    <thead>
-                      <tr className="bg-white text-[10px] font-black text-slate-500 uppercase">
-                        <th className="p-4 border-b border-slate-100 text-right">رقم التعريف (ID)</th>
-                        <th className="p-4 border-b border-slate-100 text-right">اسم الفريق / المشترك</th>
-                        <th className="p-4 border-b border-slate-100 text-right">النشاط</th>
-                        <th className="p-4 border-b border-slate-100 text-right">الكنيسة</th>
-                        <th className="p-4 border-b border-slate-100 text-right">عدد الأعضاء</th>
-                        <th className="p-4 border-b border-slate-100 text-right">تاريخ التسجيل</th>
-                        <th className="p-4 border-b border-slate-100 text-center">الإجراءات</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {activityTeams
-                        .slice((teamPageCount - 1) * 20, teamPageCount * 20)
-                        .map(t => (
-                          <tr key={t.id} className="bg-white hover:bg-slate-50 transition-colors">
-                            <td className="p-4 text-slate-400 font-mono text-[10px] select-all">{t.id}</td>
-                            <td className="p-4 font-bold text-slate-850 text-xs">{t.team_name || '-'}</td>
-                            <td className="p-4 text-slate-700 text-xs font-bold">{(t as any).stage_name || t.activityType || '-'}</td>
-                            <td className="p-4 text-slate-600 text-xs">{t.church_name || t.churchName || '-'}</td>
-                            <td className="p-4 text-slate-600 text-xs font-bold">{t.members_number ?? (t.members?.length || 0)}</td>
-                            <td className="p-4 text-slate-500 text-xs font-mono">{t.timestamp ? new Date(t.timestamp).toLocaleDateString('ar-EG') : '-'}</td>
-                            <td className="p-4">
-                              <div className="flex items-center justify-center gap-2">
-                                <button 
-                                  onClick={() => handleEditTeam(t)}
-                                  className="p-2 text-slate-400 hover:text-emerald-500 transition-colors"
-                                  title="تعديل"
-                                >
-                                  <FileText size={18} />
-                                </button>
-                                <button 
-                                  onClick={() => handleDeleteTeam(t.id)}
-                                  className="p-2 text-slate-400 hover:text-coptic-red transition-colors"
-                                  title="حذف"
-                                >
-                                  <Trash2 size={18} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
+                  {/* Desktop View Table */}
+                  <div className="hidden md:block overflow-x-auto">
+                    <table className="w-full text-right border-collapse">
+                      <thead>
+                        <tr className="bg-white text-[10px] font-black text-slate-500 uppercase">
+                          <th className="p-4 border-b border-slate-100 text-right">رقم التعريف (ID)</th>
+                          <th className="p-4 border-b border-slate-100 text-right">اسم الفريق / المشترك</th>
+                          <th className="p-4 border-b border-slate-100 text-right">النشاط</th>
+                          <th className="p-4 border-b border-slate-100 text-right">الكنيسة</th>
+                          <th className="p-4 border-b border-slate-100 text-right">عدد الأعضاء</th>
+                          <th className="p-4 border-b border-slate-100 text-right">تاريخ التسجيل</th>
+                          <th className="p-4 border-b border-slate-100 text-center">الإجراءات</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {activityTeams
+                          .slice((teamPageCount - 1) * 20, teamPageCount * 20)
+                          .map(t => (
+                            <tr key={t.id} className="bg-white hover:bg-slate-50 transition-colors">
+                              <td className="p-4 text-slate-400 font-mono text-[10px] select-all">{t.id}</td>
+                              <td className="p-4 font-bold text-slate-855 text-xs">{t.team_name || '-'}</td>
+                              <td className="p-4 text-slate-700 text-xs font-bold">{(t as any).stage_name || t.activityType || '-'}</td>
+                              <td className="p-4 text-slate-600 text-xs">{t.church_name || t.churchName || '-'}</td>
+                              <td className="p-4 text-slate-600 text-xs font-bold">{t.members_number ?? (t.members?.length || 0)}</td>
+                              <td className="p-4 text-slate-505 text-xs font-mono">{t.timestamp ? new Date(t.timestamp).toLocaleDateString('ar-EG') : '-'}</td>
+                              <td className="p-4">
+                                <div className="flex items-center justify-center gap-2">
+                                  <button 
+                                    onClick={() => handleEditTeam(t)}
+                                    className="p-2 text-slate-400 hover:text-emerald-500 transition-colors"
+                                    title="تعديل"
+                                  >
+                                    <FileText size={18} />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDeleteTeam(t.id)}
+                                    className="p-2 text-slate-400 hover:text-coptic-red transition-colors"
+                                    title="حذف"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Mobile Cards View */}
+                  <div className="block md:hidden space-y-4">
+                    {activityTeams
+                      .slice((teamPageCount - 1) * 20, teamPageCount * 20)
+                      .map(t => (
+                        <div key={t.id} className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-3 text-right">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-650 rounded-lg text-[9px] font-mono font-bold mb-1">
+                                ID: {t.id}
+                              </span>
+                              <h5 className="font-bold text-slate-900 text-sm">{t.team_name || '-'}</h5>
+                            </div>
+                            <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold">
+                              {(t as any).stage_name || t.activityType || '-'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                            <div className="bg-slate-50 p-2 rounded-xl">
+                              <span className="block text-[10px] text-slate-400 font-bold mb-0.5">الكنيسة</span>
+                              <span className="font-bold text-slate-700">{t.church_name || t.churchName || '-'}</span>
+                            </div>
+                            <div className="bg-slate-50 p-2 rounded-xl">
+                              <span className="block text-[10px] text-slate-400 font-bold mb-0.5">عدد الأعضاء</span>
+                              <span className="font-bold text-slate-700">{t.members_number ?? (t.members?.length || 0)}</span>
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center pt-2 border-t border-slate-50">
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              سُجل في: {t.timestamp ? new Date(t.timestamp).toLocaleDateString('ar-EG') : '-'}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button 
+                                onClick={() => handleEditTeam(t)}
+                                className="p-2 text-slate-500 bg-slate-50 hover:bg-slate-100 rounded-xl transition-all"
+                                title="تعديل"
+                              >
+                                <FileText size={16} />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteTeam(t.id)}
+                                className="p-2 text-red-500 bg-red-50 hover:bg-red-100 rounded-xl transition-all"
+                                title="حذف"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
 
                 <div className="flex items-center justify-between mt-6 bg-white p-4 rounded-2xl border border-slate-100 italic text-slate-400">
                   <PaginationComponent 
