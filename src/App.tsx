@@ -6328,11 +6328,11 @@ function AppComponent() {
 
       {!isLoggedIn && activeSection !== 'schedule' ? (
         activeSection === 'locked' ? (
-          <main className="max-w-md mx-auto px-4 py-20 relative z-10 text-center">
+          <main className="flex min-h-[calc(100vh-5rem)] flex-col items-center justify-center px-4 py-8 relative z-10 bg-gray-50 w-full">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white p-10 rounded-2xl shadow-xl border border-red-100 text-center space-y-6 flex flex-col items-center justify-center font-arabic"
+              className="bg-white p-8 sm:p-10 rounded-2xl shadow-md border border-slate-100 text-center space-y-6 flex flex-col items-center justify-center font-arabic w-full max-w-md my-auto"
               dir="rtl"
             >
               <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center shadow-inner">
@@ -6358,11 +6358,11 @@ function AppComponent() {
             </motion.div>
           </main>
         ) : (
-          <main className="max-w-md mx-auto px-4 py-20 relative z-10">
+          <main className="flex min-h-[calc(100vh-5rem)] flex-col items-center justify-center px-4 py-8 relative z-10 bg-gray-50 w-full">
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white p-10 rounded-xl shadow-sm border border-slate-100"
+              className="bg-white p-8 sm:p-10 rounded-2xl shadow-md border border-slate-100 w-full max-w-md my-auto"
             >
               <div className="text-center mb-10">
                 <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-20 h-20 rounded-full mx-auto mb-6 object-contain shadow-sm border border-slate-50 bg-white" />
@@ -7124,25 +7124,25 @@ function AppComponent() {
               {adminActiveTab === 'dashboard' && (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full px-4 mb-12">
-                <div className="p-6 bg-coptic-blue/5 rounded-3xl border border-coptic-blue/10 w-full">
+                <div className="p-6 bg-white rounded-xl border border-gray-100 shadow-sm w-full">
                   <p className="text-[10px] font-black text-coptic-blue uppercase mb-1">المشتركين ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
                     {analyticsData.totalParticipants}
                   </p>
                 </div>
-                <div className="p-6 bg-coptic-gold/5 rounded-3xl border border-coptic-gold/10 w-full">
+                <div className="p-6 bg-white rounded-xl border border-gray-100 shadow-sm w-full">
                   <p className="text-[10px] font-black text-coptic-gold uppercase mb-1">طلبات الكتب ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
                     {analyticsData.totalOrders}
                   </p>
                 </div>
-                <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100 w-full">
+                <div className="p-6 bg-white rounded-xl border border-gray-100 shadow-sm w-full">
                   <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">الفرق ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
                     {analyticsData.totalTeams}
                   </p>
                 </div>
-                <div className="p-6 bg-coptic-red/5 rounded-3xl border border-coptic-red/10 w-full">
+                <div className="p-6 bg-white rounded-xl border border-gray-100 shadow-sm w-full">
                   <p className="text-[10px] font-black text-coptic-red uppercase mb-1">الاستفسارات ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
                     {(inquiries || []).filter(i => globalChurchFilter === 'الكل' || i.churchName === globalChurchFilter).length}
@@ -7150,7 +7150,7 @@ function AppComponent() {
                 </div>
               </div>
 
-                  <div className="mb-12 p-6 bg-slate-50 rounded-3xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-4 w-full">
+                  <div className="mb-12 p-6 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 w-full">
                     <div>
                       <h4 className="font-black text-slate-800">تصدير البيانات المجمعة</h4>
                       <p className="text-xs text-slate-400 font-bold">تحميل كافة بيانات التسجيل (مشتركين + فرق) في ملف واحد</p>
@@ -8676,7 +8676,7 @@ function AppComponent() {
             {adminActiveTab === 'dashboard' && (
               <div className="space-y-16 mt-16 font-arabic">
                 
-                <div className="flex flex-col md:flex-row justify-between items-center bg-slate-50 p-6 rounded-3xl border border-slate-200 gap-4 w-full">
+                <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl border border-gray-100 gap-4 w-full shadow-sm">
                   <div>
                     <h2 className="text-xl font-black text-slate-800">اللوحة التحليلية الشاملة</h2>
                     <p className="text-sm text-slate-500 font-bold mt-1">مؤشرات إحصائية ورسوم بيانية لبيانات التسجيل والحاسبة</p>
@@ -8687,12 +8687,12 @@ function AppComponent() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full">
                   <motion.div 
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm w-full"
+                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">منحنى توزيع المشتركين (كثافة المراحل)</h3>
                     <div className="h-64">
@@ -8716,7 +8716,7 @@ function AppComponent() {
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut", delay: 0.2 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm w-full"
+                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">معدل الانخراط والمشاركة (عدد المسابقات)</h3>
                     <div className="h-64">
@@ -8737,7 +8737,7 @@ function AppComponent() {
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm w-full"
+                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">توزيع المشتركين حسب الجنس</h3>
                     <div className="h-64">
@@ -8779,7 +8779,7 @@ function AppComponent() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3 w-full"
+                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm md:col-span-2 lg:col-span-3 w-full"
                   >
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                       <div>
@@ -8879,7 +8879,7 @@ function AppComponent() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-3 w-full"
+                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm md:col-span-2 lg:col-span-3 w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">الطلب الحقيقي للكتب (الكتب المطلوبة vs مسابقات المشتركين)</h3>
                     <div className="h-80 mb-8">
@@ -8937,14 +8937,14 @@ function AppComponent() {
                 </div>
 
                 {/* Sub-Activities Analytics (Teams & Individuals) */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16 w-full">
                   {/* Widget 1: Activity Participation Counter */}
                   <motion.div 
                     initial={{ opacity: 0, y: 40 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut" }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm w-full"
+                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">عداد المشاركات في الأنشطة الفرعية</h3>
                     <div className="space-y-4">
@@ -8974,7 +8974,7 @@ function AppComponent() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
-                    className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm w-full"
+                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm w-full"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">مصفوفة الأنشطة للكنائس المشاركة</h3>
                     <div className="overflow-x-auto rounded-xl border border-slate-200">
