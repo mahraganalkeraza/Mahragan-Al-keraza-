@@ -492,7 +492,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           .from('registrations')
           .select('student_id, name, stage, churchName, gender, competitions')
           .ilike('name', `%${queryClean}%`)
-          .limit(15);
+          .limit(5);
 
         if (error) throw error;
         
@@ -593,7 +593,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
               }
             }}
             className="absolute top-4 right-4 bg-white/10 p-2 rounded-xl backdrop-blur-md cursor-pointer hover:bg-white/20 transition-all select-none"
-            title="وضع الطوارئ للجان"
+            title="وضع الطوارئ "
           >
             <Compass className={`${isAdminUnlocked ? 'text-emerald-400' : 'text-amber-500'} animate-spin-slow`} size={22} />
           </div>
@@ -602,7 +602,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
             <QrCode className="text-amber-400" size={28} />
           </div>
 
-          <h1 className="text-xl md:text-2xl font-black mb-1">بوابة الاختبارات الإلكترونية الرقمية</h1>
+          <h1 className="text-xl md:text-2xl font-black mb-1">امتحانات الأونلاين</h1>
           <p className="text-slate-400 text-xs font-semibold max-w-sm mx-auto">
             مهرجان الكرازة المرقسية - وجه كارت الـ QR أمام كاميرا الموبيل فوراً لبدء اللجنة.
           </p>
@@ -653,7 +653,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                 </button>
               </div>
 
-              {/* شريط التبديل العلوي الخفي - لا يظهر إلا لو تم إدخال الباسورد 101096بنجاح */}
+              {/* شريط التبديل العلوي الخفي - لا يظهر إلا لو تم إدخال الباسورد بنجاح */}
               {isAdminUnlocked && (
                 <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-6">
                   <button
@@ -756,7 +756,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                       type="text"
                       value={academicCode}
                       onChange={(e) => setAcademicCode(e.target.value)}
-                      placeholder="وجه الكارت للكاميرا ليتم السحب التلقائي هنا..."
+                      placeholder="اكتب كود الطالب هنا "
                       className="w-full px-4 py-3 bg-white border-2 border-gray-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 rounded-xl transition-all duration-300 text-right font-black text-sm text-slate-950 shadow-inner"
                       required
                     />
@@ -772,7 +772,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                     disabled={isLoading || !academicCode.trim()}
                     className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#4a000b] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
                   >
-                    {isLoading ? "جاري سحب الأسئلة ومطابقة جهازك..." : "ابدأ الامتحان"}
+                    {isLoading ? "جاري سحب الأسئلة ..." : "ابدأ الامتحان"}
                   </button>
                 </form>
               ) : (
@@ -787,7 +787,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                         type="text"
                         value={searchQuery}
                         onChange={(e) => { setSearchQuery(e.target.value); setSelectedStudent(null); }}
-                        placeholder="اكتب 3 أحرف من الاسم لمطابقة قاعدة البيانات..."
+                        placeholder="اكتب 3 أحرف من الاسم ..."
                         className="w-full pr-11 pl-4 py-3 bg-white text-right border-2 border-gray-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 rounded-xl transition-all duration-300 text-sm font-black text-slate-950"
                       />
                       {isSearching && (
@@ -820,7 +820,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                   {selectedStudent && (
                     <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center justify-between text-xs font-bold">
                       <div>
-                        <p className="text-emerald-600">تم فك القفل والمطابقة الاستثنائية للولد:</p>
+                        <p className="text-emerald-600">تم فك القفل:</p>
                         <p className="text-slate-900 font-black">{selectedStudent.name} ({selectedStudent.stage})</p>
                       </div>
                       <CheckCircle className="text-emerald-500" size={20} />
@@ -832,7 +832,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                     disabled={isLoading || !selectedStudent}
                     className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#4a000b] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
                   >
-                    {isLoading ? "جاري سحب الأسئلة المتوافقة..." : "ابدأ الامتحان"}
+                    {isLoading ? "جاري سحب الأسئلة ..." : "ابدأ الامتحان"}
                   </button>
                 </form>
               )}
@@ -876,7 +876,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                   <Lock size={22} />
                 </div>
                 <h3 className="text-base font-black">رمز حماية وضع الطوارئ</h3>
-                <p className="text-[11px] text-slate-400 mt-1">يرجى إدخال الرقم السري المخصص لتفعيل البحث بالاسم للجان الطوارئ</p>
+                <p className="text-[11px] text-slate-400 mt-1">يرجى إدخال الرقم السري</p>
               </div>
 
                <form 
@@ -914,7 +914,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                     }
                   } catch (err) {
                     console.error("خطأ أثناء التحقق من رمز المرور:", err);
-                    setPasswordError('حدث خطأ في الاتصال بالخادم، يرجى التحقق من الشبكة وإعادة المحاولة.');
+                    setPasswordError('حدث خطأ في الاتصال بالانترنت، يرجى التحقق من الشبكة وإعادة المحاولة.');
                   }
                 }}
                 className="space-y-4"

@@ -99,6 +99,34 @@ export const ResultsViewer: React.FC<{
     setBulkCurrentPage(1);
   }, [bulkStage, bulkChurch, bulkSearchQuery]);
 
+    // 1. تعريف State لتخزين قائمة أسم الكنائس
+    const [churchesList, setChurchesList] = useState<string[]>([]);
+
+    // 2. دالة جلب الكنائس من السوبابيز
+    useEffect(() => {
+      const fetchChurches = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('church_access_codes')
+            .select('church_name'); // جلب عمود اسم الكنيسة
+
+          if (error) throw error;
+
+          if (data) {
+            // استخراج الأسماء، تنظيفها من الفراغات، وحذف المكرر إن وجد
+            const names = data.map((item: any) => item.church_name).filter(Boolean);
+            const uniqueNames = Array.from(new Set(names));
+            setChurchesList(uniqueNames as string[]);
+          }
+        } catch (err) {
+          console.error("Error fetching churches list:", err);
+        }
+      };
+
+            fetchChurches();
+          }, []);
+
+
   const totalBulkPages = useMemo(() => {
     return Math.ceil(filteredBulkStudents.length / bulkItemsPerPage) || 1;
   }, [filteredBulkStudents.length, bulkItemsPerPage]);
@@ -1111,49 +1139,59 @@ export const ResultsViewer: React.FC<{
             </h5>
             <p className="text-xs text-slate-500 font-bold">رصد نتائج امتحانات المهرجان بمختلف التقنيات (تصحيح ورقي، بابل شيت، أونلاين)</p>
           </div>
-          <div className="flex flex-wrap gap-2 w-full md:w-auto shrink-0 animate-fade-in">
-            <button 
-              onClick={handleDownloadOmrTemplate}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-black transition-all shadow-sm cursor-pointer"
-              title="تحميل نموذج ملف Excel المخصص للبابل شيت OMR"
-            >
-              <Download size={14} />
-              تحميل نموذج بابل شيت (Excel)
-            </button>
-            {/* File upload input hidden */}
-            <label className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black cursor-pointer transition-all shadow-sm">
-              <Upload size={14} />
-              رفع نتائج بابل شيت (Excel)
-              <input 
-                type="file" 
-                accept=".xlsx, .xls" 
-                onChange={handleExcelUpload} 
-                className="hidden" 
-              />
-            </label>
-            <button 
-              onClick={() => setShowManualModal(true)}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-black transition-all shadow-sm"
-            >
-              <Plus size={14} />
-              إضافة نتيجة يدوي (ورقي)
-            </button>
-            <button 
-              onClick={() => setShowBulkScoreDashboard(!showBulkScoreDashboard)}
-              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all shadow-sm border ${
-                showBulkScoreDashboard 
-                  ? "bg-slate-800 border-slate-700 hover:bg-slate-900 text-white animate-pulse" 
-                  : "bg-indigo-600 border-indigo-500 hover:bg-indigo-700 text-white"
-              }`}
-            >
-              <Award size={14} />
-              {showBulkScoreDashboard ? "العودة لجدول النتائج 📋" : "رصد الدرجات الجماعي ⚡"}
-            </button>
+          <div className="grid grid-cols-2 gap-2 w-full md:w-auto shrink-0 animate-fade-in text-right">
+  
+  {/* العمود الأول - سطر 1 */}
+          <button 
+            onClick={handleDownloadOmrTemplate}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-black transition-all shadow-sm cursor-pointer"
+            title="تحميل نموذج ملف Excel المخصص للبابل شيت OMR"
+          >
+            <Download size={14} />
+            تحميل نموذج بابل شيت (Excel)
+          </button>
+
+          {/* العمود الثاني - سطر 1 */}
+          <label className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black cursor-pointer transition-all shadow-sm">
+            <Upload size={14} />
+            رفع نتائج بابل شيت (Excel)
+            <input 
+              type="file" 
+              accept=".xlsx, .xls" 
+              onChange={handleExcelUpload} 
+              className="hidden" 
+            />
+          </label>
+
+          {/* العمود الأول - سطر 2 */}
+          <button 
+            onClick={() => setShowManualModal(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-black rounded-xl text-xs font-black transition-all shadow-sm"
+          >
+            <Plus size={14} />
+            إضافة نتيجة يدوي (ورقي)
+          </button>
+
+          {/* العمود الثاني - سطر 2 */}
+          <button 
+            onClick={() => setShowBulkScoreDashboard(!showBulkScoreDashboard)}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all shadow-sm border ${
+              showBulkScoreDashboard 
+                ? "bg-cyan-400 border-cyan-300 hover:bg-cyan-500 text-black animate-pulse" 
+                : "bg-teal-500 border-teal-400 hover:bg-teal-600 text-black"
+            }`}
+          >
+            <Award size={14} />
+            {showBulkScoreDashboard ? "العودة لجدول النتائج " : "رصد الدرجات الجماعي "}
+          </button>
+
+          {/* زر الإعلان عن النتائج (يأخذ العمودين بالكامل في السطر الثالث ليكون مميزاً) */}
+          <div className="col-span-2">
             {!resultsPublished ? (
               <button
                 onClick={() => handleTogglePublish(true)}
                 disabled={isPublishLoading}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl text-xs font-black transition-all shadow-sm cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-xl text-xs font-black transition-all shadow-sm cursor-pointer"
               >
                 <Megaphone size={14} />
                 {isPublishLoading ? "جاري الإعلان..." : "إعلان النتائج للكنائس"}
@@ -1162,19 +1200,22 @@ export const ResultsViewer: React.FC<{
               <button
                 onClick={() => handleTogglePublish(false)}
                 disabled={isPublishLoading}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white rounded-xl text-xs font-black transition-all shadow-sm cursor-pointer"
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white rounded-xl text-xs font-black transition-all shadow-sm cursor-pointer"
               >
                 <EyeOff size={14} />
                 {isPublishLoading ? "جاري الحجب..." : "تراجع / حجب النتائج عن الكنائس"}
               </button>
             )}
-
-            <span className={`flex items-center justify-center px-3 py-2.5 rounded-xl text-[10px] font-black ${resultsPublished ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
-              {resultsPublished ? "● النتائج حالياً: معلنة للكنائس" : "● النتائج حالياً: محجوبة"}
-            </span>
           </div>
+
+          {/* شارة حالة الإعلان الحالية (تأخذ العمودين بالكامل أيضاً في الأسفل) */}
+          <span className={`col-span-2 flex items-center justify-center px-3 py-2.5 rounded-xl text-[10px] font-black ${resultsPublished ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
+            {resultsPublished ? "● النتائج حالياً: معلنة للكنائس" : "● النتائج حالياً: محجوبة"}
+          </span>
+
         </div>
-      )}
+      </div>
+    )}
 
       {!showBulkScoreDashboard ? (
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm overflow-hidden font-arabic" id="results-table-main-wrapper">
@@ -1189,19 +1230,19 @@ export const ResultsViewer: React.FC<{
                   onClick={handleExportToExcel}
                   disabled={isExportingExcel}
                   className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-                  title="تصدير كشف النتائج كملف Excel مخصص (OMR)"
+                  title="تحميل كشف النتائج كملف Excel (OMR)"
                 >
                   <FileSpreadsheet size={15} />
-                  <span>{isExportingExcel ? 'جاري تصدير Excel...' : 'تصدير كشف Excel (OMR) 📊'}</span>
+                  <span>{isExportingExcel ? 'جاري تحميل Excel...' : 'تحميل كشف Excel (OMR) 📊'}</span>
                 </button>
                 <button 
                   onClick={handleAdvancedExportPDF}
                   disabled={isGeneratingPDF}
                   className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-                  title="تصدير كشف النتائج كملف PDF"
+                  title="تحميل كشف النتائج كملف PDF"
                 >
                   <FileSpreadsheet size={15} />
-                  <span>تصدير تقرير PDF متعدد الصفحات (Landscape) 📑</span>
+                  <span>تحميل تقرير PDF متعدد الصفحات (Landscape) 📑</span>
                 </button>
               </>
             )}
@@ -1235,19 +1276,27 @@ export const ResultsViewer: React.FC<{
             />
           </div>
 
-          {/* 2. فلتر البحث بالكنيسة */}
+         {/* 2. فلتر البحث بالكنيسة - قائمة منسدلة */}
           <div className="flex-1 min-w-[200px]">
             <label className="block text-xs font-black text-slate-500 mb-1.5">البحث بالكنيسة</label>
-            <input 
-              type="text"
-              placeholder="ابحث باسم الكنيسة..."
+            <select 
               value={searchChurch}
               onChange={(e) => {
                 setSearchChurch(e.target.value);
-                setCurrentPage(1);
+                setCurrentPage(1); // إعادة الترقيم للصفحة الأولى عند الفلترة
               }}
-              className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 shadow-sm"
-            />
+              className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 shadow-sm appearance-none cursor-pointer"
+            >
+              {/* خيار افتراضي لعرض كل الكنائس بدون فلترة */}
+              <option value="">الكل</option>
+              
+              {/* عرض الكنائس القادمة من جدول السوبابيز */}
+              {churchesList.map((church, index) => (
+                <option key={index} value={church}>
+                  {church}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* 3. تصفية بالمرحلة */}

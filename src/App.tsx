@@ -73,6 +73,7 @@ import {
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
+import { ExamModelsDashboard } from './components/ExamModelsDashboard';
 import { ResultsViewer } from './components/ResultsViewer';
 import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
@@ -1131,6 +1132,7 @@ function AppComponent() {
   const [rememberMe, setRememberMe] = useState(false);
   const [adminFilterChurch, setAdminFilterChurch] = useState('الكل');
   const [adminActiveTab, setAdminActiveTab] = useState('dashboard');
+  const [examsManagementSubTab, setExamsManagementSubTab] = useState<'electronic' | 'paper_models'>('electronic');
   const [newsSearch, setNewsSearch] = useState('');
   const [newsFilterDate, setNewsFilterDate] = useState('');
   const [newsPage, setNewsPage] = useState(1);
@@ -8305,11 +8307,47 @@ function AppComponent() {
             )}
 
             {adminActiveTab === 'exams_management' && (
-              <section>
-                <h4 className="text-xl font-black text-slate-800 mb-8 flex items-center gap-2">
-                  <BookOpen className="text-primary" /> بناء وتحكم الامتحانات الإلكترونية
-                </h4>
-                <ExamBuilder stages={dynamicLevels} />
+              <section className="space-y-6">
+                {/* Sub-tabs Navigation */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-4 gap-4 font-arabic" dir="rtl">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="text-primary" size={24} />
+                    <h4 className="text-xl font-black text-slate-800">
+                      بناء وتوليد نماذج الامتحانات
+                    </h4>
+                  </div>
+                  
+                  <div className="flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto shadow-inner">
+                    <button
+                      onClick={() => setExamsManagementSubTab('electronic')}
+                      className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        examsManagementSubTab === 'electronic'
+                          ? 'bg-white text-indigo-600 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      الامتحانات الإلكترونية 💻
+                    </button>
+                    <button
+                      onClick={() => setExamsManagementSubTab('paper_models')}
+                      className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        examsManagementSubTab === 'paper_models'
+                          ? 'bg-white text-indigo-600 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      النماذج الورقية الذكية (أوفلاين) 📝
+                    </button>
+                  </div>
+                </div>
+
+                {examsManagementSubTab === 'electronic' ? (
+                  <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200">
+                    <ExamBuilder stages={dynamicLevels} />
+                  </div>
+                ) : (
+                  <ExamModelsDashboard />
+                )}
               </section>
             )}
 
