@@ -84,6 +84,9 @@ export const ResultsViewer: React.FC<{
   const [stageOptions, setStageOptions] = useState<string[]>([]);
   const [churchOptions, setChurchOptions] = useState<string[]>([]);
 
+  const [bulkCurrentPage, setBulkCurrentPage] = useState(1);
+  const bulkItemsPerPage = 100;
+
   const filteredBulkStudents = useMemo(() => {
     if (!bulkSearchQuery.trim()) return bulkStudents;
     const q = bulkSearchQuery.toLowerCase().trim();
@@ -91,6 +94,20 @@ export const ResultsViewer: React.FC<{
       student.name?.toLowerCase().includes(q)
     );
   }, [bulkStudents, bulkSearchQuery]);
+
+  useEffect(() => {
+    setBulkCurrentPage(1);
+  }, [bulkStage, bulkChurch, bulkSearchQuery]);
+
+  const totalBulkPages = useMemo(() => {
+    return Math.ceil(filteredBulkStudents.length / bulkItemsPerPage) || 1;
+  }, [filteredBulkStudents.length, bulkItemsPerPage]);
+
+  const currentBulkStudents = useMemo(() => {
+    const indexOfLastBulkItem = bulkCurrentPage * bulkItemsPerPage;
+    const indexOfFirstBulkItem = indexOfLastBulkItem - bulkItemsPerPage;
+    return filteredBulkStudents.slice(indexOfFirstBulkItem, indexOfLastBulkItem);
+  }, [filteredBulkStudents, bulkCurrentPage, bulkItemsPerPage]);
   
   const [manualForm, setManualForm] = useState({
     student_name: '',
@@ -1700,12 +1717,22 @@ export const ResultsViewer: React.FC<{
             <div className="flex gap-2">
               <button 
                 onClick={() => {
+                  const visibleIds = currentBulkStudents.map(s => s.student_id);
+                  setSelectedStudentIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+                }}
+                className="text-indigo-600 hover:underline font-black"
+              >
+                تحديد الكل بالصفحة ☑️
+              </button>
+              <span className="text-slate-300">|</span>
+              <button 
+                onClick={() => {
                   const visibleIds = filteredBulkStudents.map(s => s.student_id);
                   setSelectedStudentIds(prev => Array.from(new Set([...prev, ...visibleIds])));
                 }}
                 className="text-indigo-600 hover:underline font-black"
               >
-                تحديد الكل الظاهر ☑️
+                تحديد كل نتائج البحث 🎯
               </button>
               <span className="text-slate-300">|</span>
               <button 
@@ -1752,7 +1779,7 @@ export const ResultsViewer: React.FC<{
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredBulkStudents.map((student, idx) => {
+                  {currentBulkStudents.map((student, idx) => {
                     const isSelected = selectedStudentIds.includes(student.student_id);
                     const scores = existingScores[student.student_id] || {};
                     return (
@@ -1811,6 +1838,73 @@ export const ResultsViewer: React.FC<{
                   })}
                 </tbody>
               </table>
+
+              {/* Pagination controls */}
+              {totalBulkPages > 1 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 border-t border-slate-150 rounded-b-2xl font-arabic" dir="rtl">
+                  <div className="text-xs text-slate-500 font-bold">
+                    يعرض <span className="text-slate-800 font-black">{Math.min((bulkCurrentPage - 1) * bulkItemsPerPage + 1, filteredBulkStudents.length)}</span> - <span className="text-slate-800 font-black">{Math.min(bulkCurrentPage * bulkItemsPerPage, filteredBulkStudents.length)}</span> من أصل <span className="text-indigo-600 font-extrabold">{filteredBulkStudents.length}</span> مشترك (الصفحة {bulkCurrentPage} من {totalBulkPages})
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setBulkCurrentPage(1)}
+                      disabled={bulkCurrentPage === 1}
+                      className="px-2.5 py-1.5 text-[10px] font-black bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white transition-colors cursor-pointer"
+                      title="الصفحة الأولى"
+                    >
+                      الأولى
+                    </button>
+                    <button
+                      onClick={() => setBulkCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={bulkCurrentPage === 1}
+                      className="px-3 py-1.5 text-[10px] font-black bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      السابق
+                    </button>
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, totalBulkPages) }, (_, i) => {
+                        let pageNum = bulkCurrentPage - 2 + i;
+                        if (bulkCurrentPage <= 2) {
+                          pageNum = i + 1;
+                        } else if (bulkCurrentPage >= totalBulkPages - 1) {
+                          pageNum = totalBulkPages - 4 + i;
+                        }
+                        if (pageNum < 1 || pageNum > totalBulkPages) return null;
+
+                        const isCurrent = pageNum === bulkCurrentPage;
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setBulkCurrentPage(pageNum)}
+                            className={`w-8 h-8 flex items-center justify-center text-xs font-black rounded-lg transition-colors cursor-pointer ${
+                              isCurrent
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <button
+                      onClick={() => setBulkCurrentPage(prev => Math.min(prev + 1, totalBulkPages))}
+                      disabled={bulkCurrentPage === totalBulkPages}
+                      className="px-3 py-1.5 text-[10px] font-black bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      التالي
+                    </button>
+                    <button
+                      onClick={() => setBulkCurrentPage(totalBulkPages)}
+                      disabled={bulkCurrentPage === totalBulkPages}
+                      className="px-2.5 py-1.5 text-[10px] font-black bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white transition-colors cursor-pointer"
+                      title="الصفحة الأخيرة"
+                    >
+                      الأخيرة
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
