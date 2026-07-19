@@ -10405,7 +10405,7 @@ function AppComponent() {
 
               {/* Team Registration form content starts below directly */}
 
-              <EarlyGateGuard targetType="church" targetName={churchName} actionType="registration" userRole={userRole} fallbackMessage="عفواً، باب التسجيل لهذه المرحلة مغلق حالياً بقرار من إدارة الكنترول المركزي.">
+              <EarlyGateGuard targetType="church" targetName={churchName} actionType="registration" userRole={userRole} fallbackMessage="عفواً، التسجيل مغلق .">
                 <div className="space-y-8">
                   {viewMode === 'edit' ? (
                     <>
