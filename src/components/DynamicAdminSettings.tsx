@@ -403,7 +403,8 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
           { data: activityData },
           { data: hymnData },
           { data: configData },
-          { data: validationData }
+          { data: validationData },
+          { data: festivalLogoData }
         ] = await Promise.all([
           supabase.from('churches').select('*').range(0, 4999),
           supabase.from('stage_competitions').select('*').range(0, 4999),
@@ -411,7 +412,8 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
           supabase.from('activityStages').select('*').range(0, 4999),
           supabase.from('hymnStages').select('*').range(0, 4999),
           supabase.from('system_settings').select('*').eq('id', 'app_config').maybeSingle(),
-          supabase.from('system_settings').select('*').eq('id', 'validation').maybeSingle()
+          supabase.from('system_settings').select('*').eq('id', 'validation').maybeSingle(),
+          supabase.from('festival_settings').select('value').eq('key', 'annual_logo').maybeSingle()
         ]);
 
         if (!isMounted) return;
@@ -422,8 +424,13 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
         if (activityData) setActivityStages(activityData);
         if (hymnData) setHymnStages(hymnData);
         
-        if (configData) {
+        if (festivalLogoData && festivalLogoData.value) {
+          setAppLogo(festivalLogoData.value);
+        } else if (configData) {
           setAppLogo(configData.appLogo || null);
+        }
+
+        if (configData) {
           setGlobalReadAccess(configData.global_read_access !== false);
         }
         
@@ -856,31 +863,86 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
     if (!file) return;
 
     // Reject huge files directly to stay within reasonable limits
-    if (file.size > 2000000) { // Increased limit to 2MB for Firebase
+    if (file.size > 2000000) {
       alert('حجم الصورة كبير جداً. يرجى رفع صورة أقل من 2 ميجابايت.');
       return;
     }
 
     setIsUploadingLogo(true);
     try {
-      // 1. Upload to Firebase Storage
-      const logoUrl = await uploadToFirebase(file, 'branding');
-      
-      // 2. Update Supabase app_config
+      // 1. Upload to Supabase Storage bucket 'festival-assets'
+      const fileExt = file.name.split('.').pop() || 'png';
+      const fileName = `logo_${Date.now()}.${fileExt}`;
+      const filePath = `logos/${fileName}`;
+
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('festival-assets')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (uploadErr) {
+        console.warn("Supabase storage upload failed, attempting Firebase upload as fallback...", uploadErr);
+        // Fallback to Firebase upload if Supabase bucket doesn't exist or is not fully provisioned
+        const logoUrl = await uploadToFirebase(file, 'branding');
+        
+        // Update both tables for consistency
+        const { error: sbErr } = await supabase
+          .from('festival_settings')
+          .upsert({ 
+            key: 'annual_logo', 
+            value: logoUrl,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'key' });
+
+        if (sbErr) throw sbErr;
+
+        // Keep system_settings in sync as backup
+        await supabase
+          .from('system_settings')
+          .upsert({ 
+            id: 'app_config', 
+            appLogo: logoUrl 
+          });
+
+        setAppLogo(logoUrl);
+        alert('تم تحديث شعار المهرجان بنجاح!');
+        return;
+      }
+
+      // 2. Retrieve public URL from Supabase Storage
+      const { data: publicUrlData } = supabase.storage
+        .from('festival-assets')
+        .getPublicUrl(filePath);
+
+      const logoUrl = publicUrlData?.publicUrl;
+      if (!logoUrl) throw new Error('فشل الحصول على رابط الصورة المرفوعة من التخزين.');
+
+      // 3. Update festival_settings table
       const { error: sbErr } = await supabase
+        .from('festival_settings')
+        .upsert({ 
+          key: 'annual_logo', 
+          value: logoUrl,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'key' });
+
+      if (sbErr) throw sbErr;
+
+      // Keep system_settings in sync as backup
+      await supabase
         .from('system_settings')
         .upsert({ 
           id: 'app_config', 
           appLogo: logoUrl 
         });
 
-      if (sbErr) throw sbErr;
-
       setAppLogo(logoUrl);
-      alert('تم تحديث شعار المهرجان بنجاح!');
-    } catch (error) {
+      alert('تم تحديث شعار المهرجان بنجاح عبر التخزين السحابي!');
+    } catch (error: any) {
       console.error("Error uploading logo:", error);
-      alert('حدث خطأ أثناء رفع الشعار.');
+      alert('حدث خطأ أثناء رفع الشعار: ' + (error.message || 'خطأ غير معروف'));
     } finally {
       setIsUploadingLogo(false);
     }

@@ -909,9 +909,23 @@ function AppComponent() {
   }, [userProfile?.logoUrl, appLogo]);
 
   useEffect(() => {
-    // Fetch app_config from Supabase
+    // Fetch app_config and festival_settings from Supabase
     const fetchAppConfig = async () => {
       try {
+        let logoUrl: string | null = null;
+        try {
+          const { data: logoSetting, error: logoError } = await supabase
+            .from('festival_settings')
+            .select('value')
+            .eq('key', 'annual_logo')
+            .maybeSingle();
+          if (logoSetting && logoSetting.value) {
+            logoUrl = logoSetting.value;
+          }
+        } catch (err) {
+          console.error("Error fetching annual logo from festival_settings:", err);
+        }
+
         const { data, error } = await supabase
           .from('system_settings')
           .select('*')
@@ -921,13 +935,18 @@ function AppComponent() {
         if (data) {
           setActiveYear(data.activeYear || CURRENT_YEAR);
           setGlobalReadAccess(data.global_read_access !== false);
-          if (data.appLogo) {
-            localStorage.setItem('appLogoCache', data.appLogo);
-            setAppLogo(data.appLogo);
-          } else {
-            localStorage.removeItem('appLogoCache');
-            setAppLogo(null);
+          
+          if (!logoUrl && data.appLogo) {
+            logoUrl = data.appLogo;
           }
+        }
+
+        if (logoUrl) {
+          localStorage.setItem('appLogoCache', logoUrl);
+          setAppLogo(logoUrl);
+        } else {
+          localStorage.removeItem('appLogoCache');
+          setAppLogo(null);
         }
       } catch (err) {
         console.error("Error fetching app config from Supabase:", err);
