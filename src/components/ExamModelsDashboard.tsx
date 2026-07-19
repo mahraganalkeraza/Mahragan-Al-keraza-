@@ -93,7 +93,7 @@ export const ExamModelsDashboard: React.FC = () => {
       return;
     }
     if (!selectedSubject) {
-      alert('الرجاء اختيار المادة أولاً.');
+      alert('الرجاء اختيار المسابقة أولاً.');
       return;
     }
     
@@ -249,11 +249,11 @@ export const ExamModelsDashboard: React.FC = () => {
         </div>
         <div className="relative z-10 max-w-2xl">
           <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
-            نظام إدارة وتوليد النماذج الذكي
+           إنشاء نماذج الامتحانات   
           </span>
           <h2 className="text-2xl font-black mt-3 text-white">إعدادات نماذج امتحانات المهرجان</h2>
           <p className="text-xs text-indigo-200/80 leading-relaxed mt-2">
-            يتيح لك هذا القسم إعداد نماذج الامتحانات وتجربتها بشكل تفاعلي ذكي (أونلاين)، أو تصدير 10 نماذج مختلفة تماماً بضغطة زر واحدة داخل ملف Word منسق للطباعة لتسهيل أعمال الامتحانات الورقية أوفلاين.
+            يتيح لك هذا القسم إعداد نماذج الامتحانات وتحميل 10 نماذج مختلفة تمامًا بضغطة زر واحدة داخل ملف Word منسق للطباعة لتسهيل الامتحانات الورقية.
           </p>
         </div>
       </div>
@@ -274,7 +274,7 @@ export const ExamModelsDashboard: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {/* Stage Selector */}
             <div>
-              <label className="block text-xs font-black text-slate-500 mb-2">المرحلة الدراسية</label>
+              <label className="block text-xs font-black text-slate-500 mb-2">المرحلة</label>
               <select
                 value={selectedStage}
                 onChange={(e) => setSelectedStage(e.target.value)}
@@ -288,7 +288,7 @@ export const ExamModelsDashboard: React.FC = () => {
 
             {/* Subject Selector */}
             <div>
-              <label className="block text-xs font-black text-slate-500 mb-2">المادة الدراسية (الموضوع)</label>
+              <label className="block text-xs font-black text-slate-500 mb-2">  المسابقة </label>
               <select
                 value={selectedSubject}
                 onChange={(e) => setSelectedSubject(e.target.value)}
@@ -354,7 +354,7 @@ export const ExamModelsDashboard: React.FC = () => {
             ) : (
               <>
                 <Award size={14} />
-                سحب ومعاينة الامتحان التفاعلي 🎯
+                سحب ومعاينة الامتحان التفاعلي
               </>
             )}
           </button>
