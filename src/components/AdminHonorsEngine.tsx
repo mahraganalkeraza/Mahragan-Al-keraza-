@@ -16,14 +16,37 @@ export const AdminHonorsEngine: React.FC<{
   onHonorsUpdate?: (ranks: Record<string, any>) => void 
 }> = ({ results, isAdmin = false, onHonorsUpdate }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [weights, setWeights] = useState<WeightsMap>({});
-  const [minThreshold, setMinThreshold] = useState<number>(90);
+  const [weights, setWeights] = useState<WeightsMap>(() => {
+    try {
+      const cached = localStorage.getItem('honors_weights_matrix');
+      return cached ? JSON.parse(cached) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+  const [minThreshold, setMinThreshold] = useState<number>(() => {
+    try {
+      const cached = localStorage.getItem('honors_min_threshold');
+      return cached ? parseFloat(cached) : 90;
+    } catch (e) {
+      return 90;
+    }
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [systemStages, setSystemStages] = useState<string[]>([]);
   const [systemSubjects, setSystemSubjects] = useState<string[]>([]);
 
-  // تعديل 1: تحميل الإعدادات فوراً وتلقائياً عند تشغيل المكون بغض النظر عن حالة القسم مفتوح أم مغلق
+  // Sync state changes to localStorage
+  useEffect(() => {
+    localStorage.setItem('honors_weights_matrix', JSON.stringify(weights));
+  }, [weights]);
+
+  useEffect(() => {
+    localStorage.setItem('honors_min_threshold', minThreshold.toString());
+  }, [minThreshold]);
+
+  // تحميل الإعدادات فوراً وتلقائياً عند تشغيل المكون
   useEffect(() => {
     loadSettings();
   }, []);
@@ -31,15 +54,15 @@ export const AdminHonorsEngine: React.FC<{
   const loadSettings = async () => {
     setIsLoading(true);
     try {
-      const [weightsSnap, stagesSnap, bankSnap] = await Promise.all([
-        supabase.from('system_settings').select('*').eq('id', 'examWeights').maybeSingle(),
+      const [honorsSnap, stagesSnap, bankSnap] = await Promise.all([
+        supabase.from('honors_settings').select('*').eq('id', 'current_config').maybeSingle(),
         supabase.from('stage_competitions').select('stage_name'),
         supabase.from('competition_bank').select('name')
       ]);
-      if (weightsSnap.data) {
-        const data = weightsSnap.data.details || {};
-        if (data.weights) setWeights(data.weights);
-        if (data.minThreshold !== undefined) setMinThreshold(data.minThreshold);
+      if (honorsSnap.data) {
+        const data = honorsSnap.data;
+        if (data.weights_matrix) setWeights(data.weights_matrix);
+        if (data.min_threshold !== undefined) setMinThreshold(Number(data.min_threshold));
       }
       setSystemStages(stagesSnap.data?.map(d => d.stage_name).filter(Boolean) as string[] || []);
       
@@ -56,10 +79,13 @@ export const AdminHonorsEngine: React.FC<{
   const saveSettings = async () => {
     setIsSaving(true);
     try {
-      await supabase.from('system_settings').upsert({
-        id: 'examWeights',
-        details: { weights, minThreshold }
+      const { error } = await supabase.from('honors_settings').upsert({
+        id: 'current_config',
+        min_threshold: minThreshold,
+        weights_matrix: weights,
+        updated_at: new Date().toISOString()
       });
+      if (error) throw error;
       alert('تم حفظ إعدادات ودرجات التكريم بنجاح!');
     } catch (e) {
       console.error(e);
