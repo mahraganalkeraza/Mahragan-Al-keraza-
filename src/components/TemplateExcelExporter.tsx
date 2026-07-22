@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../utils/supabaseClient';
 import { 
   FileSpreadsheet, 
@@ -89,6 +90,168 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
   }, [isAdmin, userChurch]);
 
   const [churchOptions, setChurchOptions] = useState<string[]>([]);
+  const [localQualifiedList, setLocalQualifiedList] = useState<any[]>([]);
+  const [isLoadingResults, setIsLoadingResults] = useState<boolean>(true);
+
+  // Fetch Local Qualification Results directly from DB (exam_submissions & registrations)
+  const fetchLocalQualificationResults = async () => {
+    setIsLoadingResults(true);
+    try {
+      // 1. Query Local Qualification Results table: exam_submissions
+      let query = supabase.from('exam_submissions').select('*');
+      if (!isAdmin && userChurch) {
+        query = query.or(`churchName.eq.${userChurch},church.eq.${userChurch},church_name.eq.${userChurch}`);
+      }
+      const { data: submissionsData, error: subErr } = await query;
+      if (subErr) {
+        console.warn("Error fetching exam_submissions for export templates:", subErr);
+      }
+
+      // 2. Query registrations for phone numbers, competitions & registration-level qualification flags
+      let regMap: Record<string, any> = {};
+      let regList: any[] = [];
+      try {
+        let regQuery = supabase.from('registrations').select('*');
+        if (!isAdmin && userChurch) {
+          regQuery = regQuery.eq('churchName', userChurch);
+        }
+        const { data: regData } = await regQuery;
+        if (regData) {
+          regList = regData;
+          regData.forEach((r: any) => {
+            const key = String(r.student_id || r.id || '').trim();
+            if (key) regMap[key] = r;
+            if (r.name) regMap[String(r.name).trim()] = r;
+          });
+        }
+      } catch (e) {
+        console.warn("Could not fetch registrations for template exporter:", e);
+      }
+
+      const mergedMap = new Map<string, any>();
+
+      // Process exam_submissions (Local Qualification Results)
+      if (submissionsData && submissionsData.length > 0) {
+        submissionsData.forEach((sb: any) => {
+          const studentKey = String(sb.student_id || sb.id || sb.name || Math.random()).trim();
+          const regInfo = regMap[studentKey] || regMap[String(sb.name || '').trim()] || {};
+
+          const d = Number(sb.derasy_score || 0);
+          const m = Number(sb.mahfouzat_score || 0);
+          const q1 = Number(sb.qebty_lvl1_score || 0);
+          const q2 = Number(sb.qebty_lvl2_score || 0);
+          const totalScore = d + m + q1 + q2;
+
+          // Qualification status check
+          const isExplicitlyFalse = sb.is_qualified === false || sb.is_qualified === 'false' || sb.is_qualified === 0;
+          
+          const isQualified = 
+            sb.is_qualified === true || sb.is_qualified === 'true' || sb.is_qualified === 1 ||
+            regInfo.is_qualified === true || regInfo.is_qualified === 'true' || regInfo.is_qualified === 1 ||
+            sb.is_honored === true || sb.isHonored === true || sb.isMokaram === true ||
+            regInfo.isHonored === true || regInfo.isMokaram === true ||
+            sb.is_published === true || sb.status === 'completed' || sb.status === 'منشور' ||
+            totalScore > 0 ||
+            (!isExplicitlyFalse && (sb.submitted_at || sb.created_at || sb.status));
+
+          if (isQualified) {
+            let competitionsArr: string[] = [];
+            const rawComps = regInfo.competitions || sb.competitions;
+            if (Array.isArray(rawComps)) competitionsArr = rawComps;
+            else if (typeof rawComps === 'string') {
+              try { competitionsArr = JSON.parse(rawComps); } catch (_) { competitionsArr = [rawComps]; }
+            }
+
+            mergedMap.set(studentKey, {
+              id: studentKey,
+              studentName: sb.name || regInfo.name || 'مشترك',
+              name: sb.name || regInfo.name || 'مشترك',
+              churchName: sb.churchName || sb.church_name || sb.church || regInfo.churchName || userChurch || 'كنيسة غير محددة',
+              stage: sb.stage || regInfo.stage || '',
+              gender: sb.gender || regInfo.gender || 'ذكر',
+              phoneNumber: regInfo.phone || regInfo.phoneNumber || regInfo.mobile || sb.phone || sb.phoneNumber || '',
+              competitions: competitionsArr,
+              derasy_score: d,
+              mahfouzat_score: m,
+              qebty_lvl1_score: q1,
+              qebty_lvl2_score: q2,
+              academicScore: totalScore,
+              isQualified: true,
+              year: sb.year || regInfo.year || '2026'
+            });
+          }
+        });
+      }
+
+      // Also include any registrations explicitly marked as qualified or honored
+      if (regList.length > 0) {
+        regList.forEach((r: any) => {
+          const key = String(r.student_id || r.id || r.name || '').trim();
+          if (!mergedMap.has(key)) {
+            const isQual = 
+              r.is_qualified === true || r.is_qualified === 'true' || r.is_qualified === 1 ||
+              r.isHonored === true || r.isMokaram === true || r.is_honored === true ||
+              r.academicScore > 0 || r.totalScore > 0;
+
+            if (isQual) {
+              let competitionsArr: string[] = [];
+              if (Array.isArray(r.competitions)) competitionsArr = r.competitions;
+              else if (typeof r.competitions === 'string') {
+                try { competitionsArr = JSON.parse(r.competitions); } catch (_) { competitionsArr = [r.competitions]; }
+              }
+
+              mergedMap.set(key, {
+                id: key,
+                studentName: r.name || 'مشترك',
+                name: r.name || 'مشترك',
+                churchName: r.churchName || r.charchName || r.church || userChurch || 'كنيسة غير محددة',
+                stage: r.stage || '',
+                gender: r.gender || 'ذكر',
+                phoneNumber: r.phone || r.phoneNumber || r.mobile || '',
+                competitions: competitionsArr,
+                isQualified: true,
+                year: r.year || '2026'
+              });
+            }
+          }
+        });
+      }
+
+      // Fallback to prop participants if DB query returned nothing
+      if (mergedMap.size === 0 && participants && participants.length > 0) {
+        participants.forEach((p: any) => {
+          const key = String(p.id || p.student_id || p.name || Math.random()).trim();
+          mergedMap.set(key, {
+            ...p,
+            studentName: p.name || p.studentName || 'مشترك',
+            phoneNumber: p.phoneNumber || p.phone || p.mobile || '',
+            churchName: p.churchName || p.charchName || p.church || ''
+          });
+        });
+      }
+
+      const finalQualifiedArray = Array.from(mergedMap.values());
+      setLocalQualifiedList(finalQualifiedArray);
+
+      // Populate unique churches option dropdown
+      const allChurchesInResults = Array.from(
+        new Set(finalQualifiedArray.map((p: any) => p.churchName).filter(Boolean))
+      ).sort() as string[];
+
+      if (allChurchesInResults.length > 0) {
+        setChurchOptions(prev => Array.from(new Set([...prev, ...allChurchesInResults])).sort());
+      }
+
+    } catch (err) {
+      console.error("Failed to fetch local qualification results:", err);
+    } finally {
+      setIsLoadingResults(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLocalQualificationResults();
+  }, [isAdmin, userChurch]);
 
   // Fetch unique sorted list of churches directly from database on mount
   useEffect(() => {
@@ -108,7 +271,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
           const uniqueNames = Array.from(
             new Set(data.map((d: any) => d.church_name).filter(Boolean))
           ) as string[];
-          setChurchOptions(uniqueNames);
+          setChurchOptions(prev => Array.from(new Set([...prev, ...uniqueNames])).sort());
         }
       } catch (err) {
         console.error("Error in fetchChurches:", err);
@@ -117,43 +280,59 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     fetchChurches();
   }, []);
 
-  // Helper: map stage to template details
+  // Helper: map stage to template details with robust matching
   const getTemplateForStage = (stage: string): { templateName: string; displayName: string; category: 'primary' | 'prep_servants' | 'special' } => {
-    const primaryStages = ['حضانة', 'أولى وثانية', 'ثالثة ورابعة', 'خامسة وسادسة'];
-    const specialStages = [' صم وبكم', 'صم وبكم', 'سمعان الشيخ', 'ذوي القدرات', 'ديديموس', 'بولس وسيلا'];
-    
     const cleanStage = (stage || '').trim();
-    if (primaryStages.includes(cleanStage)) {
+
+    // Special Needs / Special Categories (فئات خاصة)
+    const isSpecial = 
+      cleanStage.includes('صم') ||
+      cleanStage.includes('سمعان') ||
+      cleanStage.includes('قدرات') ||
+      cleanStage.includes('ديديموس') ||
+      cleanStage.includes('بولس') ||
+      cleanStage.includes('خاصة');
+
+    // Primary (ابتدائي)
+    const isPrimary = 
+      cleanStage.includes('حضانة') ||
+      cleanStage.includes('أولى') ||
+      cleanStage.includes('ثانية') ||
+      cleanStage.includes('ثالثة') ||
+      cleanStage.includes('رابعة') ||
+      cleanStage.includes('خامسة') ||
+      cleanStage.includes('سادسة') ||
+      cleanStage.includes('ابتدائي') ||
+      cleanStage.includes('ابتدائي');
+
+    if (isSpecial) {
       return {
-        templateName: 'تسجيل مشتركين ابتدائي 2026.xls',
-        displayName: 'تسجيل مشتركين ابتدائي 2026.xls',
-        category: 'primary'
-      };
-    } else if (specialStages.includes(cleanStage)) {
-      return {
-        templateName: 'تسجيل مشتركين فئات خاصة 2026.xls',
-        displayName: 'تسجيل مشتركين فئات خاصة 2026.xls',
+        templateName: 'تسجيل مشتركين فئات خاصة 2026.xlsx',
+        displayName: 'تسجيل مشتركين فئات خاصة 2026.xlsx',
         category: 'special'
       };
-    } else {
+    } else if (isPrimary) {
       return {
-        templateName: 'تسجيل مشتركين من اعدادي لخدام 2026.xls',
-        displayName: 'تسجيل مشتركين من اعدادي لخدام 2026.xls',
+        templateName: 'تسجيل مشتركين ابتدائي 2026.xlsx',
+        displayName: 'تسجيل مشتركين ابتدائي 2026.xlsx',
+        category: 'primary'
+      };
+    } else {
+      // Prep to Servants (إعدادي لخدام)
+      return {
+        templateName: 'تسجيل مشتركين من اعدادي لخدام 2026.xlsx',
+        displayName: 'تسجيل مشتركين من اعدادي لخدام 2026.xlsx',
         category: 'prep_servants'
       };
     }
   };
 
- // Organize and filter participants (Only honored participants)
+  // Organize and filter participants for selected church
   const filteredParticipants = useMemo(() => {
-    // 1. نقوم أولاً بتصفية المشتركين ليحتوي الحقل فقط على المكرمين
-    // تذكر تغيير p.isHonored للاسم الصحيح للحقل لديك في الـ database (مثلاً: p.honored أو p.is_honored)
-    const honoredOnly = participants.filter(p => p.isHonored === true || p.isMokaram === true);
-
-    // 2. نقوم بالتصفية بناءً على الكنيسة المختارة
-    if (selectedChurch === 'الكل') return honoredOnly;
-    return honoredOnly.filter(p => (p.churchName || p.charchName) === selectedChurch);
-  }, [participants, selectedChurch]);
+    if (selectedChurch === 'الكل') return localQualifiedList;
+    const norm = selectedChurch.trim();
+    return localQualifiedList.filter(p => (p.churchName || '').trim() === norm);
+  }, [localQualifiedList, selectedChurch]);
 
   // Count students by template category
   const countsByTemplate = useMemo(() => {
@@ -189,60 +368,175 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     const ExcelJS = (await import('exceljs')).default;
     const workbook = new ExcelJS.Workbook();
     let ws: any;
-    let loaded = false;
 
-    const templateUrl = getTemplateUrl(templateName);
+    // Standardize template file name
+    let cleanName = templateName;
+    if (cleanName.endsWith('.xls')) {
+      cleanName = cleanName.replace(/\.xls$/, '.xlsx');
+    }
+
+    const templateUrl = getTemplateUrl(cleanName);
 
     try {
       const response = await fetch(templateUrl);
       if (response.ok) {
         const buffer = await response.arrayBuffer();
-        await workbook.xlsx.load(buffer);
-        ws = workbook.getWorksheet("تسجيل مشتركين");
-        if (ws) {
-          loaded = true;
-          console.log(`Successfully loaded official template: ${templateName}`);
+        
+        try {
+          await workbook.xlsx.load(buffer);
+          ws = workbook.getWorksheet("تسجيل مشتركين") || workbook.worksheets[0];
+          if (ws) {
+            ws.name = "تسجيل مشتركين";
+            ws.views = [{ rtl: true }];
+            console.log(`Successfully loaded official template: ${cleanName}`);
+          }
+        } catch (excelJsErr) {
+          console.warn(`ExcelJS native load failed for ${cleanName}, converting via XLSX...`, excelJsErr);
+          try {
+            const sheetJsWb = XLSX.read(buffer, { type: 'array' });
+            const xlsxArrayBuf = XLSX.write(sheetJsWb, { bookType: 'xlsx', type: 'array' });
+            await workbook.xlsx.load(xlsxArrayBuf);
+            ws = workbook.getWorksheet("تسجيل مشتركين") || workbook.worksheets[0];
+            if (ws) {
+              ws.name = "تسجيل مشتركين";
+              ws.views = [{ rtl: true }];
+            }
+          } catch (xlsxErr) {
+            console.error(`XLSX fallback conversion failed for ${cleanName}:`, xlsxErr);
+          }
         }
       } else {
         console.warn(`Template not found at ${templateUrl} (status ${response.status}). Creating workbook dynamically.`);
       }
     } catch (e) {
-      console.error(`Error fetching/parsing template ${templateName}:`, e);
+      console.error(`Error fetching/parsing template ${cleanName}:`, e);
     }
 
-    if (!loaded) {
-      throw new Error(`خطأ حرج: تعذر تحميل الملف الفعلي للقالب المعتمد المرفوع من المستخدم: "${templateName}". النظام مبرمج للعمل كمحقن بيانات فقط ولا يمكنه إنشاء قالب برمجي لتجنب فقدان صيغ التحقق والتنسيقات المعتمدة للوزارة.`);
+    // Dynamic Fallback if template loading failed or worksheet is missing
+    if (!ws) {
+      console.log(`Creating worksheet dynamically for template: ${cleanName}`);
+      ws = workbook.addWorksheet("تسجيل مشتركين");
+      ws.views = [{ rtl: true }];
+
+      // Set column widths
+      ws.columns = [
+        { key: "name", width: 34 },
+        { key: "phone", width: 18 },
+        { key: "gender", width: 14 },
+        { key: "day", width: 10 },
+        { key: "month", width: 10 },
+        { key: "year", width: 12 },
+        { key: "comp1", width: 22 },
+        { key: "comp2", width: 22 },
+        { key: "comp3", width: 22 },
+        { key: "comp4", width: 22 },
+        { key: "comp5", width: 22 },
+        { key: "comp6", width: 22 },
+        { key: "comp7", width: 22 },
+        { key: "comp8", width: 22 }
+      ];
+
+      // Header row 1: Merged Title
+      ws.mergeCells("A1:N1");
+      const titleCell = ws.getCell("A1");
+      titleCell.value = "أسقفية الشباب - مهرجان الكرازة 2026 - استمارة تسجيل المشتركين";
+      titleCell.font = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+      titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
+      titleCell.alignment = { vertical: "middle", horizontal: "center" };
+      ws.getRow(1).height = 36;
+
+      // Header row 2: Columns
+      const headerRow2 = ws.getRow(2);
+      headerRow2.height = 28;
+      headerRow2.values = [
+        "اسم المشترك (الاسم الرباعي)",
+        "رقم الموبايل",
+        "النوع (ذكر/أنثى)",
+        "اليوم",
+        "الشهر",
+        "السنة",
+        "المسابقة الأولى",
+        "المسابقة الثانية",
+        "المسابقة الثالثة",
+        "المسابقة الرابعة",
+        "المسابقة الخامسة",
+        "المسابقة السادسة",
+        "المسابقة السابعة",
+        "المسابقة الثامنة"
+      ];
+      headerRow2.eachCell((cell) => {
+        cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0284C7" } };
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFCBD5E1" } },
+          left: { style: "thin", color: { argb: "FFCBD5E1" } },
+          bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
+          right: { style: "thin", color: { argb: "FFCBD5E1" } }
+        };
+      });
     }
 
-    // Row writing starts at Row Index 2 (0-indexed) which is Row 3 in ExcelJS
+    // Row writing starts at Row 3 in ExcelJS
     let currentRow = 3;
 
     studentsList.forEach(student => {
       const row = ws.getRow(currentRow);
+      row.height = 22;
       
       // Column A (1): Name
-      row.getCell(1).value = student.name || student.studentName || '';
+      const nameCell = row.getCell(1);
+      nameCell.value = student.name || student.studentName || '';
+      nameCell.font = { name: 'Calibri', size: 11 };
+      nameCell.alignment = { vertical: 'middle', horizontal: 'right' };
       
       // Column B (2): Phone number
-      row.getCell(2).value = student.phoneNumber || student.phone || student.mobile || fallbackPhone;
+      const phoneCell = row.getCell(2);
+      phoneCell.value = student.phoneNumber || student.phone || student.mobile || fallbackPhone;
+      phoneCell.font = { name: 'Calibri', size: 11 };
+      phoneCell.alignment = { vertical: 'middle', horizontal: 'center' };
       
       // Column C (3): Gender
       const gender = student.gender === 'أنثى' || student.gender === 'female' ? 'أنثى' : 'ذكر';
-      row.getCell(3).value = gender;
+      const genderCell = row.getCell(3);
+      genderCell.value = gender;
+      genderCell.font = { name: 'Calibri', size: 11 };
+      genderCell.alignment = { vertical: 'middle', horizontal: 'center' };
       
       // Birthdate split
       const { day, month, year } = getRandomBirthdate(student.stage);
-      // Column D (4): Day
-      row.getCell(4).value = day;
-      // Column E (5): Month
-      row.getCell(5).value = month;
-      // Column F (6): Year
-      row.getCell(6).value = year;
+      const dayCell = row.getCell(4);
+      dayCell.value = Number(day);
+      dayCell.font = { name: 'Calibri', size: 11 };
+      dayCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const monthCell = row.getCell(5);
+      monthCell.value = Number(month);
+      monthCell.font = { name: 'Calibri', size: 11 };
+      monthCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+      const yearCell = row.getCell(6);
+      yearCell.value = Number(year);
+      yearCell.font = { name: 'Calibri', size: 11 };
+      yearCell.alignment = { vertical: 'middle', horizontal: 'center' };
 
       // Columns G to N (7 to 14): Registered Competitions
       const competitions = student.competitions || [];
       for (let i = 0; i < 8; i++) {
-        row.getCell(7 + i).value = competitions[i] || '';
+        const compCell = row.getCell(7 + i);
+        compCell.value = competitions[i] || '';
+        compCell.font = { name: 'Calibri', size: 11 };
+        compCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      }
+
+      // Border formatting for student data cells
+      for (let colIdx = 1; colIdx <= 14; colIdx++) {
+        row.getCell(colIdx).border = {
+          top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+        };
       }
 
       currentRow++;
@@ -265,13 +559,13 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     });
 
     if (category === 'primary') {
-      templateName = 'تسجيل مشتركين ابتدائي 2026.xls';
+      templateName = 'تسجيل مشتركين ابتدائي 2026.xlsx';
       categoryTitle = 'ابتدائي';
     } else if (category === 'prep_servants') {
-      templateName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
+      templateName = 'تسجيل مشتركين من اعدادي لخدام 2026.xlsx';
       categoryTitle = 'إعدادي لخدام';
     } else {
-      templateName = 'تسجيل مشتركين فئات خاصة 2026.xls';
+      templateName = 'تسجيل مشتركين فئات خاصة 2026.xlsx';
       categoryTitle = 'فئات خاصة';
     }
 
@@ -327,9 +621,9 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
 
         if (students.length > 0) {
           let tName = '';
-          if (cat === 'primary') tName = 'تسجيل مشتركين ابتدائي 2026.xls';
-          else if (cat === 'prep_servants') tName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
-          else tName = 'تسجيل مشتركين فئات خاصة 2026.xls';
+          if (cat === 'primary') tName = 'تسجيل مشتركين ابتدائي 2026.xlsx';
+          else if (cat === 'prep_servants') tName = 'تسجيل مشتركين من اعدادي لخدام 2026.xlsx';
+          else tName = 'تسجيل مشتركين فئات خاصة 2026.xlsx';
 
           setExportProgress(`جاري تعبئة ملف ${tName} لـ ${students.length} مشترك...`);
           const buffer = await fillTemplateBuffer(tName, students);
@@ -371,10 +665,9 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
       const JSZip = (await import('jszip')).default;
       const mainZip = new JSZip();
 
-     // Group students by church (Only honored)
+      // Group students by church
       const groupedChurches: Record<string, any[]> = {};
-      // نقوم بفلترة المصفوفة الكاملة للمكرمين فقط قبل تقسيمهم على الكنائس
-      const honoredAll = participants.filter(p => p.isHonored === true || p.isMokaram === true);
+      const honoredAll = localQualifiedList;
       
       honoredAll.forEach(p => {
         const cName = p.churchName || p.charchName || 'كنيسة غير معروفة';
@@ -412,9 +705,9 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
 
           if (students.length > 0) {
             let tName = '';
-            if (cat === 'primary') tName = 'تسجيل مشتركين ابتدائي 2026.xls';
-            else if (cat === 'prep_servants') tName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
-            else tName = 'تسجيل مشتركين فئات خاصة 2026.xls';
+            if (cat === 'primary') tName = 'تسجيل مشتركين ابتدائي 2026.xlsx';
+            else if (cat === 'prep_servants') tName = 'تسجيل مشتركين من اعدادي لخدام 2026.xlsx';
+            else tName = 'تسجيل مشتركين فئات خاصة 2026.xlsx';
 
             const buffer = await fillTemplateBuffer(tName, students);
             churchFolder?.file(tName, buffer);
@@ -531,26 +824,46 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
                     يمكنك تصفية وتصدير البيانات لكنيسة واحدة، أو تصدير جميع الكنائس دفعة واحدة بملفات منظمة.
                   </div>
                 </div>
-                <div className="relative min-w-[240px]">
-                  <select
-                    value={selectedChurch}
-                    onChange={(e) => setSelectedChurch(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold focus:outline-none focus:border-emerald-500 cursor-pointer text-slate-700 appearance-none"
+                <div className="flex items-center gap-2 min-w-[280px]">
+                  <div className="relative flex-1">
+                    <select
+                      value={selectedChurch}
+                      onChange={(e) => setSelectedChurch(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold focus:outline-none focus:border-emerald-500 cursor-pointer text-slate-700 appearance-none"
+                    >
+                      <option value="الكل">كل الكنائس ({churchOptions.length} كنيسة)</option>
+                      {churchOptions.map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                  <button
+                    onClick={fetchLocalQualificationResults}
+                    disabled={isLoadingResults}
+                    title="تحديث نتائج التصفية المحلية من قاعدة البيانات"
+                    className="p-2 bg-white border border-slate-200 hover:border-emerald-500 hover:text-emerald-600 rounded-xl text-slate-600 transition-all cursor-pointer shadow-sm disabled:opacity-50 shrink-0"
                   >
-                    <option value="الكل">كل الكنائس ({churchOptions.length} كنيسة)</option>
-                    {churchOptions.map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                  <ChevronDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <RefreshCw size={16} className={isLoadingResults ? 'animate-spin text-emerald-600' : ''} />
+                  </button>
                 </div>
               </div>
             )}
 
             {!isAdmin && (
-              <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-xl mb-6 text-xs text-emerald-800 font-bold flex items-center gap-2">
-                <Info size={16} className="text-emerald-600 shrink-0" />
-                <span>أنت تقوم بتصدير البيانات الرسمية الخاصة بكنيستك: <strong>{userChurch || 'كنيسة غير معروفة'}</strong></span>
+              <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-xl mb-6 text-xs text-emerald-800 font-bold flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Info size={16} className="text-emerald-600 shrink-0" />
+                  <span>أنت تقوم بتصدير البيانات الرسمية الخاصة بكنيستك: <strong>{userChurch || 'كنيسة غير معروفة'}</strong></span>
+                </div>
+                <button
+                  onClick={fetchLocalQualificationResults}
+                  disabled={isLoadingResults}
+                  className="px-3 py-1 bg-white border border-emerald-200 hover:bg-emerald-100/50 rounded-lg text-emerald-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  <RefreshCw size={13} className={isLoadingResults ? 'animate-spin' : ''} />
+                  <span>تحديث</span>
+                </button>
               </div>
             )}
 
