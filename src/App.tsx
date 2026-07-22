@@ -78,6 +78,7 @@ import { ResultsViewer } from './components/ResultsViewer';
 import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
 import OmrGenerator from './components/OmrGenerator';
+import { downloadStudentQRCode } from './utils/qrCodeGenerator';
 import { ExamLoginPortal } from './components/ExamLoginPortal';
 import { TemplateExcelExporter } from './components/TemplateExcelExporter';
 import AdminDisplayGate from './components/AdminDisplayGate';
@@ -7649,6 +7650,13 @@ function AppComponent() {
                               <td className="p-4">
                                 <div className="flex items-center justify-center gap-2">
                                   <button 
+                                    onClick={() => downloadStudentQRCode(p)}
+                                    className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors border border-transparent hover:border-indigo-100"
+                                    title="تحميل كود QR"
+                                  >
+                                    <QrCode size={18} />
+                                  </button>
+                                  <button 
                                     onClick={() => handleResetExam(p.id, p.name)}
                                     className="p-2 text-orange-500 hover:bg-orange-50 rounded-lg transition-colors border border-transparent hover:border-orange-100"
                                     title="إعادة فتح الامتحان"
@@ -7727,7 +7735,14 @@ function AppComponent() {
                             </div>
                           )}
 
-                          <div className="pt-2 border-t border-slate-50 flex items-center justify-end gap-2">
+                          <div className="pt-2 border-t border-slate-50 flex items-center justify-end gap-2 flex-wrap">
+                            <button 
+                              onClick={() => downloadStudentQRCode(p)}
+                              className="px-3 py-1.5 text-xs text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-all font-black flex items-center gap-1 cursor-pointer"
+                            >
+                              <QrCode size={14} />
+                              تحميل QR
+                            </button>
                             <button 
                               onClick={() => handleResetExam(p.id, p.name)}
                               className="px-3 py-1.5 text-xs text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-xl transition-all font-black flex items-center gap-1 cursor-pointer"
@@ -10973,6 +10988,13 @@ function AppComponent() {
                                 ))}
                               </div>
                               <div className="flex gap-1 items-center">
+                                <button 
+                                  onClick={() => downloadStudentQRCode(p)}
+                                  className="p-2 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors"
+                                  title="تحميل كود الـ QR"
+                                >
+                                  <QrCode size={18} />
+                                </button>
                                 <button 
                                   onClick={() => {
                                     setViewMode('edit');
