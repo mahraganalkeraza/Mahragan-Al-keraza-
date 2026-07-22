@@ -57,7 +57,7 @@ export async function downloadStudentQRCode(student: StudentQRData): Promise<voi
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     // Border around card
-    ctx.strokeStyle = '#e2e8f0';
+    ctx.strokeStyle = '#FFE066';
     ctx.lineWidth = 4;
     ctx.strokeRect(2, 2, canvasWidth - 4, canvasHeight - 4);
 
@@ -69,11 +69,11 @@ export async function downloadStudentQRCode(student: StudentQRData): Promise<voi
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 22px Cairo, Tahoma, Arial, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('مهرجان الكرازة المرقسية 2026', canvasWidth / 2, 42);
+    ctx.fillText('مهرجان الكرازة المرقسية ', canvasWidth / 2, 42);
 
-    ctx.fillStyle = '#38bdf8'; // Sky blue text
+    ctx.fillStyle = '#FFE066'; // Sky blue text
     ctx.font = 'bold 14px Cairo, Tahoma, Arial, sans-serif';
-    ctx.fillText('بطاقة إثبات هضور وتأكيد المشترك', canvasWidth / 2, 68);
+    ctx.fillText('الكود الخاص بدخول امتحان الأونلاين', canvasWidth / 2, 68);
 
     // Draw QR Code
     const qrSize = 280;
@@ -120,7 +120,7 @@ export async function downloadStudentQRCode(student: StudentQRData): Promise<voi
     // Footer
     ctx.fillStyle = '#94a3b8';
     ctx.font = '12px Cairo, Tahoma, Arial, sans-serif';
-    ctx.fillText('أسقفية الشباب - نظام الكرازة الإلكتروني الموحد', canvasWidth / 2, 580);
+    ctx.fillText('مهرجان الكرازة المرقسية - إيبارشية مغاغة والعدوة (المنظقة 18)', canvasWidth / 2, 580);
 
     // 4. Convert Canvas to PNG Blob & Download
     canvas.toBlob((blob) => {
