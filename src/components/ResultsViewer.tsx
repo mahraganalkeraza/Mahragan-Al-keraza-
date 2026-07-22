@@ -27,6 +27,7 @@ import PaginationComponent from './Pagination';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import { withStylesCleaned } from '../utils/oklchCleaner';
 
 export const ResultsViewer: React.FC<{ 
   results?: Result[], 
@@ -577,45 +578,47 @@ export const ResultsViewer: React.FC<{
     // Wait short time to let the DOM render the hidden element
     setTimeout(async () => {
       try {
-        const rowsPerPage = 12;
-        const totalPages = Math.ceil((results?.length || 0) / rowsPerPage);
-        
-        // Setup jsPDF with Landscape orientation
-        const pdf = new jsPDF({
-          orientation: 'landscape',
-          unit: 'mm',
-          format: 'a4'
-        });
-
-        for (let i = 0; i < totalPages; i++) {
-          setPdfProgress(Math.round((i / totalPages) * 100));
-          setPdfStatus(`جاري معالجة وتصدير الصفحة ${i + 1} من ${totalPages}...`);
+        await withStylesCleaned(async () => {
+          const rowsPerPage = 12;
+          const totalPages = Math.ceil((results?.length || 0) / rowsPerPage);
           
-          const element = document.getElementById(`pdf-page-${i}`);
-          if (element) {
-            // Options for html2canvas
-            const canvas = await html2canvas(element, {
-              scale: 2, // Sharpness
-              useCORS: true,
-              logging: false,
-              backgroundColor: '#ffffff'
-            });
-            const imgData = canvas.toDataURL('image/jpeg', 0.95);
-            
-            // On A4 Landscape (297mm x 210mm)
-            if (i > 0) {
-              pdf.addPage('a4', 'landscape');
-            }
-            pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210, `page-${i}`, 'FAST');
-          }
-        }
+          // Setup jsPDF with Landscape orientation
+          const pdf = new jsPDF({
+            orientation: 'landscape',
+            unit: 'mm',
+            format: 'a4'
+          });
 
-        setPdfProgress(100);
-        setPdfStatus("جاري تحفيظ وتصدير ملف الـ PDF النهائي...");
-        
-        const timestamp = new Date().toISOString().slice(0, 10);
-        const fileName = `تقرير_النتائج_النهائي_${timestamp}.pdf`;
-        pdf.save(fileName);
+          for (let i = 0; i < totalPages; i++) {
+            setPdfProgress(Math.round((i / totalPages) * 100));
+            setPdfStatus(`جاري معالجة وتصدير الصفحة ${i + 1} من ${totalPages}...`);
+            
+            const element = document.getElementById(`pdf-page-${i}`);
+            if (element) {
+              // Options for html2canvas
+              const canvas = await html2canvas(element, {
+                scale: 2, // Sharpness
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+              });
+              const imgData = canvas.toDataURL('image/jpeg', 0.95);
+              
+              // On A4 Landscape (297mm x 210mm)
+              if (i > 0) {
+                pdf.addPage('a4', 'landscape');
+              }
+              pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210, `page-${i}`, 'FAST');
+            }
+          }
+
+          setPdfProgress(100);
+          setPdfStatus("جاري تحفيظ وتصدير ملف الـ PDF النهائي...");
+          
+          const timestamp = new Date().toISOString().slice(0, 10);
+          const fileName = `تقرير_النتائج_النهائي_${timestamp}.pdf`;
+          pdf.save(fileName);
+        });
       } catch (err: any) {
         console.error("Advanced export PDF error:", err);
         alert("حدث خطأ أثناء تصدير ملف PDF: " + (err.message || err));

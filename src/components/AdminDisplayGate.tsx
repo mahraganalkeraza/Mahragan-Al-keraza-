@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { getHourlyExamToken } from '../utils/dailyToken';
-import { QrCode, Printer, RefreshCw, Clock, Calendar, CheckCircle, ShieldAlert } from 'lucide-react';
+import { triggerGlobalRefresh, performPurgeAndReload } from '../utils/forceRefreshManager';
+import { QrCode, Printer, RefreshCw, Clock, Calendar, CheckCircle, ShieldAlert, AlertTriangle, LogOut, X } from 'lucide-react';
 import logo from '../by-logo.jpeg';
 import { supabase } from '../lib/supabaseClient';
 
@@ -18,6 +19,8 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
   const [isLocked, setIsLocked] = useState(false);
   const [isUpdatingLock, setIsUpdatingLock] = useState(false);
   const [isRegeneratingToken, setIsRegeneratingToken] = useState(false);
+  const [isHardRefreshing, setIsHardRefreshing] = useState(false);
+  const [showRefreshConfirmModal, setShowRefreshConfirmModal] = useState(false);
 
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -101,6 +104,34 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
       alert(`خطأ أثناء إعادة توليد الرمز: ${err.message || err}`);
     } finally {
       setIsRegeneratingToken(false);
+    }
+  };
+
+  const handleHardRefreshPortal = () => {
+    setShowRefreshConfirmModal(true);
+  };
+
+  const executeHardRefresh = async () => {
+    setShowRefreshConfirmModal(false);
+    setIsHardRefreshing(true);
+    try {
+      // 1. Trigger DB timestamp update & Realtime broadcast to all devices
+      const nowMs = await triggerGlobalRefresh();
+
+      // 2. Clear local storage gate tokens and recalculate token
+      localStorage.setItem('manual_seed_modifier', String(nowMs));
+      localStorage.setItem('app_version', `v-${nowMs}`);
+      
+      const newToken = getHourlyExamToken();
+      setHourlyToken(newToken);
+
+      // 3. Perform purge and hard reload on admin device
+      await performPurgeAndReload(nowMs);
+
+    } catch (err: any) {
+      console.error("Hard refresh error:", err);
+      alert(`حدث خطأ أثناء إجراء الـ Refresh: ${err.message || err}`);
+      setIsHardRefreshing(false);
     }
   };
 
@@ -282,23 +313,39 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
             </p>
           </div>
 
-          {/* Button Two: Force Regeneration */}
+          {/* Button Two: Force Regeneration & Hard Refresh */}
           <div className="space-y-2">
-            <label className="text-[11px] font-black text-slate-400 block">تغيير وتحديث كود الدخول اليومي:</label>
-            <button
-              type="button"
-              onClick={handleForceRegenerateQR}
-              disabled={isRegeneratingToken}
-              className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/25 disabled:opacity-50 text-sm"
-            >
-              {isRegeneratingToken ? (
-                <RefreshCw className="animate-spin text-white" size={18} />
-              ) : (
-                <>🔄 QR جديد</>
-              )}
-            </button>
+            <label className="text-[11px] font-black text-slate-400 block">تحديث كود الدخول والكاش اليومي:</label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={handleForceRegenerateQR}
+                disabled={isRegeneratingToken || isHardRefreshing}
+                className="flex-1 py-3 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/25 disabled:opacity-50 text-xs sm:text-sm"
+              >
+                {isRegeneratingToken ? (
+                  <RefreshCw className="animate-spin text-white" size={18} />
+                ) : (
+                  <>🔄 QR جديد</>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleHardRefreshPortal}
+                disabled={isRegeneratingToken || isHardRefreshing}
+                className="flex-1 py-3 px-3 bg-cyan-600 hover:bg-cyan-700 text-white font-bold rounded-xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-cyan-950/40 disabled:opacity-50 text-xs sm:text-sm"
+                title="مسح الكاش، طرد الجلسات القديمة، وطلب آخر تحديث للبوابة"
+              >
+                {isHardRefreshing ? (
+                  <RefreshCw className="animate-spin text-white" size={18} />
+                ) : (
+                  <>⚡ Refresh (تحديث طارد)</>
+                )}
+              </button>
+            </div>
             <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
-              يؤدي الضغط على هذا الزر إلى توليد رمز تشفيري ساعي جديد وتغيير الـ QR كود فوراً وتحديثه في قواعد البيانات.
+              <span className="text-emerald-400 font-bold">QR جديد:</span> توليد كود جديد. | <span className="text-cyan-400 font-bold">Refresh:</span> مسح الكاش وطرد الدخول وجلب أحدث تحديث للبوابة فوراً.
             </p>
           </div>
         </div>
@@ -358,6 +405,88 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
           </button>
         )}
       </div>
+
+      {/* Confirmation Modal for Hard Refresh */}
+      {showRefreshConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in" dir="rtl">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl relative space-y-5 text-right overflow-hidden">
+            
+            {/* Background Glow */}
+            <div className="absolute -top-12 -left-12 w-36 h-36 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-12 -right-12 w-36 h-36 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 border-b border-slate-800/80 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 shrink-0">
+                  <AlertTriangle size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-100">تأكيد التحديث الإجباري (Hard Refresh)</h3>
+                  <p className="text-xs text-rose-400 font-bold mt-0.5">إجراء حساس على مستوى البوابة العامة</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRefreshConfirmModal(false)}
+                className="text-slate-400 hover:text-slate-200 p-1.5 rounded-xl hover:bg-slate-800/80 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="space-y-3 text-xs sm:text-sm text-slate-300 leading-relaxed font-semibold">
+              <p className="text-slate-200">
+                هل أنت متأكد من رغبتك في تفعيل <span className="text-rose-400 font-bold">التحديث الإجباري للبوابة</span>؟
+              </p>
+
+              <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3.5 space-y-2.5 text-xs text-slate-300">
+                <div className="flex items-start gap-2 text-rose-300">
+                  <LogOut size={16} className="shrink-0 mt-0.5 text-rose-400" />
+                  <span><strong>طرد الجلسات:</strong> سيتم تسجيل الخروج فوراً وطرد جميع الطلاب والمستخدمين المتصلين حالياً.</span>
+                </div>
+
+                <div className="flex items-start gap-2 text-amber-300">
+                  <RefreshCw size={16} className="shrink-0 mt-0.5 text-amber-400" />
+                  <span><strong>تحديث الكاش:</strong> سيتم تفريغ ذاكرة الكاش (Cache Storage) وملفات الـ Service Worker القديمة.</span>
+                </div>
+
+                <div className="flex items-start gap-2 text-cyan-300">
+                  <ShieldAlert size={16} className="shrink-0 mt-0.5 text-cyan-400" />
+                  <span><strong>جلب النسخة الجديدة:</strong> سيُجبر التطبيق على تحميل أحدث ملفات البوابة مباشرة على كافة الهواتف.</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={executeHardRefresh}
+                disabled={isHardRefreshing}
+                className="flex-1 py-3 px-4 bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-rose-950/50 flex items-center justify-center gap-2"
+              >
+                {isHardRefreshing ? (
+                  <RefreshCw className="animate-spin" size={18} />
+                ) : (
+                  <>⚡ تأكيد التحديث والإخراج</>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowRefreshConfirmModal(false)}
+                disabled={isHardRefreshing}
+                className="py-3 px-5 bg-slate-800 hover:bg-slate-700 active:bg-slate-850 text-slate-300 font-bold text-xs sm:text-sm rounded-xl border border-slate-700 transition-all"
+              >
+                إلغاء
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 

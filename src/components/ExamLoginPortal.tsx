@@ -20,6 +20,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { getDeviceFingerprint } from '../lib/deviceTracking';
 import { getDailyExamToken, validateHourlyExamToken } from '../utils/dailyToken';
+import { setupForceRefreshListener } from '../utils/forceRefreshManager';
 
 interface ExamLoginPortalProps {
   onClose: () => void; // زر الرجوع / إغلاق البوابة
@@ -112,6 +113,13 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     };
 
     checkEmergencyLockAndSeed();
+  }, []);
+
+  useEffect(() => {
+    const cleanup = setupForceRefreshListener();
+    return () => {
+      cleanup();
+    };
   }, []);
 
   useEffect(() => {

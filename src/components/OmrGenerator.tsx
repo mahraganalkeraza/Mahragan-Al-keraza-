@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient';
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 import html2canvas from 'html2canvas';
+import { withStylesCleaned } from '../utils/oklchCleaner';
 import { Download, Loader2, AlertCircle, FileScan, Users, LayoutGrid, QrCode, Search, CheckCircle2 } from 'lucide-react';
 import appLogo from '../by-logo.jpeg';
 
@@ -591,78 +592,82 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
   };
 
   const generateOMRPDF = async (students: Participant[]) => {
-    const churchLogos = await fetchPublicChurches();
-    const totalStudents = students.length;
-    const totalBatchesNum = Math.ceil(totalStudents / BATCH_SIZE);
-    setProgress({ current: 0, total: totalStudents, batch: 1, totalBatches: totalBatchesNum });
+    await withStylesCleaned(async () => {
+      const churchLogos = await fetchPublicChurches();
+      const totalStudents = students.length;
+      const totalBatchesNum = Math.ceil(totalStudents / BATCH_SIZE);
+      setProgress({ current: 0, total: totalStudents, batch: 1, totalBatches: totalBatchesNum });
 
-    for (let batchIndex = 0; batchIndex < totalBatchesNum; batchIndex++) {
-      const batchList = students.slice(batchIndex * BATCH_SIZE, (batchIndex + 1) * BATCH_SIZE);
-      const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+      for (let batchIndex = 0; batchIndex < totalBatchesNum; batchIndex++) {
+        const batchList = students.slice(batchIndex * BATCH_SIZE, (batchIndex + 1) * BATCH_SIZE);
+        const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
 
-      for (let j = 0; j < batchList.length; j++) {
-        const student = batchList[j];
-        try {
-          const domElement = await createOMRSheetElement(student, numQuestions, churchLogos, rawChurches);
-          const canvas = await html2canvas(domElement, { scale: 3, useCORS: true, allowTaint: true });
-          const imgData = canvas.toDataURL('image/jpeg', 0.95);
-          doc.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-          document.body.removeChild(domElement);
-        } catch (e) {
-          console.error('Error generating OMR page:', e);
+        for (let j = 0; j < batchList.length; j++) {
+          const student = batchList[j];
+          try {
+            const domElement = await createOMRSheetElement(student, numQuestions, churchLogos, rawChurches);
+            const canvas = await html2canvas(domElement, { scale: 3, useCORS: true, allowTaint: true });
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
+            doc.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+            document.body.removeChild(domElement);
+          } catch (e) {
+            console.error('Error generating OMR page:', e);
+          }
+
+          if (j < batchList.length - 1) doc.addPage();
+          if (j % 5 === 0) {
+            setProgress(p => ({ ...p, current: (batchIndex * BATCH_SIZE) + j + 1 }));
+            await new Promise(resolve => setTimeout(resolve, 0)); 
+          }
         }
-
-        if (j < batchList.length - 1) doc.addPage();
-        if (j % 5 === 0) {
-          setProgress(p => ({ ...p, current: (batchIndex * BATCH_SIZE) + j + 1 }));
-          await new Promise(resolve => setTimeout(resolve, 0)); 
-        }
+        setProgress(p => ({ ...p, current: Math.min((batchIndex + 1) * BATCH_SIZE, totalStudents) }));
+        const timeStamp = new Date().getTime();
+        doc.save(`OMR_${selectedChurch}_B${batchIndex + 1}_${timeStamp}.pdf`);
+        await new Promise(resolve => setTimeout(resolve, 500)); 
       }
-      setProgress(p => ({ ...p, current: Math.min((batchIndex + 1) * BATCH_SIZE, totalStudents) }));
-      const timeStamp = new Date().getTime();
-      doc.save(`OMR_${selectedChurch}_B${batchIndex + 1}_${timeStamp}.pdf`);
-      await new Promise(resolve => setTimeout(resolve, 500)); 
-    }
+    });
   };
 
   const generateQRPDF = async (students: Participant[]) => {
-    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-    const totalStudents = students.length;
-    const cardsPerPage = 20; // 4x5
-    const totalPagesNum = Math.ceil(totalStudents / cardsPerPage);
-    
-    setProgress({ current: 0, total: totalStudents, batch: 1, totalBatches: 1 });
+    await withStylesCleaned(async () => {
+      const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+      const totalStudents = students.length;
+      const cardsPerPage = 20; // 4x5
+      const totalPagesNum = Math.ceil(totalStudents / cardsPerPage);
+      
+      setProgress({ current: 0, total: totalStudents, batch: 1, totalBatches: 1 });
 
-    for (let pIdx = 0; pIdx < totalPagesNum; pIdx++) {
-        const batch = students.slice(pIdx * cardsPerPage, (pIdx + 1) * cardsPerPage);
-        try {
-          const domElement = await createQRCardPageElement(batch, rawChurches);
+      for (let pIdx = 0; pIdx < totalPagesNum; pIdx++) {
+          const batch = students.slice(pIdx * cardsPerPage, (pIdx + 1) * cardsPerPage);
+          try {
+            const domElement = await createQRCardPageElement(batch, rawChurches);
+            
+            // Use html2canvas to render the entire page of cards
+            const canvas = await html2canvas(domElement, { 
+                scale: 2.5, // Slightly lower scale to avoid memory issues on large PDFs
+                useCORS: true, 
+                allowTaint: true,
+                logging: true, // Enable logging for troubleshooting
+                backgroundColor: '#ffffff'
+            });
+            
+            const imgData = canvas.toDataURL('image/jpeg', 0.9); 
+            doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+
+            document.body.removeChild(domElement);
+          } catch (e) {
+            console.error('Error rendering QR page:', e);
+          }
+
+          if (pIdx < totalPagesNum - 1) doc.addPage();
           
-          // Use html2canvas to render the entire page of cards
-          const canvas = await html2canvas(domElement, { 
-              scale: 2.5, // Slightly lower scale to avoid memory issues on large PDFs
-              useCORS: true, 
-              allowTaint: true,
-              logging: true, // Enable logging for troubleshooting
-              backgroundColor: '#ffffff'
-          });
-          
-          const imgData = canvas.toDataURL('image/jpeg', 0.9); 
-          doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+          setProgress(prev => ({ ...prev, current: Math.min((pIdx + 1) * cardsPerPage, totalStudents) }));
+          await new Promise(r => setTimeout(r, 100)); // UI responsiveness
+      }
 
-          document.body.removeChild(domElement);
-        } catch (e) {
-          console.error('Error rendering QR page:', e);
-        }
-
-        if (pIdx < totalPagesNum - 1) doc.addPage();
-        
-        setProgress(prev => ({ ...prev, current: Math.min((pIdx + 1) * cardsPerPage, totalStudents) }));
-        await new Promise(r => setTimeout(r, 100)); // UI responsiveness
-    }
-
-    const timeStamp = new Date().getTime();
-    doc.save(`QR_ID_Cards_${selectedChurch === 'الكل' ? 'All' : selectedChurch}_${timeStamp}.pdf`);
+      const timeStamp = new Date().getTime();
+      doc.save(`QR_ID_Cards_${selectedChurch === 'الكل' ? 'All' : selectedChurch}_${timeStamp}.pdf`);
+    });
   };
 
   return (
