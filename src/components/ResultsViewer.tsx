@@ -89,12 +89,21 @@ export const ResultsViewer: React.FC<{
   const bulkItemsPerPage = 100;
 
   const filteredBulkStudents = useMemo(() => {
-    if (!bulkSearchQuery.trim()) return bulkStudents;
-    const q = bulkSearchQuery.toLowerCase().trim();
-    return bulkStudents.filter((student: any) => 
-      student.name?.toLowerCase().includes(q)
-    );
-  }, [bulkStudents, bulkSearchQuery]);
+    let list = bulkStudents;
+    if (bulkChurch !== 'الكل') {
+      list = list.filter((s: any) => s.churchName === bulkChurch);
+    }
+    if (bulkStage !== 'الكل') {
+      list = list.filter((s: any) => s.stage === bulkStage);
+    }
+    if (bulkSearchQuery.trim()) {
+      const q = bulkSearchQuery.toLowerCase().trim();
+      list = list.filter((student: any) => 
+        student.name?.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [bulkStudents, bulkChurch, bulkStage, bulkSearchQuery]);
 
   useEffect(() => {
     setBulkCurrentPage(1);
@@ -303,31 +312,26 @@ export const ResultsViewer: React.FC<{
   const fetchBulkStudents = async () => {
     setIsBulkStudentsLoading(true);
     try {
-      let query = supabase.from('registrations').select('student_id, name, churchName, stage, gender');
+      const { data, error } = await supabase
+        .from('registrations')
+        .select('student_id, name, churchName, stage, gender')
+        .order('name');
       
-      if (bulkChurch !== 'الكل') {
-        query = query.eq('churchName', bulkChurch);
-      }
-      if (bulkStage !== 'الكل') {
-        query = query.eq('stage', bulkStage);
-      }
-      
-      const { data, error } = await query.order('name');
       if (error) throw error;
       setBulkStudents(data || []);
       setSelectedStudentIds([]); // Reset selected checkboxes
       
       if (data && data.length > 0) {
-        const studentIds = data.map(s => s.student_id);
         const { data: scoresData, error: scoresErr } = await supabase
           .from('exam_submissions')
-          .select('student_id, churchName, stage, gender, qebty_lvl1_score, qebty_lvl2_score, derasy_score, mahfouzat_score')
-          .in('student_id', studentIds);
+          .select('student_id, churchName, stage, gender, qebty_lvl1_score, qebty_lvl2_score, derasy_score, mahfouzat_score');
         
         if (!scoresErr && scoresData) {
           const scoresMap: Record<string, any> = {};
           scoresData.forEach(item => {
-            scoresMap[item.student_id] = item;
+            if (item.student_id) {
+              scoresMap[item.student_id] = item;
+            }
           });
           setExistingScores(scoresMap);
         }
@@ -342,10 +346,10 @@ export const ResultsViewer: React.FC<{
   };
 
   useEffect(() => {
-    if (showBulkScoreDashboard && isAdmin) {
+    if (showBulkScoreDashboard && isAdmin && bulkStudents.length === 0) {
       fetchBulkStudents();
     }
-  }, [bulkStage, bulkChurch, showBulkScoreDashboard]);
+  }, [showBulkScoreDashboard, isAdmin, bulkStudents.length]);
 
   const getColumnArabicName = (col: string) => {
     switch (col) {
@@ -404,10 +408,61 @@ export const ResultsViewer: React.FC<{
 
       if (error) throw error;
 
+      // Optimistic updates for local state (zero latency)
+      setExistingScores(prev => {
+        const updated = { ...prev };
+        selectedStudentIds.forEach(id => {
+          const student = bulkStudents.find(s => s.student_id === id);
+          const existing = updated[id] || {};
+          updated[id] = {
+            ...existing,
+            student_id: id,
+            churchName: student?.churchName || existing.churchName || '',
+            stage: student?.stage || existing.stage || '',
+            gender: student?.gender || existing.gender || 'ذكر',
+            derasy_score: selectedColumn === 'derasy_score' ? scoreVal : (existing.derasy_score !== undefined ? existing.derasy_score : null),
+            mahfouzat_score: selectedColumn === 'mahfouzat_score' ? scoreVal : (existing.mahfouzat_score !== undefined ? existing.mahfouzat_score : null),
+            qebty_lvl1_score: selectedColumn === 'qebty_lvl1_score' ? scoreVal : (existing.qebty_lvl1_score !== undefined ? existing.qebty_lvl1_score : null),
+            qebty_lvl2_score: selectedColumn === 'qebty_lvl2_score' ? scoreVal : (existing.qebty_lvl2_score !== undefined ? existing.qebty_lvl2_score : null),
+          };
+        });
+        return updated;
+      });
+
+      setSupabaseSubmissions(prev => {
+        const prevMap = new Map(prev.map(r => [r.id, r]));
+        selectedStudentIds.forEach(id => {
+          const student = bulkStudents.find(s => s.student_id === id);
+          const existing = prevMap.get(id);
+          const d = selectedColumn === 'derasy_score' ? scoreVal : Number(existing?.derasy_score || 0);
+          const m = selectedColumn === 'mahfouzat_score' ? scoreVal : Number(existing?.mahfouzat_score || 0);
+          const q1 = selectedColumn === 'qebty_lvl1_score' ? scoreVal : Number(existing?.qebty_lvl1_score || 0);
+          const q2 = selectedColumn === 'qebty_lvl2_score' ? scoreVal : Number(existing?.qebty_lvl2_score || 0);
+          
+          prevMap.set(id, {
+            id,
+            studentName: student?.name || existing?.studentName || 'طالب',
+            churchName: student?.churchName || existing?.churchName || '',
+            stage: student?.stage || existing?.stage || '',
+            derasy_score: d,
+            mahfouzat_score: m,
+            qebty_lvl1_score: q1,
+            qebty_lvl2_score: q2,
+            academicScore: d + m + q1 + q2,
+            submissionStatus: existing?.submissionStatus || 'منشور',
+            timestamp: existing?.timestamp || new Date().toISOString(),
+            gender: student?.gender || existing?.gender || '',
+            submissionType: existing?.submissionType || 'online',
+            detailed_answers: existing?.detailed_answers || null
+          });
+        });
+        return Array.from(prevMap.values());
+      });
+
       alert(`تم بنجاح رصد درجة [${scoreVal}] في [${columnArabic}] لعدد [${selectedStudentIds.length}] من الطلاب! 🎉`);
       
-      await fetchBulkStudents();
-      fetchSubmissionsFromSupabase();
+      setSelectedStudentIds([]);
+      setBulkScoreValue('');
     } catch (err: any) {
       console.error('Error submitting bulk scores:', err.message);
       alert('حدث خطأ أثناء رصد الدرجات: ' + err.message);
@@ -1633,13 +1688,14 @@ export const ResultsViewer: React.FC<{
               <button 
                 onClick={fetchBulkStudents}
                 disabled={isBulkStudentsLoading}
-                className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all"
-                title="تحديث البيانات"
+                className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all font-bold text-xs shadow-sm cursor-pointer disabled:opacity-50"
+                title="تحديث البيانات من السيرفر"
               >
-                <RefreshCcw size={16} className={isBulkStudentsLoading ? 'animate-spin' : ''} />
+                <RefreshCcw size={15} className={isBulkStudentsLoading ? 'animate-spin text-indigo-600' : ''} />
+                <span>{isBulkStudentsLoading ? 'جاري التحديث...' : 'تحديث البيانات 🔄'}</span>
               </button>
-              <span className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-xs font-black">
-                المطابقين: {bulkStudents.length} مشترك
+              <span className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl text-xs font-black border border-indigo-100">
+                المطابقين: {filteredBulkStudents.length} / {bulkStudents.length} مشترك
               </span>
             </div>
           </div>

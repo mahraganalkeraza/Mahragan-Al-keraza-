@@ -98,6 +98,7 @@ export interface Result {
   timestamp: string;
   year?: string;
   submissionType?: string;
+  submissionStatus?: string;
   detailed_answers?: any[];
 }
 
