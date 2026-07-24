@@ -83,7 +83,7 @@ import { ExamLoginPortal } from './components/ExamLoginPortal';
 import { TemplateExcelExporter } from './components/TemplateExcelExporter';
 import AdminDisplayGate from './components/AdminDisplayGate';
 import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
-import { setupForceRefreshListener, performPurgeAndReload, triggerGlobalRefresh } from './utils/forceRefreshManager';
+import { setupForceRefreshListener } from './utils/forceRefreshManager';
 import { supabase } from './lib/supabaseClient';
 import { getCustomActivities } from './utils/activitiesService';
 import { getDeviceFingerprint } from './lib/deviceTracking';
@@ -517,7 +517,7 @@ function AppComponent() {
     if (refreshCountdown === null) return;
     
     if (refreshCountdown <= 0) {
-      performPurgeAndReload();
+      window.location.href = targetRefreshUrl || window.location.href;
       return;
     }
 
@@ -568,12 +568,13 @@ function AppComponent() {
   // Global Unconditional Broadcast Listener for Force Hard Refresh / Cache Busting
   useEffect(() => {
     const handleHardRefresh = (payload: any) => {
-      const timestamp = (payload && payload.timestamp) || Date.now();
+      sessionStorage.clear();
       const currentUrl = window.location.origin + window.location.pathname;
-      const cacheBusterUrl = `${currentUrl}?v=${timestamp}${window.location.hash}`;
+      const timestamp = (payload && payload.timestamp) || Date.now();
+      const cacheBusterUrl = `${currentUrl}?bust=${timestamp}${window.location.hash}`;
       
       setTargetRefreshUrl(cacheBusterUrl);
-      setRefreshCountdown(3);
+      setRefreshCountdown(5);
     };
 
     const globalLockChannel = supabase

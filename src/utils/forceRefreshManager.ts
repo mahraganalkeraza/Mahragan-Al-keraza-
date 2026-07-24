@@ -3,42 +3,6 @@ import { supabase } from '../lib/supabaseClient';
 let isPurgeInProgress = false;
 
 /**
- * Helper function to clear all cookies across path scopes and domains
- */
-export function clearAllCookies() {
-  try {
-    const cookies = document.cookie ? document.cookie.split("; ") : [];
-    const hostname = window.location.hostname;
-    const path = window.location.pathname;
-    const paths = ["/", path, path.substring(0, path.lastIndexOf('/')) || "/"];
-    const domains = [
-      hostname,
-      "." + hostname,
-      hostname.startsWith(".") ? hostname.substring(1) : hostname
-    ].filter(Boolean);
-
-    for (const cookie of cookies) {
-      const eqPos = cookie.indexOf("=");
-      const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
-      if (!name) continue;
-
-      // Expire cookie without explicit domain/path
-      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;`;
-      
-      // Expire cookie across path and domain variations
-      for (const p of paths) {
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=${p};`;
-        for (const d of domains) {
-          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=${p}; domain=${d};`;
-        }
-      }
-    }
-  } catch (e) {
-    console.warn("Cookie clear error:", e);
-  }
-}
-
-/**
  * Fetches the latest forced refresh timestamp from system_settings DB.
  */
 export async function getLatestForcedRefreshTimestamp(): Promise<number> {
@@ -83,56 +47,39 @@ export async function getLatestForcedRefreshTimestamp(): Promise<number> {
 }
 
 /**
- * Executes a full clean, force logout, cache purge, and page reload for ALL users,
- * including visitors logged in via Daily QR Code scan and registered account holders.
- *
- * Sequence:
- * 1. Clear All Local & Session Storage (explicit QR validation keys + clear())
- * 2. Clear Cookies across all path scopes
- * 3. Purge Cache Storage & Service Workers (PWA / Browser Cache)
- * 4. Force Uncached Hard Reload: window.location.href = window.location.pathname + '?v=' + new Date().getTime();
+ * Executes a full clean, force logout, cache purge, and page reload.
  */
-export async function performPurgeAndReload(timestampMs?: number) {
+export async function performPurgeAndReload(timestampMs: number) {
   if (isPurgeInProgress) return;
   isPurgeInProgress = true;
 
   try {
-    // Revoke Supabase auth session if active
+    // a) Sign out current user session completely
     await supabase.auth.signOut().catch((err) => console.warn("SignOut error:", err));
 
-    // 1. Clear All Local & Session Storage
-    const specificKeys = [
-      'qr_token',
-      'daily_code',
-      'access_key',
-      'guest_session',
-      'gate_access_granted_hourly',
-      'gate_access_granted',
-      'gateway_exam_token',
-      'active_student_session',
-      'active_student_id',
-      'church_session',
-      'userProfileCache',
-      'cached_auth_version',
-      'exam_session',
-      'portal_locked_by_admin',
-      'manual_seed_modifier',
-      'last_applied_refresh',
-      'cached_students_registry',
-      'cached_students_registry_time',
-      'cached_students_last_sync_timestamp',
-      'current_exam_questions',
-      'device_hardware_token',
-      'app_version'
-    ];
-
-    specificKeys.forEach((key) => {
+    // Unregister Service Workers
+    if ('serviceWorker' in navigator) {
       try {
-        localStorage.removeItem(key);
-        sessionStorage.removeItem(key);
-      } catch (e) {}
-    });
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          await reg.unregister();
+        }
+      } catch (swErr) {
+        console.warn("SW unregister error:", swErr);
+      }
+    }
 
+    // Clear Cache Storage
+    if ('caches' in window) {
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      } catch (cErr) {
+        console.warn("Cache delete error:", cErr);
+      }
+    }
+
+    // b) Clear all local storage & session storage
     try {
       localStorage.clear();
       sessionStorage.clear();
@@ -140,39 +87,23 @@ export async function performPurgeAndReload(timestampMs?: number) {
       console.warn("Storage clear error:", e);
     }
 
-    // 2. Clear Cookies across all path scopes
-    clearAllCookies();
+    // Store last_applied_refresh so device knows it's up to date after reload
+    try {
+      localStorage.setItem('last_applied_refresh', String(timestampMs));
+    } catch (e) {}
 
-    // 3. Purge Cache Storage & Service Workers (PWA / Browser Cache)
-    if ('caches' in window) {
-      try {
-        const names = await caches.keys();
-        await Promise.all(names.map((name) => caches.delete(name)));
-      } catch (cErr) {
-        console.warn("Cache delete error:", cErr);
-      }
-    }
-
-    if ('serviceWorker' in navigator) {
-      try {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(registrations.map((registration) => registration.unregister()));
-      } catch (swErr) {
-        console.warn("SW unregister error:", swErr);
-      }
-    }
-
-    // 4. Force Uncached Hard Reload
-    const reloadVersion = timestampMs || new Date().getTime();
-    window.location.href = window.location.pathname + '?v=' + reloadVersion;
+    // c) Force a clean cache-busting reload
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.set('v', String(timestampMs || Date.now()));
+    window.location.href = cleanUrl.toString();
   } catch (err) {
     console.error("Purge and reload error:", err);
-    window.location.href = window.location.pathname + '?v=' + new Date().getTime();
+    window.location.reload();
   }
 }
 
 /**
- * Triggered by Admin: updates DB persistent timestamp & broadcasts Realtime event to all devices.
+ * Triggered by Admin: updates DB persistent timestamp & broadcasts Realtime event.
  */
 export async function triggerGlobalRefresh(): Promise<number> {
   const nowMs = Date.now();
@@ -187,6 +118,7 @@ export async function triggerGlobalRefresh(): Promise<number> {
       updated_at: isoTime
     });
     if (upsertErr) {
+      // Fallback if last_forced_refresh_at column does not exist
       await supabase.from('system_settings').upsert({
         id: 'app_config',
         content_version: String(nowMs),
@@ -206,44 +138,35 @@ export async function triggerGlobalRefresh(): Promise<number> {
     console.warn("Failed to update row 1 in system_settings:", e);
   }
 
-  // 2. Publish Realtime Broadcast Event across multiple channels to reach all devices
-  const channelsToBroadcast = ['global-app-control', 'church-lock-channel', 'global-updates'];
-  
-  await Promise.all(channelsToBroadcast.map(async (channelName) => {
-    try {
-      const channel = supabase.channel(channelName);
-      await new Promise<void>((resolve) => {
-        channel.subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            try {
-              await channel.send({
-                type: 'broadcast',
-                event: 'FORCE_GLOBAL_REFRESH',
-                payload: { timestamp: nowMs }
-              });
-              await channel.send({
-                type: 'broadcast',
-                event: 'FORCE_HARD_REFRESH',
-                payload: { type: 'FORCE_HARD_REFRESH', timestamp: nowMs }
-              });
-            } catch (sendErr) {
-              console.warn(`Error sending broadcast on ${channelName}:`, sendErr);
-            }
-            setTimeout(() => {
-              supabase.removeChannel(channel);
-              resolve();
-            }, 300);
+  // 2. Publish Supabase Realtime Broadcast Event
+  try {
+    const channel = supabase.channel('global-app-control');
+    await new Promise<void>((resolve) => {
+      channel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          try {
+            await channel.send({
+              type: 'broadcast',
+              event: 'FORCE_GLOBAL_REFRESH',
+              payload: { timestamp: nowMs }
+            });
+          } catch (sendErr) {
+            console.warn("Error sending broadcast:", sendErr);
           }
-        });
-        setTimeout(() => {
-          supabase.removeChannel(channel);
-          resolve();
-        }, 1500);
+          setTimeout(() => {
+            supabase.removeChannel(channel);
+            resolve();
+          }, 300);
+        }
       });
-    } catch (err) {
-      console.warn(`Realtime broadcast error on ${channelName}:`, err);
-    }
-  }));
+      setTimeout(() => {
+        supabase.removeChannel(channel);
+        resolve();
+      }, 2000);
+    });
+  } catch (err) {
+    console.warn("Realtime broadcast error:", err);
+  }
 
   return nowMs;
 }
@@ -278,18 +201,9 @@ export function setupForceRefreshListener(): () => void {
         performPurgeAndReload(incomingTimestamp);
       }
     })
-    .on('broadcast', { event: 'FORCE_HARD_REFRESH' }, (payload) => {
-      const incomingTimestamp = Number(payload?.payload?.timestamp || Date.now());
-      const lastApplied = Number(localStorage.getItem('last_applied_refresh') || '0');
-      if (incomingTimestamp > lastApplied) {
-        console.log(`[ForceRefresh] Hard refresh broadcast received! Timestamp: ${incomingTimestamp}, Local applied: ${lastApplied}. Executing purge...`);
-        performPurgeAndReload(incomingTimestamp);
-      }
-    })
     .subscribe();
 
   return () => {
     supabase.removeChannel(channel);
   };
 }
-
