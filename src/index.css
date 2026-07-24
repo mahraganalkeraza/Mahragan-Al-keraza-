@@ -88,16 +88,58 @@
   background-size: 10px 10px;
 }
 
-/* كود لتغيير إطار كل الزراير في الموقع */
-button {
-  border: 2px solid #D4AF37 !important; /* لون ذهبي للإطار */
-  color: #dfab02; /* شلنا ال !important علشان Tailwind يشتغل */
-  font-weight: bold;
+/* Modern Gold Gradient Theme for General Website Buttons */
+.btn-modern-gold {
+  background: linear-gradient(135deg, #d4af37 0%, #aa7c11 100%) !important;
+  color: #000000 !important;
+  font-weight: 700 !important;
+  border: 1px solid #b8860b !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(170, 124, 17, 0.25) !important;
+  transition: all 0.3s ease !important;
 }
 
-button:hover {
-  background-color: #000000 !important; 
-  color: #ffffff !important; 
+.btn-modern-gold:hover,
+.btn-modern-gold:focus,
+.btn-modern-gold:active,
+.btn-modern-gold.active {
+  background: linear-gradient(135deg, #800020 0%, #4a0013 100%) !important;
+  color: #d4af37 !important;
+  border-color: #800020 !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 18px rgba(128, 0, 32, 0.4) !important;
+}
+
+.btn-modern-gold svg {
+  color: inherit !important;
+  stroke: currentColor !important;
+  transition: color 0.3s ease !important;
+}
+
+button:not([data-admin-dashboard]):not([data-admin-dashboard] *):not(.admin-dashboard-container):not(.admin-dashboard-container *):not([data-slider]):not([data-slider] *):not(.slider-container):not(.slider-container *):not(.swiper *):not(.swiper-button-prev-custom):not(.swiper-button-next-custom):not(.quick-access-card):not(.no-gold-btn) {
+  background: linear-gradient(135deg, #d4af37 0%, #aa7c11 100%) !important;
+  color: #000000 !important;
+  font-weight: 700 !important;
+  border: 1px solid #b8860b !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(170, 124, 17, 0.25) !important;
+  transition: all 0.3s ease !important;
+}
+
+button:not([data-admin-dashboard]):not([data-admin-dashboard] *):not(.admin-dashboard-container):not(.admin-dashboard-container *):not([data-slider]):not([data-slider] *):not(.slider-container):not(.slider-container *):not(.swiper *):not(.swiper-button-prev-custom):not(.swiper-button-next-custom):not(.quick-access-card):not(.no-gold-btn):hover,
+button:not([data-admin-dashboard]):not([data-admin-dashboard] *):not(.admin-dashboard-container):not(.admin-dashboard-container *):not([data-slider]):not([data-slider] *):not(.slider-container):not(.slider-container *):not(.swiper *):not(.swiper-button-prev-custom):not(.swiper-button-next-custom):not(.quick-access-card):not(.no-gold-btn):focus,
+button:not([data-admin-dashboard]):not([data-admin-dashboard] *):not(.admin-dashboard-container):not(.admin-dashboard-container *):not([data-slider]):not([data-slider] *):not(.slider-container):not(.slider-container *):not(.swiper *):not(.swiper-button-prev-custom):not(.swiper-button-next-custom):not(.quick-access-card):not(.no-gold-btn):active {
+  background: linear-gradient(135deg, #800020 0%, #4a0013 100%) !important;
+  color: #d4af37 !important;
+  border-color: #800020 !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 18px rgba(128, 0, 32, 0.4) !important;
+}
+
+button:not([data-admin-dashboard]):not([data-admin-dashboard] *):not(.admin-dashboard-container):not(.admin-dashboard-container *):not([data-slider]):not([data-slider] *):not(.slider-container):not(.slider-container *):not(.swiper *):not(.swiper-button-prev-custom):not(.swiper-button-next-custom):not(.quick-access-card):not(.no-gold-btn) svg {
+  color: inherit !important;
+  stroke: currentColor !important;
+  transition: color 0.3s ease !important;
 }
 
 button.quick-access-card {

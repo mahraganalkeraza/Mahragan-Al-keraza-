@@ -231,7 +231,7 @@ function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carous
   }
 
   return (
-    <div className="relative h-[400px] md:h-[650px] w-full overflow-hidden rounded-[2.5rem] shadow-[0_35px_60px_-15px_rgba(0,0,0,0.5)] mb-16 group border-8 border-white/5">
+    <div data-slider="true" className="slider-container relative h-[400px] md:h-[650px] w-full overflow-hidden rounded-[2.5rem] shadow-[0_35px_60px_-15px_rgba(0,0,0,0.5)] mb-16 group border-8 border-white/5">
       <Swiper
         modules={[Autoplay, EffectCreative, Navigation, Pagination]}
         grabCursor={true}
@@ -5714,7 +5714,7 @@ function AppComponent() {
         }
         setIsMenuOpen(false); 
       }}
-      className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300 w-full text-right ${
+      className={`no-gold-btn flex items-center gap-3 px-4 py-3 rounded-2xl transition-all duration-300 w-full text-right ${
         activeSection === id 
           ? 'bg-primary text-white shadow-lg scale-[1.02]' 
           : 'text-slate-600 hover:bg-accent/10 hover:text-primary'
@@ -5732,7 +5732,7 @@ function AppComponent() {
     return (
       <button 
         onClick={() => setActiveSection(targetSection)}
-        className="flex items-center gap-2 text-slate-400 hover:text-primary transition-colors mb-6 group"
+        className="no-gold-btn flex items-center gap-2 text-slate-400 hover:text-primary transition-colors mb-6 group"
       >
         <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
         <span className="font-bold text-sm">{isDashboard ? 'العودة للرئيسية' : 'العودة لمركز التحكم'}</span>
@@ -6691,7 +6691,7 @@ function AppComponent() {
         )}
 
         {activeSection === 'church_dashboard' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+          <motion.div data-admin-dashboard="true" className="admin-dashboard-container space-y-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <div className="flex items-center justify-between">
               <BackButton />
               <button 
@@ -6987,7 +6987,7 @@ function AppComponent() {
         )}
 
         {activeSection === 'admin_dashboard' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+          <motion.div data-admin-dashboard="true" className="admin-dashboard-container space-y-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <div className="flex flex-col md:flex-row items-center justify-between gap-4 no-print">
               <div className="flex items-center gap-2">
                 <BackButton />
@@ -11333,7 +11333,7 @@ function AppComponent() {
 
       <AnimatePresence>
         {isCustomizeTabsModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div data-admin-dashboard="true" className="admin-dashboard-container fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
               <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                 <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">

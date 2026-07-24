@@ -125,7 +125,8 @@ const createOMRSheetElement = async (
   student: Participant, 
   numQuestions: number, 
   churchLogos: Record<string, string>,
-  rawChurches?: any[]
+  rawChurches?: any[],
+  optionsCount: number = 4
 ) => {
   const wrapper = document.createElement('div');
   wrapper.style.width = '210mm';
@@ -135,8 +136,9 @@ const createOMRSheetElement = async (
   wrapper.style.top = '-9999px';
   wrapper.style.left = '-9999px';
   wrapper.style.boxSizing = 'border-box';
-  wrapper.style.fontFamily = 'Arial, sans-serif';
+  wrapper.style.fontFamily = "'Cairo', Arial, sans-serif";
   wrapper.style.zIndex = '-9999';
+  wrapper.style.direction = 'rtl';
 
   const style = document.createElement('style');
   style.innerHTML = `@media print { @page { size: A4 portrait; margin: 0; } }`;
@@ -169,10 +171,11 @@ const createOMRSheetElement = async (
   header.style.top = '10mm';
   header.style.left = '25mm';
   header.style.right = '25mm';
-  header.style.height = '35mm';
+  header.style.height = '32mm';
   header.style.display = 'flex';
   header.style.justifyContent = 'space-between';
   header.style.alignItems = 'center';
+  header.style.direction = 'rtl';
 
   const chLogoSrc = churchLogos[student.churchName] || appLogo;
   const verifiedLogoSrc = await preloadImage(chLogoSrc);
@@ -184,6 +187,17 @@ const createOMRSheetElement = async (
   logoImg.style.maxWidth = '35mm';
   logoImg.style.objectFit = 'contain';
   header.appendChild(logoImg);
+
+  const headerTitle = document.createElement('div');
+  headerTitle.style.textAlign = 'center';
+  headerTitle.style.flex = '1';
+  headerTitle.style.padding = '0 10px';
+  headerTitle.style.direction = 'rtl';
+  headerTitle.innerHTML = `
+    <h3 style="margin: 0; font-size: 16px; font-weight: 900; color: #1e293b;">مهرجان الكرازة المرقسية</h3>
+    <p style="margin: 3px 0 0 0; font-size: 11px; font-weight: 700; color: #64748b;"> إيبارشية مغاغة والعدوة</p>
+  `;
+  header.appendChild(headerTitle);
 
   const qrImg = document.createElement('img');
   const qrPayload = student.id.toString();
@@ -205,55 +219,90 @@ const createOMRSheetElement = async (
 
   wrapper.appendChild(header);
 
-  // Student Info Area
+  // Student Info Area (Right-aligned)
   const infoBlock = document.createElement('div');
   infoBlock.style.position = 'absolute';
-  infoBlock.style.top = '48mm';
-  infoBlock.style.left = '20mm';
-  infoBlock.style.right = '20mm';
-  infoBlock.style.textAlign = 'center';
+  infoBlock.style.top = '45mm';
+  infoBlock.style.left = '25mm';
+  infoBlock.style.right = '25mm';
   infoBlock.style.direction = 'rtl';
+  infoBlock.style.textAlign = 'right';
+  infoBlock.style.backgroundColor = '#f8fafc';
+  infoBlock.style.border = '1.5px solid #cbd5e1';
+  infoBlock.style.borderRadius = '8px';
+  infoBlock.style.padding = '8px 14px';
+  infoBlock.style.boxSizing = 'border-box';
   
-  const nameTitle = document.createElement('h2');
-  nameTitle.innerText = student.name;
-  nameTitle.style.margin = '0 0 5px 0';
-  nameTitle.style.fontSize = '20px';
-  nameTitle.style.fontWeight = 'bold';
-  infoBlock.appendChild(nameTitle);
+  const nameLine = document.createElement('div');
+  nameLine.style.fontSize = '16px';
+  nameLine.style.fontWeight = '900';
+  nameLine.style.color = '#0f172a';
+  nameLine.style.marginBottom = '4px';
+  nameLine.style.direction = 'rtl';
+  nameLine.style.textAlign = 'right';
+  nameLine.innerText = `الاسم: ${student.name}`;
+  infoBlock.appendChild(nameLine);
 
-  const stageChurch = document.createElement('h4');
-  stageChurch.innerText = `${student.churchName} - ${student.stage}`;
-  stageChurch.style.margin = '0';
-  stageChurch.style.fontSize = '16px';
-  stageChurch.style.color = '#333';
-  infoBlock.appendChild(stageChurch);
+  const subLine = document.createElement('div');
+  subLine.style.fontSize = '12px';
+  subLine.style.fontWeight = '700';
+  subLine.style.color = '#334155';
+  subLine.style.display = 'flex';
+  subLine.style.gap = '20px';
+  subLine.style.direction = 'rtl';
+  subLine.style.justifyContent = 'flex-start';
+
+  subLine.innerHTML = `
+    <span>الكنيسة: <strong>${student.churchName}</strong></span>
+    <span>المرحلة: <strong>${student.stage}</strong></span>
+    <span>الكود: <strong>${student.serial || student.id}</strong></span>
+  `;
+  infoBlock.appendChild(subLine);
   
   wrapper.appendChild(infoBlock);
 
   // Dynamic OMR Grid
   const tableContainer = document.createElement('div');
   tableContainer.style.position = 'absolute';
-  tableContainer.style.top = '75mm';
-  tableContainer.style.left = '30mm';
-  tableContainer.style.right = '30mm'; 
+  tableContainer.style.top = '68mm';
+  tableContainer.style.left = '20mm';
+  tableContainer.style.right = '20mm'; 
+  tableContainer.style.direction = 'rtl';
   
   const layoutWrapper = document.createElement('div');
-  layoutWrapper.className = 'flex flex-row justify-center gap-12 w-full max-w-[150mm] mx-auto';
+  layoutWrapper.className = 'flex flex-row justify-center gap-8 w-full max-w-[170mm] mx-auto';
   layoutWrapper.dir = 'rtl';
+  layoutWrapper.style.direction = 'rtl';
   
   const columnsWrapper = document.createElement('div');
-  columnsWrapper.className = 'flex flex-row gap-8 md:gap-12';
+  columnsWrapper.className = 'flex flex-row gap-8 md:gap-15';
+  columnsWrapper.dir = 'rtl';
+  columnsWrapper.style.direction = 'rtl';
   
-  const questionsPerColumn = 10;
+  let questionsPerColumn = 10;
+  if (numQuestions > 20 && numQuestions <= 60) {
+    questionsPerColumn = 20;
+  } else if (numQuestions > 60 && numQuestions <= 90) {
+    questionsPerColumn = 25;
+  } else if (numQuestions > 90) {
+    questionsPerColumn = 30;
+  }
+
   const numColumns = Math.ceil(numQuestions / questionsPerColumn);
   const rowsInColumn = Math.min(numQuestions, questionsPerColumn);
   
-  const availableHeightMm = 110; 
-  const rowHeight = Math.min(availableHeightMm / rowsInColumn, 12);
+  const availableHeightMm = 205; 
+  const rowHeight = Math.min(availableHeightMm / rowsInColumn, 18);
+
+  const arabicLetters = ['أ', 'ب', 'ج', 'د', 'هـ', 'و', 'ز'];
+  const optionsList = arabicLetters.slice(0, Math.max(2, Math.min(6, optionsCount || 4)));
+  const bubbleSize = optionsCount >= 5 ? '18px' : '21px';
+  const bubbleFontSize = optionsCount >= 5 ? '8px' : '9px';
 
   for (let c = 0; c < numColumns; c++) {
       const colDiv = document.createElement('div');
-      colDiv.className = 'flex flex-col space-y-2';
+      colDiv.className = 'flex flex-col';
+      colDiv.style.direction = 'rtl';
       
       const startQ = c * questionsPerColumn + 1;
       const endQ = Math.min((c + 1) * questionsPerColumn, numQuestions);
@@ -262,29 +311,32 @@ const createOMRSheetElement = async (
           const qContainer = document.createElement('div');
           qContainer.style.display = 'flex';
           qContainer.style.alignItems = 'center';
-          qContainer.style.direction = 'ltr';
-          qContainer.style.gap = '8px';
+          qContainer.style.direction = 'rtl';
+          qContainer.style.gap = optionsCount >= 5 ? '4px' : '6px';
           qContainer.style.height = `${rowHeight}mm`;
           
           const qNum = document.createElement('span');
           qNum.innerText = `${q}.`;
-          qNum.style.fontSize = '16px';
+          qNum.style.fontSize = '13px';
           qNum.style.fontWeight = 'bold';
           qNum.style.width = '24px';
           qNum.style.textAlign = 'right';
+          qNum.style.color = '#000000';
           qContainer.appendChild(qNum);
 
-          ['أ', 'ب', 'ج'].forEach(opt => {
+          optionsList.forEach(opt => {
               const bubble = document.createElement('div');
-              bubble.style.width = '24px';
-              bubble.style.height = '24px';
+              bubble.style.width = bubbleSize;
+              bubble.style.height = bubbleSize;
               bubble.style.borderRadius = '50%';
-              bubble.style.border = '2.5px solid black';
+              bubble.style.border = '2px solid black';
               bubble.style.display = 'flex';
               bubble.style.alignItems = 'center';
               bubble.style.justifyContent = 'center';
-              bubble.style.fontSize = '8px';
+              bubble.style.fontSize = bubbleFontSize;
               bubble.style.fontWeight = 'bold';
+              bubble.style.color = 'black';
+              bubble.style.paddingBottom = '4px';
               bubble.innerText = opt;
               qContainer.appendChild(bubble);
           });
@@ -294,18 +346,19 @@ const createOMRSheetElement = async (
   }
   
   const tmColumn = document.createElement('div');
-  tmColumn.className = 'flex flex-col space-y-2';
+  tmColumn.className = 'flex flex-col';
+  tmColumn.style.direction = 'rtl';
   
   for (let r = 0; r < rowsInColumn; r++) {
       const tmWrap = document.createElement('div');
       tmWrap.style.height = `${rowHeight}mm`;
-      tmWrap.style.width = '6mm';
+      tmWrap.style.width = '8mm';
       tmWrap.style.display = 'flex';
       tmWrap.style.alignItems = 'center';
-      tmWrap.style.justifyContent = 'flex-end';
+      tmWrap.style.justifyContent = 'center';
       
       const tm = document.createElement('div');
-      tm.style.width = '6mm';
+      tm.style.width = '5.5mm';
       tm.style.height = '3.5mm';
       tm.style.backgroundColor = 'black';
       
@@ -313,6 +366,7 @@ const createOMRSheetElement = async (
       tmColumn.appendChild(tmWrap);
   }
   
+  // Append timing mark column first (on the far right of grid)
   layoutWrapper.appendChild(tmColumn);
   layoutWrapper.appendChild(columnsWrapper);
   tableContainer.appendChild(layoutWrapper);
@@ -473,6 +527,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
   const [selectedStage, setSelectedStage] = useState<string>('الكل');
   const [selectedCompetition, setSelectedCompetition] = useState<string>('الكل');
   const [numQuestions, setNumQuestions] = useState<number>(20);
+  const [optionsCount, setOptionsCount] = useState<number>(4);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -605,7 +660,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
         for (let j = 0; j < batchList.length; j++) {
           const student = batchList[j];
           try {
-            const domElement = await createOMRSheetElement(student, numQuestions, churchLogos, rawChurches);
+            const domElement = await createOMRSheetElement(student, numQuestions, churchLogos, rawChurches, optionsCount);
             const canvas = await html2canvas(domElement, { scale: 3, useCORS: true, allowTaint: true });
             const imgData = canvas.toDataURL('image/jpeg', 0.95);
             doc.addImage(imgData, 'JPEG', 0, 0, 210, 297);
@@ -776,8 +831,8 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
               <LayoutGrid className="text-indigo-600" size={24}/>
               <h4 className="font-black text-indigo-800">إعدادات ورقة الإجابة</h4>
            </div>
-           <div className="flex flex-col md:flex-row items-center gap-6">
-              <div className="flex-1 w-full">
+           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+              <div className="md:col-span-4 w-full">
                 <label className="block text-sm font-bold text-indigo-600 mb-2">إجمالي عدد الأسئلة (من 1 إلى 120)</label>
                 <input 
                     type="number" 
@@ -786,7 +841,19 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
                     onChange={(e) => setNumQuestions(Number(e.target.value))}
                 />
               </div>
-              <div className="flex-[2] text-sm font-bold text-indigo-500 leading-relaxed">
+              <div className="md:col-span-4 w-full">
+                <label className="block text-sm font-bold text-indigo-600 mb-2">عدد الاختيارات (البابلز)</label>
+                <select 
+                    className="w-full p-4 bg-white border border-indigo-200 rounded-xl font-bold focus:ring-2 focus:ring-primary outline-none"
+                    value={optionsCount}
+                    onChange={(e) => setOptionsCount(Number(e.target.value))}
+                >
+                  <option value={3}>3 خيارات (أ ، ب ، ج)</option>
+                  <option value={4}>4 خيارات (أ ، ب ، ج ، د)</option>
+                  <option value={5}>5 خيارات (أ ، ب ، ج ، د ، هـ)</option>
+                </select>
+              </div>
+              <div className="md:col-span-4 text-sm font-bold text-indigo-500 leading-relaxed">
                  ورقة A4 عالية الدقة، تحتوي على 4 نقاط معايرة QR كود مدمج للتعرف الفوري على هوية المتسابق. 
                  <span className="block mt-1 text-xs text-indigo-400 opacity-80">* مخصص لمرحلة إعدادي فما فوق.</span>
               </div>
