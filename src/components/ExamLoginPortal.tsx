@@ -23,7 +23,7 @@ import { getDailyExamToken, validateHourlyExamToken } from '../utils/dailyToken'
 import { setupForceRefreshListener } from '../utils/forceRefreshManager';
 
 interface ExamLoginPortalProps {
-  onClose: () => void; // زر الرجوع / إغلاق البوابة
+  onClose: () => void; // زر الرجوع / إغلاق المنصة
   onSuccess: (
     student: {
       id: string;
@@ -173,7 +173,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
     setIsSyncing(true);
     setSyncError(null);
     try {
-      // 1. محاولة جلب البيانات من بوابة الخدمة الموحدة (التي يراقبها الـ Service Worker)
+      // 1. محاولة جلب البيانات من منصة الخدمة الموحدة (التي يراقبها الـ Service Worker)
       try {
         const url = forceRefetch ? '/api/roster?sync=true' : '/api/roster';
         const response = await fetch(url);
@@ -578,7 +578,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         {/* الهيدر العلوي */}
         <div className="bg-gradient-to-br from-slate-900 to-slate-800 p-6 text-white relative text-center">
           
-          {/* زر الرجوع المفتوح للجميع لغلق البوابة والعودة */}
+          {/* زر الرجوع المفتوح للجميع لغلق منصة والعودة */}
           <button 
             type="button"
             onClick={onClose}
@@ -623,15 +623,15 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                 <Lock size={40} />
               </div>
               <h2 className="text-xl font-black text-red-600">
-                {isPortalLockedByAdmin ? "عفوًا تم غلق بوابة الأونلاين من قبل لجنة المهرجان" : "البوابة مغلقة حالياً"}
+                {isPortalLockedByAdmin ? "عفوًا تم غلق منصةالأونلاين من قبل لجنة المهرجان" : "المنصة مغلقة حاليًا"}
               </h2>
               <p className="text-slate-600 text-sm font-bold leading-relaxed max-w-sm">
                 {isPortalLockedByAdmin 
-                  ? "عفوًا تم غلق بوابة الأونلاين من قبل لجنة المهرجان" 
-                  : "عذراً، البوابة مغلقة. برجاء مسح الـ QR Code المعتمد الساعي من مقر اللجنة لتفعيل الدخول."}
+                  ? "عفوًا تم غلق منصة الأونلاين من قبل لجنة المهرجان" 
+                  : "عذرًا، المنصة مغلقة. برجاء مسح الـ QR Code  من مسئول اللجنة لتفعيل الدخول."}
               </p>
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-500 font-bold max-w-sm">
-                تنبيه: يتغير رمز الدخول الخاص بالبوابة تلقائياً كل ساعة (ساعي ديناميكي متزامن) لتأمين الاختبارات ومنع التمرير غير المصرح به.
+                تنبيه: يتغير رمز الدخول الخاص بالمنصة تلقائيًا كل ساعة لتأمين الاختبارات ومنع الدخول غير المصرح به.
               </div>
             </div>
           ) : (
@@ -772,13 +772,13 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
 
                   <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex gap-2.5 text-[11px] text-slate-500 font-bold leading-relaxed">
                     <Lock size={15} className="text-slate-400 shrink-0 mt-0.5" />
-                    تنبيه: بوابة الدخول بالـ QR مفتوحة لجميع لجان الخدام دون حيازة حساب إدارة مسجل.
+                    تنبيه: المنصة الدخول بالـ QR مفتوحة لجميع الخدام.
                   </div>
 
                   <button
                     type="submit"
                     disabled={isLoading || !academicCode.trim()}
-                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#4a000b] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
+                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#800020] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
                   >
                     {isLoading ? "جاري سحب الأسئلة ..." : "ابدأ الامتحان"}
                   </button>
@@ -838,7 +838,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                   <button
                     type="submit"
                     disabled={isLoading || !selectedStudent}
-                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#4a000b] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
+                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-[#800020] rounded-xl font-bold text-xl shadow-lg hover:shadow-amber-500/40 transform hover:-translate-y-0.5 transition-all animate-pulse disabled:opacity-50 disabled:animate-none flex items-center justify-center gap-2"
                   >
                     {isLoading ? "جاري سحب الأسئلة ..." : "ابدأ الامتحان"}
                   </button>
@@ -850,7 +850,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           {/* فوتر النظام */}
           <div className="mt-6 border-t border-slate-100 pt-4 text-center text-[10px] font-black text-slate-400 flex items-center justify-center gap-2">
             <School size={12} />
-            <span>لجنة مهرجان الكرازة - إيبارشية مفافة والعدوة - منطقة 18©{new Date().getFullYear()}</span>
+            <span>لجنة مهرجان الكرازة - إيبارشية مغاغة والعدوة - منطقة 18©{new Date().getFullYear()}</span>
           </div>
         </div>
       </motion.div>
@@ -884,7 +884,7 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
                   <Lock size={22} />
                 </div>
                 <h3 className="text-base font-black">رمز حماية وضع الطوارئ</h3>
-                <p className="text-[11px] text-slate-400 mt-1">يرجى إدخال الرقم السري</p>
+                <p className="text-[11px] text-slate-400 mt-1">يرجى ادخال الرقم السري</p>
               </div>
 
                <form 

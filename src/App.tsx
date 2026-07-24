@@ -1033,12 +1033,34 @@ function AppComponent() {
   useEffect(() => {
     const checkAuthVersionAndInvalidate = async () => {
       try {
-        const response = await fetch('/api/auth-version');
-        if (!response.ok) return;
-        const resData = await response.json();
-        
-        if (resData && resData.auth_version) {
-          const serverVersion = String(resData.auth_version);
+        let serverVersion: string | null = null;
+        try {
+          const response = await fetch('/api/auth-version');
+          if (response.ok) {
+            const resData = await response.json();
+            if (resData && resData.auth_version) {
+              serverVersion = String(resData.auth_version);
+            }
+          }
+        } catch (fetchErr) {
+          // Direct Supabase fallback if local API route is unreachable or pending
+          const { data: versionRow } = await supabase
+            .from('system_settings')
+            .select('*')
+            .eq('id', 'auth_version')
+            .maybeSingle();
+
+          if (versionRow && versionRow.content) {
+            try {
+              const parsed = JSON.parse(versionRow.content);
+              if (parsed.version) {
+                serverVersion = String(parsed.version);
+              }
+            } catch (e) {}
+          }
+        }
+
+        if (serverVersion) {
           const cachedVersion = localStorage.getItem('cached_auth_version');
           
           const hasActiveSession = !!localStorage.getItem('church_session') || 
@@ -1075,7 +1097,7 @@ function AppComponent() {
           }
         }
       } catch (err) {
-        console.error("Failed to verify auth version against server:", err);
+        console.warn("Auth version check handled:", err);
       }
     };
     
@@ -4555,7 +4577,7 @@ function AppComponent() {
             localStorage.setItem('cached_auth_version', String(resData.auth_version));
           }
         })
-        .catch(err => console.error("Error setting initial auth version:", err))
+        .catch(err => console.warn("Initial auth version sync handled (admin):", err))
         .finally(() => {
           setIsLoading(false);
         });
@@ -4616,7 +4638,7 @@ function AppComponent() {
             localStorage.setItem('cached_auth_version', String(resData.auth_version));
           }
         })
-        .catch(err => console.error("Error setting initial auth version:", err));
+        .catch(err => console.warn("Initial auth version sync handled (church):", err));
 
     } catch (err: any) {
       console.error('Login error:', err);
@@ -6993,15 +7015,15 @@ function AppComponent() {
             </div>
             <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden min-h-[700px] flex flex-col lg:flex-row">
               {/* Sidebar Navigation */}
-              <div className="w-full lg:w-72 bg-slate-50 border-b lg:border-b-0 lg:border-l border-slate-200 flex flex-col no-print">
-                <div className="p-6 border-b border-slate-200">
+              <div className="w-full lg:w-72 bg-slate-900 border-b lg:border-b-0 lg:border-l border-slate-700 flex flex-col no-print min-h-full">
+                <div className="p-6 border-b border-slate-800">
                   <div className="flex items-center gap-4 mb-6">
                     <div className="w-12 h-12 bg-coptic-red text-white rounded-xl flex items-center justify-center shadow-lg">
                       <ShieldCheck size={24} />
                     </div>
                     <div>
-                      <h3 className="text-lg font-black text-slate-800 leading-tight">لوحة الإدارة</h3>
-                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">المنطقة ١٨</p>
+                      <h3 className="text-lg font-black text-white leading-tight">لوحة الإدارة</h3>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">المنطقة ١٨</p>
                     </div>
                   </div>
 
@@ -7013,28 +7035,28 @@ function AppComponent() {
                         const val = e.target.value;
                         setGlobalChurchFilter(val === '' || val === 'all' ? 'الكل' : val);
                       }}
-                      className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary font-bold shadow-sm"
+                      className="w-full px-4 py-2.5 bg-slate-800 text-white border border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary font-bold shadow-sm"
                     >
-                      <option value="">عرض الكل</option>
+                      <option value="" className="bg-slate-800 text-white">عرض الكل</option>
                       {churchOptions.map(church => (
-                        <option key={church} value={church}>{church}</option>
+                        <option key={church} value={church} className="bg-slate-800 text-white">{church}</option>
                       ))}
                     </select>
                   </div>
-                  <div className="flex flex-col gap-2 mt-2">
+                  <div className="flex flex-col gap-2 mt-3">
                     <label className="text-[10px] font-black text-slate-400 uppercase">بحث بالاسم</label>
                     <input 
                       type="text"
                       placeholder="ابحث بالاسم..."
                       value={globalNameFilter}
                       onChange={(e) => setGlobalNameFilter(e.target.value)}
-                      className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary font-bold shadow-sm"
+                      className="w-full px-4 py-2.5 bg-slate-800 text-white border border-slate-700 rounded-xl text-sm outline-none focus:ring-2 focus:ring-primary font-bold shadow-sm placeholder-slate-400"
                     />
                   </div>
                   <div className="mt-6">
                     <button 
                       onClick={() => generateMasterExcel(allChurchParticipants, userRole === 'admin' ? null : churchName)}
-                      className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-md active:scale-95"
+                      className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-md active:scale-95 cursor-pointer"
                     >
                       <Download size={14} />  تحميل بيانات المشتركين (Excel)
                     </button>
@@ -7047,7 +7069,11 @@ function AppComponent() {
                       <button 
                         key={tab.id}
                         onClick={() => setAdminActiveTab(tab.id)}
-                        className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm text-right ${adminActiveTab === tab.id ? 'bg-primary text-white shadow-md transform lg:scale-[1.02]' : 'bg-white lg:bg-transparent text-slate-600 hover:bg-slate-200 hover:text-slate-900 border lg:border-none border-slate-200'}`}
+                        className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm text-right cursor-pointer ${
+                          adminActiveTab === tab.id 
+                            ? 'bg-primary text-white shadow-md transform lg:scale-[1.02]' 
+                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/60'
+                        }`}
                       >
                         <tab.icon size={18} className={adminActiveTab === tab.id ? 'text-white' : 'text-slate-400'} />
                         <span className="flex-1 whitespace-nowrap">{tab.label}</span>
@@ -7057,10 +7083,10 @@ function AppComponent() {
                   </div>
                   
                   {/* Customization Button */}
-                  <div className="border-t border-slate-100 lg:border-none mt-auto pt-4 pb-2 lg:pt-8 w-full flex justify-center">
+                  <div className="border-t border-slate-800 lg:border-none mt-auto pt-4 pb-2 lg:pt-8 w-full flex justify-center">
                     <button 
                       onClick={openCustomizeModal}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 hover:text-slate-900 transition-colors font-black text-xs min-w-[200px] lg:min-w-0"
+                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white transition-colors font-black text-xs min-w-[200px] lg:min-w-0 border border-slate-700/60 cursor-pointer"
                     >
                       <Sliders size={16} /> خصص لوحة التحكم
                     </button>

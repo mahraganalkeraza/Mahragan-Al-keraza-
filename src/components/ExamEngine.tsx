@@ -2448,7 +2448,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             }}
             className="px-8 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black hover:bg-emerald-200 transition-all font-sans"
           >
-            خروج البوابة
+            خروج المنصة
           </button>
         </div>
       </div>
@@ -2522,7 +2522,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         id="student-selection-outer-container"
       >
         <h1 className="text-amber-400 font-extrabold text-3xl sm:text-4xl drop-shadow-md mb-8 text-center text-balance mt-4">
-          بوابة الامتحان الالكترونية
+          منصة الامتحان الالكترونية
         </h1>
         <div className="w-full max-w-2xl">
           <div
@@ -2561,7 +2561,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                 className="text-[10px] sm:text-[11px] text-gray-600 font-bold uppercase tracking-wider mt-1"
                 id="student-meta-details-sub"
               >
-                المشترك النشط بالبوابة الرقمية • كود خاص:{" "}
+                المشترك النشط بالمنصة الرقمية • كود خاص:{" "}
                 <span className="font-mono text-[#6b0311] font-black">
                   {activeStudent.id}
                 </span>

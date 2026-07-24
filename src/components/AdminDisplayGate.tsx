@@ -72,7 +72,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
       }
     } catch (err: any) {
       console.error(err);
-      alert(`خطأ أثناء تحديث حالة البوابة: ${err.message || err}`);
+      alert(`خطأ أثناء التحديث حالة : ${err.message || err}`);
     } finally {
       setIsUpdatingLock(false);
     }
@@ -101,7 +101,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
       setHourlyToken(newToken);
     } catch (err: any) {
       console.error(err);
-      alert(`خطأ أثناء إعادة توليد الرمز: ${err.message || err}`);
+      alert(`خطأ أثناء إعادة استخراج الرمز: ${err.message || err}`);
     } finally {
       setIsRegeneratingToken(false);
     }
@@ -231,7 +231,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
           <span className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-2xl print:hidden">
             <QrCode size={28} />
           </span>
-          <h1 className="text-2xl font-black text-amber-400 print:text-black print:text-3xl">الـ QRCode اليومية لبوابة الامتحانات</h1>
+          <h1 className="text-2xl font-black text-amber-400 print:text-black print:text-3xl">الـ QRCode اليومية لمنصة الامتحانات</h1>
         </div>
         <p className="text-slate-400 text-xs font-bold print:text-slate-700">مهرجان الكرازة المرقسية - إيبارشية مغاغة والعدوة (منطقة 18)</p>
       </div>
@@ -281,13 +281,13 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
       {/* Control Panel: Emergency Lock & Force Regeneration */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 mb-6 text-right space-y-4 print:hidden">
         <h3 className="text-sm font-black text-slate-200 flex items-center gap-2 border-b border-slate-800 pb-2">
-          ⚙️ لوحة التحكم الفوري للبوابة والـ QR
+          ⚙️ التحكم في المنصة والـ QR
         </h3>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Button One: Emergency Lock */}
           <div className="space-y-2">
-            <label className="text-[11px] font-black text-slate-400 block">التحكم في غلق البوابة الطارئ:</label>
+            <label className="text-[11px] font-black text-slate-400 block">التحكم في غلق المنصة الطارئ:</label>
             <button
               type="button"
               onClick={handleToggleLock}
@@ -301,21 +301,21 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
               {isUpdatingLock ? (
                 <RefreshCw className="animate-spin text-white" size={18} />
               ) : isLocked ? (
-                <>🔓 فتح بوابة الامتحانات للكل</>
+                <>🔓 فتح منصة الامتحانات للكل</>
               ) : (
-                <>🔒 غلق البوابة</>
+                <>🔒 غلق المنصة</>
               )}
             </button>
             <p className="text-[10px] text-slate-400 leading-relaxed font-semibold">
               {isLocked 
-                ? '🔴 البوابة مغلقة حالياً بالكامل. تم تسجيل خروج كافة الطلاب ومنع دخول أي لجان.' 
-                : '🟢 البوابة نشطة ومتاحة للجان المصرح لها من خلال رمز الـ QR اليومي.'}
+                ? '🔴 المنصة مغلقة حاليًا . تم تسجيل خروج كافة الأجهزة.' 
+                : '🟢 المنصة متاحة للأجهزةالمصرح لها من خلال رمز الـ QR اليومي.'}
             </p>
           </div>
 
           {/* Button Two: Force Regeneration & Hard Refresh */}
           <div className="space-y-2">
-            <label className="text-[11px] font-black text-slate-400 block">تحديث كود الدخول والكاش اليومي:</label>
+            <label className="text-[11px] font-black text-slate-400 block">تحديث كود الدخول اليومي:</label>
             <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="button"
@@ -340,7 +340,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
                 {isHardRefreshing ? (
                   <RefreshCw className="animate-spin text-white" size={18} />
                 ) : (
-                  <>⚡ Refresh (تحديث طارد)</>
+                  <> Refresh </>
                 )}
               </button>
             </div>
@@ -356,7 +356,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         <div className="flex items-center gap-2.5 text-right">
           <ShieldAlert className="text-amber-500 shrink-0" size={20} />
           <div>
-            <p className="text-slate-200 font-black">حماية وتحديث ذاتي يومي</p>
+            <p className="text-slate-200 font-black"> تحديث يومي</p>
             <p className="text-slate-400 text-[11px] font-semibold">يتغير كود الـ QRCode تلقائيًا يوميًا في تمام الساعة 10:00 مساءً بالتوقيت المحلي لتأمين الاختبارات ومنع تسريب الرابط.</p>
           </div>
         </div>
@@ -368,7 +368,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
 
       {/* User instructions */}
       <div className="p-4 bg-amber-500/5 rounded-2xl border border-amber-500/10 text-right text-xs font-bold leading-relaxed mb-6 text-amber-300 print:text-slate-800 print:border-slate-300 print:bg-slate-50">
-        💡 <span className="font-black text-amber-400 print:text-black">تعليمات الاستخدام:</span> وجه كاميرا هاتفك لمسح الـ QR Code لتفعيل صلاحية دخول بوابة الامتحانات فورًا. الرمز صالح لمدة 24 ساعة.
+        💡 <span className="font-black text-amber-400 print:text-black">تعليمات الاستخدام:</span> وجه كاميرا هاتفك لمسح الـ QR Code لتفعيل صلاحية دخول منصة الامتحانات فورًا. الرمز صالح لمدة 24 ساعة.
       </div>
 
       {/* Actions Button */}
@@ -376,9 +376,9 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
         <button
           type="button"
           onClick={handlePrint}
-          className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl flex items-center gap-2 transition-all active:scale-95 shadow-md shadow-amber-500/20"
+          className="px-5 py-2.5 rounded-xl font-black text-xs flex items-center gap-2 transition-all active:scale-95 bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/20 border border-amber-400"
         >
-          <Printer size={16} />
+          <Printer size={16} className="text-slate-950" />
           طباعة الـ QR Code
         </button>
         
@@ -387,12 +387,12 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
           onClick={handleCopyLink}
           className={`px-5 py-2.5 rounded-xl font-black text-xs flex items-center gap-2 transition-all active:scale-95 border ${
             copied 
-              ? 'bg-emerald-600 text-white border-emerald-500' 
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+              ? 'bg-emerald-600 text-white border-emerald-500 shadow-md' 
+              : 'bg-slate-800 hover:bg-slate-700 text-amber-400 border-amber-500/50 shadow-sm'
           }`}
         >
           {copied ? <CheckCircle size={16} /> : <RefreshCw size={16} />}
-          {copied ? 'تم نسخ رابط التفعيل' : 'نسخ رابط التفعيل '}
+          {copied ? 'تم نسخ رابط التفعيل' : 'نسخ رابط التفعيل'}
         </button>
 
         {onClose && (
@@ -423,7 +423,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
                 </div>
                 <div>
                   <h3 className="text-lg font-black text-slate-100">تأكيد التحديث الإجباري (Hard Refresh)</h3>
-                  <p className="text-xs text-rose-400 font-bold mt-0.5">إجراء حساس على مستوى البوابة العامة</p>
+                  <p className="text-xs text-rose-400 font-bold mt-0.5">إجراء حساس على مستوى المنصة العامة</p>
                 </div>
               </div>
               <button
@@ -438,23 +438,23 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
             {/* Content Body */}
             <div className="space-y-3 text-xs sm:text-sm text-slate-300 leading-relaxed font-semibold">
               <p className="text-slate-200">
-                هل أنت متأكد من رغبتك في تفعيل <span className="text-rose-400 font-bold">التحديث الإجباري للبوابة</span>؟
+                هل أنت متأكد من رغبتك في تفعيل <span className="text-rose-400 font-bold">التحديث الإجباري للمنصة</span>؟
               </p>
 
               <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3.5 space-y-2.5 text-xs text-slate-300">
                 <div className="flex items-start gap-2 text-rose-300">
                   <LogOut size={16} className="shrink-0 mt-0.5 text-rose-400" />
-                  <span><strong>طرد الجلسات:</strong> سيتم تسجيل الخروج فوراً وطرد جميع الطلاب والمستخدمين المتصلين حالياً.</span>
+                  <span><strong>طرد الأجهزة:</strong> سيتم تسجيل الخروج فورًا وطرد جميع المستخدمين المتصلين حاليًا.</span>
                 </div>
 
                 <div className="flex items-start gap-2 text-amber-300">
                   <RefreshCw size={16} className="shrink-0 mt-0.5 text-amber-400" />
-                  <span><strong>تحديث الكاش:</strong> سيتم تفريغ ذاكرة الكاش (Cache Storage) وملفات الـ Service Worker القديمة.</span>
+                  <span><strong>Refresh :</strong> سيتم تفريغ Cache Storage وملفات الـ Service Worker القديمة.</span>
                 </div>
 
                 <div className="flex items-start gap-2 text-cyan-300">
                   <ShieldAlert size={16} className="shrink-0 mt-0.5 text-cyan-400" />
-                  <span><strong>جلب النسخة الجديدة:</strong> سيُجبر التطبيق على تحميل أحدث ملفات البوابة مباشرة على كافة الهواتف.</span>
+                  <span><strong>جلب النسخة الجديدة:</strong> سيُجبر التطبيق على تحميل أحدث ملفات المنصة مباشرة على كافة الأجهزة.</span>
                 </div>
               </div>
             </div>
@@ -470,7 +470,7 @@ export default function AdminDisplayGate({ onClose, isInline = false }: { onClos
                 {isHardRefreshing ? (
                   <RefreshCw className="animate-spin" size={18} />
                 ) : (
-                  <>⚡ تأكيد التحديث والإخراج</>
+                  <> تأكيد التحديث</>
                 )}
               </button>
 

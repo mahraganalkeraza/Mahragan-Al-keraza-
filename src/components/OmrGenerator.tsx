@@ -472,7 +472,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
   const [selectedChurch, setSelectedChurch] = useState<string>('الكل');
   const [selectedStage, setSelectedStage] = useState<string>('الكل');
   const [selectedCompetition, setSelectedCompetition] = useState<string>('الكل');
-  const [numQuestions, setNumQuestions] = useState<number>(40);
+  const [numQuestions, setNumQuestions] = useState<number>(20);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -686,13 +686,13 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
         <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-1">
           <button 
             onClick={() => setMode('omr')} 
-            className={`px-6 py-2.5 rounded-xl font-black transition-all flex items-center gap-2 ${mode === 'omr' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}
+            className={`px-6 py-2.5 rounded-xl font-black transition-all flex items-center gap-2 ${mode === 'omr' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:bg-red/50'}`}
           >
             <FileScan size={18} /> بابل شيت
           </button>
           <button 
             onClick={() => setMode('qr')} 
-            className={`px-6 py-2.5 rounded-xl font-black transition-all flex items-center gap-2 ${mode === 'qr' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:bg-white/50'}`}
+            className={`px-6 py-2.5 rounded-xl font-black transition-all flex items-center gap-2 ${mode === 'qr' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:bg-red/50'}`}
           >
             <QrCode size={18} /> كروت QR
           </button>
@@ -787,8 +787,8 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
                 />
               </div>
               <div className="flex-[2] text-sm font-bold text-indigo-500 leading-relaxed">
-                 ورقة A5 عالية الدقة، تحتوي على 4 نقاط معايرة QR كود مدمج للتعرف الفوري على هوية المتسابق. 
-                 <span className="block mt-1 text-xs text-indigo-400 opacity-80">* مخصص لمرحلة إعدادي فما فوق فقط.</span>
+                 ورقة A4 عالية الدقة، تحتوي على 4 نقاط معايرة QR كود مدمج للتعرف الفوري على هوية المتسابق. 
+                 <span className="block mt-1 text-xs text-indigo-400 opacity-80">* مخصص لمرحلة إعدادي فما فوق.</span>
               </div>
            </div>
         </div>
@@ -799,7 +799,7 @@ export default function OmrGenerator({ allStudents }: { allStudents?: any[] }) {
            </div>
            <div>
              <h4 className="font-black text-emerald-800">استخراج أكواد المسابقين (QR Cards)</h4>
-             <p className="text-sm font-bold text-emerald-600 mt-1">استخراج ملف PDF جاهز للطباعة يحتوي على شبكة  تحتوي على QR كود يحمل هوية الطالب المشفرة لاستخدامها في بوابة الامتحانات.</p>
+             <p className="text-sm font-bold text-emerald-600 mt-1">استخراج ملف PDF جاهز للطباعة يحتوي على شبكة  تحتوي على QR كود يحمل هوية الطالب المشفرة لاستخدامها في منصة الامتحانات.</p>
              <div className="flex gap-4 mt-3">
                 <span className="flex items-center gap-1 text-[10px] font-black uppercase text-emerald-700/60 bg-emerald-700/10 px-2 py-0.5 rounded-full">
                   <CheckCircle2 size={10}/> Grid 4x5
