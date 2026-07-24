@@ -6134,7 +6134,7 @@ function AppComponent() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-soft font-sans selection:bg-accent/30 relative" dir="rtl">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-bg-soft font-sans selection:bg-accent/30 relative" dir="rtl">
       {/* Forced Remote Refresh Countdown Toast */}
       <AnimatePresence>
         {refreshCountdown !== null && (
@@ -6246,8 +6246,8 @@ function AppComponent() {
         )}
       </AnimatePresence>
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-md no-print">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-md no-print w-full">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between w-full">
           <div className="flex items-center gap-4">
             <button 
               onClick={() => setIsMenuOpen(true)}
@@ -6308,42 +6308,45 @@ function AppComponent() {
 
       {!isLoggedIn && activeSection !== 'schedule' ? (
         activeSection === 'locked' ? (
-          <main className="flex min-h-[calc(100vh-5rem)] flex-col items-center justify-center px-4 py-8 relative z-10 bg-gray-50 w-full">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white p-8 sm:p-10 rounded-2xl shadow-md border border-slate-100 text-center space-y-6 flex flex-col items-center justify-center font-arabic w-full max-w-md my-auto"
-              dir="rtl"
-            >
-              <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center shadow-inner">
-                <Lock size={40} className="stroke-[2.5]" />
-              </div>
-              <div className="space-y-2 col-span-full">
-                <h2 className="text-2xl font-black text-slate-800">الحساب مغلق 🔒</h2>
-                <p className="text-slate-500 font-bold leading-relaxed text-sm">
-                  عذرًا، تم إغلاق التسجيل أو قفل الحساب الخاص بكنيستكم من قبل لجنة المهرجان بقرار مركزي سيادي!
-                </p>
-              </div>
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-xs font-bold text-slate-600 leading-relaxed">
-                يرجى مراجعة الكنترول العام أو الدعم الفني للمهرجان لإنهاء الإجراءات وطلب فك القفل اللوجستي.
-              </div>
-              <button
-                onClick={() => {
-                  setActiveSection('home');
-                }}
-                className="w-full py-3.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-850 transition-all flex items-center justify-center gap-2 text-sm"
+          <main className="w-full min-h-[calc(100vh-5rem)] flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8 py-8 sm:py-12 relative z-10 bg-slate-50">
+            <div className="w-full max-w-7xl mx-auto flex items-center justify-center">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white p-8 sm:p-10 rounded-2xl shadow-md border border-slate-100 text-center space-y-6 flex flex-col items-center justify-center font-arabic w-full max-w-md my-auto"
+                dir="rtl"
               >
-                <span>العودة للرئيسية</span>
-              </button>
-            </motion.div>
+                <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center shadow-inner">
+                  <Lock size={40} className="stroke-[2.5]" />
+                </div>
+                <div className="space-y-2 col-span-full">
+                  <h2 className="text-2xl font-black text-slate-800">الحساب مغلق 🔒</h2>
+                  <p className="text-slate-500 font-bold leading-relaxed text-sm">
+                    عذرًا، تم إغلاق التسجيل أو قفل الحساب الخاص بكنيستكم من قبل لجنة المهرجان بقرار مركزي سيادي!
+                  </p>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-xs font-bold text-slate-600 leading-relaxed">
+                  يرجى مراجعة الكنترول العام أو الدعم الفني للمهرجان لإنهاء الإجراءات وطلب فك القفل اللوجستي.
+                </div>
+                <button
+                  onClick={() => {
+                    setActiveSection('home');
+                  }}
+                  className="w-full py-3.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-850 transition-all flex items-center justify-center gap-2 text-sm"
+                >
+                  <span>العودة للرئيسية</span>
+                </button>
+              </motion.div>
+            </div>
           </main>
         ) : (
-          <main className="flex min-h-[calc(100vh-5rem)] flex-col items-center justify-center px-4 py-8 relative z-10 bg-gray-50 w-full">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-white p-8 sm:p-10 rounded-2xl shadow-md border border-slate-100 w-full max-w-md my-auto"
-            >
+          <main className="w-full min-h-[calc(100vh-5rem)] flex flex-col items-center justify-center px-4 sm:px-6 lg:px-8 py-8 sm:py-12 relative z-10 bg-slate-50">
+            <div className="w-full max-w-7xl mx-auto flex items-center justify-center">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-white p-6 sm:p-10 rounded-2xl shadow-xl border border-slate-100 w-full max-w-md my-auto shadow-slate-200/50"
+              >
               <div className="text-center mb-10">
                 <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-20 h-20 rounded-full mx-auto mb-6 object-contain shadow-sm border border-slate-50 bg-white" />
                 <h2 className="text-2xl font-black text-slate-800">تسجيل الدخول</h2>
@@ -6472,14 +6475,15 @@ function AppComponent() {
                 </button>
               </form>
             </motion.div>
+            </div>
           </main>
         )
       ) : (
         <div 
-          className={`min-h-screen transition-all duration-500 ${dashboardBg ? 'bg-fixed bg-cover bg-center' : 'bg-slate-50'}`}
+          className={`min-h-screen w-full max-w-full overflow-x-hidden transition-all duration-500 ${dashboardBg ? 'bg-fixed bg-cover bg-center' : 'bg-slate-50'}`}
           style={dashboardBg ? { backgroundImage: `linear-gradient(rgba(248, 250, 252, 0.9), rgba(248, 250, 252, 0.9)), url(${dashboardBg})` } : {}}
         >
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full min-w-0">
           {notification && (
           <Notification message={notification} onClose={() => setNotification(null)} />
         )}
@@ -6987,8 +6991,8 @@ function AppComponent() {
         )}
 
         {activeSection === 'admin_dashboard' && (
-          <motion.div data-admin-dashboard="true" className="admin-dashboard-container space-y-8" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4 no-print">
+          <motion.div data-admin-dashboard="true" className="admin-dashboard-container space-y-8 w-full min-w-0" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 no-print w-full">
               <div className="flex items-center gap-2">
                 <BackButton />
                 <div className="flex bg-slate-100 p-1 rounded-xl gap-1 border border-slate-200">
@@ -7013,7 +7017,7 @@ function AppComponent() {
                  تحديث البيانات
               </button>
             </div>
-            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden min-h-[700px] flex flex-col lg:flex-row">
+            <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden min-h-[700px] flex flex-col lg:flex-row w-full min-w-0">
               {/* Sidebar Navigation */}
               <div className="w-full lg:w-72 bg-slate-900 border-b lg:border-b-0 lg:border-l border-slate-700 flex flex-col no-print min-h-full">
                 <div className="p-6 border-b border-slate-800">
@@ -7095,7 +7099,7 @@ function AppComponent() {
               </div>
 
               {/* Main Content Area */}
-              <div className="flex-1 p-6 md:p-10 min-w-0 bg-white overflow-y-auto">
+              <div className="flex-1 p-4 sm:p-6 md:p-8 min-w-0 bg-white overflow-y-auto w-full">
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={adminActiveTab}
@@ -7103,11 +7107,12 @@ function AppComponent() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -15 }}
                     transition={{ duration: 0.3, ease: 'easeOut' }}
+                    className="w-full min-w-0"
                   >
 
               {adminActiveTab === 'dashboard' && (
                 <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full px-4 mb-12">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full min-w-0 mb-12">
                 <div className="p-6 bg-white rounded-xl border border-gray-100 shadow-sm w-full">
                   <p className="text-[10px] font-black text-coptic-blue uppercase mb-1">المشتركين ({globalChurchFilter})</p>
                   <p className="text-3xl font-black text-slate-800">
@@ -8838,25 +8843,25 @@ function AppComponent() {
             )}
 
             {adminActiveTab === 'dashboard' && (
-              <div className="space-y-16 mt-16 font-arabic">
+              <div className="space-y-12 sm:space-y-16 mt-8 sm:mt-16 font-arabic w-full min-w-0">
                 
-                <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl border border-gray-100 gap-4 w-full shadow-sm">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 sm:p-6 rounded-xl border border-gray-100 gap-4 w-full min-w-0 shadow-sm">
                   <div>
                     <h2 className="text-xl font-black text-slate-800">المركز التحليلي الشامل</h2>
                     <p className="text-sm text-slate-500 font-bold mt-1">مؤشرات إحصائية ورسوم بيانية لبيانات التسجيل والحاسبة</p>
                   </div>
-                  <button onClick={exportComprehensivePDF} disabled={isExportingPDF} className={`px-6 py-3 bg-slate-900 text-white rounded-2xl font-black shadow-lg transition-all text-sm flex items-center gap-2 ${isExportingPDF ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800'}`}>
+                  <button onClick={exportComprehensivePDF} disabled={isExportingPDF} className={`px-6 py-3 bg-slate-900 text-white rounded-2xl font-black shadow-lg transition-all text-sm flex items-center gap-2 shrink-0 ${isExportingPDF ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800'}`}>
                     {isExportingPDF ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                     {isExportingPDF ? 'جاري التحضير...' : 'تصدير التقرير التحليلي (PDF)'}
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 w-full min-w-0">
                   <motion.div 
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
-                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm w-full"
+                    className="bg-white p-4 sm:p-6 rounded-xl border border-gray-100 shadow-sm w-full min-w-0"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">منحنى توزيع المشتركين (كثافة المراحل)</h3>
                     <div className="h-64">
@@ -8880,7 +8885,7 @@ function AppComponent() {
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut", delay: 0.2 }}
-                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm w-full"
+                    className="bg-white p-4 sm:p-6 rounded-xl border border-gray-100 shadow-sm w-full min-w-0"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">معدل الانخراط والمشاركة (عدد المسابقات)</h3>
                     <div className="h-64">
@@ -8901,7 +8906,7 @@ function AppComponent() {
                     initial={{ opacity: 0, y: 30 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
-                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm w-full"
+                    className="bg-white p-4 sm:p-6 rounded-xl border border-gray-100 shadow-sm w-full min-w-0"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">توزيع المشتركين حسب الجنس</h3>
                     <div className="h-64">
@@ -8943,7 +8948,7 @@ function AppComponent() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
-                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm md:col-span-2 lg:col-span-3 w-full"
+                    className="bg-white p-4 sm:p-6 rounded-xl border border-gray-100 shadow-sm md:col-span-2 lg:col-span-3 w-full min-w-0"
                   >
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                       <div>
@@ -9043,7 +9048,7 @@ function AppComponent() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
-                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm md:col-span-2 lg:col-span-3 w-full"
+                    className="bg-white p-4 sm:p-6 rounded-xl border border-gray-100 shadow-sm md:col-span-2 lg:col-span-3 w-full min-w-0"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">الطلب الحقيقي للكتب (الكتب المطلوبة vs مسابقات المشتركين)</h3>
                     <div className="h-80 mb-8">
@@ -9060,7 +9065,7 @@ function AppComponent() {
                       </ResponsiveContainer>
                     </div>
                     
-                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 w-full min-w-0">
                       <table className="w-full text-right text-sm">
                         <thead className="bg-slate-50 text-slate-600 font-bold">
                           <tr>
@@ -9101,14 +9106,14 @@ function AppComponent() {
                 </div>
 
                 {/* Sub-Activities Analytics (Teams & Individuals) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 mb-16 w-full min-w-0">
                   {/* Widget 1: Activity Participation Counter */}
                   <motion.div 
                     initial={{ opacity: 0, y: 40 }}
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut" }}
-                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm w-full"
+                    className="bg-white p-4 sm:p-6 rounded-xl border border-gray-100 shadow-sm w-full min-w-0"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">عداد المشاركات في الأنشطة الفرعية</h3>
                     <div className="space-y-4">
@@ -9138,10 +9143,10 @@ function AppComponent() {
                     whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true }}
                     transition={{ duration: 0.7, ease: "easeOut", delay: 0.2 }}
-                    className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm w-full"
+                    className="bg-white p-4 sm:p-6 rounded-xl border border-gray-100 shadow-sm w-full min-w-0"
                   >
                     <h3 className="font-black text-slate-800 mb-6 text-lg">مصفوفة الأنشطة للكنائس المشاركة</h3>
-                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 w-full min-w-0">
                       <table className="w-full text-right text-sm">
                         <thead className="bg-slate-50 text-slate-600 font-bold">
                           <tr>
@@ -9169,7 +9174,7 @@ function AppComponent() {
                 </div>
 
                 {/* Advanced Data Aggregation for Printing Statement */}
-                <section className="analytics-report-container pt-12 border-t border-slate-100">
+                <section className="analytics-report-container pt-12 border-t border-slate-100 w-full min-w-0">
                   <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 mb-6">
                     <div>
                       <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
