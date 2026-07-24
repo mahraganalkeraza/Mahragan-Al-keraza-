@@ -32,6 +32,15 @@ export const AdminHonorsEngine: React.FC<{
       return 90;
     }
   });
+  const [stageThresholds, setStageThresholds] = useState<Record<string, number>>(() => {
+    try {
+      const cached = localStorage.getItem('honors_stage_thresholds');
+      if (cached) return JSON.parse(cached);
+      return {};
+    } catch (e) {
+      return {};
+    }
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [systemStages, setSystemStages] = useState<string[]>([]);
@@ -45,6 +54,10 @@ export const AdminHonorsEngine: React.FC<{
   useEffect(() => {
     localStorage.setItem('honors_min_threshold', minThreshold.toString());
   }, [minThreshold]);
+
+  useEffect(() => {
+    localStorage.setItem('honors_stage_thresholds', JSON.stringify(stageThresholds));
+  }, [stageThresholds]);
 
   // تحميل الإعدادات فوراً وتلقائياً عند تشغيل المكون
   useEffect(() => {
@@ -61,7 +74,17 @@ export const AdminHonorsEngine: React.FC<{
       ]);
       if (honorsSnap.data) {
         const data = honorsSnap.data;
-        if (data.weights_matrix) setWeights(data.weights_matrix);
+        if (data.weights_matrix) {
+          const wData = { ...data.weights_matrix };
+          if (wData.__stage_thresholds__) {
+            setStageThresholds(wData.__stage_thresholds__);
+            delete wData.__stage_thresholds__;
+          }
+          setWeights(wData);
+        }
+        if (data.stage_thresholds && typeof data.stage_thresholds === 'object') {
+          setStageThresholds(data.stage_thresholds);
+        }
         if (data.min_threshold !== undefined) setMinThreshold(Number(data.min_threshold));
       }
       setSystemStages(stagesSnap.data?.map(d => d.stage_name).filter(Boolean) as string[] || []);
@@ -79,13 +102,30 @@ export const AdminHonorsEngine: React.FC<{
   const saveSettings = async () => {
     setIsSaving(true);
     try {
-      const { error } = await supabase.from('honors_settings').upsert({
+      const payload: any = {
         id: 'current_config',
         min_threshold: minThreshold,
+        stage_thresholds: stageThresholds,
         weights_matrix: weights,
         updated_at: new Date().toISOString()
-      });
-      if (error) throw error;
+      };
+      
+      const { error } = await supabase.from('honors_settings').upsert(payload);
+      if (error) {
+        // Fallback in case stage_thresholds column is missing in Supabase schema
+        console.warn('Direct upsert with stage_thresholds failed/warned, using weights_matrix fallback:', error);
+        const fallbackPayload = {
+          id: 'current_config',
+          min_threshold: minThreshold,
+          weights_matrix: {
+            ...weights,
+            __stage_thresholds__: stageThresholds as any
+          },
+          updated_at: new Date().toISOString()
+        };
+        const { error: fallbackError } = await supabase.from('honors_settings').upsert(fallbackPayload);
+        if (fallbackError) throw fallbackError;
+      }
       alert('تم حفظ إعدادات ودرجات التكريم بنجاح!');
     } catch (e) {
       console.error(e);
@@ -102,6 +142,14 @@ export const AdminHonorsEngine: React.FC<{
         ...(prev[stage] || {}),
         [subject]: num
       }
+    }));
+  };
+
+  const handleStageThresholdChange = (stage: string, value: string) => {
+    const num = parseFloat(value);
+    setStageThresholds(prev => ({
+      ...prev,
+      [stage]: isNaN(num) ? 0 : num
     }));
   };
 
@@ -175,6 +223,7 @@ export const AdminHonorsEngine: React.FC<{
 
     Object.keys(grouped).forEach(church => {
       Object.keys(grouped[church]).forEach(stage => {
+        const stageMinThreshold = stageThresholds[stage] !== undefined ? Number(stageThresholds[stage]) : (minThreshold || 90);
         Object.keys(grouped[church][stage]).forEach(subject => {
           const students = grouped[church][stage][subject] || [];
           if (students.length === 0) return;
@@ -182,7 +231,7 @@ export const AdminHonorsEngine: React.FC<{
           const maxPercentageInSubj = Math.max(...students.map(s => s.percentage));
           const hasPerfectScore = maxPercentageInSubj >= 100;
 
-          const qualifiedStudents = students.filter(s => s.percentage >= minThreshold);
+          const qualifiedStudents = students.filter(s => s.percentage >= stageMinThreshold);
           qualifiedStudents.forEach(s => {
             const singlePointPercentage = (1 / s.maxScore) * 100;
             let rank = 0;
@@ -197,7 +246,7 @@ export const AdminHonorsEngine: React.FC<{
                 rank = 3;
               }
             } else {
-              if (maxPercentageInSubj >= minThreshold) {
+              if (maxPercentageInSubj >= stageMinThreshold) {
                 const diffPercentage = maxPercentageInSubj - s.percentage;
                 if (diffPercentage === 0) {
                   rank = 1;
@@ -246,7 +295,7 @@ export const AdminHonorsEngine: React.FC<{
       exportData: eData 
     };
     // تعديل 3: إزالة isOpen من مصفوفة التبعيات الخاصة بالـ useMemo لمنع إعادة تصفير الحسابات عند غلق الواجهة
-  }, [results, weights, minThreshold, systemSubjects]);
+  }, [results, weights, stageThresholds, minThreshold, systemSubjects]);
 
   const lastDispatchedRef = useRef<string>('');
 
@@ -304,40 +353,25 @@ export const AdminHonorsEngine: React.FC<{
           ) : (
             <div className="space-y-8">
               <p className="text-slate-500 text-sm font-bold bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
-                حدد الدرجة النهائية (الحد الأقصى) لكل مسابقة حسب المرحلة. سيقوم النظام بحساب نسبة كل مادة بشكل منفصل تماماً ومستقل عن باقي المواد لترتيب الأوائل الثلاث وتكراراتهم لكل مسابقة على حدة داخل كل كنيسة.
+                حدد الدرجة النهائية (الحد الأقصى) والحد الأدنى للتكريم لكل مرحلة/مسابقة. سيقوم النظام بحساب نسبة كل مادة بشكل منفصل تماماً ومستقل عن باقي المواد لترتيب الأوائل الثلاث وتكراراتهم لكل مسابقة على حدة داخل كل كنيسة.
               </p>
 
-              {/* Threshold & Global Actions */}
-              <div className="flex flex-col md:flex-row items-center justify-between bg-slate-50 p-6 rounded-2xl border border-slate-200 gap-6">
-                <div>
-                  <label className="block text-sm font-black text-slate-700 mb-2">الحد الأدنى للتكريم (%)</label>
-                  <div className="relative">
-                    <input 
-                      type="number" 
-                      value={minThreshold}
-                      onChange={(e) => setMinThreshold(Number(e.target.value) || 0)}
-                      className="w-32 px-4 py-2 bg-white border border-slate-300 rounded-xl font-bold text-center focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4 w-full md:w-auto">
-                  <button 
-                    onClick={saveSettings}
-                    disabled={isSaving}
-                    className="flex-1 md:flex-none px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-indigo-700 transition shadow-lg active:scale-95 disabled:opacity-50"
-                  >
-                    {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                    حفظ مصفوفة الدرجات
-                  </button>
-                  <button 
-                    onClick={exportExcel}
-                    className="flex-1 md:flex-none px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition shadow-lg active:scale-95"
-                  >
-                    <Download size={18} /> تصدير كشف Excel (XLSX)
-                  </button>
-                </div>
+              {/* Global Actions */}
+              <div className="flex flex-col sm:flex-row items-center justify-end bg-slate-50 p-6 rounded-2xl border border-slate-200 gap-4">
+                <button 
+                  onClick={saveSettings}
+                  disabled={isSaving}
+                  className="w-full sm:w-auto px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-indigo-700 transition shadow-lg active:scale-95 disabled:opacity-50"
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                  حفظ مصفوفة الدرجات
+                </button>
+                <button 
+                  onClick={exportExcel}
+                  className="w-full sm:w-auto px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition shadow-lg active:scale-95"
+                >
+                  <Download size={18} /> تصدير كشف Excel (XLSX)
+                </button>
               </div>
 
               {/* Dynamic Matrix View */}
@@ -345,30 +379,51 @@ export const AdminHonorsEngine: React.FC<{
                 <table className="w-full text-right border-collapse">
                   <thead>
                     <tr className="bg-slate-100 text-slate-600 font-black text-sm uppercase">
-                      <th className="p-4 border-b border-l border-slate-200">المرحلة / المسابقة</th>
+                      <th className="p-4 border-b border-l border-slate-200 min-w-[140px]">المرحلة / المسابقة</th>
+                      <th className="p-4 border-b border-l border-slate-200 text-center min-w-[150px] text-indigo-900 bg-indigo-50/70">
+                        الحد الأدنى للتكريم (%)
+                      </th>
                       {systemSubjects.map((s, idx) => (
-                        <th key={idx} className="p-4 border-b border-l border-slate-200 text-center">{s}</th>
+                        <th key={idx} className="p-4 border-b border-l border-slate-200 text-center min-w-[100px]">{s}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {systemStages.map((stage) => (
-                      <tr key={stage} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-4 border-b border-l border-slate-200 font-bold text-indigo-900 bg-slate-50/50">{stage}</td>
-                        {systemSubjects.map((subj) => (
-                          <td key={subj} className="p-3 border-b border-l border-slate-100 relative text-center">
-                            <input 
-                              type="number"
-                              min="0"
-                              placeholder="-"
-                              value={weights[stage]?.[subj] || ''}
-                              onChange={(e) => handleWeightChange(stage, subj, e.target.value)}
-                              className="w-20 px-2 py-1.5 text-center bg-white border border-slate-200 rounded-lg text-sm font-bold focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none placeholder:text-slate-300"
-                            />
+                    {systemStages.map((stage) => {
+                      const currentThreshold = stageThresholds[stage] !== undefined ? stageThresholds[stage] : 90;
+                      return (
+                        <tr key={stage} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-4 border-b border-l border-slate-200 font-bold text-indigo-900 bg-slate-50/50">
+                            {stage}
                           </td>
-                        ))}
-                      </tr>
-                    ))}
+                          <td className="p-3 border-b border-l border-slate-200 bg-indigo-50/30 text-center">
+                            <div className="relative inline-flex items-center justify-center w-24">
+                              <input 
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={currentThreshold}
+                                onChange={(e) => handleStageThresholdChange(stage, e.target.value)}
+                                className="w-full px-2 py-1.5 text-center bg-white border border-indigo-200 rounded-lg text-sm font-black text-indigo-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm"
+                              />
+                              <span className="absolute left-2 text-indigo-400 font-bold text-xs pointer-events-none">%</span>
+                            </div>
+                          </td>
+                          {systemSubjects.map((subj) => (
+                            <td key={subj} className="p-3 border-b border-l border-slate-100 relative text-center">
+                              <input 
+                                type="number"
+                                min="0"
+                                placeholder="-"
+                                value={weights[stage]?.[subj] || ''}
+                                onChange={(e) => handleWeightChange(stage, subj, e.target.value)}
+                                className="w-20 px-2 py-1.5 text-center bg-white border border-slate-200 rounded-lg text-sm font-bold focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none placeholder:text-slate-300"
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

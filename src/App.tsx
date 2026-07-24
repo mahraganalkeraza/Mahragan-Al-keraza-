@@ -5735,7 +5735,7 @@ function AppComponent() {
         className="flex items-center gap-2 text-slate-400 hover:text-primary transition-colors mb-6 group"
       >
         <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
-        <span className="font-bold text-sm">{isDashboard ? 'العودة للرئيسية' : 'العودة للوحة التحكم'}</span>
+        <span className="font-bold text-sm">{isDashboard ? 'العودة للرئيسية' : 'العودة لمركز التحكم'}</span>
       </button>
     );
   };
@@ -6213,7 +6213,7 @@ function AppComponent() {
 
               <nav className="space-y-2">
                 <NavItem id="home" icon={Home} label="الرئيسية" />
-                {userRole === 'admin' && <NavItem id="admin_dashboard" icon={ShieldCheck} label="لوحة تحكم المسئول" />}
+                {userRole === 'admin' && <NavItem id="admin_dashboard" icon={ShieldCheck} label="مركز التحكم " />}
                 {userRole === 'church' && <NavItem id="church_dashboard" icon={LayoutDashboard} label="صفحة الكنيسة" />}
                 <NavItem id="calculator" icon={Calculator} label="حاسبة الكتب" />
                 <NavItem id="inquiries" icon={MessageSquare} label="الاستفسارات والشكاوي" />
@@ -6499,7 +6499,7 @@ function AppComponent() {
                 <div className="w-16 h-16 bg-coptic-blue/10 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                   <LayoutDashboard className="text-coptic-blue" size={32} />
                 </div>
-                <h3 className="text-xl font-black text-coptic-blue mb-2">{userRole === 'admin' ? 'لوحة المسئول' : 'صفحة الكنيسة'}</h3>
+                <h3 className="text-xl font-black text-coptic-blue mb-2">{userRole === 'admin' ? 'مركز المسئول' : 'صفحة الكنيسة'}</h3>
                 <p className="text-slate-500 text-sm leading-relaxed">اطلع على كافة البيانات والطلبات الخاصة بك.</p>
               </div>
 
@@ -7022,7 +7022,7 @@ function AppComponent() {
                       <ShieldCheck size={24} />
                     </div>
                     <div>
-                      <h3 className="text-lg font-black text-white leading-tight">لوحة الإدارة</h3>
+                      <h3 className="text-lg font-black text-white leading-tight">مركز الإدارة</h3>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">المنطقة ١٨</p>
                     </div>
                   </div>
@@ -7088,7 +7088,7 @@ function AppComponent() {
                       onClick={openCustomizeModal}
                       className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 text-slate-300 rounded-xl hover:bg-slate-700 hover:text-white transition-colors font-black text-xs min-w-[200px] lg:min-w-0 border border-slate-700/60 cursor-pointer"
                     >
-                      <Sliders size={16} /> خصص لوحة التحكم
+                      <Sliders size={16} /> خصص مركز التحكم
                     </button>
                   </div>
                 </div>
@@ -8480,7 +8480,7 @@ function AppComponent() {
                 <section className="p-8 bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden relative">
                   <div className="absolute top-0 inset-x-0 h-2 bg-rose-600" />
                   <h4 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8">
-                    <ShieldAlert className="text-rose-600" /> لوحة التحكم السيادية العامة (قاعدة البيانات والاتصال المباشر)
+                    <ShieldAlert className="text-rose-600" /> مركز التحكم السيادية العامة (قاعدة البيانات والاتصال المباشر)
                   </h4>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -8546,7 +8546,7 @@ function AppComponent() {
                 <section className="p-8 bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden relative">
                   <div className="absolute top-0 inset-x-0 h-2 bg-indigo-600" />
                   <h4 className="text-2xl font-black text-slate-800 flex items-center gap-3 mb-8">
-                    <Sliders className="text-indigo-600" /> لوحة التحكم التفصيلية والاستثناءات الجغرافية والدراسية (Granular Controls)
+                    <Sliders className="text-indigo-600" /> مركز التحكم التفصيلية والاستثناءات الجغرافية والدراسية (Granular Controls)
                   </h4>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
@@ -8842,7 +8842,7 @@ function AppComponent() {
                 
                 <div className="flex flex-col md:flex-row justify-between items-center bg-white p-6 rounded-xl border border-gray-100 gap-4 w-full shadow-sm">
                   <div>
-                    <h2 className="text-xl font-black text-slate-800">اللوحة التحليلية الشاملة</h2>
+                    <h2 className="text-xl font-black text-slate-800">المركز التحليلي الشامل</h2>
                     <p className="text-sm text-slate-500 font-bold mt-1">مؤشرات إحصائية ورسوم بيانية لبيانات التسجيل والحاسبة</p>
                   </div>
                   <button onClick={exportComprehensivePDF} disabled={isExportingPDF} className={`px-6 py-3 bg-slate-900 text-white rounded-2xl font-black shadow-lg transition-all text-sm flex items-center gap-2 ${isExportingPDF ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800'}`}>
@@ -10079,12 +10079,12 @@ function AppComponent() {
               ) : (
                 <div className="text-center py-12">
                   <ShieldCheck className="mx-auto text-coptic-blue mb-4" size={48} />
-                  <p className="text-slate-600 font-bold">أنت الآن بصفة مسئول، يمكنك الرد على الاستفسارات من لوحة التحكم.</p>
+                  <p className="text-slate-600 font-bold">أنت الآن بصفة مسئول، يمكنك الرد على الاستفسارات من مركز التحكم.</p>
                   <button 
                     onClick={() => setActiveSection('admin_dashboard')}
                     className="mt-4 px-6 py-2 bg-coptic-blue text-white rounded-xl font-bold"
                   >
-                    انتقل للوحة التحكم
+                    انتقل لمركز التحكم
                   </button>
                 </div>
               )}
@@ -10139,7 +10139,7 @@ function AppComponent() {
                   </div>
                   {!systemControls.isBookCalculatorOpen && (
                     <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-lg text-[10px] font-black w-fit mt-1 animate-pulse">
-                      [مغلقة حالياً من قبل الإدارة المركزية]
+                      [مغلقة حاليًا من قبل اللجنة المركزية]
                     </span>
                   )}
                 </div>
@@ -10177,7 +10177,7 @@ function AppComponent() {
                   </div>
                 ) : calculatorSettings.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 font-bold">
-                    لا توجد كتب مضافة حالياً
+                    لا توجد كتب مضافة حاليًا
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -10257,7 +10257,7 @@ function AppComponent() {
                     {userRole === 'church' && <img src={logoBase64 || getValidLogoUrl(userProfile?.logoUrl, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-16 h-16 rounded-full object-contain shadow-sm border border-slate-100 bg-white" crossOrigin="anonymous" />}
                     <div>
                       <h1 className="text-4xl font-black text-coptic-blue mb-2">مهرجان الكرازة {activeYear}</h1>
-                      <p className="text-coptic-gold font-bold uppercase tracking-widest text-sm">فاتورة طلب كتب رسمية - نسخة إدارية</p>
+                      <p className="text-coptic-gold font-bold uppercase tracking-widest text-sm">فاتورة طلب كتب رسمية - نسخة طبق الأصل</p>
                     </div>
                   </div>
                   <div className="text-left">
@@ -10301,7 +10301,7 @@ function AppComponent() {
                     <div className="h-px bg-slate-200 w-full"></div>
                   </div>
                   <div className="border-t border-slate-300 pt-4">
-                    <p className="text-xs text-slate-400 uppercase font-bold mb-8">توقيع أمين الصندوق</p>
+                    <p className="text-xs text-slate-400 uppercase font-bold mb-8">توقيع  الكاهن</p>
                     <div className="h-px bg-slate-200 w-full"></div>
                   </div>
                 </div>
@@ -10422,7 +10422,7 @@ function AppComponent() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                             <div className="space-y-2">
                               <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                                اسم المخدوم ثلاثياً
+                                اسم المخدوم ثلاثيًا
                               </label>
                               <input 
                                 type="text" 
@@ -10597,7 +10597,7 @@ function AppComponent() {
                         </div>
                         <div className="text-center">
                           <h4 className="font-black text-xl mb-1">معاينة المشتركين المسجلين</h4>
-                          <p className="text-sm font-bold text-slate-400">عرض وإدارة {totalParticipantsCount} مشترك تم تسجيلهم حالياً</p>
+                          <p className="text-sm font-bold text-slate-400">عرض وإدارة {totalParticipantsCount} مشترك تم تسجيلهم حاليًا</p>
                         </div>
                       </button>
                     </div>
