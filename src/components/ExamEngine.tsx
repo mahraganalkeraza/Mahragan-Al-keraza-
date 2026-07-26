@@ -2225,15 +2225,27 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           : `${oldExamId} + ${currentExamId}`;
       }
 
-      // 3️⃣ ثالثاً: بناء الـ Payload الذكي باستخدام الـ combinedExamId المدموج
+      // 3️⃣ ثالثاً: فحص حالة إعلان النتائج من system_settings وبناء الـ Payload الذكي
+      let isPublishedGlobally = false;
+      try {
+        const { data: sysSet } = await supabase
+          .from('system_settings')
+          .select('results_published')
+          .eq('id', '1')
+          .maybeSingle();
+        if (sysSet && sysSet.results_published === true) {
+          isPublishedGlobally = true;
+        }
+      } catch (_) {}
+
       let scoreUpdatePayload: any = {
         name: studentName,
         churchName: currentStudentPayload?.church,
         stage: currentStudentPayload?.stage,
         gender: currentStudentPayload?.gender,
         detailed_answers: JSON.parse(selectedAnswers || "[]"),
-        exam_id: combinedExamId, // 🔥 السحر هنا: بقى يشيل القديم + الجديد مع بعض!
-        is_published: true,
+        exam_id: combinedExamId,
+        is_published: isPublishedGlobally,
         duration_seconds: calculatedDurationInSeconds,
         status: "completed",
         submitted_at: new Date().toISOString()

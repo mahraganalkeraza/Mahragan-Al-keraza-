@@ -3369,6 +3369,13 @@ function AppComponent() {
             });
           }
           
+          // Check system_settings results_published
+          let isPub = false;
+          try {
+            const { data: sysSet } = await supabase.from('system_settings').select('results_published').eq('id', '1').maybeSingle();
+            if (sysSet && sysSet.results_published === true) isPub = true;
+          } catch (_) {}
+
           // Filter out rows without student name
           const validData = data
             .filter((row: any) => String(row['الاسم'] || '').trim() !== '')
@@ -3397,7 +3404,7 @@ function AppComponent() {
                 qebty_lvl1_score: qebtyL1,
                 qebty_lvl2_score: qebtyL2,
                 submitted_at: row['توقيت التسجيل'] ? new Date(row['توقيت التسجيل']).toISOString() : new Date().toISOString(),
-                is_published: true,
+                is_published: isPub,
                 status: 'completed',
                 duration_seconds: 0,
                 detailed_answers: null
@@ -4713,6 +4720,12 @@ function AppComponent() {
     if (!newResult.studentName || !newResult.churchName) return;
     setIsSubmittingResult(true);
     try {
+      let isPub = false;
+      try {
+        const { data: sysSet } = await supabase.from('system_settings').select('results_published').eq('id', '1').maybeSingle();
+        if (sysSet && sysSet.results_published === true) isPub = true;
+      } catch (_) {}
+
       const payload = {
         student_id: editingResult ? editingResult.id : `manual-${Math.random().toString(36).substring(2, 11)}`,
         churchName: newResult.churchName,
@@ -4723,7 +4736,7 @@ function AppComponent() {
         qebty_lvl1_score: newResult.q1Score !== undefined ? Number(newResult.q1Score) : null,
         qebty_lvl2_score: newResult.qScore !== undefined ? Number(newResult.qScore) : null,
         submitted_at: new Date().toISOString(),
-        is_published: true,
+        is_published: isPub,
         status: 'completed',
         duration_seconds: 0,
         detailed_answers: null

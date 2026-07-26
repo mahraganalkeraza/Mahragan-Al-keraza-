@@ -209,8 +209,11 @@ export const ResultsViewer: React.FC<{
         .from('exam_submissions')
         .select('student_id, name, churchName, stage, derasy_score, mahfouzat_score, qebty_lvl1_score, qebty_lvl2_score, status, is_published, submitted_at, gender, submission_type, detailed_answers');
       
-      if (!isAdmin && activeUserChurch) {
-        query = query.eq('is_published', true).eq('churchName', activeUserChurch);
+      if (!isAdmin) {
+        query = query.eq('is_published', true);
+        if (activeUserChurch) {
+          query = query.eq('churchName', activeUserChurch);
+        }
       }
 
       const { data, error } = await query;
@@ -397,7 +400,7 @@ export const ResultsViewer: React.FC<{
           mahfouzat_score: selectedColumn === 'mahfouzat_score' ? scoreVal : (existing.mahfouzat_score !== undefined ? existing.mahfouzat_score : null),
           qebty_lvl1_score: selectedColumn === 'qebty_lvl1_score' ? scoreVal : (existing.qebty_lvl1_score !== undefined ? existing.qebty_lvl1_score : null),
           qebty_lvl2_score: selectedColumn === 'qebty_lvl2_score' ? scoreVal : (existing.qebty_lvl2_score !== undefined ? existing.qebty_lvl2_score : null),
-          is_published: true,
+          is_published: resultsPublished,
           status: 'completed'
         };
       });
@@ -1018,7 +1021,7 @@ export const ResultsViewer: React.FC<{
             mahfouzat_score: null, // Treat purely as academic score, other parts null
             qebty_lvl1_score: null,
             qebty_lvl2_score: null,
-            is_published: true,
+            is_published: resultsPublished,
             status: statusText === 'غائب' ? 'absent' : 'completed',
             submission_type: 'bubble_sheet',
             submitted_at: new Date().toISOString()
@@ -1070,7 +1073,7 @@ export const ResultsViewer: React.FC<{
         mahfouzat_score: manualForm.mahfouzat_score !== '' ? Number(manualForm.mahfouzat_score) : null,
         qebty_lvl1_score: manualForm.qebty_lvl1_score !== '' ? Number(manualForm.qebty_lvl1_score) : null,
         qebty_lvl2_score: manualForm.qebty_lvl2_score !== '' ? Number(manualForm.qebty_lvl2_score) : null,
-        is_published: true,
+        is_published: resultsPublished,
         status: 'completed',
         submitted_at: new Date().toISOString()
       };
@@ -1104,38 +1107,35 @@ export const ResultsViewer: React.FC<{
 
   const handlePublishResults = async () => {
     if (!confirm('هل أنت متأكد من مراجعة كافة الدرجات ونشرها رسميًا للكنائس؟')) return;
-    try {
-      setIsLoading(true);
-      
-      const { error } = await supabase
-        .from('exam_submissions')
-        .update({ is_published: true })
-        .neq('id', '0'); // Update all rows
-
-      if (error) throw error;
-
-      alert('تم إعلان ونشر كافة نتائج الامتحانات للكنائس بنجاح! 🚀');
-      fetchSubmissionsFromSupabase();
-    } catch (err: any) {
-      console.error('Error publishing results:', err);
-      alert('حدث خطأ أثناء نشر النتائج للكنائس: ' + err.message);
-    } finally {
-      setIsLoading(false);
-    }
+    await handleTogglePublish(true);
   };
 
   const handleTogglePublish = async (publishState: boolean) => {
     setIsPublishLoading(true);
     try {
-      const { error } = await supabase
+      // 1. Update system_settings table (row id '1')
+      const { error: settingsError } = await supabase
         .from('system_settings')
-        .update({ results_published: publishState })
-        .eq('id', '1');
+        .upsert({ id: '1', results_published: publishState }, { onConflict: 'id' });
 
-      if (error) throw error;
+      if (settingsError) {
+        console.warn("Error updating system_settings:", settingsError.message);
+      }
+
+      // 2. Direct database UPDATE to set is_published = publishState in exam_submissions
+      const { error: submissionsError } = await supabase
+        .from('exam_submissions')
+        .update({ is_published: publishState })
+        .not('student_id', 'is', null);
+
+      if (submissionsError) {
+        console.error("Error updating exam_submissions.is_published:", submissionsError);
+        throw submissionsError;
+      }
 
       setResultsPublished(publishState);
       alert(publishState ? "تم إعلان النتائج بنجاح لجميع الكنائس! 🚀" : "تم حجب النتائج بنجاح عن الكنائس. 🔒");
+      await fetchSubmissionsFromSupabase();
     } catch (err: any) {
       console.error("Error updating publish status:", err);
       alert("حدث خطأ أثناء تعديل حالة الإعلان: " + err.message);
@@ -1177,7 +1177,7 @@ export const ResultsViewer: React.FC<{
         </div>
         <h3 className="text-lg font-black text-slate-800 mb-2">النتائج قيد المراجعة</h3>
         <p className="text-xs text-slate-500 leading-relaxed font-bold">
-          سلام المسيح .. يجرى حاليًا رصد ومراجعة درجات المخدومين. انتظروا إعلان النتائج رسميًا قريبًا جدًا!
+          سلام المسيح، النتائج غير معلنة حاليًا سوف يتم الإعلان عنها قريبًا
         </p>
       </div>
     );
