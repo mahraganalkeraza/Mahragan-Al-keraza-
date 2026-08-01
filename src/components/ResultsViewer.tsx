@@ -633,6 +633,15 @@ export const ResultsViewer: React.FC<{
     setPdfProgress(5);
     setPdfStatus("جاري تحضير البيانات وتقسيم الجداول لملفات متعددة الأوراق...");
 
+    // Setup the headers and row values schema explicitly as requested
+    const pdfTableHeaders = ["الدراسي", "المحفوظات", "قبطي 1", "قبطي 2"];
+    const pdfRowDataValues = results.map(row => [
+      row.derasy_score ?? '-',
+      row.mahfouzat_score ?? '-',
+      row.qebty_lvl1_score ?? '-',
+      row.qebty_lvl2_score ?? '-'
+    ]);
+
     // Wait short time to let the DOM render the hidden element
     setTimeout(async () => {
       try {
@@ -743,6 +752,10 @@ export const ResultsViewer: React.FC<{
         { header: 'الكنيسة', key: 'church_name', width: 25 },
         { header: 'المرحلة', key: 'stage', width: 20 },
         { header: 'بيانات الـ QR', key: 'qr_data', width: 22 },
+        { header: 'الدراسي', key: 'الدراسي', width: 15 },
+        { header: 'المحفوظات', key: 'المحفوظات', width: 15 },
+        { header: 'قبطي 1', key: 'قبطي 1', width: 15 },
+        { header: 'قبطي 2', key: 'قبطي 2', width: 15 },
         { header: 'الدرجة الكلية', key: 'total_score', width: 15 },
         { header: 'إجمالي الأسئلة', key: 'total_questions', width: 15 },
         { header: 'الإجابات الصحيحة', key: 'correct_answers', width: 15 },
@@ -783,6 +796,10 @@ export const ResultsViewer: React.FC<{
           church_name: row.churchName || "N/A",
           stage: row.stage || "عام",
           qr_data: row.id || "N/A",
+          "الدراسي": row.derasy_score ?? 'لم يمتحن',
+          "المحفوظات": row.mahfouzat_score ?? 'لم يمتحن',
+          "قبطي 1": row.qebty_lvl1_score ?? 'لم يمتحن',
+          "قبطي 2": row.qebty_lvl2_score ?? 'لم يمتحن',
           total_score: row.academicScore ?? 0,
           total_questions: totalQuestions,
           correct_answers: correctCount,
