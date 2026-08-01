@@ -187,32 +187,60 @@ async function handleRosterSync() {
       lastTimestamp = "1970-01-01T00:00:00.000Z";
     }
 
-    const url = `${SUPABASE_URL}/rest/v1/registrations?select=student_id,name,stage,churchName,gender,competitions,updated_at&updated_at=gt.${lastTimestamp}&order=updated_at.asc`;
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'apikey': SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    });
+    let response;
+    let data;
+    let hasTimestampColumn = true;
 
-    if (!response.ok) {
-      throw new Error(`Supabase returned status ${response.status}`);
+    // 1. Try with timestamp column (Delta Sync)
+    try {
+      const url = `${SUPABASE_URL}/rest/v1/registrations?select=student_id,name,stage,churchName,gender,competitions,timestamp&timestamp=gt.${lastTimestamp}&order=timestamp.asc`;
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (response.ok) {
+        data = await response.json();
+      } else {
+        hasTimestampColumn = false;
+      }
+    } catch (e) {
+      hasTimestampColumn = false;
     }
 
-    const data = await response.json();
+    // 2. Fallback to full sync (no timestamp) if delta sync failed/unsupported
+    if (!hasTimestampColumn || !response || !response.ok) {
+      const url = `${SUPABASE_URL}/rest/v1/registrations?select=student_id,name,stage,churchName,gender,competitions`;
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!response.ok) {
+        throw new Error(`Supabase full sync returned status ${response.status}`);
+      }
+      data = await response.json();
+    }
+
     if (Array.isArray(data) && data.length > 0) {
       const cleanedData = data.filter(r => r.name !== 'SYSTEM_LOCK');
       await saveRosterItems(cleanedData);
 
-      let latest = lastTimestamp;
-      data.forEach(r => {
-        if (r.updated_at && r.updated_at > latest) {
-          latest = r.updated_at;
-        }
-      });
-      await setMeta('last_sync_timestamp', latest);
+      if (hasTimestampColumn) {
+        let latest = lastTimestamp;
+        data.forEach(r => {
+          if (r.timestamp && r.timestamp > latest) {
+            latest = r.timestamp;
+          }
+        });
+        await setMeta('last_sync_timestamp', latest);
+      }
     }
 
     const syncTimeStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) + ' - ' + new Date().toLocaleDateString('ar-EG');

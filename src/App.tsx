@@ -4728,6 +4728,7 @@ function AppComponent() {
 
       const payload = {
         student_id: editingResult ? editingResult.id : `manual-${Math.random().toString(36).substring(2, 11)}`,
+        name: newResult.studentName,
         churchName: newResult.churchName,
         stage: newResult.stage || 'عام',
         gender: 'ذكر',

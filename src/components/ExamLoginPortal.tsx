@@ -217,22 +217,28 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         return;
       }
 
-      // 3. تفعيل المزامنة الجزئية (Delta Sync) باستخدام حقل updated_at لتقليص حجم البيانات المستهلكة
+      // 3. تفعيل المزامنة الجزئية (Delta Sync) باستخدام حقل timestamp لتقليص حجم البيانات المستهلكة
       const lastSyncTimestamp = localStorage.getItem('cached_students_last_sync_timestamp');
       let newOrUpdatedRows: any[] = [];
       let page = 0;
       const pageSize = 1000;
       let hasMore = true;
       let useDelta = !!lastSyncTimestamp && existingStudents.length > 0;
+      let useTimestamp = true;
 
       while (hasMore) {
+        let selectCols = 'student_id, name, stage, churchName, gender, competitions';
+        if (useTimestamp) {
+          selectCols += ', timestamp';
+        }
+
         let query = supabase
           .from('registrations')
-          .select('student_id, name, stage, churchName, gender, competitions, updated_at')
+          .select(selectCols)
           .range(page * pageSize, (page + 1) * pageSize - 1);
 
-        if (useDelta && lastSyncTimestamp) {
-          query = query.gt('updated_at', lastSyncTimestamp);
+        if (useDelta && lastSyncTimestamp && useTimestamp) {
+          query = query.gt('timestamp', lastSyncTimestamp);
         }
 
         const { data, error } = await query;
@@ -242,6 +248,13 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           if (useDelta) {
             console.warn("Delta sync failed, falling back to full sync:", error);
             useDelta = false;
+            page = 0;
+            newOrUpdatedRows = [];
+            continue;
+          }
+          if (useTimestamp) {
+            console.warn("Query with timestamp column failed, falling back to query without timestamp:", error);
+            useTimestamp = false;
             page = 0;
             newOrUpdatedRows = [];
             continue;
@@ -290,8 +303,8 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
       
       let latestTimestamp = lastSyncTimestamp || new Date(0).toISOString();
       newOrUpdatedRows.forEach((r: any) => {
-        if (r.updated_at && r.updated_at > latestTimestamp) {
-          latestTimestamp = r.updated_at;
+        if (r.timestamp && r.timestamp > latestTimestamp) {
+          latestTimestamp = r.timestamp;
         }
       });
       localStorage.setItem('cached_students_last_sync_timestamp', latestTimestamp);

@@ -1024,7 +1024,22 @@ export const ResultsViewer: React.FC<{
           
           // CRITICAL NOTE: The Score column represents Academic/Study Contest score ONLY
           const scoreVal = row['مسابقة الدراسي فقط'] || row['مسابقة الدراسي'] || row['الدرجة'] || row['درجة الدراسي'] || row['derasy_score'] || row['score'] || row['Score'] || 0;
-          const derasy = scoreVal !== undefined && scoreVal !== '' ? Number(scoreVal) : 0;
+          const parsedDerasy = Number(scoreVal);
+          const derasy = !isNaN(parsedDerasy) ? parsedDerasy : 0;
+
+          // Also check other score columns if they exist in the uploaded sheet
+          const mVal = row['المحفوظات'] || row['درجة المحفوظات'] || row['mahfouzat_score'] || row['mahfouzat'] || null;
+          const q1Val = row['قبطي 1'] || row['درجة قبطي 1'] || row['qebty_lvl1_score'] || row['qebty_lvl1'] || null;
+          const q2Val = row['قبطي 2'] || row['درجة قبطي 2'] || row['qebty_lvl2_score'] || row['qebty_lvl2'] || null;
+
+          const parsedMahfouzat = mVal !== null && mVal !== undefined && mVal !== '' ? Number(mVal) : null;
+          const mahfouzat = parsedMahfouzat !== null && !isNaN(parsedMahfouzat) ? parsedMahfouzat : null;
+
+          const parsedQ1 = q1Val !== null && q1Val !== undefined && q1Val !== '' ? Number(q1Val) : null;
+          const qebty1 = parsedQ1 !== null && !isNaN(parsedQ1) ? parsedQ1 : null;
+
+          const parsedQ2 = q2Val !== null && q2Val !== undefined && q2Val !== '' ? Number(q2Val) : null;
+          const qebty2 = parsedQ2 !== null && !isNaN(parsedQ2) ? parsedQ2 : null;
 
           const statusText = row['الحالة - غائب/حاضر/إلخ'] || row['الحالة'] || row['Status'] || row['status'] || 'حاضر';
 
@@ -1035,9 +1050,9 @@ export const ResultsViewer: React.FC<{
             stage: stage,
             gender: gender,
             derasy_score: derasy,
-            mahfouzat_score: null, // Treat purely as academic score, other parts null
-            qebty_lvl1_score: null,
-            qebty_lvl2_score: null,
+            mahfouzat_score: mahfouzat,
+            qebty_lvl1_score: qebty1,
+            qebty_lvl2_score: qebty2,
             is_published: resultsPublished,
             status: statusText === 'غائب' ? 'absent' : 'completed',
             submission_type: 'bubble_sheet',
@@ -1050,15 +1065,35 @@ export const ResultsViewer: React.FC<{
           return;
         }
 
-        console.log("Payload to Supabase (bubble sheet alignment):", submissionsToInsert);
+        // Deduplicate the submissionsToInsert array by student_id to be absolutely safe
+        const uniqueSubmissionsMap = new Map<string, any>();
+        submissionsToInsert.forEach(sub => {
+          uniqueSubmissionsMap.set(String(sub.student_id).trim(), sub);
+        });
+        const finalSubmissionsToInsert = Array.from(uniqueSubmissionsMap.values());
 
+        console.log("Payload to Supabase (bubble sheet alignment):", finalSubmissionsToInsert);
+
+        // 1. Delete any existing rows for these student_ids to avoid duplicates/conflicts
+        const studentIdsToWipe = finalSubmissionsToInsert.map(s => s.student_id).filter(Boolean);
+        if (studentIdsToWipe.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('exam_submissions')
+            .delete()
+            .in('student_id', studentIdsToWipe);
+          if (deleteError) {
+            console.warn("Wiping existing submissions before import failed (non-blocking):", deleteError.message);
+          }
+        }
+
+        // 2. Insert the clean deduplicated payload
         const { error } = await supabase
           .from('exam_submissions')
-          .insert(submissionsToInsert);
+          .insert(finalSubmissionsToInsert);
 
         if (error) throw error;
 
-        alert(`تم رفع عدد ${submissionsToInsert.length} نتيجة بابل شيت بنجاح!`);
+        alert(`تم رفع عدد ${finalSubmissionsToInsert.length} نتيجة بابل شيت بنجاح!`);
         fetchSubmissionsFromSupabase();
       } catch (err: any) {
         console.error('Error parsing/inserting Excel bubble sheet data:', err);
