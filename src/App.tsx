@@ -83,6 +83,8 @@ import { downloadStudentQRCode } from './utils/qrCodeGenerator';
 import { ExamLoginPortal } from './components/ExamLoginPortal';
 import { TemplateExcelExporter } from './components/TemplateExcelExporter';
 import AdminDisplayGate from './components/AdminDisplayGate';
+import ChurchInquiryForm from './components/ChurchInquiryForm';
+import AdminInquiriesViewer from './components/AdminInquiriesViewer';
 import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
 import { setupForceRefreshListener } from './utils/forceRefreshManager';
 import { supabase } from './lib/supabaseClient';
@@ -6075,10 +6077,6 @@ function AppComponent() {
     );
   }
 
-  useEffect(() => {
-    // Shared exam-login portal is accessible to all users directly without admin role check
-  }, [activeSection, userRole]);
-
   if (activeSection === 'admin-display-gate') {
     return (
       <AdminDisplayGate 
@@ -8128,59 +8126,7 @@ function AppComponent() {
             )}
 
             {adminActiveTab === 'inquiries' && (
-              <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
-                <div className="flex items-center justify-between mb-8">
-                  <h4 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                    <MessageSquare className="text-coptic-blue" /> إدارة الاستفسارات
-                  </h4>
-                </div>
-                <div className="space-y-6">
-                  {(inquiries || [])
-                    .filter(i => adminFilterChurch === 'الكل' || i.churchName === adminFilterChurch)
-                    .slice((inquiryPage - 1) * 20, inquiryPage * 20)
-                    .map(i => (
-                      <div key={i.id} className="p-6 bg-white rounded-2xl border border-slate-100 shadow-sm">
-                        <div className="flex justify-between items-start mb-4">
-                          <div>
-                            <p className="font-black text-slate-800">{i.churchName}</p>
-                            <p className="text-xs text-slate-400 font-bold">{i.timestamp}</p>
-                          </div>
-                          <button 
-                            onClick={() => handleDeleteInquiry(i.id)}
-                            className="p-2 text-slate-300 hover:text-red-500 transition-colors"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        </div>
-                        <p className="text-slate-600 mb-4 bg-slate-50 p-4 rounded-xl border border-slate-100">{i.message}</p>
-                        <div className="flex gap-2">
-                          <input 
-                            type="text"
-                            placeholder="اكتب الرد هنا..."
-                            className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-coptic-blue"
-                            id={`reply-${i.id}`}
-                            defaultValue={i.reply || ''}
-                          />
-                          <button 
-                            onClick={() => {
-                              const reply = (document.getElementById(`reply-${i.id}`) as HTMLInputElement).value;
-                              handleReplyInquiry(i.id, reply);
-                            }}
-                            className="px-4 py-2 bg-coptic-blue text-white rounded-xl text-xs font-black hover:bg-opacity-90 transition-all"
-                          >
-                            إرسال الرد
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  <PaginationComponent 
-                    currentPage={inquiryPage}
-                    totalItems={(inquiries || []).filter(i => adminFilterChurch === 'الكل' || i.churchName === adminFilterChurch).length}
-                    itemsPerPage={20}
-                    onPageChange={setInquiryPage}
-                  />
-                </div>
-              </section>
+              <AdminInquiriesViewer />
             )}
 
             {adminActiveTab === 'schedules' && (
@@ -10086,70 +10032,22 @@ function AppComponent() {
       )}
 
         {activeSection === 'inquiries' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-2xl mx-auto">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto space-y-4">
             <BackButton />
-            <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-16 h-16 bg-coptic-gold/10 rounded-2xl flex items-center justify-center">
-                  <MessageSquare className="text-coptic-gold" size={32} />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-black text-coptic-blue">قناة الاستفسارات والشكاوي</h3>
-                  <p className="text-slate-400 font-bold">تواصل معنا وسنقوم بالرد عليك في أقرب وقت</p>
-                </div>
+            {userRole === 'church' ? (
+              <ChurchInquiryForm churchName={churchName} userProfile={userProfile} />
+            ) : (
+              <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 text-center py-12">
+                <ShieldCheck className="mx-auto text-primary mb-4" size={48} />
+                <p className="text-slate-600 font-bold">أنت الآن بصفة مسئول، يمكنك الرد على جميع الاستفسارات والشكاوي من مركز التحكم.</p>
+                <button 
+                  onClick={() => setActiveSection('admin_dashboard')}
+                  className="mt-4 px-6 py-3 bg-primary text-white rounded-xl font-black text-sm shadow-md hover:bg-primary/90 transition-all cursor-pointer"
+                >
+                  انتقل لمركز التحكم
+                </button>
               </div>
-
-              {userRole === 'church' ? (
-                <div className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-slate-500 uppercase">رسالتك</label>
-                    <textarea 
-                      value={inquiryMessage}
-                      onChange={(e) => setInquiryMessage(e.target.value)}
-                      placeholder="اكتب استفسارك أو شكواك هنا بالتفصيل..."
-                      className="w-full h-40 px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-coptic-blue transition-all"
-                    />
-                  </div>
-                  <button 
-                    onClick={handleSendInquiry}
-                    className="w-full py-4 bg-coptic-blue text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2"
-                  >
-                    <Send size={20} />
-                    <span>إرسال الاستفسار</span>
-                  </button>
-
-                  <div className="pt-8 border-t border-slate-100">
-                    <h4 className="font-black text-slate-800 mb-4 flex items-center gap-2">
-                      <History size={18} className="text-coptic-gold" /> استفساراتك السابقة
-                    </h4>
-                    <div className="space-y-4">
-                      {(inquiries || []).filter(inq => inq.churchName === churchName).map(inq => (
-                        <div key={inq.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                          <p className="text-sm font-bold text-slate-700 mb-2">{inq.message}</p>
-                          {inq.reply && (
-                            <div className="mt-2 p-3 bg-white rounded-xl border-r-4 border-coptic-blue">
-                              <p className="text-xs font-black text-coptic-blue mb-1">رد المسئول:</p>
-                              <p className="text-sm text-slate-600">{inq.reply}</p>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-12">
-                  <ShieldCheck className="mx-auto text-coptic-blue mb-4" size={48} />
-                  <p className="text-slate-600 font-bold">أنت الآن بصفة مسئول، يمكنك الرد على الاستفسارات من مركز التحكم.</p>
-                  <button 
-                    onClick={() => setActiveSection('admin_dashboard')}
-                    className="mt-4 px-6 py-2 bg-coptic-blue text-white rounded-xl font-bold"
-                  >
-                    انتقل لمركز التحكم
-                  </button>
-                </div>
-              )}
-            </div>
+            )}
           </motion.div>
         )}
 

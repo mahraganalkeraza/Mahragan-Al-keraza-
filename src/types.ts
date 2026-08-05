@@ -24,6 +24,22 @@ export interface Inquiry {
   year?: string;
 }
 
+export interface ChurchInquiry {
+  id?: string;
+  church_id: string;
+  contact_person: string;
+  phone_number: string;
+  type: 'inquiry' | 'complaint';
+  subject: string;
+  message: string;
+  status?: string;
+  admin_reply?: string;
+  reply?: string;
+  replied_at?: string;
+  created_at?: string;
+  church_name?: string;
+}
+
 export interface Order {
   id: string;
   churchName: string;
