@@ -1961,6 +1961,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
   const handleFinalSubmission = async (e?: React.FormEvent) => {
     if (e) e.preventDefault(); // 👈 CRITICAL: Prevents HTML form locking/reloading behavior
+    if (isLoading) return; // 👈 Prevent duplicate invocation if clicked extremely quickly
 
     if (middleNameValidation.trim() !== '') {
       setIsLoading(true);
@@ -2271,19 +2272,30 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         scoreUpdatePayload.student_id = currentStudentPayload?.id;
         dbResult = await supabase
           .from('exam_submissions')
-          .insert(scoreUpdatePayload);
+          .insert(scoreUpdatePayload)
+          .select();
       } else {
         // 🔥 لو الطالب موجود قبل كدة.. بنعمل UPDATE للخانة الجديدة بس ومبنلمسش القديم!
         dbResult = await supabase
           .from('exam_submissions')
           .update(scoreUpdatePayload)
-          .eq('student_id', currentStudentPayload?.id);
+          .eq('student_id', currentStudentPayload?.id)
+          .select();
       }
 
-      // 6️⃣ سادساً: فحص الأخطاء كالمعتاد
+      // 6️⃣ سادساً: فحص الأخطاء كالمعتاد والتحقق من تأكيد الحفظ الفعلي لمنع النجاح الزائف
       if (dbResult.error) {
-        console.error("Supabase Error:", dbResult.error.message);
+        console.error("Supabase Save Error (submission):", dbResult.error.message, dbResult.error);
         alert(`فشل إرسال الإجابات لقاعدة البيانات: ${dbResult.error.message}`);
+        setHasSubmissionFailed(true);
+        setIsLoading(false);
+        return;
+      }
+
+      if (!dbResult.data || dbResult.data.length === 0) {
+        const errorMsg = "لم يتم تأكيد حفظ السجل في قاعدة البيانات. قد يكون ذلك بسبب قيود الصلاحيات أو عدم العثور على السجل لتحديثه.";
+        console.error("Supabase Save Error (No rows returned):", errorMsg);
+        alert(`فشل التسجيل: ${errorMsg}`);
         setHasSubmissionFailed(true);
         setIsLoading(false);
         return;

@@ -43,6 +43,7 @@ import {
   Link2,
   QrCode,
   ExternalLink,
+  Music,
   Image as ImageIcon,
   Upload,
   Newspaper,
@@ -403,8 +404,11 @@ function NewsHeroSlider({ news, carouselItems, appLogo }: { news: News[], carous
   );
 }
 
+const HYMNS_SITE_URL = "https://mahraganalkeraza.github.io/Hymens_comptetion/";
+
 const ALL_ADMIN_TABS = [
   { id: 'dashboard', label: 'Data Analysis', icon: LayoutDashboard },
+  { id: 'hymns_judging', label: 'انتقال للجنة تحكيم الألحان', icon: Music, isExternal: true, url: HYMNS_SITE_URL },
   { id: 'news', label: 'الأخبار والـ Slider', icon: Newspaper },
   { id: 'participants', label: 'إدارة المشتركين', icon: Users },
   { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
@@ -4743,17 +4747,37 @@ function AppComponent() {
         detailed_answers: null
       };
 
+      let dbResult;
       if (editingResult) {
-        await supabase
+        dbResult = await supabase
           .from('exam_submissions')
           .update(payload)
-          .eq('student_id', editingResult.id);
+          .eq('student_id', editingResult.id)
+          .select();
+      } else {
+        dbResult = await supabase
+          .from('exam_submissions')
+          .insert([payload])
+          .select();
+      }
+
+      if (dbResult.error) {
+        console.error("Supabase manual save error:", dbResult.error.message, dbResult.error);
+        alert(`فشل حفظ النتيجة: ${dbResult.error.message}`);
+        return;
+      }
+
+      if (!dbResult.data || dbResult.data.length === 0) {
+        const errStr = "لم يتم تأكيد حفظ النتيجة في قاعدة البيانات. قد يكون ذلك بسبب الصلاحيات أو عدم العثور على الطالب.";
+        console.error("Supabase manual save returned no data:", errStr);
+        alert(`فشل الحفظ: ${errStr}`);
+        return;
+      }
+
+      if (editingResult) {
         setEditingResult(null);
         alert('تم تحديث النتيجة بنجاح');
       } else {
-        await supabase
-          .from('exam_submissions')
-          .insert([payload]);
         alert('تم إضافة النتيجة بنجاح');
       }
       setNewResult({ 
@@ -7083,21 +7107,39 @@ function AppComponent() {
 
                 <div className="p-4 flex flex-col gap-2 h-auto lg:h-full overflow-x-auto lg:overflow-y-auto no-scrollbar lg:custom-scrollbar">
                   <div className="flex gap-2 lg:flex-col lg:space-y-1">
-                    {visibleAdminTabs.map(tab => (
-                      <button 
-                        key={tab.id}
-                        onClick={() => setAdminActiveTab(tab.id)}
-                        className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm text-right cursor-pointer ${
-                          adminActiveTab === tab.id 
-                            ? 'bg-primary text-white shadow-md transform lg:scale-[1.02]' 
-                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/60'
-                        }`}
-                      >
-                        <tab.icon size={18} className={adminActiveTab === tab.id ? 'text-white' : 'text-slate-400'} />
-                        <span className="flex-1 whitespace-nowrap">{tab.label}</span>
-                        {adminActiveTab === tab.id && <ChevronLeft size={16} className="text-white/50 hidden lg:block" />}
-                      </button>
-                    ))}
+                    {visibleAdminTabs.map(tab => {
+                      if ((tab as any).isExternal) {
+                        return (
+                          <a 
+                            key={tab.id}
+                            href={(tab as any).url || HYMNS_SITE_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm text-right cursor-pointer bg-slate-800/90 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 border border-amber-500/30 shadow-sm group"
+                          >
+                            <tab.icon size={18} className="text-amber-400 group-hover:scale-110 transition-transform" />
+                            <span className="flex-1 whitespace-nowrap">{tab.label}</span>
+                            <ExternalLink size={16} className="text-amber-400/80 group-hover:translate-x-[-2px] transition-transform" />
+                          </a>
+                        );
+                      }
+
+                      return (
+                        <button 
+                          key={tab.id}
+                          onClick={() => setAdminActiveTab(tab.id)}
+                          className={`flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm text-right cursor-pointer ${
+                            adminActiveTab === tab.id 
+                              ? 'bg-primary text-white shadow-md transform lg:scale-[1.02]' 
+                              : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/60'
+                          }`}
+                        >
+                          <tab.icon size={18} className={adminActiveTab === tab.id ? 'text-white' : 'text-slate-400'} />
+                          <span className="flex-1 whitespace-nowrap">{tab.label}</span>
+                          {adminActiveTab === tab.id && <ChevronLeft size={16} className="text-white/50 hidden lg:block" />}
+                        </button>
+                      );
+                    })}
                   </div>
                   
                   {/* Customization Button */}
@@ -7151,6 +7193,32 @@ function AppComponent() {
                     {(inquiries || []).filter(i => globalChurchFilter === 'الكل' || i.churchName === globalChurchFilter).length}
                   </p>
                 </div>
+              </div>
+
+              {/* Hymns Judging System Quick Action Banner */}
+              <div className="mb-8 p-6 bg-gradient-to-r from-amber-500/10 via-amber-50/60 to-amber-100/40 rounded-2xl border border-amber-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full font-arabic" dir="rtl">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-md flex-shrink-0">
+                    <Music size={24} />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                      بوابة لجنة تحكيم الألحان 🎶
+                    </h4>
+                    <p className="text-xs text-slate-600 font-bold mt-0.5">
+                      الرابط السريع للانتقال إلى نظام وموقع تقييم مسابقة الألحان.
+                    </p>
+                  </div>
+                </div>
+                <a 
+                  href={HYMNS_SITE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-xs flex items-center gap-2 transition-all shadow-md active:scale-95 whitespace-nowrap cursor-pointer self-stretch md:self-auto justify-center"
+                >
+                  <span>الانتقال للموقع الآن ↗</span>
+                  <ExternalLink size={14} />
+                </a>
               </div>
 
                   <div className="mb-12 p-6 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 w-full">

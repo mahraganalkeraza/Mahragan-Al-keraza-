@@ -1087,13 +1087,18 @@ export const ResultsViewer: React.FC<{
         }
 
         // 2. Insert the clean deduplicated payload
-        const { error } = await supabase
+        const { data: insertedData, error } = await supabase
           .from('exam_submissions')
-          .insert(finalSubmissionsToInsert);
+          .insert(finalSubmissionsToInsert)
+          .select();
 
         if (error) throw error;
 
-        alert(`تم رفع عدد ${finalSubmissionsToInsert.length} نتيجة بابل شيت بنجاح!`);
+        if (!insertedData || insertedData.length === 0) {
+          throw new Error("لم يتم تأكيد حفظ النتائج في قاعدة البيانات، يرجى مراجعة الصلاحيات.");
+        }
+
+        alert(`تم رفع عدد ${insertedData.length} نتيجة بابل شيت بنجاح!`);
         fetchSubmissionsFromSupabase();
       } catch (err: any) {
         console.error('Error parsing/inserting Excel bubble sheet data:', err);
@@ -1132,11 +1137,16 @@ export const ResultsViewer: React.FC<{
 
       console.log("Payload to Supabase (manual):", payload);
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('exam_submissions')
-        .insert(payload);
+        .insert(payload)
+        .select();
 
       if (error) throw error;
+
+      if (!data || data.length === 0) {
+        throw new Error("لم يتم تأكيد حفظ السجل في قاعدة البيانات، يرجى مراجعة الصلاحيات.");
+      }
 
       alert('تم حفظ نتيجة الامتحان الورقي بنجاح!');
       setShowManualModal(false);
@@ -1200,14 +1210,19 @@ export const ResultsViewer: React.FC<{
     try {
       setIsLoading(true);
 
-      const { error } = await supabase
+      const { data: updatedRows, error } = await supabase
         .from('exam_submissions')
         .update({ is_published: true })
-        .eq('churchName', churchName);
+        .eq('churchName', churchName)
+        .select();
 
       if (error) throw error;
 
-      alert(`تم نشر النتيجة بنجاح لكنيسة: ${churchName}`);
+      if (!updatedRows || updatedRows.length === 0) {
+        alert(`تنبيه: لم يتم العثور على أي نتائج مسجلة لهذه الكنيسة (${churchName}) لنشرها.`);
+      } else {
+        alert(`تم نشر عدد ${updatedRows.length} نتيجة بنجاح لكنيسة: ${churchName} 🎉`);
+      }
       fetchSubmissionsFromSupabase();
     } catch (err: any) {
       console.error("Publishing failed:", err.message);
