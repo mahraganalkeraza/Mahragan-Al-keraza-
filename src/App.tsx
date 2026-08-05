@@ -7194,33 +7194,7 @@ function AppComponent() {
                   </p>
                 </div>
               </div>
-
-              {/* Hymns Judging System Quick Action Banner */}
-              <div className="mb-8 p-6 bg-gradient-to-r from-amber-500/10 via-amber-50/60 to-amber-100/40 rounded-2xl border border-amber-200/80 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 w-full font-arabic" dir="rtl">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-md flex-shrink-0">
-                    <Music size={24} />
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                      بوابة لجنة تحكيم الألحان 🎶
-                    </h4>
-                    <p className="text-xs text-slate-600 font-bold mt-0.5">
-                      الرابط السريع للانتقال إلى نظام وموقع تقييم مسابقة الألحان.
-                    </p>
-                  </div>
-                </div>
-                <a 
-                  href={HYMNS_SITE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-xs flex items-center gap-2 transition-all shadow-md active:scale-95 whitespace-nowrap cursor-pointer self-stretch md:self-auto justify-center"
-                >
-                  <span>الانتقال للموقع الآن ↗</span>
-                  <ExternalLink size={14} />
-                </a>
-              </div>
-
+              
                   <div className="mb-12 p-6 bg-white rounded-xl border border-gray-100 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 w-full">
                     <div>
                       <h4 className="font-black text-slate-800">تصدير البيانات المجمعة</h4>
