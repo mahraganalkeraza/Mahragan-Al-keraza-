@@ -85,6 +85,7 @@ import { TemplateExcelExporter } from './components/TemplateExcelExporter';
 import AdminDisplayGate from './components/AdminDisplayGate';
 import ChurchInquiryForm from './components/ChurchInquiryForm';
 import AdminInquiriesViewer from './components/AdminInquiriesViewer';
+import { ChurchQualificationFeesCard } from './components/ChurchQualificationFeesCard';
 import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
 import { setupForceRefreshListener } from './utils/forceRefreshManager';
 import { supabase } from './lib/supabaseClient';
@@ -4387,7 +4388,10 @@ function AppComponent() {
           queryBuilder = queryBuilder.eq('churchName', globalChurchFilter);
         }
       } else {
-        queryBuilder = queryBuilder.eq('churchName', churchName).eq('is_published', true);
+        queryBuilder = queryBuilder.eq('is_published', true);
+        if (churchName && churchName.trim()) {
+          queryBuilder = queryBuilder.ilike('churchName', `%${churchName.trim()}%`);
+        }
       }
 
       if (globalStageFilter !== 'الكل') {
@@ -6723,7 +6727,7 @@ function AppComponent() {
                 </div>
               ) : (
                 <>
-                  <ResultsViewer isAdmin={userRole === 'admin'} />
+                  <ResultsViewer isAdmin={userRole === 'admin'} userChurch={churchName || userProfile?.churchName || userProfile?.church_name} />
                 </>
               )}
             </div>
@@ -6922,6 +6926,9 @@ function AppComponent() {
                   );
                 })()}
               </div>
+
+              {/* Final Qualification Fees Breakdown Card */}
+              <ChurchQualificationFeesCard churchName={churchName || userProfile?.churchName || userProfile?.church_name || ''} />
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-4">

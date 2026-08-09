@@ -22,6 +22,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { AdminHonorsEngine } from './AdminHonorsEngine';
+import { ChurchQualificationFeesCard } from './ChurchQualificationFeesCard';
 import { supabase } from '../utils/supabaseClient';
 import PaginationComponent from './Pagination';
 import * as XLSX from 'xlsx';
@@ -183,79 +184,185 @@ export const ResultsViewer: React.FC<{
     return base;
   }, [hideNames]);
 
+  const [asyncChurchName, setAsyncChurchName] = useState<string>('');
+
+  useEffect(() => {
+    const fetchAuthUserChurch = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const churchFromMeta = user.user_metadata?.church_name || user.user_metadata?.churchName || user.user_metadata?.church;
+          if (churchFromMeta) {
+            setAsyncChurchName(churchFromMeta);
+          }
+        }
+      } catch (_) {}
+    };
+    fetchAuthUserChurch();
+  }, []);
+
   // Determine user church name for non-admins to ensure isolation
   const activeUserChurch = useMemo(() => {
     if (userChurch) return userChurch;
+    if (asyncChurchName) return asyncChurchName;
     try {
       const sessionStr = localStorage.getItem('church_session');
       if (sessionStr) {
         const session = JSON.parse(sessionStr);
-        if (session && session.isAuthenticated) {
-          return session.church;
+        if (session && session.isAuthenticated && (session.church || session.churchName)) {
+          return session.church || session.churchName;
         }
       }
       const cached = localStorage.getItem('userProfileCache');
       if (cached) {
-        return JSON.parse(cached)?.churchName;
+        const profile = JSON.parse(cached);
+        return profile?.churchName || profile?.church_name || profile?.name || '';
       }
     } catch (_) {}
     return '';
-  }, [userChurch]);
+  }, [userChurch, asyncChurchName]);
 
-  const fetchSubmissionsFromSupabase = async () => {
+  const mapRowsToResults = (rows: any[]): Result[] => {
+    return rows.map((sbRow: any) => {
+      const d = Number(sbRow.derasy_score || 0);
+      const m = Number(sbRow.mahfouzat_score || 0);
+      const q1 = Number(sbRow.qebty_lvl1_score || 0);
+      const q2 = Number(sbRow.qebty_lvl2_score || 0);
+      const total = d + m + q1 + q2;
+
+      return {
+        id: sbRow.student_id || sbRow.id || Math.random().toString(),
+        studentName: sbRow.name || sbRow.student_id || 'طالب',
+        churchName: sbRow.churchName || '',
+        stage: sbRow.stage || '',
+        derasy_score: d,
+        mahfouzat_score: m,
+        qebty_lvl1_score: q1,
+        qebty_lvl2_score: q2,
+        academicScore: total,
+        submissionStatus: sbRow.status || (sbRow.is_published ? 'منشور' : 'مسودة'),
+        timestamp: sbRow.submitted_at || sbRow.created_at || null,
+        gender: sbRow.gender || '',
+        submissionType: sbRow.submission_type || 'online',
+        detailed_answers: sbRow.detailed_answers || null,
+      };
+    });
+  };
+
+  const fetchSubmissionsFromSupabase = async (forceRefetch = false): Promise<Result[]> => {
     setIsLoading(true);
     try {
+      // Clear local state cache on force re-fetch if requested
+      if (forceRefetch) {
+        try {
+          sessionStorage.removeItem('cached_results_data');
+          localStorage.removeItem('cached_exam_submissions_data');
+        } catch (_) {}
+      }
+
       let query = supabase
         .from('exam_submissions')
-        .select('student_id, name, churchName, stage, derasy_score, mahfouzat_score, qebty_lvl1_score, qebty_lvl2_score, status, is_published, submitted_at, gender, submission_type, detailed_answers');
+        .select('*');
       
       if (!isAdmin) {
         query = query.eq('is_published', true);
-        if (activeUserChurch) {
-          query = query.eq('churchName', activeUserChurch);
+        if (activeUserChurch && activeUserChurch.trim()) {
+          const cleanChurch = activeUserChurch.trim();
+          query = query.ilike('churchName', `%${cleanChurch}%`);
         }
       }
 
       const { data, error } = await query;
 
-      if (error) throw error;
+      if (error) {
+        console.warn('Supabase fetch issue on exam_submissions:', error.message);
+        // Fallback retry without strict churchName filter in case of whitespace mismatch
+        if (!isAdmin) {
+          try {
+            const { data: fallbackData } = await supabase
+              .from('exam_submissions')
+              .select('*')
+              .eq('is_published', true);
+
+            if (fallbackData && fallbackData.length > 0) {
+              let filtered = fallbackData;
+              if (activeUserChurch && activeUserChurch.trim()) {
+                const target = activeUserChurch.trim().toLowerCase();
+                filtered = fallbackData.filter((row: any) => 
+                  (row.churchName || '').trim().toLowerCase().includes(target)
+                );
+              }
+              const mapped = mapRowsToResults(filtered);
+              setSupabaseSubmissions(mapped);
+              try {
+                localStorage.setItem('cached_exam_submissions_data', JSON.stringify(filtered));
+              } catch (_) {}
+              return mapped;
+            }
+          } catch (retryErr) {
+            console.warn('Fallback fetch attempt also encountered network issue:', retryErr);
+          }
+        }
+        
+        // Attempt restoring from offline cache
+        try {
+          const cachedRaw = localStorage.getItem('cached_exam_submissions_data');
+          if (cachedRaw) {
+            const parsed = JSON.parse(cachedRaw);
+            let mapped = mapRowsToResults(parsed);
+            if (!isAdmin && activeUserChurch && activeUserChurch.trim()) {
+              const target = activeUserChurch.trim().toLowerCase();
+              mapped = mapped.filter(r => (r.churchName || '').trim().toLowerCase().includes(target));
+            }
+            if (mapped.length > 0) {
+              setSupabaseSubmissions(mapped);
+              return mapped;
+            }
+          }
+        } catch (_) {}
+
+        return [];
+      }
 
       if (data) {
-        const mapped: Result[] = data.map((sbRow: any) => {
-          const d = Number(sbRow.derasy_score || 0);
-          const m = Number(sbRow.mahfouzat_score || 0);
-          const q1 = Number(sbRow.qebty_lvl1_score || 0);
-          const q2 = Number(sbRow.qebty_lvl2_score || 0);
-          const total = d + m + q1 + q2;
-
-          return {
-            id: sbRow.student_id || sbRow.id || Math.random().toString(),
-            studentName: sbRow.name || sbRow.student_id || 'طالب',
-            churchName: sbRow.churchName || '',
-            stage: sbRow.stage || '',
-            derasy_score: d,
-            mahfouzat_score: m,
-            qebty_lvl1_score: q1,
-            qebty_lvl2_score: q2,
-            academicScore: total,
-            submissionStatus: sbRow.status || (sbRow.is_published ? 'منشور' : 'مسودة'),
-            timestamp: sbRow.submitted_at || sbRow.created_at || null,
-            gender: sbRow.gender || '',
-            submissionType: sbRow.submission_type || 'online',
-            detailed_answers: sbRow.detailed_answers || null,
-          };
-        });
-
-        // Data Isolation: Strict filter at query level for non-admins matching their church name
-        let finalData = mapped;
-        if (!isAdmin && activeUserChurch) {
-          finalData = mapped.filter(r => r.churchName === activeUserChurch);
+        let mapped = mapRowsToResults(data);
+        // Data Isolation: Extra layer of memory filtering for non-admins if activeUserChurch is provided
+        if (!isAdmin && activeUserChurch && activeUserChurch.trim()) {
+          const target = activeUserChurch.trim().toLowerCase();
+          const filtered = mapped.filter(r => (r.churchName || '').trim().toLowerCase().includes(target));
+          // If strict match produced results, use them; otherwise fallback to mapped if not restricted
+          if (filtered.length > 0) {
+            mapped = filtered;
+          }
         }
 
-        setSupabaseSubmissions(finalData);
+        try {
+          localStorage.setItem('cached_exam_submissions_data', JSON.stringify(data));
+        } catch (_) {}
+
+        setSupabaseSubmissions(mapped);
+        return mapped;
       }
+      return [];
     } catch (err: any) {
-      console.error('Error fetching submissions from exam_submissions:', err.message);
+      console.warn('Network or fetch notice on exam_submissions:', err?.message || err);
+      // Attempt loading from cache when network/TypeError: Failed to fetch occurs
+      try {
+        const cachedRaw = localStorage.getItem('cached_exam_submissions_data');
+        if (cachedRaw) {
+          const parsed = JSON.parse(cachedRaw);
+          let mapped = mapRowsToResults(parsed);
+          if (!isAdmin && activeUserChurch && activeUserChurch.trim()) {
+            const target = activeUserChurch.trim().toLowerCase();
+            mapped = mapped.filter(r => (r.churchName || '').trim().toLowerCase().includes(target));
+          }
+          if (mapped.length > 0) {
+            setSupabaseSubmissions(mapped);
+            return mapped;
+          }
+        }
+      } catch (_) {}
+      return [];
     } finally {
       setIsLoading(false);
     }
@@ -265,19 +372,23 @@ export const ResultsViewer: React.FC<{
     const checkPublishAndFetchData = async () => {
       try {
         setIsCheckingStatus(true);
-        // 1. فحص حالة النشر من الداتابيز
+        // 1. فحص حالة النشر من الداتابيز (system_settings)
         const { data: settings } = await supabase
           .from('system_settings')
           .select('results_published')
           .eq('id', '1')
           .maybeSingle();
 
-        const isPublished = settings?.results_published || false;
-        setResultsPublished(isPublished);
+        const isPublishedGlobally = !!settings?.results_published;
 
-        // 2. إذا كانت معلنة، أو كان المستخدم الحالي Admin، يتم جلب البيانات كالمعتاد
-        if (isPublished || isAdmin) {
-          await fetchSubmissionsFromSupabase();
+        // 2. Fetch published submissions directly from exam_submissions table
+        const fetchedSubmissions = await fetchSubmissionsFromSupabase(true);
+
+        // 3. Set resultsPublished to true if global setting is enabled OR if published submissions exist
+        if (isPublishedGlobally || (fetchedSubmissions && fetchedSubmissions.length > 0) || isAdmin) {
+          setResultsPublished(true);
+        } else {
+          setResultsPublished(false);
         }
       } catch (err) {
         console.error("Error checking status & fetching:", err);
@@ -1254,6 +1365,7 @@ export const ResultsViewer: React.FC<{
     <div className="space-y-8">
      {/* جعل المحرك يعمل دائماً لتستفيد منه الكنائس، وتمرير صلاحية الأدمن ليرى الواجهة فقط */}
       <AdminHonorsEngine results={supabaseSubmissions} isAdmin={isAdmin} onHonorsUpdate={setHonorsRanks} />
+      {!isAdmin && <ChurchQualificationFeesCard churchName={activeUserChurch} />}
       {/* Admin Action Bar (Only visible if isAdmin is true) */}
       {isAdmin && (
         <div className="bg-gradient-to-r from-slate-50 to-slate-100/50 p-6 border border-slate-200 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm font-arabic text-right animate-fade-in" dir="rtl" id="admin-actions-bar">
@@ -1373,7 +1485,7 @@ export const ResultsViewer: React.FC<{
             )}
             <div className="flex items-center gap-2">
               <button 
-                onClick={fetchSubmissionsFromSupabase}
+                onClick={() => fetchSubmissionsFromSupabase(true)}
                 className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-all"
                 title="تحديث البيانات"
               >
@@ -1723,9 +1835,9 @@ export const ResultsViewer: React.FC<{
             
             {results.length === 0 && (
               <div className="text-center py-12 px-4 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                < Award className="mx-auto text-slate-300 mb-4" size={48} />
+                <Award className="mx-auto text-slate-300 mb-4" size={48} />
                 <p className="text-slate-800 font-black text-lg">
-                  {!isAdmin ? 'جاري رصد الدرجات، لم يتم نشر النتيجة بعد لهذه الكنيسة.' : 'بانتظار رصد وتسجيل درجات الامتحانات...'}
+                  {!isAdmin ? 'لا توجد نتائج معلنة حالياً لهذه الكنيسة' : 'بانتظار رصد وتسجيل درجات الامتحانات...'}
                 </p>
                 {!isAdmin && <p className="text-slate-500 font-bold mt-2">يرجى العودة لاحقاً فور اعتماد النتيجة رسمياً من الإدارة.</p>}
               </div>

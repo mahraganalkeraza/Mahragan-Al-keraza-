@@ -41,6 +41,15 @@ export const AdminHonorsEngine: React.FC<{
       return {};
     }
   });
+  const [stageFees, setStageFees] = useState<Record<string, number>>(() => {
+    try {
+      const cached = localStorage.getItem('honors_stage_fees');
+      if (cached) return JSON.parse(cached);
+      return {};
+    } catch (e) {
+      return {};
+    }
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [systemStages, setSystemStages] = useState<string[]>([]);
@@ -59,6 +68,10 @@ export const AdminHonorsEngine: React.FC<{
     localStorage.setItem('honors_stage_thresholds', JSON.stringify(stageThresholds));
   }, [stageThresholds]);
 
+  useEffect(() => {
+    localStorage.setItem('honors_stage_fees', JSON.stringify(stageFees));
+  }, [stageFees]);
+
   // تحميل الإعدادات فوراً وتلقائياً عند تشغيل المكون
   useEffect(() => {
     loadSettings();
@@ -67,8 +80,9 @@ export const AdminHonorsEngine: React.FC<{
   const loadSettings = async () => {
     setIsLoading(true);
     try {
-      const [honorsSnap, stagesSnap, bankSnap] = await Promise.all([
+      const [honorsSnap, sysFeesSnap, stagesSnap, bankSnap] = await Promise.all([
         supabase.from('honors_settings').select('*').eq('id', 'current_config').maybeSingle(),
+        supabase.from('system_settings').select('*').eq('id', 'stage_fees').maybeSingle(),
         supabase.from('stage_competitions').select('stage_name'),
         supabase.from('competition_bank').select('name')
       ]);
@@ -80,12 +94,22 @@ export const AdminHonorsEngine: React.FC<{
             setStageThresholds(wData.__stage_thresholds__);
             delete wData.__stage_thresholds__;
           }
+          if (wData.__stage_fees__) {
+            setStageFees(wData.__stage_fees__);
+            delete wData.__stage_fees__;
+          }
           setWeights(wData);
         }
         if (data.stage_thresholds && typeof data.stage_thresholds === 'object') {
           setStageThresholds(data.stage_thresholds);
         }
+        if (data.stage_fees && typeof data.stage_fees === 'object') {
+          setStageFees(data.stage_fees);
+        }
         if (data.min_threshold !== undefined) setMinThreshold(Number(data.min_threshold));
+      }
+      if (sysFeesSnap.data?.config_data && typeof sysFeesSnap.data.config_data === 'object') {
+        setStageFees(prev => ({ ...prev, ...sysFeesSnap.data.config_data }));
       }
       setSystemStages(stagesSnap.data?.map(d => d.stage_name).filter(Boolean) as string[] || []);
       
@@ -106,7 +130,12 @@ export const AdminHonorsEngine: React.FC<{
         id: 'current_config',
         min_threshold: minThreshold,
         stage_thresholds: stageThresholds,
-        weights_matrix: weights,
+        stage_fees: stageFees,
+        weights_matrix: {
+          ...weights,
+          __stage_thresholds__: stageThresholds as any,
+          __stage_fees__: stageFees as any
+        },
         updated_at: new Date().toISOString()
       };
       
@@ -119,14 +148,19 @@ export const AdminHonorsEngine: React.FC<{
           min_threshold: minThreshold,
           weights_matrix: {
             ...weights,
-            __stage_thresholds__: stageThresholds as any
+            __stage_thresholds__: stageThresholds as any,
+            __stage_fees__: stageFees as any
           },
           updated_at: new Date().toISOString()
         };
         const { error: fallbackError } = await supabase.from('honors_settings').upsert(fallbackPayload);
         if (fallbackError) throw fallbackError;
       }
-      alert('تم حفظ إعدادات ودرجات التكريم بنجاح!');
+      try {
+        await supabase.from('system_settings').upsert({ id: 'stage_fees', config_data: stageFees });
+      } catch (_) {}
+
+      alert('تم حفظ إعدادات ودرجات ورسوم التكريم بنجاح!');
     } catch (e) {
       console.error(e);
       alert('حدث خطأ أثناء الحفظ.');
@@ -148,6 +182,14 @@ export const AdminHonorsEngine: React.FC<{
   const handleStageThresholdChange = (stage: string, value: string) => {
     const num = parseFloat(value);
     setStageThresholds(prev => ({
+      ...prev,
+      [stage]: isNaN(num) ? 0 : num
+    }));
+  };
+
+  const handleStageFeeChange = (stage: string, value: string) => {
+    const num = parseFloat(value);
+    setStageFees(prev => ({
       ...prev,
       [stage]: isNaN(num) ? 0 : num
     }));
@@ -383,6 +425,9 @@ export const AdminHonorsEngine: React.FC<{
                       <th className="p-4 border-b border-l border-slate-200 text-center min-w-[150px] text-indigo-900 bg-indigo-50/70">
                         الحد الأدنى للتكريم (%)
                       </th>
+                      <th className="p-4 border-b border-l border-slate-200 text-center min-w-[160px] text-emerald-900 bg-emerald-50/70">
+                        رسم الاشتراك للفرد (ج.م)
+                      </th>
                       {systemSubjects.map((s, idx) => (
                         <th key={idx} className="p-4 border-b border-l border-slate-200 text-center min-w-[100px]">{s}</th>
                       ))}
@@ -391,6 +436,7 @@ export const AdminHonorsEngine: React.FC<{
                   <tbody>
                     {systemStages.map((stage) => {
                       const currentThreshold = stageThresholds[stage] !== undefined ? stageThresholds[stage] : 90;
+                      const currentFee = stageFees[stage] !== undefined ? stageFees[stage] : 50;
                       return (
                         <tr key={stage} className="hover:bg-slate-50 transition-colors">
                           <td className="p-4 border-b border-l border-slate-200 font-bold text-indigo-900 bg-slate-50/50">
@@ -407,6 +453,18 @@ export const AdminHonorsEngine: React.FC<{
                                 className="w-full px-2 py-1.5 text-center bg-white border border-indigo-200 rounded-lg text-sm font-black text-indigo-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm"
                               />
                               <span className="absolute left-2 text-indigo-400 font-bold text-xs pointer-events-none">%</span>
+                            </div>
+                          </td>
+                          <td className="p-3 border-b border-l border-slate-200 bg-emerald-50/30 text-center">
+                            <div className="relative inline-flex items-center justify-center w-28">
+                              <input 
+                                type="number"
+                                min="0"
+                                value={currentFee}
+                                onChange={(e) => handleStageFeeChange(stage, e.target.value)}
+                                className="w-full px-2 py-1.5 text-center bg-white border border-emerald-200 rounded-lg text-sm font-black text-emerald-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm"
+                              />
+                              <span className="absolute left-2 text-emerald-600 font-bold text-xs pointer-events-none">ج.م</span>
                             </div>
                           </td>
                           {systemSubjects.map((subj) => (
