@@ -523,70 +523,71 @@ export const AdminQualificationFeesViewer: React.FC = () => {
         {targetChurchForPdf && (
           <div
             ref={singleInvoiceRef}
-            className="p-10 bg-white text-slate-900 font-sans"
-            style={{ width: '210mm', minHeight: '297mm', boxSizing: 'border-box' }}
+            className="p-6 bg-white text-slate-900 font-sans"
+            style={{ width: '194mm', boxSizing: 'border-box', pageBreakInside: 'avoid', breakInside: 'avoid' }}
+            dir="rtl"
           >
-            <div className="border-b-4 border-emerald-600 pb-6 mb-8 flex justify-between items-center">
+            <div className="border-b-2 border-emerald-600 pb-3 mb-4 flex justify-between items-center">
               <div>
-                <h1 className="text-2xl font-black text-emerald-900 mb-1">مهرجان الكرازة المرقسية</h1>
-                <h2 className="text-lg font-bold text-slate-700"> اشتراك أونلاين الأسقفية (التصفيات النهائية)</h2>
+                <h1 className="text-xl font-black text-emerald-900 mb-0.5">مهرجان الكرازة المرقسية</h1>
+                <h2 className="text-sm font-bold text-slate-700">اشتراك أونلاين الأسقفية (التصفيات النهائية)</h2>
               </div>
-              <div className="text-left bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
-                <p className="text-xs font-bold text-emerald-800">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
-                <p className="text-[10px] text-slate-500 font-bold mt-0.5">اللجنة المركزية- المنظقة 18</p>
+              <div className="text-left bg-emerald-50 border border-emerald-200 py-1.5 px-3 rounded-xl">
+                <p className="text-[11px] font-bold text-emerald-800">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
+                <p className="text-[10px] text-slate-500 font-bold mt-0.5">اللجنة المركزية - المنطقة 18</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 mb-8 text-center">
+            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 mb-4 text-center">
               <div>
-                <p className="text-xs text-slate-500 font-bold">اسم الكنيسة</p>
-                <p className="text-base font-black text-slate-900 mt-1">{targetChurchForPdf.churchName}</p>
+                <p className="text-[10px] text-slate-500 font-bold">اسم الكنيسة</p>
+                <p className="text-sm font-black text-slate-900 mt-0.5">{targetChurchForPdf.churchName}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500 font-bold">إجمالي عدد الطلاب الصاعدين</p>
-                <p className="text-base font-black text-blue-700 mt-1">{targetChurchForPdf.totalQualifiedCount} طالب</p>
+                <p className="text-[10px] text-slate-500 font-bold">إجمالي عدد الطلاب الصاعدين</p>
+                <p className="text-sm font-black text-blue-700 mt-0.5">{targetChurchForPdf.totalQualifiedCount} طالب</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500 font-bold">إجمالي المبلغ</p>
-                <p className="text-base font-black text-emerald-700 mt-1">{targetChurchForPdf.totalAmountRequired.toLocaleString('ar-EG')} ج.م</p>
+                <p className="text-[10px] text-slate-500 font-bold">إجمالي المبلغ</p>
+                <p className="text-sm font-black text-emerald-700 mt-0.5">{targetChurchForPdf.totalAmountRequired.toLocaleString('ar-EG')} ج.م</p>
               </div>
             </div>
 
-            <table className="w-full text-right border-collapse mb-8 text-xs">
+            <table className="w-full text-right border-collapse mb-4 text-[11px]">
               <thead>
-                <tr className="bg-slate-100 text-slate-800 font-black">
-                  <th className="p-3 border border-slate-300 text-center min-w-[30px]">#</th>
-                  <th className="p-3 border border-slate-300">المرحلة الدراسية</th>
-                  <th className="p-3 border border-slate-300 text-center">عدد المشتركين الصاعدين</th>
-                  <th className="p-3 border border-slate-300 text-center">رسم الاشتراك للفرد</th>
-                  <th className="p-3 border border-slate-300 text-center">إجمالي المبلغ المستحق</th>
+                <tr className="bg-slate-100 text-slate-800 font-black" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                  <th className="py-2 px-2.5 border border-slate-300 text-center min-w-[28px]">#</th>
+                  <th className="py-2 px-2.5 border border-slate-300">المرحلة الدراسية</th>
+                  <th className="py-2 px-2.5 border border-slate-300 text-center">عدد المشتركين الصاعدين</th>
+                  <th className="py-2 px-2.5 border border-slate-300 text-center">رسم الاشتراك للفرد</th>
+                  <th className="py-2 px-2.5 border border-slate-300 text-center">إجمالي المبلغ المستحق</th>
                 </tr>
               </thead>
               <tbody>
                 {targetChurchForPdf.stageBreakdown.map((item, index) => (
-                  <tr key={index} className="border border-slate-200">
-                    <td className="p-3 border border-slate-200 text-center font-bold">{index + 1}</td>
-                    <td className="p-3 border border-slate-200 font-black text-slate-800">{item.stage}</td>
-                    <td className="p-3 border border-slate-200 text-center font-bold text-blue-800">{item.qualifiedCount} صاعد</td>
-                    <td className="p-3 border border-slate-200 text-center font-bold">{item.feePerStudent} ج.م</td>
-                    <td className="p-3 border border-slate-200 text-center font-black text-emerald-800">{item.subtotal.toLocaleString('ar-EG')} ج.م</td>
+                  <tr key={index} className="border border-slate-200" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                    <td className="py-1.5 px-2.5 border border-slate-200 text-center font-bold">{index + 1}</td>
+                    <td className="py-1.5 px-2.5 border border-slate-200 font-black text-slate-800">{item.stage}</td>
+                    <td className="py-1.5 px-2.5 border border-slate-200 text-center font-bold text-blue-800">{item.qualifiedCount} صاعد</td>
+                    <td className="py-1.5 px-2.5 border border-slate-200 text-center font-bold">{item.feePerStudent} ج.م</td>
+                    <td className="py-1.5 px-2.5 border border-slate-200 text-center font-black text-emerald-800">{item.subtotal.toLocaleString('ar-EG')} ج.م</td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            <div className="p-4 bg-emerald-50 border-2 border-emerald-600 rounded-xl text-center mb-10">
-              <p className="text-xs font-bold text-emerald-800">المطلوب سداده</p>
-              <p className="text-xl font-black text-emerald-950 mt-1">
+            <div className="p-3 bg-emerald-50 border-2 border-emerald-600 rounded-xl text-center mb-4" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+              <p className="text-[10px] font-bold text-emerald-800">المطلوب سداده</p>
+              <p className="text-lg font-black text-emerald-950 mt-0.5">
                 {targetChurchForPdf.totalAmountRequired.toLocaleString('ar-EG')} جنيه مصري فقط لا غير
               </p>
             </div>
 
-            <div className="mt-12 pt-6 border-t border-slate-200 text-[11px] text-slate-600 space-y-2">
+            <div className="mt-4 pt-3 border-t border-slate-200 text-[10px] text-slate-600 space-y-1" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
               <p className="font-bold text-slate-800">ملاحظات وتعليمات هامة:</p>
               <p>1. تم استخراج هذه المطالبة بناءً على نتائج وتصفيات مهرجان الكرازة المرقسية المحلية.</p>
-              <p>2. يرجى توريد المبلغ الموضح للجنة المالية بمقر اللجنة بالمظرانية.</p>
-              <div className="pt-8 flex justify-between items-center text-xs font-black text-slate-800">
+              <p>2. يرجى توريد المبلغ الموضح للجنة المالية بمقر اللجنة بالمطرانية.</p>
+              <div className="pt-4 flex justify-between items-center text-xs font-black text-slate-800">
                 <div>التوقيع: ..............................</div>
                 <div>يُعتمد: ..............................</div>
               </div>
@@ -599,70 +600,71 @@ export const AdminQualificationFeesViewer: React.FC = () => {
       <div className="hidden">
         <div
           ref={masterReportRef}
-          className="p-10 bg-white text-slate-900 font-sans"
-          style={{ width: '210mm', minHeight: '297mm', boxSizing: 'border-box' }}
+          className="p-6 bg-white text-slate-900 font-sans"
+          style={{ width: '194mm', boxSizing: 'border-box' }}
+          dir="rtl"
         >
-          <div className="border-b-4 border-slate-900 pb-6 mb-8 flex justify-between items-center">
+          <div className="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-black text-slate-900 mb-1">المنظقة18 - مهرجان الكرازة المرقسية</h1>
-              <h2 className="text-lg font-bold text-slate-700">اشتراك أونلاين الأسقفية (التصفيات النهائية)</h2>
+              <h1 className="text-xl font-black text-slate-900 mb-0.5">المنطقة 18 - مهرجان الكرازة المرقسية</h1>
+              <h2 className="text-sm font-bold text-slate-700">اشتراك أونلاين الأسقفية (التصفيات النهائية)</h2>
             </div>
-            <div className="text-left bg-slate-100 border border-slate-300 p-3 rounded-xl">
-              <p className="text-xs font-bold text-slate-800">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
+            <div className="text-left bg-slate-100 border border-slate-300 py-1.5 px-3 rounded-xl">
+              <p className="text-[11px] font-bold text-slate-800">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
               <p className="text-[10px] text-slate-500 font-bold mt-0.5">تقرير اللجنة المركزية</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 mb-8 text-center">
+          <div className="grid grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 mb-4 text-center">
             <div>
-              <p className="text-xs text-slate-500 font-bold">عدد الكنائس المشاركة</p>
-              <p className="text-base font-black text-purple-800 mt-1">{globalTotalChurches} كنيسة</p>
+              <p className="text-[10px] text-slate-500 font-bold">عدد الكنائس المشاركة</p>
+              <p className="text-sm font-black text-purple-800 mt-0.5">{globalTotalChurches} كنيسة</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500 font-bold">إجمالي أعداد الصاعدين</p>
-              <p className="text-base font-black text-blue-800 mt-1">{globalTotalQualified} طالب</p>
+              <p className="text-[10px] text-slate-500 font-bold">إجمالي أعداد الصاعدين</p>
+              <p className="text-sm font-black text-blue-800 mt-0.5">{globalTotalQualified} طالب</p>
             </div>
             <div>
-              <p className="text-xs text-slate-500 font-bold">إجمالي المبالغ المستحقة</p>
-              <p className="text-base font-black text-emerald-800 mt-1">{globalTotalAmount.toLocaleString('ar-EG')} ج.م</p>
+              <p className="text-[10px] text-slate-500 font-bold">إجمالي المبالغ المستحقة</p>
+              <p className="text-sm font-black text-emerald-800 mt-0.5">{globalTotalAmount.toLocaleString('ar-EG')} ج.م</p>
             </div>
           </div>
 
-          <table className="w-full text-right border-collapse mb-8 text-xs">
+          <table className="w-full text-right border-collapse mb-4 text-[11px]">
             <thead>
-              <tr className="bg-slate-100 text-slate-900 font-black">
-                <th className="p-3 border border-slate-300 text-center min-w-[30px]">#</th>
-                <th className="p-3 border border-slate-300">اسم الكنيسة</th>
-                <th className="p-3 border border-slate-300 text-center">عدد المراحل</th>
-                <th className="p-3 border border-slate-300 text-center">إجمالي الصاعدين</th>
-                <th className="p-3 border border-slate-300 text-center">إجمالي المبلغ (ج.م)</th>
+              <tr className="bg-slate-100 text-slate-900 font-black" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                <th className="py-2 px-2.5 border border-slate-300 text-center min-w-[28px]">#</th>
+                <th className="py-2 px-2.5 border border-slate-300">اسم الكنيسة</th>
+                <th className="py-2 px-2.5 border border-slate-300 text-center">عدد المراحل</th>
+                <th className="py-2 px-2.5 border border-slate-300 text-center">إجمالي الصاعدين</th>
+                <th className="py-2 px-2.5 border border-slate-300 text-center">إجمالي المبلغ (ج.م)</th>
               </tr>
             </thead>
             <tbody>
               {churchesSummary.map((item, index) => (
-                <tr key={index} className="border border-slate-200">
-                  <td className="p-2.5 border border-slate-200 text-center font-bold">{index + 1}</td>
-                  <td className="p-2.5 border border-slate-200 font-black text-slate-900">{item.churchName}</td>
-                  <td className="p-2.5 border border-slate-200 text-center font-bold text-purple-800">{item.stageBreakdown.length}</td>
-                  <td className="p-2.5 border border-slate-200 text-center font-bold text-blue-800">{item.totalQualifiedCount}</td>
-                  <td className="p-2.5 border border-slate-200 text-center font-black text-emerald-800">{item.totalAmountRequired.toLocaleString('ar-EG')} ج.م</td>
+                <tr key={index} className="border border-slate-200" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                  <td className="py-1.5 px-2 border border-slate-200 text-center font-bold">{index + 1}</td>
+                  <td className="py-1.5 px-2 border border-slate-200 font-black text-slate-900">{item.churchName}</td>
+                  <td className="py-1.5 px-2 border border-slate-200 text-center font-bold text-purple-800">{item.stageBreakdown.length}</td>
+                  <td className="py-1.5 px-2 border border-slate-200 text-center font-bold text-blue-800">{item.totalQualifiedCount}</td>
+                  <td className="py-1.5 px-2 border border-slate-200 text-center font-black text-emerald-800">{item.totalAmountRequired.toLocaleString('ar-EG')} ج.م</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr className="bg-slate-100 font-black text-slate-900">
-                <td colSpan={2} className="p-3 border border-slate-300 text-right">الإجمالي الكلي المستحق</td>
-                <td className="p-3 border border-slate-300 text-center">-</td>
-                <td className="p-3 border border-slate-300 text-center text-blue-900">{globalTotalQualified} طالب</td>
-                <td className="p-3 border border-slate-300 text-center text-emerald-900 text-sm">{globalTotalAmount.toLocaleString('ar-EG')} ج.م</td>
+              <tr className="bg-slate-100 font-black text-slate-900" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+                <td colSpan={2} className="py-2 px-2.5 border border-slate-300 text-right">الإجمالي الكلي المستحق</td>
+                <td className="py-2 px-2.5 border border-slate-300 text-center">-</td>
+                <td className="py-2 px-2.5 border border-slate-300 text-center text-blue-900">{globalTotalQualified} طالب</td>
+                <td className="py-2 px-2.5 border border-slate-300 text-center text-emerald-900 text-xs font-black">{globalTotalAmount.toLocaleString('ar-EG')} ج.م</td>
               </tr>
             </tfoot>
           </table>
 
-          <div className="mt-12 pt-6 border-t border-slate-200 text-[11px] text-slate-600 space-y-2">
+          <div className="mt-4 pt-3 border-t border-slate-200 text-[10px] text-slate-600 space-y-1" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
             <p className="font-bold text-slate-800">بيان اعتمادات الكنترول المركزي:</p>
             <p>يعتبر هذا الكشف بياناً رسمياً معتمداً من اللجنة المركزية لمهرجان الكرازة المرقسية.</p>
-            <div className="pt-8 flex justify-between items-center text-xs font-black text-slate-800">
+            <div className="pt-4 flex justify-between items-center text-xs font-black text-slate-800">
               <div>التوقيع: ..............................</div>
               <div>يُعتمد: ..............................</div>
             </div>
