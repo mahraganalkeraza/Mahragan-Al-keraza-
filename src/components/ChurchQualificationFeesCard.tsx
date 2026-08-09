@@ -331,12 +331,12 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
           {/* Header */}
           <div className="border-b-4 border-emerald-600 pb-6 mb-8 flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-black text-emerald-900 mb-1">أسقفية الشباب - مهرجان الكرازة المرقسية</h1>
-              <h2 className="text-lg font-bold text-slate-700">مطالبة رسمية: اشتراك أونلاين الأسقفية (التصفيات النهائية)</h2>
+              <h1 className="text-2xl font-black text-emerald-900 mb-1"> المنطقة 18 - مهرجان الكرازة المرقسية</h1>
+              <h2 className="text-lg font-bold text-slate-700">اشتراك أونلاين الأسقفية (التصفيات النهائية)</h2>
             </div>
             <div className="text-left bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
               <p className="text-xs font-bold text-emerald-800">التاريخ: {new Date().toLocaleDateString('ar-EG')}</p>
-              <p className="text-[10px] text-slate-500 font-bold mt-0.5">الكنترول المركزي العام</p>
+              <p className="text-[10px] text-slate-500 font-bold mt-0.5">مهرجان الكرازة المركزية - المنطقة 18</p>
             </div>
           </div>
 
@@ -364,7 +364,7 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
                 <th className="p-3 border border-slate-300">المرحلة الدراسية</th>
                 <th className="p-3 border border-slate-300 text-center">عدد المشتركين الصاعدين</th>
                 <th className="p-3 border border-slate-300 text-center">رسم الاشتراك للفرد</th>
-                <th className="p-3 border border-slate-300 text-center">إجمالي المبلغ المستحق</th>
+                <th className="p-3 border border-slate-300 text-center"> المبلغ المستحق</th>
               </tr>
             </thead>
             <tbody>
@@ -390,7 +390,7 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
 
           {/* Grand Total Highlight Box */}
           <div className="p-4 bg-emerald-50 border-2 border-emerald-600 rounded-xl text-center mb-10">
-            <p className="text-xs font-bold text-emerald-800">إجمالي المبلغ المطلوب سداده رسمياً</p>
+            <p className="text-xs font-bold text-emerald-800">المبلغ المطلوب</p>
             <p className="text-xl font-black text-emerald-950 mt-1">
               {totalAmountRequired.toLocaleString('ar-EG')} جنيه مصري فقط لا غير
             </p>
@@ -399,11 +399,11 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
           {/* Official Footer / Control Notes */}
           <div className="mt-12 pt-6 border-t border-slate-200 text-[11px] text-slate-600 space-y-2">
             <p className="font-bold text-slate-800">ملاحظات وتعليمات هامة:</p>
-            <p>1. تم استخراج هذه المطالبة بناءً على نتائج وتصفيات مهرجان الكرازة المرقسية المعتمدة.</p>
-            <p>2. يرجى توريد المبلغ الموضح للجنة المالية والتنظيمية قبل بدء فعاليات التصفيات النهائية.</p>
+            <p>1. تم استخراج هذه المطالبة بناءً على نتائج وتصفيات مهرجان الكرازة المرقسية المحلية.</p>
+            <p>2. يرجى توريد المبلغ الموضح للجنة المالية بمقر اللجنة بالمطرانية قبل بدء فعاليات التصفيات النهائية.</p>
             <div className="pt-8 flex justify-between items-center text-xs font-black text-slate-800">
-              <div>توقيع مسؤول الكنترول العام: ..............................</div>
-              <div>اعتماد اللجنة المالية: ..............................</div>
+              <div>التوقيع: ..............................</div>
+              <div>يُعتمد: ..............................</div>
             </div>
           </div>
         </div>

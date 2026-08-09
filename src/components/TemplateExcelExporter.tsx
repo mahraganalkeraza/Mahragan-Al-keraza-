@@ -439,7 +439,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
       // Header row 1: Merged Title
       ws.mergeCells("A1:N1");
       const titleCell = ws.getCell("A1");
-      titleCell.value = "أسقفية الشباب - مهرجان الكرازة 2026 - استمارة تسجيل المشتركين";
+      titleCell.value = "مهرجان الكرازة 2026 - استمارة تسجيل المشتركين";
       titleCell.font = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
       titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
       titleCell.alignment = { vertical: "middle", horizontal: "center" };
