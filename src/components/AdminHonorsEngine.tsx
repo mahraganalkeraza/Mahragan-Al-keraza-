@@ -139,8 +139,14 @@ export const AdminHonorsEngine: React.FC<{
         updated_at: new Date().toISOString()
       };
       
-      const { error } = await supabase.from('honors_settings').upsert(payload);
-      if (error) {
+      if (!navigator.onLine) {
+        alert("❌ لا يوجد اتصال بالإنترنت! تعذر حفظ إعدادات التكريم.");
+        setIsSaving(false);
+        return;
+      }
+      
+      const { data: upsData, error } = await supabase.from('honors_settings').upsert(payload).select();
+      if (error || !upsData || upsData.length === 0) {
         // Fallback in case stage_thresholds column is missing in Supabase schema
         console.warn('Direct upsert with stage_thresholds failed/warned, using weights_matrix fallback:', error);
         const fallbackPayload = {
@@ -153,8 +159,10 @@ export const AdminHonorsEngine: React.FC<{
           },
           updated_at: new Date().toISOString()
         };
-        const { error: fallbackError } = await supabase.from('honors_settings').upsert(fallbackPayload);
-        if (fallbackError) throw fallbackError;
+        const { data: fbData, error: fallbackError } = await supabase.from('honors_settings').upsert(fallbackPayload).select();
+        if (fallbackError || !fbData || fbData.length === 0) {
+          throw fallbackError || new Error('لم يتم تأكيد حفظ إعدادات التكريم في قاعدة البيانات.');
+        }
       }
       try {
         await supabase.from('system_settings').upsert({ id: 'stage_fees', config_data: stageFees });

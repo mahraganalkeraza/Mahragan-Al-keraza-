@@ -81,6 +81,11 @@ export default function ActivityStagesManager() {
       return;
     }
 
+    if (!navigator.onLine) {
+      setMessage({ text: '❌ لا يوجد اتصال بالإنترنت! تعذر إضافة المرحلة.', isError: true });
+      return;
+    }
+
     setSubmitLoading(true);
 
     try {
@@ -95,7 +100,9 @@ export default function ActivityStagesManager() {
         ])
         .select();
 
-      if (error) throw error;
+      if (error || !data || data.length === 0) {
+        throw error || new Error("لم يتم تأكيد الحفظ في قاعدة البيانات.");
+      }
 
       setMessage({ text: 'تم إضافة المرحلة بنجاح! 🎉', isError: false });
       
@@ -116,13 +123,21 @@ export default function ActivityStagesManager() {
   const handleDeleteStage = async (id: number) => {
     if (!window.confirm('هل أنت متأكد من مسح هذه المرحلة؟')) return;
 
+    if (!navigator.onLine) {
+      alert('❌ لا يوجد اتصال بالإنترنت! تعذر إجراء الحذف.');
+      return;
+    }
+
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('activity_stages')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select();
 
-      if (error) throw error;
+      if (error || !data || data.length === 0) {
+        throw error || new Error("لم يتم تأكيد الحذف من قاعدة البيانات.");
+      }
       setStagesList((prev) => prev.filter((item) => item.id !== id));
     } catch (err: any) {
       alert(`فشل الحذف: ${err.message}`);

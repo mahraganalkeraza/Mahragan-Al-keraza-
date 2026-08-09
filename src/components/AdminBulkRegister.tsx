@@ -222,20 +222,30 @@ export default function AdminBulkRegister({
       });
     });
 
+    if (!navigator.onLine) {
+      setLoading(false);
+      setStatusMessage({
+        type: 'error',
+        text: '❌ لا يوجد اتصال بالإنترنت! تعذر تسجيل الطلاب.'
+      });
+      return;
+    }
+
     let supabaseSuccess = false;
 
     // Direct insert multiple rows into Supabase 'registrations'
     try {
       console.log("Direct insert of multiple rows into Supabase 'registrations'...");
-      const { error: insertErr } = await supabase
+      const { data: insertData, error: insertErr } = await supabase
         .from('registrations')
-        .insert(supabaseInserts);
+        .insert(supabaseInserts)
+        .select();
 
-      if (!insertErr) {
+      if (!insertErr && insertData && insertData.length > 0) {
         supabaseSuccess = true;
-        console.log("Supabase direct insert completed successfully.");
+        console.log("Supabase direct insert completed successfully with returned payload.");
       } else {
-        console.error("Supabase direct insert failed:", insertErr);
+        console.error("Supabase direct insert failed or returned no rows:", insertErr);
       }
     } catch (insertErr) {
       console.error("Supabase direct insert threw error:", insertErr);

@@ -73,6 +73,11 @@ export const ChurchInquiryForm: React.FC<ChurchInquiryFormProps> = ({ churchName
     setErrorMessage('');
     setSubmitSuccess(false);
 
+    if (!navigator.onLine) {
+      setErrorMessage('❌ لا يوجد اتصال بالإنترنت! تعذر إرسال الطلب.');
+      return;
+    }
+
     if (!contactPerson.trim() || !phoneNumber.trim() || !subject.trim() || !message.trim()) {
       setErrorMessage('يرجى ملء جميع الحقول المطلوبة قبل الإرسال.');
       return;

@@ -575,13 +575,20 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
   const addCompetition = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCompName) return;
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     setIsSaving(true);
     try {
-      const { error } = await supabase
+      const { data: insData, error } = await supabase
         .from('competition_bank')
-        .insert([{ name: newCompName, category: newCompCategory }]);
+        .insert([{ name: newCompName, category: newCompCategory }])
+        .select();
       
-      if (error) throw error;
+      if (error || !insData || insData.length === 0) {
+        throw error || new Error("لم يتم تأكيد الحفظ في قواعد البيانات.");
+      }
       
       const { data } = await supabase.from('competition_bank').select('*');
       if (data) setCompetitions(data);
@@ -596,14 +603,21 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
     }
   };
   const deleteCompetition = async (id: string) => {
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     setIsSaving(true);
     try {
-      const { error } = await supabase
+      const { data: delData, error } = await supabase
         .from('competition_bank')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select();
       
-      if (error) throw error;
+      if (error || !delData || delData.length === 0) {
+        throw error || new Error("لم يتم تأكيد الحذف من قواعد البيانات.");
+      }
       setCompetitions(prev => prev.filter(c => c.id !== id));
       setDeleteConfirmation(null);
     } catch (e: any) {
@@ -618,17 +632,24 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
   const addLevel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLevelName) return;
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     setIsSaving(true);
     try {
-      const { error } = await supabase
+      const { data: upsData, error } = await supabase
         .from('stage_competitions')
         .upsert([{ 
           stage_name: newLevelName, 
           stage_type: newLevelType, 
           allowed_competitions: selectedCompetitions 
-        }]);
+        }])
+        .select();
       
-      if (error) throw error;
+      if (error || !upsData || upsData.length === 0) {
+        throw error || new Error("لم يتم تأكيد الحفظ في قواعد البيانات.");
+      }
       
       const { data } = await supabase.from('stage_competitions').select('*');
       if (data) setLevels(data.map(l => ({ ...l, name: l.stage_name, comps: l.allowed_competitions })));
@@ -644,14 +665,21 @@ export default function DynamicAdminSettings({ allStudents = [] }: { allStudents
     }
   };
   const deleteLevel = async (id: string) => {
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     setIsSaving(true);
     try {
-      const { error } = await supabase
+      const { data: delData, error } = await supabase
         .from('stage_competitions')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .select();
       
-      if (error) throw error;
+      if (error || !delData || delData.length === 0) {
+        throw error || new Error("لم يتم تأكيد الحذف من قواعد البيانات.");
+      }
       setLevels(prev => prev.filter(l => l.id !== id));
       setDeleteConfirmation(null);
     } catch (e: any) {

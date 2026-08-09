@@ -322,10 +322,19 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
       };
 
       // ✅ التعديل السحري الجديد: أخبر سوبابايس أن التحديث يتم فقط لو تطابق الطالب مع نفس المسابقة
-const { error: saveErr } = await supabase
-  .from("exams_pool")
-  .upsert(examPayload, { onConflict: 'id' }); 
-      if (saveErr) throw saveErr;
+      if (!navigator.onLine) {
+        alert("❌ لا يوجد اتصال بالإنترنت! تعذر حفظ النموذج.");
+        setIsLoading(false);
+        return;
+      }
+
+      const { data: saveResult, error: saveErr } = await supabase
+        .from("exams_pool")
+        .upsert(examPayload, { onConflict: 'id' })
+        .select(); 
+      if (saveErr || !saveResult || saveResult.length === 0) {
+        throw new Error(saveErr?.message || "لم يتم تأكيد حفظ النموذج في قاعدة البيانات (تحقق من الاتصال بالإنترنت أو صلاحيات الوصول).");
+      }
 
       setIsDirty(false);
 
@@ -2259,6 +2268,13 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       if (finalQebtyLvl2Score > 0) scoreUpdatePayload.qebty_lvl2_score = finalQebtyLvl2Score;
 
       // 5️⃣ خامساً: اللوجيك المشروط اللي بيحدد Insert أو Update (بتاعك زي ما هو)
+      if (!navigator.onLine) {
+        alert("❌ لا يوجد اتصال بالإنترنت! تعذر إرسال إجابات الامتحان.");
+        setHasSubmissionFailed(true);
+        setIsLoading(false);
+        return;
+      }
+
       const { data: checkCheck } = await supabase
         .from('exam_submissions')
         .select('student_id')

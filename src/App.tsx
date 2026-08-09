@@ -2907,8 +2907,15 @@ function AppComponent() {
         imageUrl = await uploadToFirebase(compressedBlob, 'news');
       }
 
+      if (!navigator.onLine) {
+        alert("❌ لا يوجد اتصال بالإنترنت!");
+        setIsLoading(false);
+        return;
+      }
+
+      let resData, resErr;
       if (editingNews) {
-        await supabase
+        const { data, error } = await supabase
           .from('news')
           .update({
             title: newNews.title,
@@ -2916,10 +2923,12 @@ function AppComponent() {
             imageUrl,
             year: activeYear
           })
-          .eq('id', editingNews.id);
-        setEditingNews(null);
+          .eq('id', editingNews.id)
+          .select();
+        resData = data;
+        resErr = error;
       } else {
-        await supabase
+        const { data, error } = await supabase
           .from('news')
           .insert([{
             title: newNews.title,
@@ -2927,14 +2936,22 @@ function AppComponent() {
             imageUrl,
             timestamp: new Date().toISOString(),
             year: activeYear
-          }]);
+          }])
+          .select();
+        resData = data;
+        resErr = error;
       }
 
+      if (resErr || !resData || resData.length === 0) {
+        throw resErr || new Error("لم يتم تأكيد الحفظ من قواعد البيانات.");
+      }
+
+      setEditingNews(null);
       setNewNews({ title: '', content: '', image: null });
       alert(editingNews ? 'تم تحديث الخبر بنجاح!' : 'تم نشر الخبر بنجاح!');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error publishing news:", error);
-      alert('حدث خطأ أثناء نشر الخبر. يرجى المحاولة مرة أخرى.');
+      alert('حدث خطأ أثناء نشر الخبر: ' + (error.message || ''));
     } finally {
       setIsLoading(false);
     }
@@ -2942,24 +2959,40 @@ function AppComponent() {
 
   const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     setIsLoading(true);
     try {
+      let resData, resErr;
       if (editingSchedule) {
-        await supabase
+        const { data, error } = await supabase
           .from('schedules')
           .update({ ...newSchedule, year: activeYear })
-          .eq('id', editingSchedule.id);
-        setEditingSchedule(null);
+          .eq('id', editingSchedule.id)
+          .select();
+        resData = data;
+        resErr = error;
       } else {
-        await supabase
+        const { data, error } = await supabase
           .from('schedules')
-          .insert([{ ...newSchedule, year: activeYear }]);
+          .insert([{ ...newSchedule, year: activeYear }])
+          .select();
+        resData = data;
+        resErr = error;
       }
+
+      if (resErr || !resData || resData.length === 0) {
+        throw resErr || new Error("لم يتم تأكيد حفظ الجدول من قواعد البيانات.");
+      }
+
+      setEditingSchedule(null);
       setNewSchedule({ examName: 'دراسي ومحفوظات وقبطي', date: '', time: '', location: '' });
       alert('تم حفظ الجدول بنجاح!');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving schedule:", error);
-      alert('حدث خطأ أثناء حفظ الجدول');
+      alert('حدث خطأ أثناء حفظ الجدول: ' + (error.message || ''));
     } finally {
       setIsLoading(false);
     }
@@ -2969,6 +3002,10 @@ function AppComponent() {
     e.preventDefault();
     if (!newCarousel.title || (!newCarousel.image && !editingCarousel)) {
       alert('يرجى ملء كافة الحقول واختيار صورة');
+      return;
+    }
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
       return;
     }
 
@@ -2981,8 +3018,9 @@ function AppComponent() {
         url = await uploadToFirebase(compressedBlob, 'slider');
       }
 
+      let resData, resErr;
       if (editingCarousel) {
-        await supabase
+        const { data, error } = await supabase
           .from('carousel')
           .update({
             title: newCarousel.title,
@@ -2990,24 +3028,34 @@ function AppComponent() {
             order: newCarousel.order,
             year: activeYear
           })
-          .eq('id', editingCarousel.id);
-        setEditingCarousel(null);
+          .eq('id', editingCarousel.id)
+          .select();
+        resData = data;
+        resErr = error;
       } else {
-        await supabase
+        const { data, error } = await supabase
           .from('carousel')
           .insert([{
             title: newCarousel.title,
             url,
             order: newCarousel.order,
             year: activeYear
-          }]);
+          }])
+          .select();
+        resData = data;
+        resErr = error;
       }
 
+      if (resErr || !resData || resData.length === 0) {
+        throw resErr || new Error("لم يتم تأكيد حفظ السلايدر من قواعد البيانات.");
+      }
+
+      setEditingCarousel(null);
       setNewCarousel({ title: '', image: null, order: 0 });
       alert('تم حفظ صورة السلايدر بنجاح!');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving carousel item:", error);
-      alert('حدث خطأ أثناء حفظ صورة السلايدر');
+      alert('حدث خطأ أثناء حفظ صورة السلايدر: ' + (error.message || ''));
     } finally {
       setIsLoading(false);
     }
@@ -3015,47 +3063,70 @@ function AppComponent() {
 
   const handleSettingsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     setIsLoading(true);
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('system_settings')
-        .upsert({ id: 'footer', ...siteSettings });
+        .upsert({ id: 'footer', ...siteSettings })
+        .select();
+
+      if (error || !data || data.length === 0) {
+        throw error || new Error("لم يتم تأكيد حفظ إعدادات الموقع.");
+      }
+
       alert('تم حفظ إعدادات الموقع بنجاح!');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving settings:", error);
-      alert('حدث خطأ أثناء حفظ الإعدادات');
+      alert('حدث خطأ أثناء حفظ الإعدادات: ' + (error.message || ''));
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleUpdateSystemControls = async (newControls: any) => {
+    if (!navigator.onLine) {
+      setNotification('❌ لا يوجد اتصال بالإنترنت!');
+      return;
+    }
     setIsLoading(true);
     try {
       // If isRegistrationOpen changed, handle SYSTEM_LOCK in registrations table
       if (newControls.isRegistrationOpen !== systemControls.isRegistrationOpen) {
         if (!newControls.isRegistrationOpen) {
           // Lock the system
-          await supabase.from('registrations').insert([{ name: 'SYSTEM_LOCK', churchName: 'SYSTEM' }]);
+          const { data: lockData, error: lockErr } = await supabase.from('registrations').insert([{ name: 'SYSTEM_LOCK', churchName: 'SYSTEM' }]).select();
+          if (lockErr || !lockData || lockData.length === 0) {
+            throw lockErr || new Error("فشل تأكيد قفل النظام.");
+          }
         } else {
           // Unlock the system
-          await supabase.from('registrations').delete().eq('name', 'SYSTEM_LOCK');
+          const { error: unlockErr } = await supabase.from('registrations').delete().eq('name', 'SYSTEM_LOCK');
+          if (unlockErr) throw unlockErr;
         }
       }
 
-      await supabase
+      const { data: setCtrlData, error: setCtrlErr } = await supabase
         .from('system_settings')
         .upsert({
           id: 'system_controls',
           isBookCalculatorOpen: newControls.isBookCalculatorOpen,
           updatedAt: new Date().toISOString()
-        });
+        })
+        .select();
+
+      if (setCtrlErr || !setCtrlData || setCtrlData.length === 0) {
+        throw setCtrlErr || new Error("لم يتم تأكيد حفظ الإعدادات.");
+      }
       
       setSystemControls(newControls);
       setNotification('تم تحديث إعدادات النظام بنجاح');
     } catch (e: any) {
       console.error(e);
-      setNotification('خطأ في التحديث عبر Supabase');
+      setNotification('خطأ في التحديث عبر Supabase: ' + (e.message || ''));
     } finally {
       setIsLoading(false);
     }
@@ -3092,25 +3163,37 @@ function AppComponent() {
       registration_end_at: string | null;
     }
   ) => {
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     setIsLoading(true);
     try {
       const existing = granularControls.find(c => c.target_type === targetType && c.target_name === targetName);
-      let res;
+      let resData, resErr;
       if (existing) {
-        res = await supabase
+        const { data, error } = await supabase
           .from('granular_controls')
           .update(config)
-          .eq('id', existing.id);
+          .eq('id', existing.id)
+          .select();
+        resData = data;
+        resErr = error;
       } else {
-        res = await supabase
+        const { data, error } = await supabase
           .from('granular_controls')
           .insert([{
             target_type: targetType,
             target_name: targetName,
             ...config
-          }]);
+          }])
+          .select();
+        resData = data;
+        resErr = error;
       }
-      if (res.error) throw res.error;
+      if (resErr || !resData || resData.length === 0) {
+        throw resErr || new Error("لم يتم تأكيد حفظ الإستثناء.");
+      }
 
       // Refresh state
       const { data } = await supabase.from('granular_controls').select('*');
@@ -3127,10 +3210,16 @@ function AppComponent() {
   };
 
   const handleDeleteGranularControl = async (id: any) => {
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     setIsLoading(true);
     try {
-      const { error } = await supabase.from('granular_controls').delete().eq('id', id);
-      if (error) throw error;
+      const { data, error } = await supabase.from('granular_controls').delete().eq('id', id).select();
+      if (error || !data || data.length === 0) {
+        throw error || new Error("لم يتم تأكيد الحذف من السيرفر.");
+      }
       setGranularControls(prev => prev.filter(c => c.id !== id));
       setNotification('تم حذف الإستثناء بنجاح');
     } catch (e: any) {
@@ -3142,21 +3231,30 @@ function AppComponent() {
   };
 
   const handleUpdateExamConfig = async (newConfig: any) => {
+    if (!navigator.onLine) {
+      setNotification('❌ لا يوجد اتصال بالإنترنت!');
+      return;
+    }
     setIsLoading(true);
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('system_settings')
         .upsert({
           id: 'exam_config',
           ...newConfig,
           updatedAt: new Date().toISOString()
-        });
+        })
+        .select();
       
+      if (error || !data || data.length === 0) {
+        throw error || new Error("لم يتم تأكيد حفظ الإعدادات.");
+      }
+
       setExamConfig(newConfig);
       setNotification('تم تحديث إعدادات الامتحانات بنجاح');
     } catch (e: any) {
       console.error(e);
-      setNotification('خطأ في التحديث عبر Supabase');
+      setNotification('خطأ في التحديث عبر Supabase: ' + (e.message || ''));
     } finally {
       setIsLoading(false);
     }
@@ -3164,15 +3262,25 @@ function AppComponent() {
 
   const handleAboutSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     setIsLoading(true);
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('system_settings')
-        .upsert({ id: 'about', content: aboutContent });
+        .upsert({ id: 'about', content: aboutContent })
+        .select();
+      
+      if (error || !data || data.length === 0) {
+        throw error || new Error("لم يتم تأكيد حفظ المحتوى.");
+      }
+
       alert('تم حفظ محتوى "عن المهرجان" بنجاح!');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving about content:", error);
-      alert('حدث خطأ أثناء حفظ المحتوى');
+      alert('حدث خطأ أثناء حفظ المحتوى: ' + (error.message || ''));
     } finally {
       setIsLoading(false);
     }
@@ -3183,6 +3291,10 @@ function AppComponent() {
       alert('يرجى إدخال المرحلة والمادة');
       return;
     }
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     
     setIsSubmittingCalculator(true);
     try {
@@ -3190,28 +3302,37 @@ function AppComponent() {
       const competition = newCalculatorSetting.material.trim();
       const price = Number(newCalculatorSetting.price) || 0;
       
+      let resData, resErr;
       if (editingCalculatorSetting) {
         // Update existing book
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('books')
           .update({ stage, competition, price })
-          .eq('id', editingCalculatorSetting.id);
-        if (error) throw error;
+          .eq('id', editingCalculatorSetting.id)
+          .select();
+        resData = data;
+        resErr = error;
       } else {
         // Insert new book
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('books')
-          .insert([{ stage, competition, price }]);
-        if (error) throw error;
+          .insert([{ stage, competition, price }])
+          .select();
+        resData = data;
+        resErr = error;
+      }
+
+      if (resErr || !resData || resData.length === 0) {
+        throw resErr || new Error("لم يتم تأكيد حفظ الإعداد في قاعدة البيانات.");
       }
       
       setNewCalculatorSetting({ stage: '', material: '', price: 0 });
       setEditingCalculatorSetting(null);
       alert('تم حفظ الإعداد بنجاح');
       await fetchBooksFromSupabase();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving book setting:', error);
-      alert('خطأ في حفظ الإعداد');
+      alert('خطأ في حفظ الإعداد: ' + (error.message || ''));
     } finally {
       setIsSubmittingCalculator(false);
     }
@@ -3224,20 +3345,28 @@ function AppComponent() {
 
   const confirmDeleteCalculatorSetting = async () => {
     if (!calculatorSettingToDelete) return;
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('books')
         .delete()
-        .eq('id', calculatorSettingToDelete);
-      if (error) throw error;
+        .eq('id', calculatorSettingToDelete)
+        .select();
+
+      if (error || !data || data.length === 0) {
+        throw error || new Error("لم يتم تأكيد الحذف من السيرفر.");
+      }
 
       alert('تم حذف الإعداد بنجاح');
       setShowDeleteCalculatorModal(false);
       setCalculatorSettingToDelete(null);
       await fetchBooksFromSupabase();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting book setting:', error);
-      alert('خطأ في حذف الإعداد');
+      alert('خطأ في حذف الإعداد: ' + (error.message || ''));
     }
   };
 
@@ -5074,14 +5203,23 @@ function AppComponent() {
       activity_type: activity_type
     };
 
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت! تعذر حفظ النشاط.");
+      setIsSubmittingTeam(false);
+      return;
+    }
+
     try {
       if (editingTeam) {
-        const { error } = await supabase
+        const { data: updData, error } = await supabase
           .from('activity_teams')
           .update(dbPayload)
-          .eq('id', editingTeam.id);
+          .eq('id', editingTeam.id)
+          .select();
         
-        if (error) throw error;
+        if (error || !updData || updData.length === 0) {
+          throw error || new Error("لم يتم تأكيد تحديث النشاط من قواعد البيانات.");
+        }
         
         // Instant state sync
         const updatedTeam: ActivityTeam = {
@@ -5110,7 +5248,9 @@ function AppComponent() {
           .insert([dbPayload])
           .select();
         
-        if (error) throw error;
+        if (error || !data || data.length === 0) {
+          throw error || new Error("لم يتم تأكيد إدراج النشاط من قواعد البيانات.");
+        }
         
         if (data && data.length > 0) {
           const row = data[0];
@@ -5142,14 +5282,17 @@ function AppComponent() {
           const dbParticipant = participants.find(p => p.name.trim() === memberName && p.churchName === churchName);
           if (!dbParticipant) {
              const customId = generateShortId();
-             await supabase.from('registrations').insert([{
+             const { data: regIns, error: regErr } = await supabase.from('registrations').insert([{
                student_id: customId,
                name: memberName,
                churchName,
                stage: newTeam.members[0].stage || selectedStageName,
                gender: newTeam.members[0].gender,
                timestamp: new Date().toISOString()
-             }]);
+             }]).select();
+             if (regErr || !regIns || regIns.length === 0) {
+               console.warn("Auto registration insert warned or failed:", regErr);
+             }
              if (churchName) await updateChurchSubscribers(churchName);
           }
         }
@@ -5173,18 +5316,26 @@ function AppComponent() {
       setLinkedParticipantMessage('');
     } catch (error: any) {
       console.error("Supabase activity team save failed:", error);
-      alert('حدث خطأ أثناء حفظ النشاط');
+      alert('حدث خطأ أثناء حفظ النشاط: ' + (error.message || ''));
     } finally {
       setIsSubmittingTeam(false);
     }
   };
 
   const handleReplyInquiry = async (id: string, reply: string) => {
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت!");
+      return;
+    }
     try {
-      await supabase.from('inquiries').update({ reply }).eq('id', id);
+      const { data, error } = await supabase.from('inquiries').update({ reply }).eq('id', id).select();
+      if (error || !data || data.length === 0) {
+        throw error || new Error("لم يتم تأكيد الرد.");
+      }
       alert('تم إرسال الرد بنجاح');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Supabase reply inquiry failed:", error);
+      alert('فشل إرسال الرد: ' + (error.message || ''));
     }
   };
 
@@ -5224,21 +5375,28 @@ function AppComponent() {
   const handleDeleteTeam = async (teamId: string | number) => {
     const isConfirmed = window.confirm("هل أنت متأكد من رغبتك في حذف هذا الفريق/المشترك نهائياً؟");
     if (!isConfirmed) return;
+
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت! تعذر إجراء الحذف.");
+      return;
+    }
+
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('activity_teams')
         .delete()
-        .eq('id', teamId);
+        .eq('id', teamId)
+        .select();
       
-      if (error) {
-        throw error;
+      if (error || !data || data.length === 0) {
+        throw error || new Error("لم يتم تأكيد الحذف من قواعد البيانات.");
       }
       
       setActivityTeams(prev => prev.filter(t => t.id !== teamId));
       setTotalTeamsCount(prev => Math.max(0, prev - 1));
-    } catch (error) {
+    } catch (error: any) {
       console.error("Supabase delete team failed:", error);
-      alert("حدث خطأ أثناء حذف الفريق/المشترك");
+      alert("حدث خطأ أثناء حذف الفريق/المشترك: " + (error.message || ''));
     }
   };
 
@@ -5258,17 +5416,25 @@ function AppComponent() {
   };
 
   const handleDeleteParticipant = async (id: string) => {
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت! تعذر حذف المشترك.");
+      return;
+    }
+
     try {
       const deletedParticipant = participants.find(p => p.id === id) || allChurchParticipants.find(p => p.id === id);
       const targetChurch = deletedParticipant?.churchName || churchName;
 
       // Use Supabase delete
-      const { error: sbErr } = await supabase
+      const { data, error: sbErr } = await supabase
         .from('registrations')
         .delete()
-        .eq('student_id', id);
+        .eq('student_id', id)
+        .select();
       
-      if (sbErr) throw sbErr;
+      if (sbErr || !data || data.length === 0) {
+        throw sbErr || new Error("لم يتم تأكيد الحذف من قاعدة البيانات.");
+      }
 
       // Instant local state sync
       setParticipants(prev => prev.filter(p => p.id !== id));
@@ -5452,6 +5618,12 @@ function AppComponent() {
       }
     }
 
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت! تعذر تسجيل/تحديث بيانات المشترك.");
+      setIsSubmittingParticipant(false);
+      return;
+    }
+
     setIsSubmittingParticipant(true);
 
     try {
@@ -5518,7 +5690,7 @@ function AppComponent() {
           timestamp: new Date().toISOString()
         };
         
-        const { error: sbErr } = await supabase
+        const { data: upsData, error: sbErr } = await supabase
           .from('registrations')
           .upsert({
             student_id: editingParticipant.id,
@@ -5528,9 +5700,12 @@ function AppComponent() {
             gender: updatedFields.gender,
             competitions: updatedFields.competitions || [],
             timestamp: updatedFields.timestamp
-          });
+          })
+          .select();
         
-        if (sbErr) throw sbErr;
+        if (sbErr || !upsData || upsData.length === 0) {
+          throw sbErr || new Error("لم يتم تأكيد تحديث المشترك من قاعدة البيانات.");
+        }
         
         const updatedParticipant: Participant = {
           ...editingParticipant,
@@ -5553,11 +5728,14 @@ function AppComponent() {
           timestamp: new Date().toISOString()
         };
 
-        const { error: sbErr } = await supabase
+        const { data: insData, error: sbErr } = await supabase
           .from('registrations')
-          .insert([newRecord]);
+          .insert([newRecord])
+          .select();
         
-        if (sbErr) throw sbErr;
+        if (sbErr || !insData || insData.length === 0) {
+          throw sbErr || new Error("لم يتم تأكيد تسجيل المشترك من قاعدة البيانات.");
+        }
         
         const newStudent: Participant = { ...newRecord, serial: customId } as any as Participant;
         setParticipants(prev => [...prev, newStudent]);
@@ -5698,6 +5876,11 @@ function AppComponent() {
       return;
     }
 
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت! تعذر إرسال طلب الكتب.");
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       // 1. Clear previous orders for this church to prevent duplication
@@ -5714,11 +5897,14 @@ function AppComponent() {
         quantity: Number(r.quantity)
       }));
 
-      const { error: insertError } = await supabase
+      const { data: insData, error: insertError } = await supabase
         .from('book_orders')
-        .insert(ordersToInsert);
+        .insert(ordersToInsert)
+        .select();
 
-      if (insertError) throw insertError;
+      if (insertError || !insData || insData.length === 0) {
+        throw insertError || new Error("لم يتم تأكيد حفظ الطلب في قاعدة البيانات.");
+      }
 
       // 3. Trigger immediate page sync
       await fetchOrdersPage(true, true);
@@ -5729,7 +5915,7 @@ function AppComponent() {
     } catch (error: any) {
       console.error('Error submitting order on Supabase:', error);
       setSubmitStatus('error');
-      alert('حدث خطأ أثناء إرسال الطلب. يرجى مراجعة الاتصال بالإنترنت.');
+      alert('حدث خطأ أثناء إرسال الطلب: ' + (error.message || 'يرجى مراجعة الاتصال بالإنترنت'));
     } finally {
       setIsSubmitting(false);
     }

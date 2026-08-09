@@ -516,11 +516,23 @@ export const ResultsViewer: React.FC<{
         };
       });
 
-      const { error } = await supabase
-        .from('exam_submissions')
-        .upsert(bulkPayload, { onConflict: 'student_id' });
+      if (!navigator.onLine) {
+        alert("❌ لا يوجد اتصال بالإنترنت! تعذر إرسال درجات الطلاب.");
+        setIsBulkSubmitting(false);
+        return;
+      }
 
-      if (error) throw error;
+      const { data: upsertData, error } = await supabase
+        .from('exam_submissions')
+        .upsert(bulkPayload, { onConflict: 'student_id' })
+        .select();
+
+      if (error || !upsertData || upsertData.length === 0) {
+        alert(`❌ فشل حفظ الدرجات في قاعدة البيانات!
+السبب: ${error?.message || 'لم يتم تأكيد الحفظ من قواعد البيانات (تحقق من الاتصال بالإنترنت أو صلاحيات الوصول)'}`);
+        setIsBulkSubmitting(false);
+        return;
+      }
 
       // Optimistic updates for local state (zero latency)
       setExistingScores(prev => {
@@ -660,25 +672,21 @@ export const ResultsViewer: React.FC<{
   // Handle local user reset in Supabase
   const handleResetRow = async (id: string) => {
     if (!confirm('هل تريد فعلاً إعادة تعيين وحذف النتيجة وإعادة فتح الامتحان في السيرفر')) return;
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت! تعذر إعادة التعيين.");
+      return;
+    }
     try {
       // 1. Delete submission record from Supabase
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('exam_submissions')
         .delete()
-        .eq('student_id', id);
+        .eq('student_id', id)
+        .select();
 
-      if (error) throw error;
-
-      // 2. Also reset live monitoring record back to active - Postponed to next season
-      // await supabase
-      //   .from('live_monitoring')
-      //   .update({
-      //     status: 'active',
-      //     attempts_count: 0,
-      //     is_locked: false,
-      //     updated_at: new Date().toISOString()
-      //   })
-      //   .eq('student_id', id);
+      if (error || !data || data.length === 0) {
+        throw error || new Error('لم يتم تأكيد الحذف من قاعدة البيانات.');
+      }
 
       alert('تم إعادة تعيين النتيجة وفتح الامتحان بنجاح في السيرفر!');
       fetchSubmissionsFromSupabase();
@@ -699,8 +707,12 @@ export const ResultsViewer: React.FC<{
   };
 
   const handleSaveScores = async (rowId: string) => {
+    if (!navigator.onLine) {
+      alert("❌ لا يوجد اتصال بالإنترنت! تعذر حفظ الدرجات.");
+      return;
+    }
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('exam_submissions')
         .update({
           derasy_score: tempScores.darasy,
@@ -708,9 +720,12 @@ export const ResultsViewer: React.FC<{
           qebty_lvl1_score: tempScores.qebty1,
           qebty_lvl2_score: tempScores.qebty2,
         })
-        .eq('student_id', rowId);
+        .eq('student_id', rowId)
+        .select();
 
-      if (error) throw error;
+      if (error || !data || data.length === 0) {
+        throw error || new Error('لم يتم تأكيد حفظ الدرجات من قواعد البيانات.');
+      }
 
       setSupabaseSubmissions(prev => prev.map(r => {
         if (r.id === rowId) {

@@ -188,6 +188,12 @@ export default function UserManagement() {
       const isEnabledVal = editForm.isEnabled !== false;
       const isAllowedToReadVal = editForm.isAllowedToRead !== false;
 
+      if (!navigator.onLine) {
+        setError("❌ لا يوجد اتصال بالإنترنت! تعذر إجراء هذه العملية.");
+        setIsSaving(false);
+        return;
+      }
+
       if (isAdding) {
         // Create new row in church_access_codes
         const payload: any = {
@@ -198,23 +204,27 @@ export default function UserManagement() {
           logo_url: finalLogoUrl
         };
 
-        const { error } = await supabase
+        const { data: insData, error } = await supabase
           .from('church_access_codes')
-          .insert(payload);
+          .insert(payload)
+          .select();
 
-        if (error) {
+        if (error || !insData || insData.length === 0) {
           // Fallback if is_active, is_allowed_to_read or logo_url columns don't exist yet in PostgreSQL schema
-          if (error.message && error.message.includes("column")) {
+          if (error && error.message && error.message.includes("column")) {
             console.warn("Extra columns do not exist. Retrying insertion with core columns only...");
-            const { error: fallbackErr } = await supabase
+            const { data: fbData, error: fallbackErr } = await supabase
               .from('church_access_codes')
               .insert({
                 church_name: editForm.churchName,
                 access_code: editForm.password
-              });
-            if (fallbackErr) throw fallbackErr;
+              })
+              .select();
+            if (fallbackErr || !fbData || fbData.length === 0) {
+              throw fallbackErr || new Error("لم يتم تأكيد حفظ الكنيسة من قواعد البيانات.");
+            }
           } else {
-            throw error;
+            throw error || new Error("لم يتم تأكيد حفظ الكنيسة من قواعد البيانات (تحقق من الصلاحيات).");
           }
         }
 
@@ -232,25 +242,29 @@ export default function UserManagement() {
           logo_url: finalLogoUrl
         };
 
-        const { error } = await supabase
+        const { data: updData, error } = await supabase
           .from('church_access_codes')
           .update(payload)
-          .eq('id', Number(isEditing));
+          .eq('id', Number(isEditing))
+          .select();
 
-        if (error) {
+        if (error || !updData || updData.length === 0) {
           // Fallback update if extra columns don't exist
-          if (error.message && error.message.includes("column")) {
+          if (error && error.message && error.message.includes("column")) {
              console.warn("Extra columns do not exist. Retrying update with core columns only...");
-             const { error: fallbackErr } = await supabase
+             const { data: fbData, error: fallbackErr } = await supabase
                .from('church_access_codes')
                .update({
                  church_name: editForm.churchName,
                  access_code: editForm.password
                })
-               .eq('id', Number(isEditing));
-             if (fallbackErr) throw fallbackErr;
+               .eq('id', Number(isEditing))
+               .select();
+             if (fallbackErr || !fbData || fbData.length === 0) {
+               throw fallbackErr || new Error("لم يتم تأكيد تحديث الكنيسة من قواعد البيانات.");
+             }
           } else {
-             throw error;
+             throw error || new Error("لم يتم تأكيد تحديث الكنيسة من قواعد البيانات (تحقق من الصلاحيات).");
           }
         }
 
@@ -315,14 +329,22 @@ export default function UserManagement() {
     const userToDel = users.find(u => String(u.id) === String(id));
     if (!userToDel) return;
 
+    if (!navigator.onLine) {
+      setError("❌ لا يوجد اتصال بالإنترنت! تعذر حذف الكنيسة.");
+      return;
+    }
+
     setIsSaving(true);
     try {
-      const { error } = await supabase
+      const { data: delData, error } = await supabase
         .from('church_access_codes')
         .delete()
-        .eq('id', Number(id));
+        .eq('id', Number(id))
+        .select();
 
-      if (error) throw error;
+      if (error || !delData || delData.length === 0) {
+        throw error || new Error("لم يتم تأكيد حذف السجل من قواعد البيانات (قد يكون محذوفًا بالفعل أو محمي بواسطة الصلاحيات).");
+      }
 
       setUsers(prev => prev.filter(u => String(u.id) !== String(id)));
       setChurchesBank(prev => prev.filter(c => String(c.id) !== String(id)));
@@ -337,51 +359,67 @@ export default function UserManagement() {
   };
 
   const toggleStatus = async (user: User) => {
+    if (!navigator.onLine) {
+      setError("❌ لا يوجد اتصال بالإنترنت! تعذر تغيير حالة الكنيسة.");
+      return;
+    }
+
     setTogglingIds(prev => ({ ...prev, [user.id]: true }));
     try {
       const newStatus = !user.isEnabled;
       
-      const { error } = await supabase
+      const { data: updData, error } = await supabase
         .from('church_access_codes')
         .update({ is_active: newStatus })
-        .eq('id', Number(user.id));
+        .eq('id', Number(user.id))
+        .select();
 
-      if (error) throw error;
+      if (error || !updData || updData.length === 0) {
+        throw error || new Error("لم يتم تأكيد تغيير الحالة في قواعد البيانات.");
+      }
 
       setUsers(prev => prev.map(u => String(u.id) === String(user.id) ? { ...u, isEnabled: newStatus } : u));
       setChurchesBank(prev => prev.map(c => String(c.id) === String(user.id) ? { ...c, isEnabled: newStatus } : c));
       
       setSuccess(`تم ${newStatus ? 'تفعيل' : 'تعطيل'} حساب الكنيسة للدخول بنجاح`);
       setTimeout(() => setSuccess(""), 3000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error toggling status:", err);
-      setError("حدث خطأ أثناء تغيير حالة الدخول");
+      setError("حدث خطأ أثناء تغيير حالة الدخول: " + (err.message || ''));
     } finally {
       setTogglingIds(prev => ({ ...prev, [user.id]: false }));
     }
   };
 
   const toggleReadingStatus = async (user: User) => {
+    if (!navigator.onLine) {
+      setError("❌ لا يوجد اتصال بالإنترنت! تعذر تغيير صلاحيات القراءة.");
+      return;
+    }
+
     setTogglingIds(prev => ({ ...prev, [user.id]: true }));
     try {
       const currentStatus = user.isAllowedToRead === undefined ? true : user.isAllowedToRead;
       const newStatus = !currentStatus;
       
-      const { error } = await supabase
+      const { data: updData, error } = await supabase
         .from('church_access_codes')
         .update({ is_allowed_to_read: newStatus })
-        .eq('id', Number(user.id));
+        .eq('id', Number(user.id))
+        .select();
 
-      if (error) throw error;
+      if (error || !updData || updData.length === 0) {
+        throw error || new Error("لم يتم تأكيد تغيير الصلاحية في قواعد البيانات.");
+      }
 
       setUsers(prev => prev.map(u => String(u.id) === String(user.id) ? { ...u, isAllowedToRead: newStatus } : u));
       setChurchesBank(prev => prev.map(c => String(c.id) === String(user.id) ? { ...c, isAllowedToRead: newStatus } : c));
 
       setSuccess(`تم ${newStatus ? 'السماح بالقراءة' : 'إيقاف صلاحية القراءة'} بنجاح`);
       setTimeout(() => setSuccess(""), 3000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error toggling reading status:", err);
-      setError("حدث خطأ أثناء تغيير صلاحية القراءة");
+      setError("حدث خطأ أثناء تغيير صلاحية القراءة: " + (err.message || ''));
     } finally {
       setTogglingIds(prev => ({ ...prev, [user.id]: false }));
     }
