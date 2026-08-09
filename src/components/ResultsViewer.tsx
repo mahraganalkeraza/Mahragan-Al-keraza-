@@ -29,6 +29,7 @@ import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { withStylesCleaned } from '../utils/oklchCleaner';
+import { CustomAlertDialog, AlertDialogType } from './CustomAlertDialog';
 
 export const ResultsViewer: React.FC<{ 
   results?: Result[], 
@@ -43,6 +44,55 @@ export const ResultsViewer: React.FC<{
   const [resultsPublished, setResultsPublished] = useState(false);
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [isPublishLoading, setIsPublishLoading] = useState(false);
+
+  // Custom Alert Dialog State
+  const [alertDialog, setAlertDialog] = useState<{
+    isOpen: boolean;
+    type?: AlertDialogType;
+    title?: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm?: () => void;
+    onCancel?: () => void;
+  }>({ isOpen: false, message: '' });
+
+  const showAlert = (message: string, type: AlertDialogType = 'info', title?: string) => {
+    return new Promise<void>((resolve) => {
+      setAlertDialog({
+        isOpen: true,
+        type,
+        title,
+        message,
+        confirmText: 'موافق',
+        onConfirm: () => {
+          setAlertDialog(prev => ({ ...prev, isOpen: false }));
+          resolve();
+        }
+      });
+    });
+  };
+
+  const showConfirm = (message: string, title?: string, confirmText = 'تأكيد', cancelText = 'إلغاء') => {
+    return new Promise<boolean>((resolve) => {
+      setAlertDialog({
+        isOpen: true,
+        type: 'confirm',
+        title,
+        message,
+        confirmText,
+        cancelText,
+        onConfirm: () => {
+          setAlertDialog(prev => ({ ...prev, isOpen: false }));
+          resolve(true);
+        },
+        onCancel: () => {
+          setAlertDialog(prev => ({ ...prev, isOpen: false }));
+          resolve(false);
+        }
+      });
+    });
+  };
 
   // Advanced PDF Generation States
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -477,23 +527,24 @@ export const ResultsViewer: React.FC<{
 
   const handleBulkSubmit = async () => {
     if (selectedStudentIds.length === 0) {
-      alert('الرجاء تحديد طالب واحد على الأقل من الجدول للرصد.');
+      await showAlert('الرجاء تحديد طالب واحد على الأقل من الجدول للرصد.', 'warning');
       return;
     }
     if (!bulkScoreValue || isNaN(Number(bulkScoreValue))) {
-      alert('الرجاء إدخال درجة مناسبة.');
+      await showAlert('الرجاء إدخال درجة مناسبة.', 'warning');
       return;
     }
     const scoreVal = parseFloat(bulkScoreValue);
     if (scoreVal < 0 || scoreVal > 100) {
-      alert('الرجاء إدخال درجة بين 0 و 100.');
+      await showAlert('الرجاء إدخال درجة بين 0 و 100.', 'warning');
       return;
     }
 
     const columnArabic = getColumnArabicName(selectedColumn);
     const confirmMessage = `هل أنت متأكد من رصد درجة [${scoreVal}] لعدد [${selectedStudentIds.length}] من الطلاب في المسابقة المحددة؟`;
     
-    if (!window.confirm(confirmMessage)) return;
+    const isConfirmed = await showConfirm(confirmMessage, 'تأكيد رصد الدرجات');
+    if (!isConfirmed) return;
 
     setIsBulkSubmitting(true);
     try {
@@ -517,7 +568,7 @@ export const ResultsViewer: React.FC<{
       });
 
       if (!navigator.onLine) {
-        alert("❌ لا يوجد اتصال بالإنترنت! تعذر إرسال درجات الطلاب.");
+        await showAlert("❌ لا يوجد اتصال بالإنترنت! تعذر إرسال درجات الطلاب.", "error");
         setIsBulkSubmitting(false);
         return;
       }
@@ -528,8 +579,7 @@ export const ResultsViewer: React.FC<{
         .select();
 
       if (error || !upsertData || upsertData.length === 0) {
-        alert(`❌ فشل حفظ الدرجات في قاعدة البيانات!
-السبب: ${error?.message || 'لم يتم تأكيد الحفظ من قواعد البيانات (تحقق من الاتصال بالإنترنت أو صلاحيات الوصول)'}`);
+        await showAlert(`❌ فشل حفظ الدرجات في قاعدة البيانات!\nالسبب: ${error?.message || 'لم يتم تأكيد الحفظ من قواعد البيانات (تحقق من الاتصال بالإنترنت أو صلاحيات الوصول)'}`, "error");
         setIsBulkSubmitting(false);
         return;
       }
@@ -585,13 +635,13 @@ export const ResultsViewer: React.FC<{
         return Array.from(prevMap.values());
       });
 
-      alert(`تم بنجاح رصد درجة [${scoreVal}] في [${columnArabic}] لعدد [${selectedStudentIds.length}] من الطلاب! 🎉`);
+      await showAlert(`تم بنجاح رصد درجة [${scoreVal}] في [${columnArabic}] لعدد [${selectedStudentIds.length}] من الطلاب! 🎉`, "success", "تم التحديث بنجاح");
       
       setSelectedStudentIds([]);
       setBulkScoreValue('');
     } catch (err: any) {
       console.error('Error submitting bulk scores:', err.message);
-      alert('حدث خطأ أثناء رصد الدرجات: ' + err.message);
+      await showAlert('حدث خطأ أثناء رصد الدرجات: ' + err.message, "error");
     } finally {
       setIsBulkSubmitting(false);
     }
@@ -671,9 +721,11 @@ export const ResultsViewer: React.FC<{
 
   // Handle local user reset in Supabase
   const handleResetRow = async (id: string) => {
-    if (!confirm('هل تريد فعلاً إعادة تعيين وحذف النتيجة وإعادة فتح الامتحان في السيرفر')) return;
+    const isConfirmed = await showConfirm('هل تريد فعلاً إعادة تعيين وحذف النتيجة وإعادة فتح الامتحان في السيرفر؟', 'إعادة تعيين النتيجة');
+    if (!isConfirmed) return;
+
     if (!navigator.onLine) {
-      alert("❌ لا يوجد اتصال بالإنترنت! تعذر إعادة التعيين.");
+      await showAlert("❌ لا يوجد اتصال بالإنترنت! تعذر إعادة التعيين.", "error");
       return;
     }
     try {
@@ -688,11 +740,11 @@ export const ResultsViewer: React.FC<{
         throw error || new Error('لم يتم تأكيد الحذف من قاعدة البيانات.');
       }
 
-      alert('تم إعادة تعيين النتيجة وفتح الامتحان بنجاح في السيرفر!');
+      await showAlert('تم إعادة تعيين النتيجة وفتح الامتحان بنجاح في السيرفر!', 'success');
       fetchSubmissionsFromSupabase();
     } catch (err: any) {
       console.error('Error in reset operation:', err);
-      alert('حدث خطأ أثناء إعادة فتح الامتحان: ' + err.message);
+      await showAlert('حدث خطأ أثناء إعادة فتح الامتحان: ' + err.message, 'error');
     }
   };
 
@@ -708,7 +760,7 @@ export const ResultsViewer: React.FC<{
 
   const handleSaveScores = async (rowId: string) => {
     if (!navigator.onLine) {
-      alert("❌ لا يوجد اتصال بالإنترنت! تعذر حفظ الدرجات.");
+      await showAlert("❌ لا يوجد اتصال بالإنترنت! تعذر حفظ الدرجات.", "error");
       return;
     }
     try {
@@ -746,10 +798,10 @@ export const ResultsViewer: React.FC<{
       }));
 
       setEditingRowId(null);
-      alert("تم تحديث الدرجات بنجاح!");
+      await showAlert("تم تحديث الدرجات بنجاح!", "success", "تم التحديث");
     } catch (err: any) {
       console.error("Error updating scores:", err);
-      alert("حدث خطأ أثناء حفظ الدرجات: " + err.message);
+      await showAlert("حدث خطأ أثناء حفظ الدرجات: " + err.message, "error");
     }
   };
 
@@ -814,7 +866,7 @@ export const ResultsViewer: React.FC<{
         });
       } catch (err: any) {
         console.error("Advanced export PDF error:", err);
-        alert("حدث خطأ أثناء تصدير ملف PDF: " + (err.message || err));
+        await showAlert("حدث خطأ أثناء تصدير ملف PDF: " + (err.message || err), "error");
       } finally {
         setIsGeneratingPDF(false);
         setPdfProgress(0);
@@ -825,7 +877,7 @@ export const ResultsViewer: React.FC<{
 
   const handleExportToExcel = async () => {
     if (!results || results.length === 0) {
-      alert("لا توجد نتائج لتصديرها.");
+      await showAlert("لا توجد نتائج لتصديرها.", "warning");
       return;
     }
     setIsExportingExcel(true);
@@ -981,7 +1033,7 @@ export const ResultsViewer: React.FC<{
       saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileName);
     } catch (err: any) {
       console.error("Error exporting local results to Excel:", err);
-      alert("حدث خطأ أثناء تصدير ملف الإكسل: " + (err.message || err));
+      await showAlert("حدث خطأ أثناء تصدير ملف الإكسل: " + (err.message || err), "error");
     } finally {
       setIsExportingExcel(false);
     }
@@ -1072,7 +1124,7 @@ export const ResultsViewer: React.FC<{
       saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileName);
     } catch (err: any) {
       console.error('Error generating template:', err);
-      alert('حدث خطأ أثناء تحميل النموذج: ' + err.message);
+      await showAlert('حدث خطأ أثناء تحميل النموذج: ' + err.message, "error");
     }
   };
 
@@ -1095,7 +1147,7 @@ export const ResultsViewer: React.FC<{
         const json: any[] = XLSX.utils.sheet_to_json(ws);
 
         if (json.length === 0) {
-          alert('الملف فارغ أو يحتوي على تنسيق غير صحيح.');
+          await showAlert('الملف فارغ أو يحتوي على تنسيق غير صحيح.', "warning");
           return;
         }
 
@@ -1187,7 +1239,7 @@ export const ResultsViewer: React.FC<{
         }).filter(item => item.student_id && item.name);
 
         if (submissionsToInsert.length === 0) {
-          alert('لم يتم العثور على أي صفوف صالحة. تأكد من وجود كود الطالب واسم المخدوم.');
+          await showAlert('لم يتم العثور على أي صفوف صالحة. تأكد من وجود كود الطالب واسم المخدوم.', "warning");
           return;
         }
 
@@ -1224,11 +1276,11 @@ export const ResultsViewer: React.FC<{
           throw new Error("لم يتم تأكيد حفظ النتائج في قاعدة البيانات، يرجى مراجعة الصلاحيات.");
         }
 
-        alert(`تم رفع عدد ${insertedData.length} نتيجة بابل شيت بنجاح!`);
+        await showAlert(`تم رفع عدد ${insertedData.length} نتيجة بابل شيت بنجاح!`, "success");
         fetchSubmissionsFromSupabase();
       } catch (err: any) {
         console.error('Error parsing/inserting Excel bubble sheet data:', err);
-        alert('حدث خطأ أثناء معالجة ملف الإكسل: ' + err.message);
+        await showAlert('حدث خطأ أثناء معالجة ملف الإكسل: ' + err.message, "error");
       }
     };
     reader.readAsBinaryString(file);
@@ -1240,7 +1292,7 @@ export const ResultsViewer: React.FC<{
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualForm.student_name || !manualForm.church_name || !manualForm.stage) {
-      alert('يرجى ملء جميع الحقول المطلوبة المتمثلة بالنجمه (*).');
+      await showAlert('يرجى ملء جميع الحقول المطلوبة المتمثلة بالنجمة (*).', "warning");
       return;
     }
 
@@ -1274,7 +1326,7 @@ export const ResultsViewer: React.FC<{
         throw new Error("لم يتم تأكيد حفظ السجل في قاعدة البيانات، يرجى مراجعة الصلاحيات.");
       }
 
-      alert('تم حفظ نتيجة الامتحان الورقي بنجاح!');
+      await showAlert('تم حفظ نتيجة الامتحان الورقي بنجاح!', "success");
       setShowManualModal(false);
       setManualForm({
         student_name: '',
@@ -1289,12 +1341,13 @@ export const ResultsViewer: React.FC<{
       fetchSubmissionsFromSupabase();
     } catch (err: any) {
       console.error('Error inserting manual paper result:', err);
-      alert('حدث خطأ أثناء حفظ النتيجة: ' + err.message);
+      await showAlert('حدث خطأ أثناء حفظ النتيجة: ' + err.message, "error");
     }
   };
 
   const handlePublishResults = async () => {
-    if (!confirm('هل أنت متأكد من مراجعة كافة الدرجات ونشرها رسميًا للكنائس؟')) return;
+    const isConfirmed = await showConfirm('هل أنت متأكد من مراجعة كافة الدرجات ونشرها رسميًا للكنائس؟', 'نشر النتائج');
+    if (!isConfirmed) return;
     await handleTogglePublish(true);
   };
 
@@ -1322,11 +1375,11 @@ export const ResultsViewer: React.FC<{
       }
 
       setResultsPublished(publishState);
-      alert(publishState ? "تم إعلان النتائج بنجاح لجميع الكنائس! 🚀" : "تم حجب النتائج بنجاح عن الكنائس. 🔒");
+      await showAlert(publishState ? "تم إعلان النتائج بنجاح لجميع الكنائس! 🚀" : "تم حجب النتائج بنجاح عن الكنائس. 🔒", "success");
       await fetchSubmissionsFromSupabase();
     } catch (err: any) {
       console.error("Error updating publish status:", err);
-      alert("حدث خطأ أثناء تعديل حالة الإعلان: " + err.message);
+      await showAlert("حدث خطأ أثناء تعديل حالة الإعلان: " + err.message, "error");
     } finally {
       setIsPublishLoading(false);
     }
@@ -1345,14 +1398,14 @@ export const ResultsViewer: React.FC<{
       if (error) throw error;
 
       if (!updatedRows || updatedRows.length === 0) {
-        alert(`تنبيه: لم يتم العثور على أي نتائج مسجلة لهذه الكنيسة (${churchName}) لنشرها.`);
+        await showAlert(`تنبيه: لم يتم العثور على أي نتائج مسجلة لهذه الكنيسة (${churchName}) لنشرها.`, "warning");
       } else {
-        alert(`تم نشر عدد ${updatedRows.length} نتيجة بنجاح لكنيسة: ${churchName} 🎉`);
+        await showAlert(`تم نشر عدد ${updatedRows.length} نتيجة بنجاح لكنيسة: ${churchName} 🎉`, "success");
       }
       fetchSubmissionsFromSupabase();
     } catch (err: any) {
       console.error("Publishing failed:", err.message);
-      alert('حدث خطأ أثناء النشر: ' + err.message);
+      await showAlert('حدث خطأ أثناء النشر: ' + err.message, "error");
     } finally {
       setIsLoading(false);
     }
@@ -2702,6 +2755,18 @@ export const ResultsViewer: React.FC<{
           </div>
         </div>
       )}
+
+      {/* Modern Custom Alert Dialog */}
+      <CustomAlertDialog
+        isOpen={alertDialog.isOpen}
+        type={alertDialog.type}
+        title={alertDialog.title}
+        message={alertDialog.message}
+        confirmText={alertDialog.confirmText}
+        cancelText={alertDialog.cancelText}
+        onConfirm={alertDialog.onConfirm || (() => setAlertDialog(prev => ({ ...prev, isOpen: false })))}
+        onCancel={alertDialog.onCancel || (() => setAlertDialog(prev => ({ ...prev, isOpen: false })))}
+      />
     </div>
   );
 };
