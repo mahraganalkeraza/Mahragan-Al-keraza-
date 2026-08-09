@@ -400,7 +400,7 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
           {/* Official Footer / Control Notes */}
           <div className="mt-4 pt-3 border-t border-slate-200 text-[10px] text-slate-600 space-y-1" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
             <p className="font-bold text-slate-800">ملاحظات وتعليمات هامة:</p>
-            <p>1. تم استخراج هذه المطالبة بناءً على نتائج وتصفيات مهرجان الكرازة المرقسية المحلية.</p>
+            <p>1. تم استخراج هذه التقرير بناءً على نتائج وتصفيات مهرجان الكرازة المرقسية المحلية.</p>
             <p>2. يرجى توريد المبلغ الموضح للجنة المالية بمقر اللجنة بالمطرانية قبل بدء فعاليات التصفيات النهائية.</p>
             <div className="pt-4 flex justify-between items-center text-xs font-black text-slate-800">
               <div>التوقيع: ..............................</div>

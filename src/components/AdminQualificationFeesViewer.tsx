@@ -498,7 +498,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
 
             <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold text-emerald-800">إجمالي المطالبة الكلية الكنيسة</p>
+                <p className="text-xs font-bold text-emerald-800">الإجمالي</p>
                 <p className="text-xl font-black text-emerald-950 mt-0.5">
                   {selectedChurchDetail.totalAmountRequired.toLocaleString('ar-EG')} جنيه مصري
                 </p>
@@ -511,7 +511,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
                 }}
                 className="px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-black text-xs flex items-center gap-1.5 hover:bg-emerald-700 transition"
               >
-                <Download size={14} /> تحميل المطالبة (PDF)
+                <Download size={14} /> تحميل  (PDF)
               </button>
             </div>
           </div>
@@ -585,7 +585,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
 
             <div className="mt-4 pt-3 border-t border-slate-200 text-[10px] text-slate-600 space-y-1" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
               <p className="font-bold text-slate-800">ملاحظات وتعليمات هامة:</p>
-              <p>1. تم استخراج هذه المطالبة بناءً على نتائج وتصفيات مهرجان الكرازة المرقسية المحلية.</p>
+              <p>1. تم استخراج هذا التقرير بناءً على نتائج وتصفيات مهرجان الكرازة المرقسية المحلية.</p>
               <p>2. يرجى توريد المبلغ الموضح للجنة المالية بمقر اللجنة بالمطرانية.</p>
               <div className="pt-4 flex justify-between items-center text-xs font-black text-slate-800">
                 <div>التوقيع: ..............................</div>
