@@ -279,7 +279,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
                 </span>
               </div>
               <p className="text-slate-300 text-xs md:text-sm font-bold mt-1">
-                التقرير المالي العام لحساب رسوم الاشتراك المستحقة على الكنائس المشاركة بناءً على أعداد الطلاب الصاعدين
+               رسوم الاشتراك المستحقة على الكنائس المشاركة بناءً على أعداد الطلاب الصاعدين
               </p>
             </div>
           </div>
@@ -305,7 +305,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <Download size={20} /> تصدير كشف لكل الكنائس (PDF)
+                  <Download size={20} /> تحميل كشف بكل الكنائس (PDF)
                 </>
               )}
             </button>

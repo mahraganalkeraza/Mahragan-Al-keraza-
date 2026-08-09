@@ -88,6 +88,7 @@ import ChurchInquiryForm from './components/ChurchInquiryForm';
 import AdminInquiriesViewer from './components/AdminInquiriesViewer';
 import { ChurchQualificationFeesCard } from './components/ChurchQualificationFeesCard';
 import { AdminQualificationFeesViewer } from './components/AdminQualificationFeesViewer';
+import { QualificationGapAnalysisChart } from './components/QualificationGapAnalysisChart';
 import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
 import { setupForceRefreshListener } from './utils/forceRefreshManager';
 import { supabase } from './lib/supabaseClient';
@@ -8871,6 +8872,9 @@ function AppComponent() {
                     {isExportingPDF ? 'جاري التحضير...' : 'تصدير التقرير التحليلي (PDF)'}
                   </button>
                 </div>
+
+                {/* Qualification Gap Analysis Chart */}
+                <QualificationGapAnalysisChart />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8 w-full min-w-0">
                   <motion.div 
