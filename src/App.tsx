@@ -70,7 +70,8 @@ import {
   AlertTriangle,
   Bell,
   ShieldAlert,
-  RefreshCw
+  RefreshCw,
+  Receipt
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
 import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
@@ -86,6 +87,7 @@ import AdminDisplayGate from './components/AdminDisplayGate';
 import ChurchInquiryForm from './components/ChurchInquiryForm';
 import AdminInquiriesViewer from './components/AdminInquiriesViewer';
 import { ChurchQualificationFeesCard } from './components/ChurchQualificationFeesCard';
+import { AdminQualificationFeesViewer } from './components/AdminQualificationFeesViewer';
 import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
 import { setupForceRefreshListener } from './utils/forceRefreshManager';
 import { supabase } from './lib/supabaseClient';
@@ -418,6 +420,7 @@ const ALL_ADMIN_TABS = [
   { id: 'results', label: 'نتائج التصفية المحلية', icon: Award },
   { id: 'omr', label: ' Babble sheets & QR  ', icon: FileScan },
   { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
+  { id: 'qualification_fees', label: 'اشتراكات الكنائس', icon: Receipt },
   { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
   { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
   { id: 'calculator', label: 'تسعير الكتب', icon: Calculator },
@@ -8130,6 +8133,10 @@ function AppComponent() {
                   {!isOrdersLoading && <span className="text-[10px]">عرض ٢٠ طلب في الصفحة</span>}
                 </div>
               </section>
+            )}
+
+            {adminActiveTab === 'qualification_fees' && (
+              <AdminQualificationFeesViewer />
             )}
 
             {adminActiveTab === 'inquiries' && (
