@@ -28,6 +28,13 @@ export const TEMPLATE_MAPPING: Record<TemplateType, TemplateMappingInfo> = {
   },
 };
 
+export async function exportExcelTemplate(
+  templateType: TemplateType,
+  students: any[]
+): Promise<void> {
+  return exportStudentsExcel(templateType, students);
+}
+
 /**
  * Single, unified export function in React that invokes the Supabase Edge Function 'generate-excel'
  * to populate and download template-based Excel files for all educational stages, preserving data validations
