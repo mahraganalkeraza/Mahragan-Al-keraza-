@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import ExcelJS from "npm:exceljs@4.4.0";
+import * as XLSX from "https://cdn.sheetjs.com/xlsx-latest/package/xlsx.mjs";
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -56,8 +56,8 @@ function formatStudentName(rawName: any): string {
 
 /**
  * Supabase Edge Function: generate-excel
- * Retrieves template from Supabase Storage 'templates' bucket, populates student data with ExcelJS,
- * preserving existing cell formatting and dropdown data validations.
+ * Process legacy .xls (BIFF8) template files using SheetJS (xlsx) to prevent
+ * Microsoft Excel "Protected View" corruption warnings and retain cell data validations (dropdown lists).
  */
 serve(async (req: Request) => {
   // Handle CORS preflight request
@@ -108,100 +108,109 @@ serve(async (req: Request) => {
       );
     }
 
-    // 2. Load workbook with ExcelJS
-    const workbook = new ExcelJS.Workbook();
-    let loaded = false;
+    // 2. Parse workbook using SheetJS (XLSX)
+    const workbook = XLSX.read(new Uint8Array(fileBuffer), {
+      type: "array",
+      cellStyles: true,
+      cellFormulas: true,
+      bookVBA: true,
+    });
 
-    try {
-      await workbook.xlsx.load(fileBuffer);
-      loaded = true;
-    } catch (xlsxErr) {
-      console.warn(`ExcelJS xlsx load warning for ${templateName}:`, xlsxErr);
-    }
-
-    if (!loaded) {
-      // If template binary is raw BIFF8 (.xls) or couldn't be loaded directly by xlsx loader,
-      // return original fileBuffer directly as fallback so download succeeds gracefully
-      return new Response(fileBuffer, {
-        headers: {
-          ...CORS_HEADERS,
-          'Content-Type': 'application/vnd.ms-excel',
-          'Content-Disposition': `attachment; filename="${templateName}"`,
-        },
-      });
-    }
-
-    const worksheet = workbook.worksheets[0];
-    if (!worksheet) {
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
       return new Response(
         JSON.stringify({ error: `Template ${templateName} has no valid worksheets` }),
         { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
       );
     }
 
-    // 3. Determine starting row for student data insertion
-    // Check row 2 content: if row 2 has headers (e.g., 'اسم', 'موبايل'), data starts at row 3; else row 2.
-    let startRow = 2;
-    const row2Cell1 = worksheet.getRow(2).getCell(1).value;
-    const row2Cell2 = worksheet.getRow(2).getCell(2).value;
-    const row2Text = `${row2Cell1 || ''} ${row2Cell2 || ''}`;
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+
+    // Determine start row: Check row 2 (0-indexed r = 1) cell content
+    let startRowIndex = 1; // 0-indexed row 2 (A2)
+    const cellA2 = worksheet[XLSX.utils.encode_cell({ r: 1, c: 0 })];
+    const cellB2 = worksheet[XLSX.utils.encode_cell({ r: 1, c: 1 })];
+    const row2Text = `${cellA2?.v || ''} ${cellB2?.v || ''}`;
+
     if (row2Text.includes('اسم') || row2Text.includes('موبايل') || row2Text.includes('النوع')) {
-      startRow = 3;
+      startRowIndex = 2; // 0-indexed row 3 (A3)
     }
 
-    // 4. Populate student data directly into worksheet cells
-    studentsArray.forEach((student: any, idx: number) => {
-      const rowIndex = startRow + idx;
-      const row = worksheet.getRow(rowIndex);
+    // Safely update cell values directly to preserve validation metadata
+    const setCellVal = (r: number, c: number, value: any, isNumber = false) => {
+      const cellRef = XLSX.utils.encode_cell({ r, c });
+      if (!worksheet[cellRef]) {
+        worksheet[cellRef] = { t: isNumber ? 'n' : 's', v: value };
+      } else {
+        worksheet[cellRef].v = value;
+        worksheet[cellRef].t = isNumber ? 'n' : 's';
+      }
+    };
 
-      // Student Name -> Column 1 (A)
+    let maxRowIndex = startRowIndex;
+
+    studentsArray.forEach((student: any, idx: number) => {
+      const rIdx = startRowIndex + idx;
+      if (rIdx > maxRowIndex) maxRowIndex = rIdx;
+
+      // Column A (Index 0): student.name
       const nameVal = formatStudentName(
         student.name || student.studentName || student.fullName || ''
       );
-      if (nameVal) row.getCell(1).value = nameVal;
+      if (nameVal) setCellVal(rIdx, 0, nameVal);
 
-      // Phone Number -> Column 2 (B)
+      // Column B (Index 1): student.phone
       const phoneVal = student.phoneNumber || student.phone || student.mobile || '';
-      if (phoneVal) row.getCell(2).value = String(phoneVal);
+      if (phoneVal) setCellVal(rIdx, 1, String(phoneVal));
 
-      // Gender / Stage -> Column 3 (C)
-      const isFemale =
-        student.gender === 'أنثى' ||
-        student.gender === 'female' ||
-        student.gender === 'انثى';
-      const genderStr = student.gender ? (isFemale ? 'أنثى' : 'ذكر') : (student.stage || student.educationalStage || '');
-      if (genderStr) row.getCell(3).value = genderStr;
+      // Column C (Index 2): student.stage / gender (Dropdown selection value)
+      const stageOrGender = student.stage || student.educationalStage || (
+        student.gender ? (
+          student.gender === 'أنثى' || student.gender === 'female' || student.gender === 'انثى' ? 'أنثى' : 'ذكر'
+        ) : ''
+      );
+      if (stageOrGender) setCellVal(rIdx, 2, stageOrGender);
 
-      // Birth Date / Day -> Column 4 (D)
+      // Column D (Index 3): Birth Day / Stage
       if (student.birthDay || student.day) {
-        row.getCell(4).value = Number(student.birthDay || student.day);
-      } else if (student.stage || student.educationalStage) {
-        row.getCell(4).value = String(student.stage || student.educationalStage);
+        setCellVal(rIdx, 3, Number(student.birthDay || student.day), true);
+      } else if (student.gender && (student.stage || student.educationalStage)) {
+        setCellVal(rIdx, 3, String(student.stage || student.educationalStage));
       }
 
-      // Birth Month -> Column 5 (E)
+      // Column E (Index 4): Birth Month
       if (student.birthMonth || student.month) {
-        row.getCell(5).value = Number(student.birthMonth || student.month);
+        setCellVal(rIdx, 4, Number(student.birthMonth || student.month), true);
       }
 
-      // Birth Year -> Column 6 (F)
+      // Column F (Index 5): Birth Year
       if (student.birthYear || student.year) {
-        row.getCell(6).value = Number(student.birthYear || student.year);
+        setCellVal(rIdx, 5, Number(student.birthYear || student.year), true);
       }
 
-      // Competitions -> Columns 7 through 14 (G - N)
-      const competitionsList = parseCompetitions(student.competitions);
-      competitionsList.forEach((compName, cIdx) => {
+      // Columns G onwards (Index 6+): Competitions
+      const compsList = parseCompetitions(student.competitions);
+      compsList.forEach((compName, cIdx) => {
         if (cIdx < 8) {
-          row.getCell(7 + cIdx).value = compName;
+          setCellVal(rIdx, 6 + cIdx, compName);
         }
       });
-
-      row.commit();
     });
 
-    // 5. Generate output binary buffer
-    const outBuffer = await workbook.xlsx.writeBuffer();
+    // Update worksheet reference range !ref
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:N100');
+    if (maxRowIndex > range.e.r) {
+      range.e.r = maxRowIndex;
+      worksheet['!ref'] = XLSX.utils.encode_range(range);
+    }
+
+    // 3. Export modified workbook using BIFF8 .xls binary buffer
+    const outBuffer = XLSX.write(workbook, {
+      bookType: "biff8",
+      type: "buffer",
+      cellStyles: true,
+      bookVBA: true,
+    });
 
     return new Response(outBuffer, {
       headers: {
