@@ -255,6 +255,11 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportProgress, setExportProgress] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' | null }>({ text: '', type: null });
+  const [failedExport, setFailedExport] = useState<{
+    type: 'single' | 'zip' | 'master_zip';
+    category?: 'primary' | 'prep_servants' | 'special';
+    errorMsg: string;
+  } | null>(null);
 
   // Save settings on change
   useEffect(() => {
@@ -676,9 +681,16 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         text: `تم تصدير ملف "${templateName}" بنجاح وتعبئة ${students.length} مشترك!`, 
         type: 'success' 
       });
+      setFailedExport(null);
     } catch (e: any) {
       console.error(e);
-      setStatusMessage({ text: `حدث خطأ أثناء محاولة تصدير الملف: ${e?.message || e}`, type: 'error' });
+      const errMsg = e?.message || e || 'خطأ غير معروف';
+      setStatusMessage({ text: `حدث خطأ أثناء محاولة تصدير الملف: ${errMsg}`, type: 'error' });
+      setFailedExport({
+        type: 'single',
+        category,
+        errorMsg: errMsg
+      });
     } finally {
       setIsExporting(false);
       setExportProgress('');
@@ -730,9 +742,15 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         text: `تم تصدير ملف الأرشيف المضغوط لكنيسة "${churchNameStr}" بنجاح يحتوي على ${addedFilesCount} ملفات!`, 
         type: 'success' 
       });
+      setFailedExport(null);
     } catch (e: any) {
       console.error(e);
-      setStatusMessage({ text: `حدث خطأ أثناء تصدير الأرشيف المضغوط: ${e?.message || e}`, type: 'error' });
+      const errMsg = e?.message || e || 'خطأ غير معروف';
+      setStatusMessage({ text: `حدث خطأ أثناء تصدير الأرشيف المضغوط: ${errMsg}`, type: 'error' });
+      setFailedExport({
+        type: 'zip',
+        errorMsg: errMsg
+      });
     } finally {
       setIsExporting(false);
       setExportProgress('');
@@ -805,12 +823,31 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         text: `نجاح! تم تصدير بيانات ${churchNames.length} كنائس وتوليد ${totalFilesCreated} ملفات Excel مهيأة ومقسمة داخل الأرشيف بنجاح!`, 
         type: 'success' 
       });
+      setFailedExport(null);
     } catch (e: any) {
       console.error(e);
-      setStatusMessage({ text: `حدث خطأ غير متوقع أثناء توليد الأرشيف المضغوط المجمع للكنائس: ${e?.message || e}`, type: 'error' });
+      const errMsg = e?.message || e || 'خطأ غير معروف';
+      setStatusMessage({ text: `حدث خطأ غير متوقع أثناء توليد الأرشيف المضغوط المجمع للكنائس: ${errMsg}`, type: 'error' });
+      setFailedExport({
+        type: 'master_zip',
+        errorMsg: errMsg
+      });
     } finally {
       setIsExporting(false);
       setExportProgress('');
+    }
+  };
+
+  const handleRetryExport = () => {
+    if (!failedExport) return;
+    const { type, category } = failedExport;
+    setFailedExport(null);
+    if (type === 'single' && category) {
+      handleSingleExport(category);
+    } else if (type === 'zip') {
+      handleChurchZipExport();
+    } else if (type === 'master_zip') {
+      handleAllChurchesMasterZipExport();
     }
   };
 
@@ -878,6 +915,35 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
              <Info className="w-5 h-5 shrink-0 text-sky-600" />}
             <div className="text-xs font-bold leading-relaxed">{statusMessage.text}</div>
             <button className="mr-auto text-xs opacity-50 hover:opacity-100 font-bold" onClick={() => setStatusMessage({ text: '', type: null })}>إغلاق</button>
+          </div>
+        )}
+
+        {failedExport && (
+          <div className="p-4 rounded-xl mb-6 border bg-rose-50 border-rose-200 text-rose-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 shrink-0 text-rose-600 mt-0.5" />
+              <div>
+                <div className="text-xs font-black text-rose-900 mb-1">فشل تحميل أو تعبئة قالب الـ Excel من السيرفر</div>
+                <div className="text-[11px] font-bold text-rose-700 leading-relaxed">
+                  {failedExport.errorMsg}. يرجى التحقق من اتصال الإنترنت أو المحاولة مرة أخرى للاستدعاء من الدالة السحابية.
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              <button
+                onClick={handleRetryExport}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-black shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw size={12} className="animate-spin-slow" />
+                <span>إعادة المحاولة</span>
+              </button>
+              <button
+                onClick={() => setFailedExport(null)}
+                className="px-2.5 py-1.5 bg-white hover:bg-rose-100/50 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition-all cursor-pointer"
+              >
+                تجاهل
+              </button>
+            </div>
           </div>
         )}
 

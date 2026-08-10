@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as XLSX from "https://cdn.sheetjs.com/xlsx-latest/package/xlsx.mjs";
 
 const CORS_HEADERS = {
@@ -17,61 +16,71 @@ function formatStudentName(rawName: any): string {
 }
 
 /**
+ * Direct public template URLs mapped to keys
+ */
+const TEMPLATE_URLS: Record<string, string> = {
+  'primary': 'https://nrigdgdiqjdzieryjjod.supabase.co/storage/v1/object/public/templates/primary_registration_2026.xls',
+  'primary_registration_2026.xls': 'https://nrigdgdiqjdzieryjjod.supabase.co/storage/v1/object/public/templates/primary_registration_2026.xls',
+  'prep_servants': 'https://nrigdgdiqjdzieryjjod.supabase.co/storage/v1/object/public/templates/prep_to_servants_2026.xls',
+  'prep_to_servants_2026.xls': 'https://nrigdgdiqjdzieryjjod.supabase.co/storage/v1/object/public/templates/prep_to_servants_2026.xls',
+  'special': 'https://nrigdgdiqjdzieryjjod.supabase.co/storage/v1/object/public/templates/special_categories_2026.xls',
+  'special_categories_2026.xls': 'https://nrigdgdiqjdzieryjjod.supabase.co/storage/v1/object/public/templates/special_categories_2026.xls'
+};
+
+/**
  * Supabase Edge Function: generate-excel
- * Populates ONLY promoted student basic info (Name, Phone, and Birth Date).
- * Completely bypasses Column C to preserve original Data Validation dropdown lists embedded in .xls template.
- * Eliminates competition data.
+ * Fetches legacy .xls (BIFF8 format) templates directly from public storage,
+ * and populates student data. It leaves Column C completely empty (skipped)
+ * to preserve original Data Validation dropdown lists pre-built in the Excel sheet.
  */
 serve(async (req: Request) => {
-  // Handle CORS preflight request
+  // Handle CORS preflight options
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS_HEADERS });
   }
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { templateName, students } = body;
+    const { templateType, templateName, students } = body;
 
-    if (!templateName) {
+    const inputName = templateType || templateName;
+    if (!inputName) {
       return new Response(
-        JSON.stringify({ error: 'Missing required parameter: templateName' }),
+        JSON.stringify({ error: 'Missing required parameter: templateType or templateName' }),
         { status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
       );
     }
 
     const studentsArray = Array.isArray(students) ? students : [];
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_ANON_KEY') || '';
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Resolve template URL using explicit map or falling back
+    let targetUrl = '';
+    const key = String(inputName).trim().toLowerCase();
 
-    let fileBuffer: ArrayBuffer | null = null;
-
-    // 1. Fetch template from Supabase Storage 'templates' bucket
-    const { data: storageData, error: storageError } = await supabase
-      .storage
-      .from('templates')
-      .download(templateName);
-
-    if (!storageError && storageData) {
-      fileBuffer = await storageData.arrayBuffer();
+    if (TEMPLATE_URLS[key]) {
+      targetUrl = TEMPLATE_URLS[key];
+    } else if (key.includes('primary')) {
+      targetUrl = TEMPLATE_URLS['primary'];
+    } else if (key.includes('prep') || key.includes('servant')) {
+      targetUrl = TEMPLATE_URLS['prep_servants'];
+    } else if (key.includes('special')) {
+      targetUrl = TEMPLATE_URLS['special'];
     } else {
-      console.log(`Storage download failed for '${templateName}' (${storageError?.message}). Trying public fallback...`);
-      const publicUrl = `${supabaseUrl}/storage/v1/object/public/templates/${encodeURIComponent(templateName)}`;
-      const res = await fetch(publicUrl);
-      if (res.ok) {
-        fileBuffer = await res.arrayBuffer();
-      }
+      targetUrl = `https://nrigdgdiqjdzieryjjod.supabase.co/storage/v1/object/public/templates/${inputName}`;
     }
 
+    console.log(`[generate-excel] Fetching template from: ${targetUrl}`);
+    const fetchResp = await fetch(targetUrl);
+    if (!fetchResp.ok) {
+      throw new Error(`Failed to download template from ${targetUrl} (HTTP ${fetchResp.status})`);
+    }
+
+    const fileBuffer = await fetchResp.arrayBuffer();
     if (!fileBuffer || fileBuffer.byteLength === 0) {
-      return new Response(
-        JSON.stringify({ error: `Could not locate template file: ${templateName}` }),
-        { status: 404, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-      );
+      throw new Error('Downloaded template buffer is empty');
     }
 
-    // 2. Parse workbook using SheetJS (XLSX)
+    // Parse ArrayBuffer with explicit cells configurations for cellStyles, cellFormulas and bookVBA
     const workbook = XLSX.read(new Uint8Array(fileBuffer), {
       type: "array",
       cellStyles: true,
@@ -80,26 +89,23 @@ serve(async (req: Request) => {
     });
 
     if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-      return new Response(
-        JSON.stringify({ error: `Template ${templateName} has no valid worksheets` }),
-        { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-      );
+      throw new Error('The template workbook contains no worksheets');
     }
 
-    const firstSheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[firstSheetName];
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
 
-    // Determine start row: Check row 2 (0-indexed r = 1) cell content
-    let startRowIndex = 1; // 0-indexed row 2 (A2)
+    // Autodetect start row: index = 2 (Row 3) if Row 2 (index 1) contains header labels like "اسم" or "موبايل"
+    let startRowIndex = 1; // Default to row 2 (index 1)
     const cellA2 = worksheet[XLSX.utils.encode_cell({ r: 1, c: 0 })];
     const cellB2 = worksheet[XLSX.utils.encode_cell({ r: 1, c: 1 })];
     const row2Text = `${cellA2?.v || ''} ${cellB2?.v || ''}`;
 
     if (row2Text.includes('اسم') || row2Text.includes('موبايل') || row2Text.includes('النوع')) {
-      startRowIndex = 2; // 0-indexed row 3 (A3)
+      startRowIndex = 2; // Row 3 (index 2)
     }
 
-    // Safely update cell values directly to preserve validation metadata
+    // Helper to safely write cell values directly without replacing original cell structures
     const setCellVal = (r: number, c: number, value: any, isNumber = false) => {
       const cellRef = XLSX.utils.encode_cell({ r, c });
       if (!worksheet[cellRef]) {
@@ -114,50 +120,54 @@ serve(async (req: Request) => {
 
     studentsArray.forEach((student: any, idx: number) => {
       const rIdx = startRowIndex + idx;
-      if (rIdx > maxRowIndex) maxRowIndex = rIdx;
+      if (rIdx > maxRowIndex) {
+        maxRowIndex = rIdx;
+      }
 
-      // Column A (Index 0): Student Name (student.name / student.studentName / student.fullName)
-      const nameVal = formatStudentName(
-        student.name || student.studentName || student.fullName || ''
-      );
-      if (nameVal) setCellVal(rIdx, 0, nameVal);
+      // Column A (Index 0): Student Name
+      const nameVal = formatStudentName(student.name || student.fullName || student.studentName || '');
+      if (nameVal) {
+        setCellVal(rIdx, 0, nameVal);
+      }
 
-      // Column B (Index 1): Phone Number (student.phoneNumber / student.phone / student.mobile)
-      const phoneVal = student.phoneNumber || student.phone || student.mobile || '';
-      if (phoneVal) setCellVal(rIdx, 1, String(phoneVal));
+      // Column B (Index 1): Mobile / Phone
+      const phoneVal = student.phone || student.phoneNumber || student.mobile || '';
+      if (phoneVal) {
+        setCellVal(rIdx, 1, String(phoneVal));
+      }
 
-      // Column C (Index 2): DO NOT WRITE ANYTHING (SKIP COMPLETELY)
-      // Leaving this column untouched is required to preserve the original Data Validation dropdown lists embedded in the .xls template.
+      // Column C (Index 2): DO NOT WRITE ANYTHING (SKIP THIS COLUMN ENTIRELY).
+      // This is mandatory to preserve the pre-existing dropdown Data Validation list in cell Column C.
 
-      // Column D (Index 3): Birth Day (student.birthDay / student.day) formatted as a Number
+      // Column D (Index 3): Birth Day (Number format)
       const dayVal = student.birthDay ?? student.day;
       if (dayVal !== undefined && dayVal !== null && dayVal !== '') {
         setCellVal(rIdx, 3, Number(dayVal), true);
       }
 
-      // Column E (Index 4): Birth Month (student.birthMonth / student.month) formatted as a Number
+      // Column E (Index 4): Birth Month (Number format)
       const monthVal = student.birthMonth ?? student.month;
       if (monthVal !== undefined && monthVal !== null && monthVal !== '') {
         setCellVal(rIdx, 4, Number(monthVal), true);
       }
 
-      // Column F (Index 5): Birth Year (student.birthYear / student.year) formatted as a Number
+      // Column F (Index 5): Birth Year (Number format)
       const yearVal = student.birthYear ?? student.year;
       if (yearVal !== undefined && yearVal !== null && yearVal !== '') {
         setCellVal(rIdx, 5, Number(yearVal), true);
       }
 
-      // Competitions (Column G+ / Index 6+): REMOVE COMPLETELY
+      // Columns G+ (Index 6+): DO NOT WRITE ANY COMPETITIONS (Remove competition processing completely).
     });
 
-    // Update worksheet reference range !ref
+    // Update worksheet reference range !ref dynamically
     const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:F100');
     if (maxRowIndex > range.e.r) {
       range.e.r = maxRowIndex;
       worksheet['!ref'] = XLSX.utils.encode_range(range);
     }
 
-    // 3. Export modified workbook using BIFF8 .xls binary buffer
+    // Export BIFF8 binary buffer
     const outBuffer = XLSX.write(workbook, {
       bookType: "biff8",
       type: "buffer",
@@ -169,13 +179,14 @@ serve(async (req: Request) => {
       headers: {
         ...CORS_HEADERS,
         'Content-Type': 'application/vnd.ms-excel',
-        'Content-Disposition': `attachment; filename="${templateName}"`,
+        'Content-Disposition': `attachment; filename="${inputName}"`,
       },
     });
+
   } catch (err: any) {
     console.error('Edge Function Error in generate-excel:', err);
     return new Response(
-      JSON.stringify({ error: err.message || 'Internal server error in generate-excel function' }),
+      JSON.stringify({ error: err.message || 'Internal server error in generate-excel' }),
       { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
     );
   }
