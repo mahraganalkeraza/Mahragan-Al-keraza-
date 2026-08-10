@@ -2,9 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import { supabase } from '../utils/supabaseClient';
-import primaryXlsUrl from '../../public/templates/تسجيل مشتركين ابتدائي 2026.xls?url';
-import prepXlsUrl from '../../public/templates/تسجيل مشتركين من اعدادي لخدام 2026.xls?url';
-import specialXlsUrl from '../../public/templates/تسجيل مشتركين فئات خاصة 2026.xls?url';
 import { 
   FileSpreadsheet, 
   Settings, 
@@ -21,6 +18,84 @@ import {
   Sparkles,
   Info
 } from 'lucide-react';
+
+/**
+ * Normalizes raw competitions input into a clean string array.
+ * Prevents character-by-character string iteration bugs when writing to Excel cells.
+ */
+export const parseCompetitions = (rawComps: any): string[] => {
+  if (!rawComps) return [];
+  if (Array.isArray(rawComps)) {
+    return rawComps.map(item => String(item).trim()).filter(Boolean);
+  }
+  if (typeof rawComps === 'string') {
+    const trimmed = rawComps.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.map(item => String(item).trim()).filter(Boolean);
+        }
+      } catch (_) {
+        // Fall back to split if JSON parsing fails
+      }
+    }
+    return trimmed.split(/[,;\n]+/).map(item => item.trim()).filter(Boolean);
+  }
+  return [String(rawComps).trim()].filter(Boolean);
+};
+
+/**
+ * Safely quotes and escapes string values for PostgREST .or() filter queries in Supabase.
+ * Handles special characters like parentheses '()' or commas ',' in church names without syntax errors.
+ */
+export const escapePostgrestValue = (val: string): string => {
+  if (!val) return '""';
+  const escaped = val.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `"${escaped}"`;
+};
+
+/**
+ * Resolves standardized public paths for Excel template files.
+ * Uses import.meta.env.BASE_URL to support both local dev and production builds.
+ */
+export const getTemplatePath = (templateOrCategory: string): string => {
+  const base = import.meta.env.BASE_URL || '/';
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
+  
+  let fileName = '';
+  if (templateOrCategory === 'primary' || templateOrCategory.includes('ابتدائي')) {
+    fileName = 'تسجيل مشتركين ابتدائي 2026.xls';
+  } else if (
+    templateOrCategory === 'prep_servants' || 
+    templateOrCategory.includes('اعدادي') || 
+    templateOrCategory.includes('إعدادي') || 
+    templateOrCategory.includes('خدام')
+  ) {
+    fileName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
+  } else if (
+    templateOrCategory === 'special_needs' || 
+    templateOrCategory === 'special' || 
+    templateOrCategory.includes('فئات خاصة')
+  ) {
+    fileName = 'تسجيل مشتركين فئات خاصة 2026.xls';
+  } else {
+    fileName = templateOrCategory.replace(/^\/?(public\/)?(templates\/)?/, '').trim();
+  }
+
+  return `${cleanBase}templates/${encodeURIComponent(fileName)}`;
+};
+
+export async function getTemplateBufferDirect(category: string): Promise<ArrayBuffer> {
+  const templateUrl = getTemplatePath(category);
+  console.log("Fetching template directly from:", templateUrl);
+  const response = await fetch(templateUrl);
+  if (!response.ok) {
+    throw new Error(`Critical: Template file missing or failed to load from ${templateUrl}`);
+  }
+  return await response.arrayBuffer();
+}
 
 // Helper to sanitize student name to be between 3 and 5 words max
 const sanitizeStudentName = (rawName: string): string => {
@@ -228,7 +303,8 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
       // 1. Query honors settings for threshold percentages & weights
       let subQuery = supabase.from('exam_submissions').select('*');
       if (!isAdmin && userChurch) {
-        subQuery = subQuery.or(`churchName.eq.${userChurch},church.eq.${userChurch},church_name.eq.${userChurch}`);
+        const quotedChurch = escapePostgrestValue(userChurch);
+        subQuery = subQuery.or(`churchName.eq.${quotedChurch},church.eq.${quotedChurch},church_name.eq.${quotedChurch}`);
       }
 
       let regQuery = supabase.from('registrations').select('*');
@@ -284,12 +360,8 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
           const q2 = Number(sb.qebty_lvl2_score || 0);
           const totalScore = d + m + q1 + q2;
 
-          let competitionsArr: string[] = [];
           const rawComps = regInfo.competitions || sb.competitions;
-          if (Array.isArray(rawComps)) competitionsArr = rawComps;
-          else if (typeof rawComps === 'string') {
-            try { competitionsArr = JSON.parse(rawComps); } catch (_) { competitionsArr = [rawComps]; }
-          }
+          const competitionsArr = parseCompetitions(rawComps);
 
           const candidateStudent = {
             id: studentKey,
@@ -324,11 +396,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         regList.forEach((r: any) => {
           const key = String(r.student_id || r.id || r.name || '').trim();
           if (!mergedMap.has(key)) {
-            let competitionsArr: string[] = [];
-            if (Array.isArray(r.competitions)) competitionsArr = r.competitions;
-            else if (typeof r.competitions === 'string') {
-              try { competitionsArr = JSON.parse(r.competitions); } catch (_) { competitionsArr = [r.competitions]; }
-            }
+            const competitionsArr = parseCompetitions(r.competitions);
 
             const candidateStudent = {
               id: key,
@@ -360,7 +428,8 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
             ...p,
             studentName: p.name || p.studentName || 'مشترك',
             phoneNumber: p.phoneNumber || p.phone || p.mobile || '',
-            churchName: p.churchName || p.charchName || p.church || ''
+            churchName: p.churchName || p.charchName || p.church || '',
+            competitions: parseCompetitions(p.competitions)
           };
           if (isQualifiedForNextStage(candidateStudent)) {
             const key = String(p.id || p.student_id || p.name || Math.random()).trim();
@@ -492,128 +561,27 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     return { day, month, year };
   };
 
-  // Helper: sanitize candidate URL to strip invalid /public/ prefix from asset imports
-  const sanitizeUrl = (urlStr: string) => {
-    if (!urlStr) return '';
-    return urlStr
-      .replace(/\/public\/templates\//g, '/templates/')
-      .replace(/public\/templates\//g, 'templates/')
-      .replace(/\/public\//g, '/')
-      .replace(/^public\//g, '');
-  };
-
-  // Helper: get base URL for public templates
-  const getTemplateUrl = (templateFileName: string) => {
-    const baseUrl = import.meta.env.BASE_URL.endsWith('/') 
-      ? import.meta.env.BASE_URL 
-      : `${import.meta.env.BASE_URL}/`;
-      
-    const cleanFileName = templateFileName
-      .replace(/^\/?(public\/)?(templates\/)?/, '')
-      .trim();
-
-    // MUST NOT include 'public/' in the URL path!
-    return `${baseUrl}templates/${encodeURIComponent(cleanFileName)}`;
-  };
-
   // Core Function: Fill a specific Excel workbook directly in template binary (.xls BIFF8 format)
   const fillTemplateBuffer = async (
     templateName: string,
     studentsList: any[]
   ): Promise<ArrayBuffer> => {
-    // Map template name to canonical disk filename if needed
-    let canonicalFileName = templateName;
-    if (templateName.includes('اعدادي') || templateName.includes('إعدادي') || templateName.includes('خدام') || templateName.includes('prep')) {
-      canonicalFileName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
-    } else if (templateName.includes('ابتدائي') || templateName.includes('primary')) {
-      canonicalFileName = 'تسجيل مشتركين ابتدائي 2026.xls';
-    } else if (templateName.includes('فئات خاصة') || templateName.includes('special')) {
-      canonicalFileName = 'تسجيل مشتركين فئات خاصة 2026.xls';
+    const templateUrl = getTemplatePath(templateName);
+    console.log("Fetching exact template from:", templateUrl);
+
+    const resp = await fetch(templateUrl);
+    if (!resp.ok) {
+      throw new Error(`HTTP Error ${resp.status} loading template from ${templateUrl}`);
     }
 
-    const cleanFileName = canonicalFileName
-      .replace(/^\/?(public\/)?(templates\/)?/, '')
-      .trim();
-
-    const cleanPrimaryUrl = sanitizeUrl(primaryXlsUrl);
-    const cleanPrepUrl = sanitizeUrl(prepXlsUrl);
-    const cleanSpecialUrl = sanitizeUrl(specialXlsUrl);
-
-    // Determine target URL for imported template asset
-    let targetUrl = '';
-    if (cleanFileName.includes('ابتدائي')) {
-      targetUrl = cleanPrimaryUrl;
-    } else if (cleanFileName.includes('فئات خاصة')) {
-      targetUrl = cleanSpecialUrl;
-    } else {
-      targetUrl = cleanPrepUrl;
+    const contentType = resp.headers.get('content-type') || '';
+    if (contentType.toLowerCase().includes('text/html')) {
+      throw new Error(`File not found on server (404 HTML response for ${templateUrl}).`);
     }
 
-    const encFileName = encodeURIComponent(cleanFileName);
-
-    const rawCandidates = [
-      getTemplateUrl(cleanFileName),
-      getTemplateUrl(encFileName),
-      `/templates/${encFileName}`,
-      `/templates/${cleanFileName}`,
-      `./templates/${encFileName}`,
-      `./templates/${cleanFileName}`,
-      targetUrl,
-      cleanPrimaryUrl,
-      cleanPrepUrl,
-      cleanSpecialUrl
-    ];
-
-    const fetchCandidates = Array.from(new Set(
-      rawCandidates
-        .filter(Boolean)
-        .map(u => sanitizeUrl(u))
-        .filter(u => !u.includes('/public/') && !u.includes('public/templates'))
-    ));
-
-    let templateBuffer: ArrayBuffer | null = null;
-    let loadedUrl = '';
-    let lastErrDetails = '';
-
-    for (const url of fetchCandidates) {
-      try {
-        console.log("Fetching template from URL:", url);
-        const resp = await fetch(url);
-        if (!resp.ok) {
-          lastErrDetails = `HTTP ${resp.status} for ${url}`;
-          continue;
-        }
-
-        const contentType = resp.headers.get('content-type') || '';
-        if (contentType.toLowerCase().includes('text/html')) {
-          lastErrDetails = `URL ${url} returned HTML content-type`;
-          continue;
-        }
-
-        const buf = await resp.arrayBuffer();
-        if (!buf || buf.byteLength === 0) {
-          lastErrDetails = `URL ${url} returned empty buffer`;
-          continue;
-        }
-
-        // Check first byte to ensure it's not HTML string starting with '<' (0x3C)
-        const view = new Uint8Array(buf, 0, 1);
-        if (view[0] === 0x3C) {
-          lastErrDetails = `URL ${url} returned HTML content starting with '<'`;
-          continue;
-        }
-
-        templateBuffer = buf;
-        loadedUrl = url;
-        console.log(`Loaded official template binary from: ${url} (${buf.byteLength} bytes)`);
-        break;
-      } catch (e: any) {
-        lastErrDetails = e?.message || String(e);
-      }
-    }
-
-    if (!templateBuffer) {
-      throw new Error(`Failed to fetch official binary template for ${templateName}. (${lastErrDetails})`);
+    const templateBuffer = await resp.arrayBuffer();
+    if (!templateBuffer || templateBuffer.byteLength === 0) {
+      throw new Error(`Downloaded template buffer is empty for ${templateName}`);
     }
 
     let workbook: XLSX.WorkBook;
@@ -623,10 +591,11 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         cellStyles: true, 
         cellFormula: true, 
         cellDates: true, 
-        cellNF: true 
+        cellNF: true,
+        sheetStubs: true
       });
     } catch (err) {
-      console.error(`Failed to read template binary from ${loadedUrl}:`, err);
+      console.error(`Failed to read template binary from ${templateUrl}:`, err);
       throw new Error(`Could not parse template binary for ${templateName}`);
     }
 
@@ -679,7 +648,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
       ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })] = { t: 'n', v: Number(year) };
 
       // Columns G to N (7 to 14): Registered Competitions
-      const competitions = student.competitions || [];
+      const competitions = parseCompetitions(student.competitions);
       for (let i = 0; i < 8; i++) {
         ws[XLSX.utils.encode_cell({ r: rIdx, c: 6 + i })] = { t: 's', v: competitions[i] || '' };
       }
@@ -695,7 +664,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     }
 
     // Export strictly as BIFF8 .xls binary buffer
-    const outBuffer = XLSX.write(workbook, { bookType: 'biff8', type: 'array' });
+    const outBuffer = XLSX.write(workbook, { bookType: 'biff8', type: 'array', cellStyles: true });
     return outBuffer;
   };
 
@@ -742,9 +711,9 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         text: `تم تصدير ملف "${templateName}" بنجاح وتعبئة ${students.length} مشترك!`, 
         type: 'success' 
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setStatusMessage({ text: 'حدث خطأ أثناء محاولة تصدير الملف.', type: 'error' });
+      setStatusMessage({ text: `حدث خطأ أثناء محاولة تصدير الملف: ${e?.message || e}`, type: 'error' });
     } finally {
       setIsExporting(false);
       setExportProgress('');
@@ -798,9 +767,9 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         text: `تم تصدير ملف الأرشيف المضغوط لكنيسة "${churchNameStr}" بنجاح يحتوي على ${addedFilesCount} ملفات!`, 
         type: 'success' 
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setStatusMessage({ text: 'حدث خطأ أثناء تصدير الأرشيف المضغوط.', type: 'error' });
+      setStatusMessage({ text: `حدث خطأ أثناء تصدير الأرشيف المضغوط: ${e?.message || e}`, type: 'error' });
     } finally {
       setIsExporting(false);
       setExportProgress('');
@@ -875,9 +844,9 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         text: `نجاح! تم تصدير بيانات ${churchNames.length} كنائس وتوليد ${totalFilesCreated} ملفات Excel مهيأة ومقسمة داخل الأرشيف بنجاح!`, 
         type: 'success' 
       });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setStatusMessage({ text: 'حدث خطأ غير متوقع أثناء توليد الأرشيف المضغوط المجمع للكنائس.', type: 'error' });
+      setStatusMessage({ text: `حدث خطأ غير متوقع أثناء توليد الأرشيف المضغوط المجمع للكنائس: ${e?.message || e}`, type: 'error' });
     } finally {
       setIsExporting(false);
       setExportProgress('');
@@ -1213,7 +1182,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
               <div className="overflow-x-auto border border-slate-100 rounded-xl">
                 <table className="w-full text-right border-collapse">
                   <thead>
-                    <tr className="bg-slate-55 bg-slate-50 border-b border-slate-100 text-[11px] font-black text-slate-500">
+                    <tr className="bg-slate-50 border-b border-slate-100 text-[11px] font-black text-slate-500">
                       <th className="p-3 text-right">المرحلة</th>
                       <th className="p-3 text-center">أقل سنة ميلاد (أقدم)</th>
                       <th className="p-3 text-center">أعلى سنة ميلاد (أحدث)</th>
