@@ -1,6 +1,5 @@
 import { saveAs } from 'file-saver';
 import { supabase } from '../utils/supabaseClient';
-import { fillExcelTemplateBuffer } from '../components/TemplateExcelExporter';
 
 export type TemplateType = 'primary' | 'special' | 'prep_servants';
 
@@ -28,24 +27,49 @@ export const TEMPLATE_MAPPING: Record<TemplateType, TemplateMappingInfo> = {
   },
 };
 
-export async function exportExcelTemplate(
-  templateType: TemplateType,
+/**
+ * Invokes the Supabase Edge Function 'generate-excel' to fetch the populated ArrayBuffer.
+ */
+export async function fetchExcelBufferFromEdgeFunction(
+  storageName: string,
   students: any[]
-): Promise<void> {
-  return exportStudentsExcel(templateType, students);
+): Promise<ArrayBuffer> {
+  const { data, error } = await supabase.functions.invoke('generate-excel', {
+    body: {
+      templateName: storageName,
+      students: students || [],
+    },
+  });
+
+  if (error) {
+    console.error(`[generate-excel] Error invoking function for ${storageName}:`, error);
+    throw new Error(error.message || `حدث خطأ أثناء الاتصال بالخدمة السحابية لتوليد ملف الاكسل`);
+  }
+
+  if (!data) {
+    throw new Error('لم يتم استلام أي بيانات من Edge Function');
+  }
+
+  if (data instanceof ArrayBuffer) {
+    return data;
+  }
+  if (data instanceof Blob) {
+    return await data.arrayBuffer();
+  }
+  if (data && typeof data === 'object' && 'buffer' in data && (data as any).buffer instanceof ArrayBuffer) {
+    return (data as any).buffer;
+  }
+
+  throw new Error('تنسيق الاستجابة غير متوافق من Edge Function');
 }
 
 /**
- * Single, unified export function in React that invokes the Supabase Edge Function 'generate-excel'
- * to populate and download template-based Excel files for all educational stages, preserving data validations
- * (dropdown lists) and original formatting without altering data content.
- *
- * @param templateType - 'primary' | 'special' | 'prep_servants'
- * @param students - Unaltered array of student objects
+ * Main export handler that invokes the Supabase Edge Function 'generate-excel'
+ * to populate and download template-based Excel files directly, bypassing local template files.
  */
-export async function exportStudentsExcel(
+export async function handleExportExcel(
   templateType: TemplateType,
-  students: any[]
+  studentsData: any[]
 ): Promise<void> {
   const config = TEMPLATE_MAPPING[templateType];
   if (!config) {
@@ -54,57 +78,20 @@ export async function exportStudentsExcel(
 
   const { storageName, downloadName } = config;
 
-  console.log(`[exportStudentsExcel] Requesting Edge Function 'generate-excel' for: ${storageName}`, {
-    studentCount: students?.length || 0,
+  console.log(`[handleExportExcel] Requesting Edge Function 'generate-excel' for: ${storageName}`, {
+    studentCount: studentsData?.length || 0,
   });
 
-  try {
-    // Invoke Supabase Edge Function named generate-excel
-    const { data, error } = await supabase.functions.invoke('generate-excel', {
-      body: {
-        templateName: storageName,
-        students: students || [],
-      },
-    });
-
-    if (error) {
-      console.warn(`[exportStudentsExcel] Edge Function error for ${storageName}:`, error);
-      throw error;
-    }
-
-    if (!data) {
-      throw new Error('لم يتم استلام أي بيانات من Edge Function');
-    }
-
-    let blob: Blob;
-    if (data instanceof Blob) {
-      blob = data;
-    } else if (data instanceof ArrayBuffer) {
-      blob = new Blob([data], { type: 'application/vnd.ms-excel' });
-    } else if (data && typeof data === 'object' && 'buffer' in data && (data as any).buffer instanceof ArrayBuffer) {
-      blob = new Blob([(data as any).buffer], { type: 'application/vnd.ms-excel' });
-    } else {
-      throw new Error('تنسيق الاستجابة غير متوافق');
-    }
-
-    // Convert binary output into a Blob and trigger automated file download
-    saveAs(blob, downloadName);
-
-    console.log(`[exportStudentsExcel] Successfully generated and downloaded: ${downloadName}`);
-    return;
-  } catch (edgeErr: any) {
-    console.warn(`[exportStudentsExcel] Edge Function unavailable or failed. Executing local template engine for ${downloadName}:`, edgeErr);
-
-    try {
-      // Local fallback buffer filling
-      const buffer = await fillExcelTemplateBuffer(downloadName, students);
-      const blob = new Blob([buffer], { type: 'application/vnd.ms-excel' });
-      saveAs(blob, downloadName);
-      console.log(`[exportStudentsExcel] Download completed via client fallback: ${downloadName}`);
-    } catch (fallbackErr: any) {
-      console.error(`[exportStudentsExcel] Client fallback also failed:`, fallbackErr);
-      const errorMessage = fallbackErr?.message || fallbackErr || 'خطأ غير معروف أثناء إنشاء الملف';
-      throw new Error(`فشل تصدير ملف Excel (${downloadName}): ${errorMessage}`);
-    }
+  const arrayBuffer = await fetchExcelBufferFromEdgeFunction(storageName, studentsData);
+  if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+    throw new Error(`الملف المستلم لـ ${downloadName} فارغ`);
   }
+
+  const blob = new Blob([arrayBuffer], { type: 'application/vnd.ms-excel' });
+  saveAs(blob, downloadName);
+  console.log(`[handleExportExcel] Successfully generated and downloaded: ${downloadName}`);
 }
+
+export const exportExcelTemplate = handleExportExcel;
+export const exportStudentsExcel = handleExportExcel;
+

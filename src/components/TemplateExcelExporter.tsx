@@ -60,33 +60,6 @@ export const escapePostgrestValue = (val: string): string => {
  * Resolves standardized public paths for Excel template files.
  * Uses import.meta.env.BASE_URL to support both local dev and production builds.
  */
-export const getTemplatePath = (templateOrCategory: string): string => {
-  const base = import.meta.env.BASE_URL || '/';
-  const cleanBase = base.endsWith('/') ? base : `${base}/`;
-  
-  let fileName = '';
-  if (templateOrCategory === 'primary' || templateOrCategory.includes('ابتدائي')) {
-    fileName = 'تسجيل مشتركين ابتدائي 2026.xls';
-  } else if (
-    templateOrCategory === 'prep_servants' || 
-    templateOrCategory.includes('اعدادي') || 
-    templateOrCategory.includes('إعدادي') || 
-    templateOrCategory.includes('خدام')
-  ) {
-    fileName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
-  } else if (
-    templateOrCategory === 'special_needs' || 
-    templateOrCategory === 'special' || 
-    templateOrCategory.includes('فئات خاصة')
-  ) {
-    fileName = 'تسجيل مشتركين فئات خاصة 2026.xls';
-  } else {
-    fileName = templateOrCategory.replace(/^\/?(public\/)?(templates\/)?/, '').trim();
-  }
-
-  return `${cleanBase}templates/${encodeURIComponent(fileName)}`;
-};
-
 export type TemplateType = 'primary' | 'special' | 'prep_servants';
 
 export interface TemplateMappingInfo {
@@ -186,131 +159,12 @@ export const getRandomBirthdate = (stageName: string, yearRanges: Record<string,
 };
 
 /**
- * Top-level Core Function: Fill a specific Excel workbook directly in template binary (.xls BIFF8 format)
+ * Fetches Excel ArrayBuffer by invoking Supabase Edge Function 'generate-excel'
  */
-export async function fillExcelTemplateBuffer(
-  templateName: string,
-  studentsList: any[],
-  fallbackPhone: string = '01234567890'
-): Promise<ArrayBuffer> {
-  const templateUrl = getTemplatePath(templateName);
-  console.log("Fetching exact template from:", templateUrl);
-
-  const resp = await fetch(templateUrl);
-  if (!resp.ok) {
-    throw new Error(`HTTP Error ${resp.status} loading template from ${templateUrl}`);
-  }
-
-  const contentType = resp.headers.get('content-type') || '';
-  if (contentType.toLowerCase().includes('text/html')) {
-    throw new Error(`File not found on server (404 HTML response for ${templateUrl}).`);
-  }
-
-  const templateBuffer = await resp.arrayBuffer();
-  if (!templateBuffer || templateBuffer.byteLength === 0) {
-    throw new Error(`Downloaded template buffer is empty for ${templateName}`);
-  }
-
-  let workbook: XLSX.WorkBook;
-  try {
-    workbook = XLSX.read(templateBuffer, { 
-      type: 'array', 
-      cellStyles: true, 
-      cellFormula: true, 
-      cellDates: true, 
-      cellNF: true,
-      sheetStubs: true
-    });
-  } catch (err) {
-    console.error(`Failed to read template binary from ${templateUrl}:`, err);
-    throw new Error(`Could not parse template binary for ${templateName}`);
-  }
-
-  if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-    throw new Error(`Official template ${templateName} has no valid worksheets.`);
-  }
-
-  const sheetName = workbook.SheetNames[0];
-  const ws = workbook.Sheets[sheetName];
-
-  // Filter list to keep ONLY qualified students (المصعدين) from local results
-  const qualifiedStudents = studentsList.filter((student) => {
-    return isQualifiedForNextStage(student);
-  });
-
-  // Row writing starts strictly at ROW 3 (0-indexed rIdx = 2 -> A3, B3, C3...)
-  let currentRow = 3;
-
-  qualifiedStudents.forEach(student => {
-    const rIdx = currentRow - 1; // 0-indexed row for SheetJS
-
-    // Column A (Row 3 onwards - A3): Student Name (اسم المتسابق) - 3 to 5 words max
-    const rawName = student.name || student.studentName || student.fullName || '';
-    const cleanName = sanitizeStudentName(rawName);
-    ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })] = { t: 's', v: cleanName };
-
-    // Column B (Row 3 onwards - B3): Mobile Number (رقم الموبايل)
-    const phoneNum = student.phoneNumber || student.phone || student.mobile || fallbackPhone;
-    ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })] = { t: 's', v: String(phoneNum) };
-
-    // Column C (Row 3 onwards - C3): Gender Dropdown (ذكر / أنثى)
-    const isFemale = student.gender === 'أنثى' || student.gender === 'female' || student.gender === 'انثى';
-    const genderStr = isFemale ? 'أنثى' : 'ذكر';
-    ws[XLSX.utils.encode_cell({ r: rIdx, c: 2 })] = { t: 's', v: genderStr };
-
-    // Column D (Day), E (Month), F (Year) starting strictly at Row 3
-    let day = student.birthDay || student.day;
-    let month = student.birthMonth || student.month;
-    let year = student.birthYear || student.year;
-
-    if (!day || !month || !year) {
-      const generated = getRandomBirthdate(student.stage);
-      day = day || generated.day;
-      month = month || generated.month;
-      year = year || generated.year;
-    }
-
-    ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })] = { t: 'n', v: Number(day) };
-    ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })] = { t: 'n', v: Number(month) };
-    ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })] = { t: 'n', v: Number(year) };
-
-    // Columns G to N (7 to 14): Registered Competitions
-    const competitions = parseCompetitions(student.competitions);
-    for (let i = 0; i < 8; i++) {
-      ws[XLSX.utils.encode_cell({ r: rIdx, c: 6 + i })] = { t: 's', v: competitions[i] || '' };
-    }
-
-    currentRow++;
-  });
-
-  // Update worksheet dimensions range
-  const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:N100');
-  if (currentRow - 1 > range.e.r) {
-    range.e.r = currentRow - 1;
-    ws['!ref'] = XLSX.utils.encode_range(range);
-  }
-
-  // Export strictly as BIFF8 .xls binary buffer
-  const outBuffer = XLSX.write(workbook, { bookType: 'biff8', type: 'array', cellStyles: true });
-  return outBuffer;
-}
-
-export async function exportExcelTemplate(
+export async function fetchExcelBufferFromEdgeFunction(
   templateType: TemplateType,
   students: any[]
-): Promise<void> {
-  return exportStudentsExcel(templateType, students);
-}
-
-/**
- * Single, unified export function in React that invokes the Supabase Edge Function 'generate-excel'
- * to populate and download template-based Excel files for all educational stages, preserving data validations
- * (dropdown lists) and original formatting without altering data content.
- */
-export async function exportStudentsExcel(
-  templateType: TemplateType,
-  students: any[]
-): Promise<void> {
+): Promise<{ buffer: ArrayBuffer; storageName: string; downloadName: string }> {
   const config = TEMPLATE_MAPPING[templateType];
   if (!config) {
     throw new Error(`نوع القالب غير معروف: ${templateType}`);
@@ -318,56 +172,55 @@ export async function exportStudentsExcel(
 
   const { storageName, downloadName } = config;
 
-  console.log(`[exportStudentsExcel] Invoking Supabase Edge Function 'generate-excel' for: ${storageName}`, {
-    studentCount: students?.length || 0,
+  console.log(`[generate-excel] Invoking Edge Function for: ${storageName} (${students?.length || 0} students)`);
+
+  const { data, error } = await supabase.functions.invoke('generate-excel', {
+    body: {
+      templateName: storageName,
+      students: students || [],
+    },
   });
 
-  try {
-    const { data, error } = await supabase.functions.invoke('generate-excel', {
-      body: {
-        templateName: storageName,
-        students: students || [],
-      },
-    });
-
-    if (error) {
-      console.warn(`[exportStudentsExcel] Edge function returned error for ${storageName}:`, error);
-      throw error;
-    }
-
-    if (!data) {
-      throw new Error('لم يتم استلام أي بيانات من Edge Function');
-    }
-
-    let blob: Blob;
-    if (data instanceof Blob) {
-      blob = data;
-    } else if (data instanceof ArrayBuffer) {
-      blob = new Blob([data], { type: 'application/vnd.ms-excel' });
-    } else if (data && typeof data === 'object' && 'buffer' in data && (data as any).buffer instanceof ArrayBuffer) {
-      blob = new Blob([(data as any).buffer], { type: 'application/vnd.ms-excel' });
-    } else {
-      throw new Error('تنسيق الاستجابة غير متوافق من Edge Function');
-    }
-
-    saveAs(blob, downloadName);
-    console.log(`[exportStudentsExcel] Automated download triggered for: ${downloadName}`);
-    return;
-  } catch (edgeErr: any) {
-    console.warn(`[exportStudentsExcel] Edge function invocation failed. Executing client fallback for ${downloadName}:`, edgeErr);
-
-    try {
-      const buffer = await fillExcelTemplateBuffer(downloadName, students);
-      const blob = new Blob([buffer], { type: 'application/vnd.ms-excel' });
-      saveAs(blob, downloadName);
-      console.log(`[exportStudentsExcel] Download completed via client fallback: ${downloadName}`);
-    } catch (fallbackErr: any) {
-      console.error(`[exportStudentsExcel] Client fallback also failed:`, fallbackErr);
-      const msg = fallbackErr?.message || fallbackErr || 'خطأ غير معروف';
-      throw new Error(`فشل تصدير ملف Excel (${downloadName}): ${msg}`);
-    }
+  if (error) {
+    console.error(`[generate-excel] Edge function error for ${storageName}:`, error);
+    throw new Error(error.message || `حدث خطأ أثناء الاتصال بالخدمة السحابية لتوليد ملف (${downloadName})`);
   }
+
+  if (!data) {
+    throw new Error(`لم يتم استلام بيانات من Edge Function للملف (${downloadName})`);
+  }
+
+  let buffer: ArrayBuffer;
+  if (data instanceof ArrayBuffer) {
+    buffer = data;
+  } else if (data instanceof Blob) {
+    buffer = await data.arrayBuffer();
+  } else if (data && typeof data === 'object' && 'buffer' in data && (data as any).buffer instanceof ArrayBuffer) {
+    buffer = (data as any).buffer;
+  } else {
+    throw new Error(`تنسيق استجابة غير صالح من Edge Function للملف (${downloadName})`);
+  }
+
+  return { buffer, storageName, downloadName };
 }
+
+/**
+ * Main export handler that invokes Supabase Edge Function 'generate-excel'
+ * and triggers automatic browser download using Arabic display filenames.
+ */
+export async function handleExportExcel(
+  templateType: TemplateType,
+  studentsData: any[]
+): Promise<void> {
+  const { buffer, downloadName } = await fetchExcelBufferFromEdgeFunction(templateType, studentsData);
+  const blob = new Blob([buffer], { type: 'application/vnd.ms-excel' });
+  saveAs(blob, downloadName);
+  console.log(`[handleExportExcel] Automated download triggered for: ${downloadName}`);
+}
+
+export const exportExcelTemplate = handleExportExcel;
+export const exportStudentsExcel = handleExportExcel;
+
 
 interface TemplateExcelExporterProps {
   participants: any[];
@@ -788,117 +641,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     return { day, month, year };
   };
 
-  // Core Function: Fill a specific Excel workbook directly in template binary (.xls BIFF8 format)
-  const fillTemplateBuffer = async (
-    templateName: string,
-    studentsList: any[]
-  ): Promise<ArrayBuffer> => {
-    const templateUrl = getTemplatePath(templateName);
-    console.log("Fetching exact template from:", templateUrl);
-
-    const resp = await fetch(templateUrl);
-    if (!resp.ok) {
-      throw new Error(`HTTP Error ${resp.status} loading template from ${templateUrl}`);
-    }
-
-    const contentType = resp.headers.get('content-type') || '';
-    if (contentType.toLowerCase().includes('text/html')) {
-      throw new Error(`File not found on server (404 HTML response for ${templateUrl}).`);
-    }
-
-    const templateBuffer = await resp.arrayBuffer();
-    if (!templateBuffer || templateBuffer.byteLength === 0) {
-      throw new Error(`Downloaded template buffer is empty for ${templateName}`);
-    }
-
-    let workbook: XLSX.WorkBook;
-    try {
-      workbook = XLSX.read(templateBuffer, { 
-        type: 'array', 
-        cellStyles: true, 
-        cellFormula: true, 
-        cellDates: true, 
-        cellNF: true,
-        sheetStubs: true
-      });
-    } catch (err) {
-      console.error(`Failed to read template binary from ${templateUrl}:`, err);
-      throw new Error(`Could not parse template binary for ${templateName}`);
-    }
-
-    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-      throw new Error(`Official template ${templateName} has no valid worksheets.`);
-    }
-
-    const sheetName = workbook.SheetNames[0];
-    const ws = workbook.Sheets[sheetName];
-
-    // Filter list to keep ONLY qualified students (المصعدين) from local results
-    const qualifiedStudents = studentsList.filter((student) => {
-      return isQualifiedForNextStage(student);
-    });
-
-    // Row writing starts strictly at ROW 3 (0-indexed rIdx = 2 -> A3, B3, C3...)
-    let currentRow = 3;
-
-    qualifiedStudents.forEach(student => {
-      const rIdx = currentRow - 1; // 0-indexed row for SheetJS
-
-      // Column A (Row 3 onwards - A3): Student Name (اسم المتسابق) - 3 to 5 words max
-      const rawName = student.name || student.studentName || student.fullName || '';
-      const cleanName = sanitizeStudentName(rawName);
-      ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })] = { t: 's', v: cleanName };
-
-      // Column B (Row 3 onwards - B3): Mobile Number (رقم الموبايل)
-      const phoneNum = student.phoneNumber || student.phone || student.mobile || fallbackPhone;
-      ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })] = { t: 's', v: String(phoneNum) };
-
-      // Column C (Row 3 onwards - C3): Gender Dropdown (ذكر / أنثى)
-      const isFemale = student.gender === 'أنثى' || student.gender === 'female' || student.gender === 'انثى';
-      const genderStr = isFemale ? 'أنثى' : 'ذكر';
-      ws[XLSX.utils.encode_cell({ r: rIdx, c: 2 })] = { t: 's', v: genderStr };
-
-      // Column D (Day), E (Month), F (Year) starting strictly at Row 3
-      let day = student.birthDay || student.day;
-      let month = student.birthMonth || student.month;
-      let year = student.birthYear || student.year;
-
-      if (!day || !month || !year) {
-        const generated = getRandomBirthdate(student.stage);
-        day = day || generated.day;
-        month = month || generated.month;
-        year = year || generated.year;
-      }
-
-      ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })] = { t: 'n', v: Number(day) };
-      ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })] = { t: 'n', v: Number(month) };
-      ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })] = { t: 'n', v: Number(year) };
-
-      // Columns G to N (7 to 14): Registered Competitions
-      const competitions = parseCompetitions(student.competitions);
-      for (let i = 0; i < 8; i++) {
-        ws[XLSX.utils.encode_cell({ r: rIdx, c: 6 + i })] = { t: 's', v: competitions[i] || '' };
-      }
-
-      currentRow++;
-    });
-
-    // Update worksheet dimensions range
-    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:N100');
-    if (currentRow - 1 > range.e.r) {
-      range.e.r = currentRow - 1;
-      ws['!ref'] = XLSX.utils.encode_range(range);
-    }
-
-    // Export strictly as BIFF8 .xls binary buffer
-    const outBuffer = XLSX.write(workbook, { bookType: 'biff8', type: 'array', cellStyles: true });
-    return outBuffer;
-  };
-
-  // Alias for external export functions
-  const fillExcelTemplateBuffer = fillTemplateBuffer;
-
-  // Trigger download of a single filled Excel file using unified exportStudentsExcel
+  // Trigger download of a single filled Excel file using unified handleExportExcel
   const handleSingleExport = async (category: 'primary' | 'prep_servants' | 'special') => {
     setIsExporting(true);
     setStatusMessage({ text: '', type: null });
@@ -927,7 +670,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
 
     try {
       setExportProgress(`جاري تجهيز وتعبئة ملف: ${templateName}...`);
-      await exportStudentsExcel(category, students);
+      await handleExportExcel(category, students);
       
       setStatusMessage({ 
         text: `تم تصدير ملف "${templateName}" بنجاح وتعبئة ${students.length} مشترك!`, 
@@ -963,14 +706,12 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         });
 
         if (students.length > 0) {
-          let tName = '';
-          if (cat === 'primary') tName = 'تسجيل مشتركين ابتدائي 2026.xls';
-          else if (cat === 'prep_servants') tName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
-          else tName = 'تسجيل مشتركين فئات خاصة 2026.xls';
+          const config = TEMPLATE_MAPPING[cat];
+          const downloadName = config.downloadName;
 
-          setExportProgress(`جاري تعبئة ملف ${tName} لـ ${students.length} مشترك...`);
-          const buffer = await fillTemplateBuffer(tName, students);
-          zip.file(tName, buffer);
+          setExportProgress(`جاري تعبئة ملف ${downloadName} لـ ${students.length} مشترك...`);
+          const { buffer } = await fetchExcelBufferFromEdgeFunction(cat, students);
+          zip.file(downloadName, buffer);
           addedFilesCount++;
         }
       }
@@ -1046,13 +787,11 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
           });
 
           if (students.length > 0) {
-            let tName = '';
-            if (cat === 'primary') tName = 'تسجيل مشتركين ابتدائي 2026.xls';
-            else if (cat === 'prep_servants') tName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
-            else tName = 'تسجيل مشتركين فئات خاصة 2026.xls';
+            const config = TEMPLATE_MAPPING[cat];
+            const downloadName = config.downloadName;
 
-            const buffer = await fillTemplateBuffer(tName, students);
-            churchFolder?.file(tName, buffer);
+            const { buffer } = await fetchExcelBufferFromEdgeFunction(cat, students);
+            churchFolder?.file(downloadName, buffer);
             totalFilesCreated++;
           }
         }
