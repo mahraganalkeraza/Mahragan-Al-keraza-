@@ -837,7 +837,6 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
       <div className="bg-gradient-to-r from-emerald-600 to-teal-700 p-6 text-white relative">
         <div className="absolute top-4 right-4 bg-white/15 px-3 py-1 rounded-full text-[11px] font-black tracking-wider flex items-center gap-1.5 backdrop-blur-sm">
           <Sparkles size={12} />
-          <span>تصدير ذكي للوزارة</span>
         </div>
         <h2 className="text-2xl font-black mb-2 flex items-center gap-3">
           <FileSpreadsheet className="w-8 h-8" />
