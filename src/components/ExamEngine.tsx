@@ -324,7 +324,6 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
       // ✅ التعديل السحري الجديد: أخبر سوبابايس أن التحديث يتم فقط لو تطابق الطالب مع نفس المسابقة
       if (!navigator.onLine) {
         alert("❌ لا يوجد اتصال بالإنترنت! تعذر حفظ النموذج.");
-        setIsLoading(false);
         return;
       }
 

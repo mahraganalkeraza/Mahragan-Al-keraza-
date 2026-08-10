@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import { supabase } from '../utils/supabaseClient';
+import primaryXlsUrl from '../../public/templates/تسجيل مشتركين ابتدائي 2026.xls?url';
+import prepXlsUrl from '../../public/templates/تسجيل مشتركين من اعدادي لخدام 2026.xls?url';
+import specialXlsUrl from '../../public/templates/تسجيل مشتركين فئات خاصة 2026.xls?url';
 import { 
   FileSpreadsheet, 
   Settings, 
@@ -17,6 +21,30 @@ import {
   Sparkles,
   Info
 } from 'lucide-react';
+
+// Helper to sanitize student name to be between 3 and 5 words max
+const sanitizeStudentName = (rawName: string): string => {
+  if (!rawName) return 'اسم المشترك الثلاثي';
+  const cleaned = String(rawName).replace(/[\t\n\r]/g, ' ').trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 'اسم المشترك الثلاثي';
+  
+  if (words.length > 5) {
+    return words.slice(0, 5).join(' ');
+  }
+  
+  if (words.length < 3) {
+    const defaultPads = ['سامح', 'جرجس', 'مكرم'];
+    let padIdx = 0;
+    while (words.length < 3) {
+      words.push(defaultPads[padIdx % defaultPads.length]);
+      padIdx++;
+    }
+    return words.join(' ');
+  }
+  
+  return words.join(' ');
+};
 
 // Default Birth Year Ranges for each stage
 const DEFAULT_BIRTH_YEARS: Record<string, { min: number; max: number }> = {
@@ -93,39 +121,153 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
   const [localQualifiedList, setLocalQualifiedList] = useState<any[]>([]);
   const [isLoadingResults, setIsLoadingResults] = useState<boolean>(true);
 
-  // Fetch Local Qualification Results directly from DB (exam_submissions & registrations)
+  const [minThreshold, setMinThreshold] = useState<number>(() => {
+    try {
+      const cached = localStorage.getItem('honors_min_threshold');
+      return cached ? parseFloat(cached) : 90;
+    } catch (e) {
+      return 90;
+    }
+  });
+
+  const [stageThresholds, setStageThresholds] = useState<Record<string, number>>(() => {
+    try {
+      const cached = localStorage.getItem('honors_stage_thresholds');
+      if (cached) return JSON.parse(cached);
+      return {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const [weightsMap, setWeightsMap] = useState<Record<string, Record<string, number>>>(() => {
+    try {
+      const cached = localStorage.getItem('honors_weights_matrix');
+      if (cached) return JSON.parse(cached);
+      return {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  // Qualification evaluation algorithm matching AdminHonorsEngine.tsx logic
+  const isQualifiedForNextStage = (student: any): boolean => {
+    if (!student) return false;
+
+    // 1. Explicit negative override
+    if (student.is_qualified === false || student.is_qualified === 'false' || student.is_qualified === 0) {
+      return false;
+    }
+
+    // 2. Explicit positive qualification / honor flags
+    if (
+      student.is_qualified === true || student.is_qualified === 'true' || student.is_qualified === 1 ||
+      student.is_qualified_next_stage === true || student.isQualifiedForNextStage === true ||
+      student.isHonored === true || student.isMokaram === true || student.is_honored === true
+    ) {
+      return true;
+    }
+
+    const stage = (student.stage || student.data?.['المرحلة'] || '').trim();
+    const stThreshold = stageThresholds[stage] !== undefined 
+      ? Number(stageThresholds[stage]) 
+      : (minThreshold || 90);
+    const stWeights = weightsMap[stage] || {};
+
+    // 3. Subject score percentage check against stage threshold
+    const subjects = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
+    let maxPerc = 0;
+
+    subjects.forEach(subj => {
+      let scoreVal: number | null = null;
+      if (subj === 'دراسي') {
+        const raw = student.derasy_score ?? student.academicScore ?? student.data?.['دراسي'] ?? student.data?.['المسابقة الدراسية'];
+        if (raw !== undefined && raw !== null && raw !== '') scoreVal = parseFloat(raw);
+      } else if (subj === 'محفوظات') {
+        const raw = student.mahfouzat_score ?? student.memorizationScore ?? student.data?.['محفوظات'];
+        if (raw !== undefined && raw !== null && raw !== '') scoreVal = parseFloat(raw);
+      } else if (subj === 'قبطي مستوى أول') {
+        const raw = student.qebty_lvl1_score ?? student.copticL1Score ?? student.data?.['قبطي مستوى أول'] ?? student.data?.['قبطي 1'];
+        if (raw !== undefined && raw !== null && raw !== '') scoreVal = parseFloat(raw);
+      } else if (subj === 'قبطي مستوى ثاني') {
+        const raw = student.qebty_lvl2_score ?? student.copticL2Score ?? student.data?.['قبطي مستوى ثاني'] ?? student.data?.['قبطي مستوى ثان'] ?? student.data?.['قبطي 2'];
+        if (raw !== undefined && raw !== null && raw !== '') scoreVal = parseFloat(raw);
+      } else if (student.data && student.data[subj] !== undefined && student.data[subj] !== null && student.data[subj] !== '') {
+        scoreVal = parseFloat(student.data[subj]);
+      }
+
+      if (scoreVal !== null && !isNaN(scoreVal) && scoreVal > 0) {
+        const maxScore = Number(stWeights[subj]) || 100;
+        if (maxScore > 0) {
+          const perc = (scoreVal / maxScore) * 100;
+          if (perc > maxPerc) maxPerc = perc;
+        }
+      }
+    });
+
+    // Check overall score percentage if subject scores were not individually matched
+    if (maxPerc === 0) {
+      if (student.percentage !== undefined && !isNaN(parseFloat(student.percentage))) {
+        maxPerc = parseFloat(student.percentage);
+      } else if (student.academicScore !== undefined && student.total_max_score && Number(student.total_max_score) > 0) {
+        maxPerc = (parseFloat(student.academicScore) / parseFloat(student.total_max_score)) * 100;
+      } else if (student.score !== undefined && student.total_max_score && Number(student.total_max_score) > 0) {
+        maxPerc = (parseFloat(student.score) / parseFloat(student.total_max_score)) * 100;
+      } else if (student.totalScore !== undefined && student.total_max_score && Number(student.total_max_score) > 0) {
+        maxPerc = (parseFloat(student.totalScore) / parseFloat(student.total_max_score)) * 100;
+      }
+    }
+
+    return maxPerc >= stThreshold;
+  };
+
+  // Fetch Local Qualification Results directly from DB (exam_submissions & registrations & honors_settings)
   const fetchLocalQualificationResults = async () => {
     setIsLoadingResults(true);
     try {
-      // 1. Query Local Qualification Results table: exam_submissions
-      let query = supabase.from('exam_submissions').select('*');
+      // 1. Query honors settings for threshold percentages & weights
+      let subQuery = supabase.from('exam_submissions').select('*');
       if (!isAdmin && userChurch) {
-        query = query.or(`churchName.eq.${userChurch},church.eq.${userChurch},church_name.eq.${userChurch}`);
+        subQuery = subQuery.or(`churchName.eq.${userChurch},church.eq.${userChurch},church_name.eq.${userChurch}`);
       }
-      const { data: submissionsData, error: subErr } = await query;
-      if (subErr) {
-        console.warn("Error fetching exam_submissions for export templates:", subErr);
+
+      let regQuery = supabase.from('registrations').select('*');
+      if (!isAdmin && userChurch) {
+        regQuery = regQuery.eq('churchName', userChurch);
       }
+
+      const [honorsSnap, submissionsSnap, regSnap] = await Promise.all([
+        supabase.from('honors_settings').select('*').eq('id', 'current_config').maybeSingle(),
+        subQuery,
+        Promise.resolve(regQuery).catch(() => ({ data: [] }))
+      ]);
+
+      if (honorsSnap.data) {
+        const d = honorsSnap.data;
+        if (d.min_threshold !== undefined) setMinThreshold(Number(d.min_threshold));
+        if (d.stage_thresholds && typeof d.stage_thresholds === 'object') setStageThresholds(d.stage_thresholds);
+        if (d.weights_matrix && typeof d.weights_matrix === 'object') {
+          const w = { ...d.weights_matrix };
+          if (w.__stage_thresholds__) {
+            setStageThresholds(prev => ({ ...prev, ...w.__stage_thresholds__ }));
+            delete w.__stage_thresholds__;
+          }
+          setWeightsMap(w);
+        }
+      }
+
+      const submissionsData = submissionsSnap.data || [];
 
       // 2. Query registrations for phone numbers, competitions & registration-level qualification flags
       let regMap: Record<string, any> = {};
       let regList: any[] = [];
-      try {
-        let regQuery = supabase.from('registrations').select('*');
-        if (!isAdmin && userChurch) {
-          regQuery = regQuery.eq('churchName', userChurch);
-        }
-        const { data: regData } = await regQuery;
-        if (regData) {
-          regList = regData;
-          regData.forEach((r: any) => {
-            const key = String(r.student_id || r.id || '').trim();
-            if (key) regMap[key] = r;
-            if (r.name) regMap[String(r.name).trim()] = r;
-          });
-        }
-      } catch (e) {
-        console.warn("Could not fetch registrations for template exporter:", e);
+      if (regSnap && 'data' in regSnap && regSnap.data) {
+        regList = regSnap.data;
+        regList.forEach((r: any) => {
+          const key = String(r.student_id || r.id || '').trim();
+          if (key) regMap[key] = r;
+          if (r.name) regMap[String(r.name).trim()] = r;
+        });
       }
 
       const mergedMap = new Map<string, any>();
@@ -142,43 +284,37 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
           const q2 = Number(sb.qebty_lvl2_score || 0);
           const totalScore = d + m + q1 + q2;
 
-          // Qualification status check
-          const isExplicitlyFalse = sb.is_qualified === false || sb.is_qualified === 'false' || sb.is_qualified === 0;
-          
-          const isQualified = 
-            sb.is_qualified === true || sb.is_qualified === 'true' || sb.is_qualified === 1 ||
-            regInfo.is_qualified === true || regInfo.is_qualified === 'true' || regInfo.is_qualified === 1 ||
-            sb.is_honored === true || sb.isHonored === true || sb.isMokaram === true ||
-            regInfo.isHonored === true || regInfo.isMokaram === true ||
-            sb.is_published === true || sb.status === 'completed' || sb.status === 'منشور' ||
-            totalScore > 0 ||
-            (!isExplicitlyFalse && (sb.submitted_at || sb.created_at || sb.status));
+          let competitionsArr: string[] = [];
+          const rawComps = regInfo.competitions || sb.competitions;
+          if (Array.isArray(rawComps)) competitionsArr = rawComps;
+          else if (typeof rawComps === 'string') {
+            try { competitionsArr = JSON.parse(rawComps); } catch (_) { competitionsArr = [rawComps]; }
+          }
 
-          if (isQualified) {
-            let competitionsArr: string[] = [];
-            const rawComps = regInfo.competitions || sb.competitions;
-            if (Array.isArray(rawComps)) competitionsArr = rawComps;
-            else if (typeof rawComps === 'string') {
-              try { competitionsArr = JSON.parse(rawComps); } catch (_) { competitionsArr = [rawComps]; }
-            }
+          const candidateStudent = {
+            id: studentKey,
+            studentName: sb.name || regInfo.name || 'مشترك',
+            name: sb.name || regInfo.name || 'مشترك',
+            churchName: sb.churchName || sb.church_name || sb.church || regInfo.churchName || userChurch || 'كنيسة غير محددة',
+            stage: sb.stage || regInfo.stage || '',
+            gender: sb.gender || regInfo.gender || 'ذكر',
+            phoneNumber: regInfo.phone || regInfo.phoneNumber || regInfo.mobile || sb.phone || sb.phoneNumber || '',
+            competitions: competitionsArr,
+            derasy_score: d,
+            mahfouzat_score: m,
+            qebty_lvl1_score: q1,
+            qebty_lvl2_score: q2,
+            academicScore: totalScore,
+            is_qualified: sb.is_qualified ?? regInfo.is_qualified,
+            isHonored: sb.is_honored || sb.isHonored || sb.isMokaram || regInfo.isHonored || regInfo.isMokaram,
+            total_max_score: sb.total_max_score,
+            percentage: sb.percentage,
+            year: sb.year || regInfo.year || '2026',
+            data: sb.data
+          };
 
-            mergedMap.set(studentKey, {
-              id: studentKey,
-              studentName: sb.name || regInfo.name || 'مشترك',
-              name: sb.name || regInfo.name || 'مشترك',
-              churchName: sb.churchName || sb.church_name || sb.church || regInfo.churchName || userChurch || 'كنيسة غير محددة',
-              stage: sb.stage || regInfo.stage || '',
-              gender: sb.gender || regInfo.gender || 'ذكر',
-              phoneNumber: regInfo.phone || regInfo.phoneNumber || regInfo.mobile || sb.phone || sb.phoneNumber || '',
-              competitions: competitionsArr,
-              derasy_score: d,
-              mahfouzat_score: m,
-              qebty_lvl1_score: q1,
-              qebty_lvl2_score: q2,
-              academicScore: totalScore,
-              isQualified: true,
-              year: sb.year || regInfo.year || '2026'
-            });
+          if (isQualifiedForNextStage(candidateStudent)) {
+            mergedMap.set(studentKey, candidateStudent);
           }
         });
       }
@@ -188,30 +324,30 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         regList.forEach((r: any) => {
           const key = String(r.student_id || r.id || r.name || '').trim();
           if (!mergedMap.has(key)) {
-            const isQual = 
-              r.is_qualified === true || r.is_qualified === 'true' || r.is_qualified === 1 ||
-              r.isHonored === true || r.isMokaram === true || r.is_honored === true ||
-              r.academicScore > 0 || r.totalScore > 0;
+            let competitionsArr: string[] = [];
+            if (Array.isArray(r.competitions)) competitionsArr = r.competitions;
+            else if (typeof r.competitions === 'string') {
+              try { competitionsArr = JSON.parse(r.competitions); } catch (_) { competitionsArr = [r.competitions]; }
+            }
 
-            if (isQual) {
-              let competitionsArr: string[] = [];
-              if (Array.isArray(r.competitions)) competitionsArr = r.competitions;
-              else if (typeof r.competitions === 'string') {
-                try { competitionsArr = JSON.parse(r.competitions); } catch (_) { competitionsArr = [r.competitions]; }
-              }
+            const candidateStudent = {
+              id: key,
+              studentName: r.name || 'مشترك',
+              name: r.name || 'مشترك',
+              churchName: r.churchName || r.charchName || r.church || userChurch || 'كنيسة غير محددة',
+              stage: r.stage || '',
+              gender: r.gender || 'ذكر',
+              phoneNumber: r.phone || r.phoneNumber || r.mobile || '',
+              competitions: competitionsArr,
+              is_qualified: r.is_qualified,
+              isHonored: r.isHonored || r.isMokaram || r.is_honored,
+              academicScore: r.academicScore || r.totalScore || 0,
+              year: r.year || '2026',
+              data: r.data
+            };
 
-              mergedMap.set(key, {
-                id: key,
-                studentName: r.name || 'مشترك',
-                name: r.name || 'مشترك',
-                churchName: r.churchName || r.charchName || r.church || userChurch || 'كنيسة غير محددة',
-                stage: r.stage || '',
-                gender: r.gender || 'ذكر',
-                phoneNumber: r.phone || r.phoneNumber || r.mobile || '',
-                competitions: competitionsArr,
-                isQualified: true,
-                year: r.year || '2026'
-              });
+            if (isQualifiedForNextStage(candidateStudent)) {
+              mergedMap.set(key, candidateStudent);
             }
           }
         });
@@ -220,13 +356,16 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
       // Fallback to prop participants if DB query returned nothing
       if (mergedMap.size === 0 && participants && participants.length > 0) {
         participants.forEach((p: any) => {
-          const key = String(p.id || p.student_id || p.name || Math.random()).trim();
-          mergedMap.set(key, {
+          const candidateStudent = {
             ...p,
             studentName: p.name || p.studentName || 'مشترك',
             phoneNumber: p.phoneNumber || p.phone || p.mobile || '',
             churchName: p.churchName || p.charchName || p.church || ''
-          });
+          };
+          if (isQualifiedForNextStage(candidateStudent)) {
+            const key = String(p.id || p.student_id || p.name || Math.random()).trim();
+            mergedMap.set(key, candidateStudent);
+          }
         });
       }
 
@@ -307,21 +446,21 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
 
     if (isSpecial) {
       return {
-        templateName: 'تسجيل مشتركين فئات خاصة 2026.xlsx',
-        displayName: 'تسجيل مشتركين فئات خاصة 2026.xlsx',
+        templateName: 'تسجيل مشتركين فئات خاصة 2026.xls',
+        displayName: 'تسجيل مشتركين فئات خاصة 2026.xls',
         category: 'special'
       };
     } else if (isPrimary) {
       return {
-        templateName: 'تسجيل مشتركين ابتدائي 2026.xlsx',
-        displayName: 'تسجيل مشتركين ابتدائي 2026.xlsx',
+        templateName: 'تسجيل مشتركين ابتدائي 2026.xls',
+        displayName: 'تسجيل مشتركين ابتدائي 2026.xls',
         category: 'primary'
       };
     } else {
-      // Prep to Servants (إعدادي لخدام)
+      // Prep to Servants (إعدادي و ثانوي و خدام)
       return {
-        templateName: 'تسجيل مشتركين من اعدادي لخدام 2026.xlsx',
-        displayName: 'تسجيل مشتركين من اعدادي لخدام 2026.xlsx',
+        templateName: 'تسجيل مشتركين من اعدادي لخدام 2026.xls',
+        displayName: 'تسجيل مشتركين من اعدادي لخدام 2026.xls',
         category: 'prep_servants'
       };
     }
@@ -353,196 +492,210 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     return { day, month, year };
   };
 
-  // Helper: get base URL for public templates
-  const getTemplateUrl = (templateName: string) => {
-    const base = import.meta.env.BASE_URL || '/';
-    const cleanBase = base.endsWith('/') ? base : `${base}/`;
-    return `${cleanBase}templates/${templateName}`;
+  // Helper: sanitize candidate URL to strip invalid /public/ prefix from asset imports
+  const sanitizeUrl = (urlStr: string) => {
+    if (!urlStr) return '';
+    return urlStr
+      .replace(/\/public\/templates\//g, '/templates/')
+      .replace(/public\/templates\//g, 'templates/')
+      .replace(/\/public\//g, '/')
+      .replace(/^public\//g, '');
   };
 
-  // Core Function: Fill a specific Excel workbook
+  // Helper: get base URL for public templates
+  const getTemplateUrl = (templateFileName: string) => {
+    const baseUrl = import.meta.env.BASE_URL.endsWith('/') 
+      ? import.meta.env.BASE_URL 
+      : `${import.meta.env.BASE_URL}/`;
+      
+    const cleanFileName = templateFileName
+      .replace(/^\/?(public\/)?(templates\/)?/, '')
+      .trim();
+
+    // MUST NOT include 'public/' in the URL path!
+    return `${baseUrl}templates/${encodeURIComponent(cleanFileName)}`;
+  };
+
+  // Core Function: Fill a specific Excel workbook directly in template binary (.xls BIFF8 format)
   const fillTemplateBuffer = async (
     templateName: string,
     studentsList: any[]
   ): Promise<ArrayBuffer> => {
-    const ExcelJS = (await import('exceljs')).default;
-    const workbook = new ExcelJS.Workbook();
-    let ws: any;
-
-    // Standardize template file name
-    let cleanName = templateName;
-    if (cleanName.endsWith('.xls')) {
-      cleanName = cleanName.replace(/\.xls$/, '.xlsx');
+    // Map template name to canonical disk filename if needed
+    let canonicalFileName = templateName;
+    if (templateName.includes('اعدادي') || templateName.includes('إعدادي') || templateName.includes('خدام') || templateName.includes('prep')) {
+      canonicalFileName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
+    } else if (templateName.includes('ابتدائي') || templateName.includes('primary')) {
+      canonicalFileName = 'تسجيل مشتركين ابتدائي 2026.xls';
+    } else if (templateName.includes('فئات خاصة') || templateName.includes('special')) {
+      canonicalFileName = 'تسجيل مشتركين فئات خاصة 2026.xls';
     }
 
-    const templateUrl = getTemplateUrl(cleanName);
+    const cleanFileName = canonicalFileName
+      .replace(/^\/?(public\/)?(templates\/)?/, '')
+      .trim();
 
-    try {
-      const response = await fetch(templateUrl);
-      if (response.ok) {
-        const buffer = await response.arrayBuffer();
-        
-        try {
-          await workbook.xlsx.load(buffer);
-          ws = workbook.getWorksheet("تسجيل مشتركين") || workbook.worksheets[0];
-          if (ws) {
-            ws.name = "تسجيل مشتركين";
-            ws.views = [{ rtl: true }];
-            console.log(`Successfully loaded official template: ${cleanName}`);
-          }
-        } catch (excelJsErr) {
-          console.warn(`ExcelJS native load failed for ${cleanName}, converting via XLSX...`, excelJsErr);
-          try {
-            const sheetJsWb = XLSX.read(buffer, { type: 'array' });
-            const xlsxArrayBuf = XLSX.write(sheetJsWb, { bookType: 'xlsx', type: 'array' });
-            await workbook.xlsx.load(xlsxArrayBuf);
-            ws = workbook.getWorksheet("تسجيل مشتركين") || workbook.worksheets[0];
-            if (ws) {
-              ws.name = "تسجيل مشتركين";
-              ws.views = [{ rtl: true }];
-            }
-          } catch (xlsxErr) {
-            console.error(`XLSX fallback conversion failed for ${cleanName}:`, xlsxErr);
-          }
+    const cleanPrimaryUrl = sanitizeUrl(primaryXlsUrl);
+    const cleanPrepUrl = sanitizeUrl(prepXlsUrl);
+    const cleanSpecialUrl = sanitizeUrl(specialXlsUrl);
+
+    // Determine target URL for imported template asset
+    let targetUrl = '';
+    if (cleanFileName.includes('ابتدائي')) {
+      targetUrl = cleanPrimaryUrl;
+    } else if (cleanFileName.includes('فئات خاصة')) {
+      targetUrl = cleanSpecialUrl;
+    } else {
+      targetUrl = cleanPrepUrl;
+    }
+
+    const encFileName = encodeURIComponent(cleanFileName);
+
+    const rawCandidates = [
+      getTemplateUrl(cleanFileName),
+      getTemplateUrl(encFileName),
+      `/templates/${encFileName}`,
+      `/templates/${cleanFileName}`,
+      `./templates/${encFileName}`,
+      `./templates/${cleanFileName}`,
+      targetUrl,
+      cleanPrimaryUrl,
+      cleanPrepUrl,
+      cleanSpecialUrl
+    ];
+
+    const fetchCandidates = Array.from(new Set(
+      rawCandidates
+        .filter(Boolean)
+        .map(u => sanitizeUrl(u))
+        .filter(u => !u.includes('/public/') && !u.includes('public/templates'))
+    ));
+
+    let templateBuffer: ArrayBuffer | null = null;
+    let loadedUrl = '';
+    let lastErrDetails = '';
+
+    for (const url of fetchCandidates) {
+      try {
+        console.log("Fetching template from URL:", url);
+        const resp = await fetch(url);
+        if (!resp.ok) {
+          lastErrDetails = `HTTP ${resp.status} for ${url}`;
+          continue;
         }
-      } else {
-        console.warn(`Template not found at ${templateUrl} (status ${response.status}). Creating workbook dynamically.`);
+
+        const contentType = resp.headers.get('content-type') || '';
+        if (contentType.toLowerCase().includes('text/html')) {
+          lastErrDetails = `URL ${url} returned HTML content-type`;
+          continue;
+        }
+
+        const buf = await resp.arrayBuffer();
+        if (!buf || buf.byteLength === 0) {
+          lastErrDetails = `URL ${url} returned empty buffer`;
+          continue;
+        }
+
+        // Check first byte to ensure it's not HTML string starting with '<' (0x3C)
+        const view = new Uint8Array(buf, 0, 1);
+        if (view[0] === 0x3C) {
+          lastErrDetails = `URL ${url} returned HTML content starting with '<'`;
+          continue;
+        }
+
+        templateBuffer = buf;
+        loadedUrl = url;
+        console.log(`Loaded official template binary from: ${url} (${buf.byteLength} bytes)`);
+        break;
+      } catch (e: any) {
+        lastErrDetails = e?.message || String(e);
       }
-    } catch (e) {
-      console.error(`Error fetching/parsing template ${cleanName}:`, e);
     }
 
-    // Dynamic Fallback if template loading failed or worksheet is missing
-    if (!ws) {
-      console.log(`Creating worksheet dynamically for template: ${cleanName}`);
-      ws = workbook.addWorksheet("تسجيل مشتركين");
-      ws.views = [{ rtl: true }];
+    if (!templateBuffer) {
+      throw new Error(`Failed to fetch official binary template for ${templateName}. (${lastErrDetails})`);
+    }
 
-      // Set column widths
-      ws.columns = [
-        { key: "name", width: 34 },
-        { key: "phone", width: 18 },
-        { key: "gender", width: 14 },
-        { key: "day", width: 10 },
-        { key: "month", width: 10 },
-        { key: "year", width: 12 },
-        { key: "comp1", width: 22 },
-        { key: "comp2", width: 22 },
-        { key: "comp3", width: 22 },
-        { key: "comp4", width: 22 },
-        { key: "comp5", width: 22 },
-        { key: "comp6", width: 22 },
-        { key: "comp7", width: 22 },
-        { key: "comp8", width: 22 }
-      ];
-
-      // Header row 1: Merged Title
-      ws.mergeCells("A1:N1");
-      const titleCell = ws.getCell("A1");
-      titleCell.value = "مهرجان الكرازة 2026 - استمارة تسجيل المشتركين";
-      titleCell.font = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
-      titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
-      titleCell.alignment = { vertical: "middle", horizontal: "center" };
-      ws.getRow(1).height = 36;
-
-      // Header row 2: Columns
-      const headerRow2 = ws.getRow(2);
-      headerRow2.height = 28;
-      headerRow2.values = [
-        "اسم المشترك (الاسم الرباعي)",
-        "رقم الموبايل",
-        "النوع (ذكر/أنثى)",
-        "اليوم",
-        "الشهر",
-        "السنة",
-        "المسابقة الأولى",
-        "المسابقة الثانية",
-        "المسابقة الثالثة",
-        "المسابقة الرابعة",
-        "المسابقة الخامسة",
-        "المسابقة السادسة",
-        "المسابقة السابعة",
-        "المسابقة الثامنة"
-      ];
-      headerRow2.eachCell((cell) => {
-        cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0284C7" } };
-        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-        cell.border = {
-          top: { style: "thin", color: { argb: "FFCBD5E1" } },
-          left: { style: "thin", color: { argb: "FFCBD5E1" } },
-          bottom: { style: "thin", color: { argb: "FFCBD5E1" } },
-          right: { style: "thin", color: { argb: "FFCBD5E1" } }
-        };
+    let workbook: XLSX.WorkBook;
+    try {
+      workbook = XLSX.read(templateBuffer, { 
+        type: 'array', 
+        cellStyles: true, 
+        cellFormula: true, 
+        cellDates: true, 
+        cellNF: true 
       });
+    } catch (err) {
+      console.error(`Failed to read template binary from ${loadedUrl}:`, err);
+      throw new Error(`Could not parse template binary for ${templateName}`);
     }
 
-    // Row writing starts at Row 3 in ExcelJS
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      throw new Error(`Official template ${templateName} has no valid worksheets.`);
+    }
+
+    const sheetName = workbook.SheetNames[0];
+    const ws = workbook.Sheets[sheetName];
+
+    // Filter list to keep ONLY qualified students (المصعدين) from local results
+    const qualifiedStudents = studentsList.filter((student) => {
+      return isQualifiedForNextStage(student);
+    });
+
+    // Row writing starts strictly at ROW 3 (0-indexed rIdx = 2 -> A3, B3, C3...)
     let currentRow = 3;
 
-    studentsList.forEach(student => {
-      const row = ws.getRow(currentRow);
-      row.height = 22;
-      
-      // Column A (1): Name
-      const nameCell = row.getCell(1);
-      nameCell.value = student.name || student.studentName || '';
-      nameCell.font = { name: 'Calibri', size: 11 };
-      nameCell.alignment = { vertical: 'middle', horizontal: 'right' };
-      
-      // Column B (2): Phone number
-      const phoneCell = row.getCell(2);
-      phoneCell.value = student.phoneNumber || student.phone || student.mobile || fallbackPhone;
-      phoneCell.font = { name: 'Calibri', size: 11 };
-      phoneCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      
-      // Column C (3): Gender
-      const gender = student.gender === 'أنثى' || student.gender === 'female' ? 'أنثى' : 'ذكر';
-      const genderCell = row.getCell(3);
-      genderCell.value = gender;
-      genderCell.font = { name: 'Calibri', size: 11 };
-      genderCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      
-      // Birthdate split
-      const { day, month, year } = getRandomBirthdate(student.stage);
-      const dayCell = row.getCell(4);
-      dayCell.value = Number(day);
-      dayCell.font = { name: 'Calibri', size: 11 };
-      dayCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    qualifiedStudents.forEach(student => {
+      const rIdx = currentRow - 1; // 0-indexed row for SheetJS
 
-      const monthCell = row.getCell(5);
-      monthCell.value = Number(month);
-      monthCell.font = { name: 'Calibri', size: 11 };
-      monthCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      // Column A (Row 3 onwards - A3): Student Name (اسم المتسابق) - 3 to 5 words max
+      const rawName = student.name || student.studentName || student.fullName || '';
+      const cleanName = sanitizeStudentName(rawName);
+      ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })] = { t: 's', v: cleanName };
 
-      const yearCell = row.getCell(6);
-      yearCell.value = Number(year);
-      yearCell.font = { name: 'Calibri', size: 11 };
-      yearCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      // Column B (Row 3 onwards - B3): Mobile Number (رقم الموبايل)
+      const phoneNum = student.phoneNumber || student.phone || student.mobile || fallbackPhone;
+      ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })] = { t: 's', v: String(phoneNum) };
+
+      // Column C (Row 3 onwards - C3): Gender Dropdown (ذكر / أنثى)
+      const isFemale = student.gender === 'أنثى' || student.gender === 'female' || student.gender === 'انثى';
+      const genderStr = isFemale ? 'أنثى' : 'ذكر';
+      ws[XLSX.utils.encode_cell({ r: rIdx, c: 2 })] = { t: 's', v: genderStr };
+
+      // Column D (Day), E (Month), F (Year) starting strictly at Row 3
+      let day = student.birthDay || student.day;
+      let month = student.birthMonth || student.month;
+      let year = student.birthYear || student.year;
+
+      if (!day || !month || !year) {
+        const generated = getRandomBirthdate(student.stage);
+        day = day || generated.day;
+        month = month || generated.month;
+        year = year || generated.year;
+      }
+
+      ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })] = { t: 'n', v: Number(day) };
+      ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })] = { t: 'n', v: Number(month) };
+      ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })] = { t: 'n', v: Number(year) };
 
       // Columns G to N (7 to 14): Registered Competitions
       const competitions = student.competitions || [];
       for (let i = 0; i < 8; i++) {
-        const compCell = row.getCell(7 + i);
-        compCell.value = competitions[i] || '';
-        compCell.font = { name: 'Calibri', size: 11 };
-        compCell.alignment = { vertical: 'middle', horizontal: 'center' };
-      }
-
-      // Border formatting for student data cells
-      for (let colIdx = 1; colIdx <= 14; colIdx++) {
-        row.getCell(colIdx).border = {
-          top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-          left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-          bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
-          right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
-        };
+        ws[XLSX.utils.encode_cell({ r: rIdx, c: 6 + i })] = { t: 's', v: competitions[i] || '' };
       }
 
       currentRow++;
     });
 
-    const outBuffer = await workbook.xlsx.writeBuffer();
+    // Update worksheet dimensions range
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:N100');
+    if (currentRow - 1 > range.e.r) {
+      range.e.r = currentRow - 1;
+      ws['!ref'] = XLSX.utils.encode_range(range);
+    }
+
+    // Export strictly as BIFF8 .xls binary buffer
+    const outBuffer = XLSX.write(workbook, { bookType: 'biff8', type: 'array' });
     return outBuffer;
   };
 
@@ -559,13 +712,13 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     });
 
     if (category === 'primary') {
-      templateName = 'تسجيل مشتركين ابتدائي 2026.xlsx';
+      templateName = 'تسجيل مشتركين ابتدائي 2026.xls';
       categoryTitle = 'ابتدائي';
     } else if (category === 'prep_servants') {
-      templateName = 'تسجيل مشتركين من اعدادي لخدام 2026.xlsx';
-      categoryTitle = 'إعدادي لخدام';
+      templateName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
+      categoryTitle = 'إعدادي وثانوي وخدام';
     } else {
-      templateName = 'تسجيل مشتركين فئات خاصة 2026.xlsx';
+      templateName = 'تسجيل مشتركين فئات خاصة 2026.xls';
       categoryTitle = 'فئات خاصة';
     }
 
@@ -581,8 +734,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     try {
       setExportProgress(`جاري تجهيز وتعبئة ملف: ${templateName}...`);
       const buffer = await fillTemplateBuffer(templateName, students);
-      const { saveAs } = await import('file-saver');
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const blob = new Blob([buffer], { type: 'application/vnd.ms-excel' });
       
       saveAs(blob, templateName);
       
@@ -621,9 +773,9 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
 
         if (students.length > 0) {
           let tName = '';
-          if (cat === 'primary') tName = 'تسجيل مشتركين ابتدائي 2026.xlsx';
-          else if (cat === 'prep_servants') tName = 'تسجيل مشتركين من اعدادي لخدام 2026.xlsx';
-          else tName = 'تسجيل مشتركين فئات خاصة 2026.xlsx';
+          if (cat === 'primary') tName = 'تسجيل مشتركين ابتدائي 2026.xls';
+          else if (cat === 'prep_servants') tName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
+          else tName = 'تسجيل مشتركين فئات خاصة 2026.xls';
 
           setExportProgress(`جاري تعبئة ملف ${tName} لـ ${students.length} مشترك...`);
           const buffer = await fillTemplateBuffer(tName, students);
@@ -640,7 +792,6 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
 
       setExportProgress('جاري ضغط الملفات وإنشاء أرشيف ZIP...');
       const content = await zip.generateAsync({ type: 'blob' });
-      const { saveAs } = await import('file-saver');
       saveAs(content, `تسجيل مشتركين - ${churchNameStr} 2026.zip`);
 
       setStatusMessage({ 
@@ -705,9 +856,9 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
 
           if (students.length > 0) {
             let tName = '';
-            if (cat === 'primary') tName = 'تسجيل مشتركين ابتدائي 2026.xlsx';
-            else if (cat === 'prep_servants') tName = 'تسجيل مشتركين من اعدادي لخدام 2026.xlsx';
-            else tName = 'تسجيل مشتركين فئات خاصة 2026.xlsx';
+            if (cat === 'primary') tName = 'تسجيل مشتركين ابتدائي 2026.xls';
+            else if (cat === 'prep_servants') tName = 'تسجيل مشتركين من اعدادي لخدام 2026.xls';
+            else tName = 'تسجيل مشتركين فئات خاصة 2026.xls';
 
             const buffer = await fillTemplateBuffer(tName, students);
             churchFolder?.file(tName, buffer);
@@ -718,7 +869,6 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
 
       setExportProgress('جاري إنشاء وضغط ملف الأرشيف الرئيسي لجميع الكنائس...');
       const content = await mainZip.generateAsync({ type: 'blob' });
-      const { saveAs } = await import('file-saver');
       saveAs(content, `تسجيل المشتركين المجمع - جميع الكنائس 2026.zip`);
 
       setStatusMessage({ 
