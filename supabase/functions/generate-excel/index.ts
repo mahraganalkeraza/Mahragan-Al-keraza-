@@ -9,44 +9,6 @@ const CORS_HEADERS = {
 };
 
 /**
- * Safely parses competitions field whether it is an array, string, JSON string, or object.
- * Prevents character-by-character splitting on Arabic strings.
- */
-function parseCompetitions(comps: any): string[] {
-  if (!comps) return [];
-  if (Array.isArray(comps)) {
-    return comps
-      .map(c => {
-        if (typeof c === 'string') return c.trim();
-        if (typeof c === 'object' && c !== null) return (c.name || c.title || c.label || '').trim();
-        return String(c).trim();
-      })
-      .filter(Boolean);
-  }
-  if (typeof comps === 'string') {
-    const trimmed = comps.trim();
-    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        return parseCompetitions(parsed);
-      } catch {
-        // Fallback to delimiter splitting
-      }
-    }
-    return trimmed
-      .split(/[,|\n;]/)
-      .map(s => s.trim())
-      .filter(Boolean);
-  }
-  if (typeof comps === 'object') {
-    return Object.values(comps)
-      .map(v => String(v).trim())
-      .filter(Boolean);
-  }
-  return [String(comps).trim()];
-}
-
-/**
  * Helper to clean and format student names
  */
 function formatStudentName(rawName: any): string {
@@ -56,8 +18,9 @@ function formatStudentName(rawName: any): string {
 
 /**
  * Supabase Edge Function: generate-excel
- * Process legacy .xls (BIFF8) template files using SheetJS (xlsx) to prevent
- * Microsoft Excel "Protected View" corruption warnings and retain cell data validations (dropdown lists).
+ * Populates ONLY promoted student basic info (Name, Phone, and Birth Date).
+ * Completely bypasses Column C to preserve original Data Validation dropdown lists embedded in .xls template.
+ * Eliminates competition data.
  */
 serve(async (req: Request) => {
   // Handle CORS preflight request
@@ -153,52 +116,42 @@ serve(async (req: Request) => {
       const rIdx = startRowIndex + idx;
       if (rIdx > maxRowIndex) maxRowIndex = rIdx;
 
-      // Column A (Index 0): student.name
+      // Column A (Index 0): Student Name (student.name / student.studentName / student.fullName)
       const nameVal = formatStudentName(
         student.name || student.studentName || student.fullName || ''
       );
       if (nameVal) setCellVal(rIdx, 0, nameVal);
 
-      // Column B (Index 1): student.phone
+      // Column B (Index 1): Phone Number (student.phoneNumber / student.phone / student.mobile)
       const phoneVal = student.phoneNumber || student.phone || student.mobile || '';
       if (phoneVal) setCellVal(rIdx, 1, String(phoneVal));
 
-      // Column C (Index 2): student.stage / gender (Dropdown selection value)
-      const stageOrGender = student.stage || student.educationalStage || (
-        student.gender ? (
-          student.gender === 'أنثى' || student.gender === 'female' || student.gender === 'انثى' ? 'أنثى' : 'ذكر'
-        ) : ''
-      );
-      if (stageOrGender) setCellVal(rIdx, 2, stageOrGender);
+      // Column C (Index 2): DO NOT WRITE ANYTHING (SKIP COMPLETELY)
+      // Leaving this column untouched is required to preserve the original Data Validation dropdown lists embedded in the .xls template.
 
-      // Column D (Index 3): Birth Day / Stage
-      if (student.birthDay || student.day) {
-        setCellVal(rIdx, 3, Number(student.birthDay || student.day), true);
-      } else if (student.gender && (student.stage || student.educationalStage)) {
-        setCellVal(rIdx, 3, String(student.stage || student.educationalStage));
+      // Column D (Index 3): Birth Day (student.birthDay / student.day) formatted as a Number
+      const dayVal = student.birthDay ?? student.day;
+      if (dayVal !== undefined && dayVal !== null && dayVal !== '') {
+        setCellVal(rIdx, 3, Number(dayVal), true);
       }
 
-      // Column E (Index 4): Birth Month
-      if (student.birthMonth || student.month) {
-        setCellVal(rIdx, 4, Number(student.birthMonth || student.month), true);
+      // Column E (Index 4): Birth Month (student.birthMonth / student.month) formatted as a Number
+      const monthVal = student.birthMonth ?? student.month;
+      if (monthVal !== undefined && monthVal !== null && monthVal !== '') {
+        setCellVal(rIdx, 4, Number(monthVal), true);
       }
 
-      // Column F (Index 5): Birth Year
-      if (student.birthYear || student.year) {
-        setCellVal(rIdx, 5, Number(student.birthYear || student.year), true);
+      // Column F (Index 5): Birth Year (student.birthYear / student.year) formatted as a Number
+      const yearVal = student.birthYear ?? student.year;
+      if (yearVal !== undefined && yearVal !== null && yearVal !== '') {
+        setCellVal(rIdx, 5, Number(yearVal), true);
       }
 
-      // Columns G onwards (Index 6+): Competitions
-      const compsList = parseCompetitions(student.competitions);
-      compsList.forEach((compName, cIdx) => {
-        if (cIdx < 8) {
-          setCellVal(rIdx, 6 + cIdx, compName);
-        }
-      });
+      // Competitions (Column G+ / Index 6+): REMOVE COMPLETELY
     });
 
     // Update worksheet reference range !ref
-    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:N100');
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:F100');
     if (maxRowIndex > range.e.r) {
       range.e.r = maxRowIndex;
       worksheet['!ref'] = XLSX.utils.encode_range(range);
