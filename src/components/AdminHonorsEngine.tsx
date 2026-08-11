@@ -258,13 +258,13 @@ export const AdminHonorsEngine: React.FC<{
       }
 
       eData.push({
-        'الكود': s.result?.id || '',
-        'الاسم': s.result?.studentName || '',
-        'الكنيسة': church,
-        'المرحلة': stage,
-        'المسابقة': subject,
-        'الدرجة الفعلية': s.score,
-        'الدرجة الكلية للمسابقة': s.maxScore,
+        'الكود': s.result?.code || s.result?.studentCode || s.result?.id || '',
+        'الاسم': s.result?.name || s.result?.fullName || s.result?.studentName || '',
+        'الكنيسة': s.result?.church || s.result?.churchName || church || '',
+        'المرحلة': s.result?.stage || s.result?.grade || stage || '',
+        'المسابقة': s.result?.competition || subject || '',
+        'الدرجة الفعلية': s.score !== undefined ? s.score : (s.result?.score || s.result?.actualScore || 0),
+        'الدرجة الكلية للمسابقة': s.maxScore !== undefined ? s.maxScore : (s.result?.totalScore || s.result?.maxScore || 0),
         'النسبة المئوية (%)': parseFloat((s.percentage || 0).toFixed(2)),
         'المركز': title,
         'رقم المركز': rank
@@ -372,8 +372,8 @@ export const AdminHonorsEngine: React.FC<{
     }
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(exportData);
-    XLSX.utils.book_append_sheet(wb, ws, "المكرمين والأوائل");
-    XLSX.writeFile(wb, `Honors_Leaderboard_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "المُصعدين");
+    XLSX.writeFile(wb, "Honors_Leaderboard_2026.xlsx");
   };
 
   // This ensures the calculations and onHonorsUpdate still run silently in the background for churches, but hides the UI panel
