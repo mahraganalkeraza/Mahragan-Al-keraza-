@@ -1153,6 +1153,11 @@ function AppComponent() {
   const [partStageFilter, setPartStageFilter] = useState('الكل');
   const [partCompFilter, setPartCompFilter] = useState('الكل');
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedChurch, setSelectedChurch] = useState('ALL');
+  const [selectedStage, setSelectedStage] = useState('ALL');
+  const [selectedCompetition, setSelectedCompetition] = useState('ALL');
+
   // PDF Export States
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [pdfData, setPdfData] = useState<any[]>([]);
@@ -1162,7 +1167,8 @@ function AppComponent() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [participantSearch, partChurchFilter, partStageFilter, partCompFilter]);
+    setParticipantPageCount(1);
+  }, [participantSearch, partChurchFilter, partStageFilter, partCompFilter, searchQuery, selectedChurch, selectedStage, selectedCompetition]);
   
   const [isDuplicateScanModalOpen, setIsDuplicateScanModalOpen] = useState(false);
   const [isAdminBulkRegisterOpen, setIsAdminBulkRegisterOpen] = useState(false);
@@ -1966,15 +1972,33 @@ function AppComponent() {
   const [globalChurchFilter, setGlobalChurchFilter] = useState('الكل');
   const [globalCompetitionFilter, setGlobalCompetitionFilter] = useState('الكل');
 
-  const filteredParticipantsList = useMemo(() => {
-    return (allChurchParticipants || []).filter(p => {
-      const matchChurch = (userRole === 'admin' || (userRole === 'church' && churchName)) ? (globalChurchFilter === 'الكل' || p.churchName === (userRole === 'admin' ? globalChurchFilter : churchName)) : true;
-      const matchName = p.name?.toLowerCase().includes(globalNameFilter.toLowerCase());
-      const matchStage = globalStageFilter === 'الكل' || p.stage === globalStageFilter;
-      const matchComp = globalCompetitionFilter === 'الكل' || (p.competitions && p.competitions.some(c => c === globalCompetitionFilter));
-      return (userRole === 'admin' ? true : p.churchName === churchName) && matchChurch && matchName && matchStage && matchComp;
+  const filteredSubscribers = useMemo(() => {
+    const list = (allChurchParticipants && allChurchParticipants.length > 0) ? allChurchParticipants : (participants || []);
+    return list.filter(p => {
+      // Name Match: subscriber.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
+      const nameLower = (p.name || '').toLowerCase();
+      const matchName = searchQuery.trim() === '' || nameLower.includes(searchQuery.trim().toLowerCase());
+
+      // Church Match: Matches subscriber.churchName if selectedChurch is set and not "ALL"
+      const targetChurch = p.churchName || '';
+      const matchChurch = selectedChurch === 'ALL' || selectedChurch === '' || targetChurch === selectedChurch;
+
+      // Stage Match: Matches subscriber.stage if selectedStage is set and not "ALL"
+      const targetStage = p.stage || '';
+      const matchStage = selectedStage === 'ALL' || selectedStage === '' || targetStage === selectedStage;
+
+      // Competition Match: Checks if selectedCompetition is active (checking if subscriber participates in that competition category)
+      const matchComp = selectedCompetition === 'ALL' || selectedCompetition === '' || 
+        (p.competitions && p.competitions.some((c: any) => c === selectedCompetition));
+
+      // UserRole enforcement for safety
+      const matchRole = userRole === 'admin' ? true : (p.churchName === churchName);
+
+      return matchName && matchChurch && matchStage && matchComp && matchRole;
     });
-  }, [allChurchParticipants, globalNameFilter, globalStageFilter, globalChurchFilter, globalCompetitionFilter, churchName, userRole]);
+  }, [allChurchParticipants, participants, searchQuery, selectedChurch, selectedStage, selectedCompetition, churchName, userRole]);
+
+  const filteredParticipantsList = filteredSubscribers;
 
   const filteredTeamsList = useMemo(() => {
     return (activityTeams || []).filter(t => {
@@ -7808,11 +7832,11 @@ function AppComponent() {
                     <div className="flex-1 w-full flex flex-col gap-1.5">
                       <label className="text-[10px] font-black text-slate-400">البلد/الكنيسة</label>
                       <select 
-                        value={partChurchFilter}
-                        onChange={(e) => setPartChurchFilter(e.target.value)}
+                        value={selectedChurch}
+                        onChange={(e) => setSelectedChurch(e.target.value)}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                       >
-                        <option value="الكل">كل الكنائس</option>
+                        <option value="ALL">كل الكنائس</option>
                         {Array.from(new Set(publicChurches.map((c: any) => c.name))).sort().map(church => (
                           <option key={church} value={church}>{church}</option>
                         ))}
@@ -7824,15 +7848,17 @@ function AppComponent() {
                   <div className="flex-1 w-full flex flex-col gap-1.5">
                     <label className="text-[10px] font-black text-slate-400">المرحلة</label>
                     <select 
-                      value={partStageFilter}
-                      onChange={(e) => setPartStageFilter(e.target.value)}
+                      value={selectedStage}
+                      onChange={(e) => setSelectedStage(e.target.value)}
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                     >
-                      <option value="الكل">كل المراحل</option>
-                      {dynamicLevels.map(l => (
-                        <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>
-                          {typeof l === 'string' ? l : l.name}
-                        </option>
+                      <option value="ALL">كل المراحل</option>
+                      {[
+                        'حضانة', 'أولى وثانية', 'ثالثة ورابعة', 'خامسة وسادسة', 'إعدادي', 'ثانوي', 
+                        'جامعة', 'خريجون', 'خدام وإعداد الخدام', 'تعليم كبار', 'قانا الجليل', 
+                        'سمعان الشيخ', 'حرفيون', 'قدرات خاصة', 'صم وبكم', 'ديديموس', 'بولس وسيلا'
+                      ].map(stage => (
+                        <option key={stage} value={stage}>{stage}</option>
                       ))}
                     </select>
                   </div>
@@ -7841,11 +7867,11 @@ function AppComponent() {
                   <div className="flex-1 w-full flex flex-col gap-1.5">
                     <label className="text-[10px] font-black text-slate-400">المسابقة</label>
                     <select 
-                      value={partCompFilter}
-                      onChange={(e) => setPartCompFilter(e.target.value)}
+                      value={selectedCompetition}
+                      onChange={(e) => setSelectedCompetition(e.target.value)}
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                     >
-                      <option value="الكل">مسابقة (الكل)</option>
+                      <option value="ALL">مسابقة (الكل)</option>
                       {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثان'].map(c => (
                         <option key={c} value={c}>{c}</option>
                       ))}
@@ -7859,25 +7885,26 @@ function AppComponent() {
                       <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                       <input 
                         type="text"
-                        placeholder="ابحث بالاسم واضغط Enter..."
+                        placeholder="ابحث بالاسم..."
                         className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
-                        value={participantSearch}
-                        onChange={(e) => setParticipantSearch(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            fetchParticipantsPage(true, true, participantSearch);
-                          }
-                        }}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
                       />
                     </div>
                   </div>
 
-                  {/* 5. زر بحث */}
+                  {/* 5. زر إعادة ضبط الفلاتر */}
                   <button 
-                    onClick={() => fetchParticipantsPage(true, true, participantSearch)}
-                    className="px-6 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-black shadow-md hover:bg-slate-800 transition-colors w-full md:w-auto mt-2 md:mt-0"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedChurch('ALL');
+                      setSelectedStage('ALL');
+                      setSelectedCompetition('ALL');
+                    }}
+                    className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-900 rounded-xl text-xs font-black shadow-md transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-1.5 w-full md:w-auto mt-2 md:mt-0"
                   >
-                    بحث
+                    <RotateCcw size={14} />
+                    إعادة ضبط الفلاتر
                   </button>
                 </div>
                   {/* Desktop View Table */}
