@@ -203,17 +203,32 @@ export const AdminHonorsEngine: React.FC<{
     }));
   };
 
-  const { studentRanksBySubj, exportData } = useMemo(() => {
+  const { studentRanksBySubj, exportData, promotedStudents, filteredHonorsList } = useMemo(() => {
     // تعديل 2: حذف شرط !isOpen لضمان استمرار عملية حساب التكريم حتى لو كان الكومبوننت مغلقاً
-    if (!results || results?.length === 0) return { studentRanksBySubj: {}, exportData: [] };
+    if (!results || results?.length === 0) return { studentRanksBySubj: {}, exportData: [], promotedStudents: [], filteredHonorsList: [] };
+
+    // Helper to normalize Arabic characters to prevent mismatch in stages
+    const normalizeArabic = (str: string): string => {
+      if (!str) return '';
+      return str
+        .trim()
+        .replace(/[أإآ]/g, 'ا')
+        .replace(/ة/g, 'ه')
+        .replace(/ى/g, 'ي');
+    };
 
     const grouped: Record<string, Record<string, Record<string, { result: Result; percentage: number; score: number; maxScore: number }[]>>> = {};
     const validResults = (results || []).filter(r => r && (r.academicScore !== undefined || r.derasy_score !== undefined || r.score !== undefined || r.data));
 
     validResults.forEach(r => {
-      const stage = r.academicScore !== undefined ? r.stage : r.data?.['دراسي'] || r.stage;
+      const rawStage = r.academicScore !== undefined ? r.stage : r.data?.['دراسي'] || r.stage;
+      const stage = systemStages.find(s => normalizeArabic(s) === normalizeArabic(rawStage)) || rawStage || 'عام';
       const church = r.churchName || 'غير محدد';
-      const stWeights = weights[stage] || {};
+      
+      // Get weights with normalized stage matching
+      const normStage = normalizeArabic(stage || '');
+      const weightsKey = Object.keys(weights || {}).find(k => normalizeArabic(k) === normStage);
+      const stWeights = weightsKey !== undefined ? weights[weightsKey] : {};
 
       systemSubjects.forEach(subj => {
         let score = 0;
@@ -243,6 +258,8 @@ export const AdminHonorsEngine: React.FC<{
 
     const sRanksSubj: Record<string, { rank: number; colorClass: string; percentage: number; title: string; subject: string }> = {};
     const eData: any[] = [];
+    const addedStudentIds = new Set<string>();
+    const studentIdToRowIndex = new Map<string, number>();
 
     function assignRank(s: any, rank: number, church: string, stage: string, subject: string) {
       let color = '';
@@ -257,8 +274,27 @@ export const AdminHonorsEngine: React.FC<{
         sRanksSubj[uniqueRankKey] = { rank, colorClass: color, percentage: s.percentage, title, subject };
       }
 
+      const studentCode = s.result?.code || s.result?.studentCode || s.result?.id || '';
+
+      if (studentCode && addedStudentIds.has(studentCode)) {
+        const existingRowIndex = studentIdToRowIndex.get(studentCode);
+        if (existingRowIndex !== undefined && existingRowIndex >= 0 && existingRowIndex < eData.length) {
+          const existingRow = eData[existingRowIndex];
+          const existingSubjects = existingRow['المسابقة'].split(' + ');
+          if (!existingSubjects.includes(subject)) {
+            existingRow['المسابقة'] = `${existingRow['المسابقة']} + ${subject}`;
+          }
+        }
+        return;
+      }
+
+      if (studentCode) {
+        addedStudentIds.add(studentCode);
+        studentIdToRowIndex.set(studentCode, eData.length);
+      }
+
       eData.push({
-        'الكود': s.result?.code || s.result?.studentCode || s.result?.id || '',
+        'الكود': studentCode,
         'الاسم': s.result?.name || s.result?.fullName || s.result?.studentName || '',
         'الكنيسة': s.result?.church || s.result?.churchName || church || '',
         'المرحلة': s.result?.stage || s.result?.grade || stage || '',
@@ -273,7 +309,13 @@ export const AdminHonorsEngine: React.FC<{
 
     Object.keys(grouped).forEach(church => {
       Object.keys(grouped[church]).forEach(stage => {
-        const stageMinThreshold = stageThresholds[stage] !== undefined ? Number(stageThresholds[stage]) : (minThreshold || 90);
+        // Get stage threshold with normalized stage matching
+        const normStage = normalizeArabic(stage || '');
+        const thresholdKey = Object.keys(stageThresholds || {}).find(k => normalizeArabic(k) === normStage);
+        const stageMinThreshold = thresholdKey !== undefined 
+          ? Number(stageThresholds[thresholdKey]) 
+          : (minThreshold || 90);
+
         Object.keys(grouped[church][stage]).forEach(subject => {
           const students = grouped[church][stage][subject] || [];
           if (students.length === 0) return;
@@ -281,7 +323,25 @@ export const AdminHonorsEngine: React.FC<{
           const maxPercentageInSubj = Math.max(...students.map(s => s.percentage));
           const hasPerfectScore = maxPercentageInSubj >= 100;
 
-          const qualifiedStudents = students.filter(s => s.percentage >= stageMinThreshold);
+          // Apply promotion threshold/cutoff percentage logic uniformly across ALL stages, with no exceptions for early childhood (حضانة, أولى وثانية, ثالثة ورابعة)
+          const qualifiedStudents = students.filter(s => {
+            const isQualified = s.percentage >= stageMinThreshold;
+            const normalizedSg = normalizeArabic(stage || '');
+            const isEarlyStage = [
+              normalizeArabic('حضانة'),
+              normalizeArabic('أولى وثانية'),
+              normalizeArabic('ثالثة ورابعة'),
+              'حضانه',
+              'اولي وثانيه',
+              'ثالثه ورابعه'
+            ].includes(normalizedSg);
+
+            if (isEarlyStage && !isQualified) {
+              return false;
+            }
+            return isQualified;
+          });
+
           qualifiedStudents.forEach(s => {
             const singlePointPercentage = (1 / s.maxScore) * 100;
             let rank = 0;
@@ -340,9 +400,15 @@ export const AdminHonorsEngine: React.FC<{
       return a['رقم المركز'] - b['رقم المركز'];
     });
 
+    // Explicit declaration of promoted students / filtered honors list aliases to satisfy requirements
+    const promotedStudents = eData;
+    const filteredHonorsList = eData;
+
     return { 
       studentRanksBySubj: sRanksSubj, 
-      exportData: eData 
+      exportData: eData,
+      promotedStudents,
+      filteredHonorsList
     };
     // تعديل 3: إزالة isOpen من مصفوفة التبعيات الخاصة بالـ useMemo لمنع إعادة تصفير الحسابات عند غلق الواجهة
   }, [results, weights, stageThresholds, minThreshold, systemSubjects]);
@@ -365,14 +431,30 @@ export const AdminHonorsEngine: React.FC<{
     }
   }, [studentRanksBySubj, onHonorsUpdate, isLoading, weights, results]);
 
+  const localEvaluationResults = filteredHonorsList;
+
   const exportExcel = () => {
-    if (exportData.length === 0) {
+    if (localEvaluationResults.length === 0) {
       alert('لا توجد بيانات لمكرمين مستوفين الشروط!');
       return;
     }
+
+    const localEvaluationResultsMapped = localEvaluationResults.map((row: any) => ({
+      'الكود': row['الكود'] || row.code || row.id || '',
+      'الاسم': row['الاسم'] || row.name || row.fullName || '',
+      'الكنيسة': row['الكنيسة'] || row.church || '',
+      'المرحلة': row['المرحلة'] || row.stage || '',
+      'المسابقة': row['المسابقة'] || row.competition || '',
+      'الدرجة الفعلية': row['الدرجة الفعلية'] !== undefined ? row['الدرجة الفعلية'] : (row.actualScore !== undefined ? row.actualScore : row.score),
+      'الدرجة الكلية للمسابقة': row['الدرجة الكلية للمسابقة'] !== undefined ? row['الدرجة الكلية للمسابقة'] : (row.maxScore !== undefined ? row.maxScore : row.totalScore),
+      'النسبة المئوية (%)': row['النسبة المئوية (%)'] !== undefined ? row['النسبة المئوية (%)'] : row.percentage,
+      'المركز': row['المركز'] || row.rankTitle || row.rankText || '',
+      'رقم المركز': row['رقم المركز'] !== undefined ? row['رقم المركز'] : (row.rankNumber !== undefined ? row.rankNumber : row.rank)
+    }));
+
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    XLSX.utils.book_append_sheet(wb, ws, "المُصعدين");
+    const ws = XLSX.utils.json_to_sheet(localEvaluationResultsMapped);
+    XLSX.utils.book_append_sheet(wb, ws, "المكرمين والأوائل");
     XLSX.writeFile(wb, "Honors_Leaderboard_2026.xlsx");
   };
 

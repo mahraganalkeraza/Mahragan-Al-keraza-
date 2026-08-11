@@ -1158,6 +1158,33 @@ function AppComponent() {
   const [selectedStage, setSelectedStage] = useState('ALL');
   const [selectedCompetition, setSelectedCompetition] = useState('ALL');
 
+  const [churchesList, setChurchesList] = useState<string[]>([]);
+
+  useEffect(() => {
+    const fetchChurches = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('church_access_codes')
+          .select('church_name')
+          .not('church_name', 'is', null);
+
+        if (!error && data) {
+          const uniqueChurches = Array.from(
+            new Set(data.map((d: any) => d.church_name).filter(Boolean))
+          ) as string[];
+
+          const sortedChurches = uniqueChurches.sort((a, b) => 
+            a.localeCompare(b, 'ar', { sensitivity: 'base' })
+          );
+          setChurchesList(sortedChurches);
+        }
+      } catch (err) {
+        console.error("Error fetching churches:", err);
+      }
+    };
+    fetchChurches();
+  }, []);
+
   // PDF Export States
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [pdfData, setPdfData] = useState<any[]>([]);
@@ -7837,8 +7864,10 @@ function AppComponent() {
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-coptic-blue font-bold"
                       >
                         <option value="ALL">كل الكنائس</option>
-                        {Array.from(new Set(publicChurches.map((c: any) => c.name))).sort().map(church => (
-                          <option key={church} value={church}>{church}</option>
+                        {churchesList.map((church) => (
+                          <option key={church} value={church}>
+                            {church}
+                          </option>
                         ))}
                       </select>
                     </div>

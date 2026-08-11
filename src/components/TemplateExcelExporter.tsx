@@ -328,11 +328,25 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
       return true;
     }
 
+    // Helper to normalize Arabic characters to prevent mismatch in stages
+    const normalizeStage = (str: string): string => {
+      if (!str) return '';
+      return str
+        .trim()
+        .replace(/[أإآ]/g, 'ا')
+        .replace(/ة/g, 'ه');
+    };
+
     const stage = (student.stage || student.data?.['المرحلة'] || '').trim();
-    const stThreshold = stageThresholds[stage] !== undefined 
-      ? Number(stageThresholds[stage]) 
+    const normStage = normalizeStage(stage);
+
+    const thresholdKey = Object.keys(stageThresholds || {}).find(k => normalizeStage(k) === normStage);
+    const stThreshold = thresholdKey !== undefined 
+      ? Number(stageThresholds[thresholdKey]) 
       : (minThreshold || 90);
-    const stWeights = weightsMap[stage] || {};
+
+    const weightsKey = Object.keys(weightsMap || {}).find(k => normalizeStage(k) === normStage);
+    const stWeights = weightsKey !== undefined ? weightsMap[weightsKey] : {};
 
     // 3. Subject score percentage check against stage threshold
     const subjects = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
