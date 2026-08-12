@@ -43,7 +43,7 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
       const [honorsSnap, sysFeesSnap, submissionsSnap, stagesSnap] = await Promise.all([
         supabase.from('honors_settings').select('*').eq('id', 'current_config').maybeSingle(),
         supabase.from('system_settings').select('*').eq('id', 'stage_fees').maybeSingle(),
-        supabase.from('exam_submissions').select('*').eq('is_published', true),
+        supabase.from('exam_submissions').select('*').eq('is_published', true).range(0, 4999),
         supabase.from('stage_competitions').select('stage_name')
       ]);
 

@@ -42,11 +42,13 @@ export const AdminQualificationFeesViewer: React.FC = () => {
   const fetchAllChurchesFeesData = async () => {
     setIsLoading(true);
     try {
-      // 1. Fetch settings and submissions
-      const [honorsSnap, sysFeesSnap, submissionsSnap] = await Promise.all([
+      // 1. Fetch settings, submissions, and churches from multiple tables to ensure no church is left out
+      const [honorsSnap, sysFeesSnap, submissionsSnap, churchesSnap, accessCodesSnap] = await Promise.all([
         supabase.from('honors_settings').select('*').eq('id', 'current_config').maybeSingle(),
         supabase.from('system_settings').select('*').eq('id', 'stage_fees').maybeSingle(),
-        supabase.from('exam_submissions').select('*').eq('is_published', true)
+        supabase.from('exam_submissions').select('*').eq('is_published', true).range(0, 4999),
+        supabase.from('churches').select('*').range(0, 4999),
+        supabase.from('church_access_codes').select('church_name').range(0, 4999)
       ]);
 
       let feesMap: Record<string, number> = {};
@@ -75,6 +77,23 @@ export const AdminQualificationFeesViewer: React.FC = () => {
 
       const allSubmissions = submissionsSnap.data || [];
 
+      // Compile a complete, deduplicated list of church names across all available data sources (Left Join approach)
+      const allChurchNamesSet = new Set<string>();
+
+      if (churchesSnap.data) {
+        churchesSnap.data.forEach((c: any) => {
+          const name = (c.name || '').trim();
+          if (name) allChurchNamesSet.add(name);
+        });
+      }
+
+      if (accessCodesSnap.data) {
+        accessCodesSnap.data.forEach((ac: any) => {
+          const name = (ac.church_name || '').trim();
+          if (name) allChurchNamesSet.add(name);
+        });
+      }
+
       // 2. Map submissions by church -> stage -> student
       // churchMap: Record<churchName, Record<stageName, Map<studentId, { id, name, percentage }>>>
       const churchMap: Record<string, Record<string, Map<string, { id: string; name: string; percentage: number }>>> = {};
@@ -82,6 +101,9 @@ export const AdminQualificationFeesViewer: React.FC = () => {
       allSubmissions.forEach((sub: any) => {
         const rawChurch = (sub.churchName || sub.data?.['الكنيسة'] || '').trim();
         if (!rawChurch) return;
+
+        // Ensure we record any church names found in actual submissions as well
+        allChurchNamesSet.add(rawChurch);
 
         const stage = sub.stage || sub.data?.['المرحلة'] || 'غير محدد';
         const studentId = sub.id || sub.student_id || sub.studentName;
@@ -124,11 +146,11 @@ export const AdminQualificationFeesViewer: React.FC = () => {
         }
       });
 
-      // 3. Transform churchMap into structured summaries
+      // 3. Transform the full set of churches into structured summaries (including those with 0 qualified)
       const summaryList: ChurchSummaryItem[] = [];
 
-      Object.keys(churchMap).forEach(chName => {
-        const stagesObj = churchMap[chName];
+      allChurchNamesSet.forEach(chName => {
+        const stagesObj = churchMap[chName] || {};
         const stageBreakdown: StageBreakdownItem[] = [];
         let chTotalCount = 0;
         let chTotalAmount = 0;
@@ -151,18 +173,18 @@ export const AdminQualificationFeesViewer: React.FC = () => {
           }
         });
 
-        if (chTotalCount > 0) {
-          stageBreakdown.sort((a, b) => a.stage.localeCompare(b.stage, 'ar'));
-          summaryList.push({
-            churchName: chName,
-            totalQualifiedCount: chTotalCount,
-            totalAmountRequired: chTotalAmount,
-            stageBreakdown
-          });
-        }
+        stageBreakdown.sort((a, b) => a.stage.localeCompare(b.stage, 'ar'));
+        summaryList.push({
+          churchName: chName,
+          totalQualifiedCount: chTotalCount,
+          totalAmountRequired: chTotalAmount,
+          stageBreakdown
+        });
       });
 
-      summaryList.sort((a, b) => b.totalAmountRequired - a.totalAmountRequired);
+      // Alphabetical Sorting: Sort the final summaryList alphabetically so all churches (active or zeroed) are organized properly in the UI.
+      summaryList.sort((a, b) => a.churchName.localeCompare(b.churchName, 'ar'));
+
       setChurchesSummary(summaryList);
 
     } catch (err) {
@@ -305,7 +327,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <Download size={20} /> تحميل كشف بكل الكنائس (PDF)
+                  <Download size={20} /> تصدير كشف ماليات كل الكنائس (PDF)
                 </>
               )}
             </button>
@@ -439,7 +461,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
                           ) : (
                             <Download size={14} />
                           )}
-                          تحميل (PDF)
+                          تحميل مطالبة الكنيسة (PDF)
                         </button>
                       </div>
                     </td>
@@ -511,7 +533,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
                 }}
                 className="px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-black text-xs flex items-center gap-1.5 hover:bg-emerald-700 transition"
               >
-                <Download size={14} /> تحميل  (PDF)
+                <Download size={14} /> تحميل مطالبة الكنيسة (PDF)
               </button>
             </div>
           </div>
