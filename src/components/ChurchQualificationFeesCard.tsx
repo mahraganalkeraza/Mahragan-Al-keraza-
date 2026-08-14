@@ -17,6 +17,28 @@ interface StageBreakdownItem {
   students: Array<{ id: string; name: string; percentage: number }>;
 }
 
+// Helper to normalize Arabic characters to prevent mismatch in churches and stages
+const normalizeArabic = (str: any): string => {
+  if (str === undefined || str === null) return '';
+  return String(str)
+    .trim()
+    .replace(/[\u064B-\u065F\u0670]/g, '') // Remove tashkeel/harakat
+    .replace(/ـ+/g, '') // Remove tatweel
+    .replace(/[أإآ]/g, 'ا') // Normalize alefs
+    .replace(/ة/g, 'ه') // Normalize taa marbuta
+    .replace(/ى/g, 'ي') // Normalize alif maqsura
+    .replace(/[^\u0600-\u06FFa-zA-Z0-9]/g, ' ') // Replace non-alphanumeric punctuation with space
+    .replace(/\s+/g, ' ') // Collapse spaces
+    .trim()
+    .toLowerCase();
+};
+
+const stripChurchPrefix = (name: string): string => {
+  return normalizeArabic(name)
+    .replace(/^(كنيسه|كنسيه|مقر|دير|قطاع)\s+/, '')
+    .trim();
+};
+
 export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardProps> = ({
   churchName,
   refreshTrigger = 0
@@ -39,11 +61,11 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
   const fetchFeesAndSubmissions = async () => {
     setIsLoading(true);
     try {
-      // 1. Fetch honors settings (config, thresholds, weights, fees)
+      // 1. Fetch honors settings (config, thresholds, weights, fees), stages, and submissions
       const [honorsSnap, sysFeesSnap, submissionsSnap, stagesSnap] = await Promise.all([
         supabase.from('honors_settings').select('*').eq('id', 'current_config').maybeSingle(),
         supabase.from('system_settings').select('*').eq('id', 'stage_fees').maybeSingle(),
-        supabase.from('exam_submissions').select('*').eq('is_published', true).range(0, 4999),
+        supabase.from('exam_submissions').select('*'),
         supabase.from('stage_competitions').select('stage_name')
       ]);
 
@@ -73,49 +95,167 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
       setStageThresholds(threshMap);
       setMinThreshold(globalMin);
 
-      // 2. Filter submissions for current logged in church
-      const allSubmissions = submissionsSnap.data || [];
-      const cleanChurch = (churchName || '').trim().toLowerCase();
+      // System stages
+      const systemStages = Array.from(
+        new Set((stagesSnap.data || []).map((s: any) => (s.stage_name || '').trim()).filter(Boolean))
+      );
 
-      const churchSubmissions = cleanChurch 
-        ? allSubmissions.filter((s: any) => (s.churchName || '').trim().toLowerCase().includes(cleanChurch))
+      // Canonical match helper for Stages
+      const findCanonicalStage = (rawStage: string): string => {
+        if (!rawStage || !rawStage.trim()) return 'عام';
+        const normRaw = normalizeArabic(rawStage);
+
+        for (const stage of systemStages) {
+          if (normalizeArabic(stage) === normRaw) return stage;
+        }
+
+        for (const stage of systemStages) {
+          const normStage = normalizeArabic(stage);
+          if (normStage.includes(normRaw) || normRaw.includes(normStage)) return stage;
+        }
+
+        return rawStage.trim();
+      };
+
+      // Safe Stage Fee lookup with fallback
+      const getStageFee = (stageName: string): number => {
+        const normStage = normalizeArabic(stageName);
+        const feeKey = Object.keys(feesMap || {}).find(k => normalizeArabic(k) === normStage);
+        if (feeKey !== undefined && !isNaN(Number(feesMap[feeKey])) && Number(feesMap[feeKey]) >= 0) {
+          return Number(feesMap[feeKey]);
+        }
+        if (feesMap['default'] !== undefined && !isNaN(Number(feesMap['default'])) && Number(feesMap['default']) >= 0) {
+          return Number(feesMap['default']);
+        }
+        return 50; // Standard fallback rate (50 EGP)
+      };
+
+      // Stage Threshold lookup
+      const getStageThreshold = (stageName: string): number => {
+        const normStage = normalizeArabic(stageName);
+        const threshKey = Object.keys(threshMap || {}).find(k => normalizeArabic(k) === normStage);
+        if (threshKey !== undefined && !isNaN(Number(threshMap[threshKey])) && Number(threshMap[threshKey]) > 0) {
+          return Number(threshMap[threshKey]);
+        }
+        return globalMin || 90;
+      };
+
+      // Stage Weights and Subject Max Score lookup
+      const getStageWeights = (stageName: string): Record<string, number> => {
+        const normStage = normalizeArabic(stageName);
+        const key = Object.keys(weightsMap || {}).find(k => normalizeArabic(k) === normStage);
+        return key ? weightsMap[key] : {};
+      };
+
+      const getSubjectMaxScore = (subjectName: string, stWeights: Record<string, number>): number => {
+        const normSubj = normalizeArabic(subjectName);
+        const key = Object.keys(stWeights || {}).find(k => normalizeArabic(k) === normSubj);
+        if (key && Number(stWeights[key]) > 0) {
+          return Number(stWeights[key]);
+        }
+        return 100;
+      };
+
+      // 2. Filter submissions for current logged in church with normalized matching
+      const allSubmissions = submissionsSnap.data || [];
+      const targetNormChurch = normalizeArabic(churchName || '');
+      const targetStrippedChurch = stripChurchPrefix(churchName || '');
+
+      const isMatchingChurch = (subChurchName: string) => {
+        if (!targetNormChurch) return true;
+        if (!subChurchName) return false;
+        const normSub = normalizeArabic(subChurchName);
+        const strippedSub = stripChurchPrefix(subChurchName);
+        if (normSub === targetNormChurch || strippedSub === targetStrippedChurch) return true;
+        if (targetStrippedChurch && (normSub.includes(targetStrippedChurch) || strippedSub.includes(targetStrippedChurch))) return true;
+        if (normSub.includes(targetNormChurch) || targetNormChurch.includes(normSub)) return true;
+        return false;
+      };
+
+      const churchSubmissions = churchName 
+        ? allSubmissions.filter((s: any) => {
+            const rawChurch = s.churchName || s.church || s.data?.['الكنيسة'] || s.data?.['كنيسة'] || '';
+            return isMatchingChurch(rawChurch);
+          })
         : allSubmissions;
 
       // 3. Process qualified students grouped by stage
-      // Qualified rule: Student score percentage in stage >= stage threshold (or minThreshold)
       const stageMap: Record<string, Map<string, { id: string; name: string; percentage: number }>> = {};
 
       churchSubmissions.forEach((sub: any) => {
-        const stage = sub.stage || sub.data?.['المرحلة'] || 'غير محدد';
-        const studentId = sub.id || sub.student_id || sub.studentName;
-        const studentName = sub.studentName || 'غير مسمى';
+        const rawStage = (sub.stage || sub.data?.['المرحلة'] || sub.grade || '').trim();
+        const stage = findCanonicalStage(rawStage);
 
-        const stWeights = weightsMap[stage] || {};
-        const stThreshold = threshMap[stage] !== undefined ? Number(threshMap[stage]) : globalMin;
+        const studentId = String(
+          sub.student_id || 
+          sub.studentCode || 
+          sub.code || 
+          sub.id || 
+          `${sub.studentName || sub.name || 'طالب'}_${stage}`
+        ).trim().toLowerCase();
+
+        const studentName = (sub.studentName || sub.name || sub.fullName || sub.data?.['الاسم'] || 'غير مسمى').trim();
+
+        const stWeights = getStageWeights(stage);
+        const stThreshold = getStageThreshold(stage);
 
         // Calculate max percentage achieved by this submission across subjects
         let maxPerc = 0;
 
         // Core subjects
-        const subjects = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
-        subjects.forEach(subj => {
-          let score = 0;
-          if (subj === 'دراسي') score = parseFloat(sub.derasy_score ?? sub.academicScore ?? sub.data?.['دراسي'] ?? 0);
-          else if (subj === 'محفوظات') score = parseFloat(sub.mahfouzat_score ?? sub.memorizationScore ?? sub.data?.['محفوظات'] ?? 0);
-          else if (subj === 'قبطي مستوى أول') score = parseFloat(sub.qebty_lvl1_score ?? sub.copticL1Score ?? sub.data?.['قبطي مستوى أول'] ?? 0);
-          else if (subj === 'قبطي مستوى ثاني') score = parseFloat(sub.qebty_lvl2_score ?? sub.copticL2Score ?? sub.data?.['قبطي مستوى ثاني'] ?? 0);
+        const coreSubjects = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
+        coreSubjects.forEach(subj => {
+          let score: any = null;
+          if (subj === 'دراسي') score = sub.derasy_score ?? sub.academicScore ?? sub.data?.['دراسي'] ?? sub.data?.['دراسية'];
+          else if (subj === 'محفوظات') score = sub.mahfouzat_score ?? sub.memorizationScore ?? sub.data?.['محفوظات'];
+          else if (subj === 'قبطي مستوى أول') score = sub.qebty_lvl1_score ?? sub.copticL1Score ?? sub.data?.['قبطي مستوى أول'] ?? sub.data?.['قبطي 1'];
+          else if (subj === 'قبطي مستوى ثاني') score = sub.qebty_lvl2_score ?? sub.copticL2Score ?? sub.data?.['قبطي مستوى ثاني'] ?? sub.data?.['قبطي 2'];
           
-          const maxScore = Number(stWeights[subj]) || 100;
-          if (score > 0 && maxScore > 0) {
-            const perc = (score / maxScore) * 100;
-            if (perc > maxPerc) maxPerc = perc;
+          if (score !== undefined && score !== null && score !== '') {
+            const numScore = parseFloat(score);
+            if (!isNaN(numScore) && numScore > 0) {
+              const maxScore = getSubjectMaxScore(subj, stWeights);
+              if (maxScore > 0) {
+                const perc = (numScore / maxScore) * 100;
+                if (perc > maxPerc) maxPerc = perc;
+              }
+            }
           }
         });
 
-        // Check overall score if available
-        if (sub.score !== undefined && sub.total_max_score) {
-          const overallPerc = (sub.score / sub.total_max_score) * 100;
-          if (overallPerc > maxPerc) maxPerc = overallPerc;
+        // Dynamic subjects in sub.data
+        if (sub.data && typeof sub.data === 'object') {
+          Object.keys(sub.data).forEach(k => {
+            const normKey = normalizeArabic(k);
+            if (normKey === 'الكنيسه' || normKey === 'المرحله' || normKey === 'الاسم' || normKey === 'الكود') return;
+            const val = sub.data[k];
+            if (val !== undefined && val !== null && val !== '') {
+              const numVal = parseFloat(val);
+              if (!isNaN(numVal) && numVal > 0) {
+                const maxScore = getSubjectMaxScore(k, stWeights);
+                if (maxScore > 0) {
+                  const perc = (numVal / maxScore) * 100;
+                  if (perc > maxPerc) maxPerc = perc;
+                }
+              }
+            }
+          });
+        }
+
+        // Direct overall percentage / total scores
+        if (sub.percentage !== undefined && sub.percentage !== null && !isNaN(Number(sub.percentage))) {
+          const p = Number(sub.percentage);
+          if (p > maxPerc) maxPerc = p;
+        }
+
+        if (sub.score !== undefined && sub.score !== null && sub.total_max_score && Number(sub.total_max_score) > 0) {
+          const p = (Number(sub.score) / Number(sub.total_max_score)) * 100;
+          if (p > maxPerc) maxPerc = p;
+        }
+
+        if (sub.actualScore !== undefined && sub.maxScore && Number(sub.maxScore) > 0) {
+          const p = (Number(sub.actualScore) / Number(sub.maxScore)) * 100;
+          if (p > maxPerc) maxPerc = p;
         }
 
         // Check if student qualifies according to threshold
@@ -123,7 +263,7 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
           if (!stageMap[stage]) {
             stageMap[stage] = new Map();
           }
-          // Store distinct student entry
+          // Store distinct student entry (deduplicate across subjects)
           const existing = stageMap[stage].get(studentId);
           if (!existing || maxPerc > existing.percentage) {
             stageMap[stage].set(studentId, { id: studentId, name: studentName, percentage: maxPerc });
@@ -140,7 +280,7 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
         const studentList = Array.from(stageMap[stage].values());
         const count = studentList.length;
         if (count > 0) {
-          const fee = feesMap[stage] !== undefined ? Number(feesMap[stage]) : 50; // default 50 EGP
+          const fee = getStageFee(stage);
           const subtotal = count * fee;
 
           grandTotal += subtotal;

@@ -21,6 +21,28 @@ interface ChurchSummaryItem {
   stageBreakdown: StageBreakdownItem[];
 }
 
+// Helper to normalize Arabic characters to prevent mismatch in churches and stages
+export const normalizeArabic = (str: any): string => {
+  if (str === undefined || str === null) return '';
+  return String(str)
+    .trim()
+    .replace(/[\u064B-\u065F\u0670]/g, '') // Remove tashkeel/harakat
+    .replace(/ـ+/g, '') // Remove tatweel
+    .replace(/[أإآ]/g, 'ا') // Normalize alefs
+    .replace(/ة/g, 'ه') // Normalize taa marbuta
+    .replace(/ى/g, 'ي') // Normalize alif maqsura
+    .replace(/[^\u0600-\u06FFa-zA-Z0-9]/g, ' ') // Replace non-alphanumeric punctuation with space
+    .replace(/\s+/g, ' ') // Collapse spaces
+    .trim()
+    .toLowerCase();
+};
+
+export const stripChurchPrefix = (name: string): string => {
+  return normalizeArabic(name)
+    .replace(/^(كنيسه|كنسيه|مقر|دير|قطاع)\s+/, '')
+    .trim();
+};
+
 export const AdminQualificationFeesViewer: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -42,13 +64,13 @@ export const AdminQualificationFeesViewer: React.FC = () => {
   const fetchAllChurchesFeesData = async () => {
     setIsLoading(true);
     try {
-      // 1. Fetch settings, submissions, and churches from multiple tables to ensure no church is left out
-      const [honorsSnap, sysFeesSnap, submissionsSnap, churchesSnap, accessCodesSnap] = await Promise.all([
+      // 1. Fetch settings, stages, church_access_codes, and all submissions in parallel
+      const [honorsSnap, sysFeesSnap, submissionsSnap, stagesSnap, churchesSnap] = await Promise.all([
         supabase.from('honors_settings').select('*').eq('id', 'current_config').maybeSingle(),
         supabase.from('system_settings').select('*').eq('id', 'stage_fees').maybeSingle(),
-        supabase.from('exam_submissions').select('*').eq('is_published', true).range(0, 4999),
-        supabase.from('churches').select('*').range(0, 4999),
-        supabase.from('church_access_codes').select('church_name').range(0, 4999)
+        supabase.from('exam_submissions').select('*'),
+        supabase.from('stage_competitions').select('stage_name'),
+        supabase.from('church_access_codes').select('church_name').order('church_name')
       ]);
 
       let feesMap: Record<string, number> = {};
@@ -75,81 +97,216 @@ export const AdminQualificationFeesViewer: React.FC = () => {
 
       setStageFees(feesMap);
 
+      // Extract system stages and master churches lists
+      const systemStages = Array.from(
+        new Set((stagesSnap.data || []).map((s: any) => (s.stage_name || '').trim()).filter(Boolean))
+      );
+
+      const masterChurches = Array.from(
+        new Set((churchesSnap.data || []).map((c: any) => (c.church_name || '').trim()).filter(Boolean))
+      );
+
+      // Canonical match helper for Churches
+      const findCanonicalChurch = (rawChurch: string): string => {
+        if (!rawChurch || !rawChurch.trim()) return '';
+        const normRaw = normalizeArabic(rawChurch);
+        const strippedRaw = stripChurchPrefix(rawChurch);
+
+        // 1. Exact normalized match
+        for (const master of masterChurches) {
+          if (normalizeArabic(master) === normRaw) return master;
+        }
+
+        // 2. Stripped prefix match ("كنيسة العذراء" vs "العذراء")
+        for (const master of masterChurches) {
+          const strippedMaster = stripChurchPrefix(master);
+          if (strippedMaster && (strippedMaster === strippedRaw || strippedMaster.includes(strippedRaw) || strippedRaw.includes(strippedMaster))) {
+            return master;
+          }
+        }
+
+        // 3. Substring match
+        for (const master of masterChurches) {
+          const normMaster = normalizeArabic(master);
+          if (normMaster.includes(normRaw) || normRaw.includes(normMaster)) {
+            return master;
+          }
+        }
+
+        return rawChurch.trim();
+      };
+
+      // Canonical match helper for Stages
+      const findCanonicalStage = (rawStage: string): string => {
+        if (!rawStage || !rawStage.trim()) return 'عام';
+        const normRaw = normalizeArabic(rawStage);
+
+        for (const stage of systemStages) {
+          if (normalizeArabic(stage) === normRaw) return stage;
+        }
+
+        for (const stage of systemStages) {
+          const normStage = normalizeArabic(stage);
+          if (normStage.includes(normRaw) || normRaw.includes(normStage)) return stage;
+        }
+
+        return rawStage.trim();
+      };
+
+      // Safe Stage Fee lookup with fallback
+      const getStageFee = (stageName: string): number => {
+        const normStage = normalizeArabic(stageName);
+        const feeKey = Object.keys(feesMap || {}).find(k => normalizeArabic(k) === normStage);
+        if (feeKey !== undefined && !isNaN(Number(feesMap[feeKey])) && Number(feesMap[feeKey]) >= 0) {
+          return Number(feesMap[feeKey]);
+        }
+        if (feesMap['default'] !== undefined && !isNaN(Number(feesMap['default'])) && Number(feesMap['default']) >= 0) {
+          return Number(feesMap['default']);
+        }
+        return 50; // Standard fallback rate (50 EGP)
+      };
+
+      // Stage Threshold lookup
+      const getStageThreshold = (stageName: string): number => {
+        const normStage = normalizeArabic(stageName);
+        const threshKey = Object.keys(threshMap || {}).find(k => normalizeArabic(k) === normStage);
+        if (threshKey !== undefined && !isNaN(Number(threshMap[threshKey])) && Number(threshMap[threshKey]) > 0) {
+          return Number(threshMap[threshKey]);
+        }
+        return globalMin || 90;
+      };
+
+      // Stage Weights and Subject Max Score lookup
+      const getStageWeights = (stageName: string): Record<string, number> => {
+        const normStage = normalizeArabic(stageName);
+        const key = Object.keys(weightsMap || {}).find(k => normalizeArabic(k) === normStage);
+        return key ? weightsMap[key] : {};
+      };
+
+      const getSubjectMaxScore = (subjectName: string, stWeights: Record<string, number>): number => {
+        const normSubj = normalizeArabic(subjectName);
+        const key = Object.keys(stWeights || {}).find(k => normalizeArabic(k) === normSubj);
+        if (key && Number(stWeights[key]) > 0) {
+          return Number(stWeights[key]);
+        }
+        return 100;
+      };
+
       const allSubmissions = submissionsSnap.data || [];
 
-      // Compile a complete, deduplicated list of church names across all available data sources (Left Join approach)
-      const allChurchNamesSet = new Set<string>();
-
-      if (churchesSnap.data) {
-        churchesSnap.data.forEach((c: any) => {
-          const name = (c.name || '').trim();
-          if (name) allChurchNamesSet.add(name);
-        });
-      }
-
-      if (accessCodesSnap.data) {
-        accessCodesSnap.data.forEach((ac: any) => {
-          const name = (ac.church_name || '').trim();
-          if (name) allChurchNamesSet.add(name);
-        });
-      }
-
-      // 2. Map submissions by church -> stage -> student
-      // churchMap: Record<churchName, Record<stageName, Map<studentId, { id, name, percentage }>>>
+      // 2. Map submissions by Canonical Church -> Canonical Stage -> Map<StudentId, StudentData>
       const churchMap: Record<string, Record<string, Map<string, { id: string; name: string; percentage: number }>>> = {};
 
       allSubmissions.forEach((sub: any) => {
-        const rawChurch = (sub.churchName || sub.data?.['الكنيسة'] || '').trim();
+        const rawChurch = (sub.churchName || sub.church || sub.data?.['الكنيسة'] || sub.data?.['كنيسة'] || '').trim();
         if (!rawChurch) return;
 
-        // Ensure we record any church names found in actual submissions as well
-        allChurchNamesSet.add(rawChurch);
+        const matchedChurch = findCanonicalChurch(rawChurch);
+        if (!matchedChurch) return;
 
-        const stage = sub.stage || sub.data?.['المرحلة'] || 'غير محدد';
-        const studentId = sub.id || sub.student_id || sub.studentName;
-        const studentName = sub.studentName || 'غير مسمى';
+        const rawStage = (sub.stage || sub.data?.['المرحلة'] || sub.grade || '').trim();
+        const matchedStage = findCanonicalStage(rawStage);
 
-        const stWeights = weightsMap[stage] || {};
-        const stThreshold = threshMap[stage] !== undefined ? Number(threshMap[stage]) : globalMin;
+        const studentId = String(
+          sub.student_id || 
+          sub.studentCode || 
+          sub.code || 
+          sub.id || 
+          `${sub.studentName || sub.name || 'طالب'}_${matchedStage}`
+        ).trim().toLowerCase();
 
-        // Calculate max percentage achieved by this submission
+        const studentName = (sub.studentName || sub.name || sub.fullName || sub.data?.['الاسم'] || 'غير مسمى').trim();
+
+        const stWeights = getStageWeights(matchedStage);
+        const stThreshold = getStageThreshold(matchedStage);
+
+        // Calculate max percentage achieved by this student across subjects
         let maxPerc = 0;
-        const subjects = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
-        subjects.forEach(subj => {
-          let score = 0;
-          if (subj === 'دراسي') score = parseFloat(sub.derasy_score ?? sub.academicScore ?? sub.data?.['دراسي'] ?? 0);
-          else if (subj === 'محفوظات') score = parseFloat(sub.mahfouzat_score ?? sub.memorizationScore ?? sub.data?.['محفوظات'] ?? 0);
-          else if (subj === 'قبطي مستوى أول') score = parseFloat(sub.qebty_lvl1_score ?? sub.copticL1Score ?? sub.data?.['قبطي مستوى أول'] ?? 0);
-          else if (subj === 'قبطي مستوى ثاني') score = parseFloat(sub.qebty_lvl2_score ?? sub.copticL2Score ?? sub.data?.['قبطي مستوى ثاني'] ?? 0);
-          
-          const maxScore = Number(stWeights[subj]) || 100;
-          if (score > 0 && maxScore > 0) {
-            const perc = (score / maxScore) * 100;
-            if (perc > maxPerc) maxPerc = perc;
+
+        // A. Core subjects evaluation
+        const coreSubjects = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
+        coreSubjects.forEach(subj => {
+          let score: any = null;
+          if (subj === 'دراسي') {
+            score = sub.derasy_score ?? sub.academicScore ?? sub.data?.['دراسي'] ?? sub.data?.['دراسية'];
+          } else if (subj === 'محفوظات') {
+            score = sub.mahfouzat_score ?? sub.memorizationScore ?? sub.data?.['محفوظات'];
+          } else if (subj === 'قبطي مستوى أول') {
+            score = sub.qebty_lvl1_score ?? sub.copticL1Score ?? sub.data?.['قبطي مستوى أول'] ?? sub.data?.['قبطي 1'];
+          } else if (subj === 'قبطي مستوى ثاني') {
+            score = sub.qebty_lvl2_score ?? sub.copticL2Score ?? sub.data?.['قبطي مستوى ثاني'] ?? sub.data?.['قبطي 2'];
+          }
+
+          if (score !== undefined && score !== null && score !== '') {
+            const numScore = parseFloat(score);
+            if (!isNaN(numScore) && numScore > 0) {
+              const maxScore = getSubjectMaxScore(subj, stWeights);
+              if (maxScore > 0) {
+                const perc = (numScore / maxScore) * 100;
+                if (perc > maxPerc) maxPerc = perc;
+              }
+            }
           }
         });
 
-        if (sub.score !== undefined && sub.total_max_score) {
-          const overallPerc = (sub.score / sub.total_max_score) * 100;
-          if (overallPerc > maxPerc) maxPerc = overallPerc;
+        // B. Dynamic subjects in sub.data
+        if (sub.data && typeof sub.data === 'object') {
+          Object.keys(sub.data).forEach(k => {
+            const normKey = normalizeArabic(k);
+            if (normKey === 'الكنيسه' || normKey === 'المرحله' || normKey === 'الاسم' || normKey === 'الكود') return;
+            const val = sub.data[k];
+            if (val !== undefined && val !== null && val !== '') {
+              const numVal = parseFloat(val);
+              if (!isNaN(numVal) && numVal > 0) {
+                const maxScore = getSubjectMaxScore(k, stWeights);
+                if (maxScore > 0) {
+                  const perc = (numVal / maxScore) * 100;
+                  if (perc > maxPerc) maxPerc = perc;
+                }
+              }
+            }
+          });
         }
 
-        // Check qualification
-        if (maxPerc >= stThreshold) {
-          if (!churchMap[rawChurch]) churchMap[rawChurch] = {};
-          if (!churchMap[rawChurch][stage]) churchMap[rawChurch][stage] = new Map();
+        // C. Direct overall percentage / total scores
+        if (sub.percentage !== undefined && sub.percentage !== null && !isNaN(Number(sub.percentage))) {
+          const p = Number(sub.percentage);
+          if (p > maxPerc) maxPerc = p;
+        }
 
-          const existing = churchMap[rawChurch][stage].get(studentId);
+        if (sub.score !== undefined && sub.score !== null && sub.total_max_score && Number(sub.total_max_score) > 0) {
+          const p = (Number(sub.score) / Number(sub.total_max_score)) * 100;
+          if (p > maxPerc) maxPerc = p;
+        }
+
+        if (sub.actualScore !== undefined && sub.maxScore && Number(sub.maxScore) > 0) {
+          const p = (Number(sub.actualScore) / Number(sub.maxScore)) * 100;
+          if (p > maxPerc) maxPerc = p;
+        }
+
+        // D. Qualification Check (Applies uniformly across all stages without bypassing early childhood)
+        if (maxPerc >= stThreshold) {
+          if (!churchMap[matchedChurch]) churchMap[matchedChurch] = {};
+          if (!churchMap[matchedChurch][matchedStage]) churchMap[matchedChurch][matchedStage] = new Map();
+
+          const existing = churchMap[matchedChurch][matchedStage].get(studentId);
           if (!existing || maxPerc > existing.percentage) {
-            churchMap[rawChurch][stage].set(studentId, { id: studentId, name: studentName, percentage: maxPerc });
+            churchMap[matchedChurch][matchedStage].set(studentId, {
+              id: studentId,
+              name: studentName,
+              percentage: maxPerc
+            });
           }
         }
       });
 
-      // 3. Transform the full set of churches into structured summaries (including those with 0 qualified)
+      // 3. Build summaryList including ALL masterChurches + any extra discovered churches
       const summaryList: ChurchSummaryItem[] = [];
+      const allChurchNames = Array.from(
+        new Set([...masterChurches, ...Object.keys(churchMap)])
+      );
 
-      allChurchNamesSet.forEach(chName => {
+      allChurchNames.forEach(chName => {
         const stagesObj = churchMap[chName] || {};
         const stageBreakdown: StageBreakdownItem[] = [];
         let chTotalCount = 0;
@@ -158,7 +315,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
         Object.keys(stagesObj).forEach(stg => {
           const count = stagesObj[stg].size;
           if (count > 0) {
-            const fee = feesMap[stg] !== undefined ? Number(feesMap[stg]) : 50;
+            const fee = getStageFee(stg);
             const subtotal = count * fee;
 
             chTotalCount += count;
@@ -174,6 +331,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
         });
 
         stageBreakdown.sort((a, b) => a.stage.localeCompare(b.stage, 'ar'));
+
         summaryList.push({
           churchName: chName,
           totalQualifiedCount: chTotalCount,
@@ -182,8 +340,16 @@ export const AdminQualificationFeesViewer: React.FC = () => {
         });
       });
 
-      // Alphabetical Sorting: Sort the final summaryList alphabetically so all churches (active or zeroed) are organized properly in the UI.
-      summaryList.sort((a, b) => a.churchName.localeCompare(b.churchName, 'ar'));
+      // Sort: highest required amount first, then highest qualified count, then alphabetical
+      summaryList.sort((a, b) => {
+        if (b.totalAmountRequired !== a.totalAmountRequired) {
+          return b.totalAmountRequired - a.totalAmountRequired;
+        }
+        if (b.totalQualifiedCount !== a.totalQualifiedCount) {
+          return b.totalQualifiedCount - a.totalQualifiedCount;
+        }
+        return a.churchName.localeCompare(b.churchName, 'ar');
+      });
 
       setChurchesSummary(summaryList);
 
@@ -327,7 +493,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <Download size={20} /> تصدير كشف ماليات كل الكنائس (PDF)
+                  <Download size={20} /> تحميل كشف بكل الكنائس (PDF)
                 </>
               )}
             </button>
@@ -461,7 +627,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
                           ) : (
                             <Download size={14} />
                           )}
-                          تحميل مطالبة الكنيسة (PDF)
+                          تحميل (PDF)
                         </button>
                       </div>
                     </td>
@@ -495,28 +661,34 @@ export const AdminQualificationFeesViewer: React.FC = () => {
               </button>
             </div>
 
-            <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-              <table className="w-full text-right border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-700 font-black text-xs">
-                    <th className="p-3 border-b border-l border-slate-200">المرحلة</th>
-                    <th className="p-3 border-b border-l border-slate-200 text-center">عدد الصاعدين</th>
-                    <th className="p-3 border-b border-l border-slate-200 text-center">رسم الفرد</th>
-                    <th className="p-3 border-b border-slate-200 text-center">الإجمالي</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs font-bold">
-                  {selectedChurchDetail.stageBreakdown.map((st, i) => (
-                    <tr key={i} className="hover:bg-slate-50">
-                      <td className="p-3 border-l border-slate-100 font-black text-slate-800">{st.stage}</td>
-                      <td className="p-3 border-l border-slate-100 text-center text-blue-700 font-black">{st.qualifiedCount} صاعد</td>
-                      <td className="p-3 border-l border-slate-100 text-center">{st.feePerStudent} ج.م</td>
-                      <td className="p-3 text-center font-black text-emerald-700">{st.subtotal.toLocaleString('ar-EG')} ج.م</td>
+            {selectedChurchDetail.stageBreakdown.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-slate-200 text-slate-500 font-bold text-sm">
+                لا توجد اشتراكات أو طلاب صاعدون مسجلون لهذه الكنيسة حالياً.
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table className="w-full text-right border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-700 font-black text-xs">
+                      <th className="p-3 border-b border-l border-slate-200">المرحلة</th>
+                      <th className="p-3 border-b border-l border-slate-200 text-center">عدد الصاعدين</th>
+                      <th className="p-3 border-b border-l border-slate-200 text-center">رسم الفرد</th>
+                      <th className="p-3 border-b border-slate-200 text-center">الإجمالي</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs font-bold">
+                    {selectedChurchDetail.stageBreakdown.map((st, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        <td className="p-3 border-l border-slate-100 font-black text-slate-800">{st.stage}</td>
+                        <td className="p-3 border-l border-slate-100 text-center text-blue-700 font-black">{st.qualifiedCount} صاعد</td>
+                        <td className="p-3 border-l border-slate-100 text-center">{st.feePerStudent} ج.م</td>
+                        <td className="p-3 text-center font-black text-emerald-700">{st.subtotal.toLocaleString('ar-EG')} ج.م</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200 flex items-center justify-between">
               <div>
@@ -533,7 +705,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
                 }}
                 className="px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-black text-xs flex items-center gap-1.5 hover:bg-emerald-700 transition"
               >
-                <Download size={14} /> تحميل مطالبة الكنيسة (PDF)
+                <Download size={14} /> تحميل  (PDF)
               </button>
             </div>
           </div>

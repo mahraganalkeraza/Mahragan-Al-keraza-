@@ -258,8 +258,6 @@ export const AdminHonorsEngine: React.FC<{
 
     const sRanksSubj: Record<string, { rank: number; colorClass: string; percentage: number; title: string; subject: string }> = {};
     const eData: any[] = [];
-    const addedStudentIds = new Set<string>();
-    const studentIdToRowIndex = new Map<string, number>();
 
     function assignRank(s: any, rank: number, church: string, stage: string, subject: string) {
       let color = '';
@@ -274,27 +272,8 @@ export const AdminHonorsEngine: React.FC<{
         sRanksSubj[uniqueRankKey] = { rank, colorClass: color, percentage: s.percentage, title, subject };
       }
 
-      const studentCode = s.result?.code || s.result?.studentCode || s.result?.id || '';
-
-      if (studentCode && addedStudentIds.has(studentCode)) {
-        const existingRowIndex = studentIdToRowIndex.get(studentCode);
-        if (existingRowIndex !== undefined && existingRowIndex >= 0 && existingRowIndex < eData.length) {
-          const existingRow = eData[existingRowIndex];
-          const existingSubjects = existingRow['المسابقة'].split(' + ');
-          if (!existingSubjects.includes(subject)) {
-            existingRow['المسابقة'] = `${existingRow['المسابقة']} + ${subject}`;
-          }
-        }
-        return;
-      }
-
-      if (studentCode) {
-        addedStudentIds.add(studentCode);
-        studentIdToRowIndex.set(studentCode, eData.length);
-      }
-
       eData.push({
-        'الكود': studentCode,
+        'الكود': s.result?.code || s.result?.studentCode || s.result?.id || '',
         'الاسم': s.result?.name || s.result?.fullName || s.result?.studentName || '',
         'الكنيسة': s.result?.church || s.result?.churchName || church || '',
         'المرحلة': s.result?.stage || s.result?.grade || stage || '',
@@ -320,56 +299,25 @@ export const AdminHonorsEngine: React.FC<{
           const students = grouped[church][stage][subject] || [];
           if (students.length === 0) return;
 
-          const maxPercentageInSubj = Math.max(...students.map(s => s.percentage));
-          const hasPerfectScore = maxPercentageInSubj >= 100;
+          // 1. فرز الطلاب تنازلياً حسب النسبة
+          const sortedStudents = [...students].sort((a, b) => b.percentage - a.percentage);
 
-          // Apply promotion threshold/cutoff percentage logic uniformly across ALL stages, with no exceptions for early childhood (حضانة, أولى وثانية, ثالثة ورابعة)
-          const qualifiedStudents = students.filter(s => {
-            const isQualified = s.percentage >= stageMinThreshold;
-            const normalizedSg = normalizeArabic(stage || '');
-            const isEarlyStage = [
-              normalizeArabic('حضانة'),
-              normalizeArabic('أولى وثانية'),
-              normalizeArabic('ثالثة ورابعة'),
-              'حضانه',
-              'اولي وثانيه',
-              'ثالثه ورابعه'
-            ].includes(normalizedSg);
+          // 2. فلترة الطلاب الذين حققوا الحد الأدنى للمرحلة فقط
+          const eligibleStudents = sortedStudents.filter(s => (s.percentage || 0) >= stageMinThreshold);
 
-            if (isEarlyStage && !isQualified) {
-              return false;
-            }
-            return isQualified;
-          });
+          if (eligibleStudents.length === 0) return;
 
-          qualifiedStudents.forEach(s => {
-            const singlePointPercentage = (1 / s.maxScore) * 100;
-            let rank = 0;
-
-            if (hasPerfectScore) {
-              const diffPercentage = 100 - s.percentage;
-              if (diffPercentage === 0) {
-                rank = 1;
-              } else if (diffPercentage <= singlePointPercentage + 0.01) {
-                rank = 2;
-              } else if (diffPercentage <= (singlePointPercentage * 2) + 0.01) {
-                rank = 3;
-              }
-            } else {
-              if (maxPercentageInSubj >= stageMinThreshold) {
-                const diffPercentage = maxPercentageInSubj - s.percentage;
-                if (diffPercentage === 0) {
-                  rank = 1;
-                } else if (diffPercentage <= singlePointPercentage + 0.01) {
-                  rank = 2;
-                } else if (diffPercentage <= (singlePointPercentage * 2) + 0.01) {
-                  rank = 3;
-                }
-              }
+          // 3. تعيين المراكز وإضافتهم لـ eData فقط للطلاب المؤهلين
+          let currentRank = 1;
+          eligibleStudents.forEach((student, idx) => {
+            // حساب الترتيب مع مراعاة التساوي في النسبة (Ties)
+            if (idx > 0 && student.percentage < eligibleStudents[idx - 1].percentage) {
+              currentRank = idx + 1;
             }
 
-            if (rank >= 1 && rank <= 3) {
-              assignRank(s, rank, church, stage, subject);
+            // لا ندخل إلا من هم في المراكز الثلاثة الأولى (أو حسب القواعد المحددة)
+            if (currentRank <= 3) {
+              assignRank(student, currentRank, church, stage, subject);
             }
           });
         });
