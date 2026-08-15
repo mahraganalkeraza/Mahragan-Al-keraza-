@@ -4,7 +4,7 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  base: '/',
+  base: '/Mahragan-Al-keraza-/',
   plugins: [
     react(),
     tailwindcss(),
@@ -26,7 +26,8 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
-        start_url: './',
+        start_url: '/Mahragan-Al-keraza-/',
+        scope: '/Mahragan-Al-keraza-/',
         icons: [
           {
             src: 'pwa-192x192.png',
