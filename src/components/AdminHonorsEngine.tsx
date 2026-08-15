@@ -262,15 +262,35 @@ export const AdminHonorsEngine: React.FC<{
     function assignRank(s: any, rank: number, church: string, stage: string, subject: string) {
       let color = '';
       let rankName = '';
-      if (rank === 1) { color = 'bg-green-200'; rankName = 'أول'; }
-      if (rank === 2) { color = 'bg-yellow-200'; rankName = 'ثاني'; }
-      if (rank === 3) { color = 'bg-orange-100'; rankName = 'ثالث'; }
+      if (rank === 1) { 
+        color = 'bg-green-100 text-green-800 border-green-300'; 
+        rankName = 'أول'; 
+      } else if (rank === 2) { 
+        color = 'bg-yellow-100 text-yellow-800 border-yellow-300'; 
+        rankName = 'ثاني'; 
+      } else if (rank === 3) { 
+        color = 'bg-orange-100 text-orange-800 border-orange-300'; 
+        rankName = 'ثالث'; 
+      }
       const title = `مركز ${rankName}`;
 
-      if (s.result?.id) {
-        const uniqueRankKey = `${s.result.id}_${subject}`;
-        sRanksSubj[uniqueRankKey] = { rank, colorClass: color, percentage: s.percentage, title, subject };
-      }
+      const targetIds = Array.from(new Set([
+        s.result?.id,
+        s.result?.student_id,
+        s.result?.studentCode,
+        s.result?.code
+      ].filter(Boolean)));
+
+      targetIds.forEach(id => {
+        const uniqueRankKey = `${id}_${subject}`;
+        sRanksSubj[uniqueRankKey] = { 
+          rank, 
+          colorClass: color, 
+          percentage: s.percentage, 
+          title, 
+          subject 
+        };
+      });
 
       eData.push({
         'الكود': s.result?.code || s.result?.studentCode || s.result?.id || '',
@@ -282,13 +302,14 @@ export const AdminHonorsEngine: React.FC<{
         'الدرجة الكلية للمسابقة': s.maxScore !== undefined ? s.maxScore : (s.result?.totalScore || s.result?.maxScore || 0),
         'النسبة المئوية (%)': parseFloat((s.percentage || 0).toFixed(2)),
         'المركز': title,
-        'رقم المركز': rank
+        'رقم المركز': rank,
+        'studentId': s.result?.id || s.result?.student_id || s.result?.code || ''
       });
     }
 
     Object.keys(grouped).forEach(church => {
       Object.keys(grouped[church]).forEach(stage => {
-        // Get stage threshold with normalized stage matching
+        // 1. Strict Stage Threshold Verification (شرط الحد الأدنى للمرحلة أولاً)
         const normStage = normalizeArabic(stage || '');
         const thresholdKey = Object.keys(stageThresholds || {}).find(k => normalizeArabic(k) === normStage);
         const stageMinThreshold = thresholdKey !== undefined 
@@ -299,24 +320,28 @@ export const AdminHonorsEngine: React.FC<{
           const students = grouped[church][stage][subject] || [];
           if (students.length === 0) return;
 
-          // 1. فرز الطلاب تنازلياً حسب النسبة
+          // 2. فرز الطلاب تنازلياً حسب النسبة
           const sortedStudents = [...students].sort((a, b) => b.percentage - a.percentage);
 
-          // 2. فلترة الطلاب الذين حققوا الحد الأدنى للمرحلة فقط
+          // 3. فلترة الطلاب الذين حققوا الحد الأدنى للمرحلة فقط (Subject Percentage >= Stage Minimum Threshold)
+          // الطلاب الأقل من النسبة لن يحصلوا على أي ترتيب أو تظليل حتى لو كانوا الأعلى في كنيستهم
           const eligibleStudents = sortedStudents.filter(s => (s.percentage || 0) >= stageMinThreshold);
 
           if (eligibleStudents.length === 0) return;
 
-          // 3. تعيين المراكز وإضافتهم لـ eData فقط للطلاب المؤهلين
-          let currentRank = 1;
-          eligibleStudents.forEach((student, idx) => {
-            // حساب الترتيب مع مراعاة التساوي في النسبة (Ties)
-            if (idx > 0 && student.percentage < eligibleStudents[idx - 1].percentage) {
-              currentRank = idx + 1;
-            }
+          // 4. استخراج النسب الفريدة للمراكز النسبية داخل الكنيسة والمسابقة المحددة
+          // (الأول لأعلى نسبة، والثاني للنسبة التالية، والثالث للنسبة الثالثة مع مشاركة الترتيب عند التساوي)
+          const uniquePercentages = Array.from(
+            new Set(eligibleStudents.map(s => parseFloat(s.percentage.toFixed(4))))
+          ).sort((a, b) => b - a);
 
-            // لا ندخل إلا من هم في المراكز الثلاثة الأولى (أو حسب القواعد المحددة)
-            if (currentRank <= 3) {
+          eligibleStudents.forEach((student) => {
+            const studentPerc = parseFloat(student.percentage.toFixed(4));
+            const distinctIndex = uniquePercentages.indexOf(studentPerc);
+            const currentRank = distinctIndex + 1; // 1, 2, 3
+
+            // تعيين المراكز الثلاثة الأولى فقط
+            if (currentRank >= 1 && currentRank <= 3) {
               assignRank(student, currentRank, church, stage, subject);
             }
           });
@@ -324,6 +349,7 @@ export const AdminHonorsEngine: React.FC<{
       });
     });
 
+    // 5. تمييز المراكز المكررة بنفس الكنيسة والمرحلة والمسابقة
     eData.forEach(item => {
       const duplicates = eData.filter(
         x => x['الكنيسة'] === item['الكنيسة'] && 
@@ -334,7 +360,8 @@ export const AdminHonorsEngine: React.FC<{
       if (duplicates.length > 1) {
         item['المركز'] = `${item['المركز']} مكرر`;
         
-        const uniqueKey = `${item['الكود']}_${item['المسابقة']}`;
+        const sid = item['studentId'] || item['الكود'];
+        const uniqueKey = `${sid}_${item['المسابقة']}`;
         if (sRanksSubj[uniqueKey]) {
           sRanksSubj[uniqueKey].title = `${sRanksSubj[uniqueKey].title} مكرر`;
         }
