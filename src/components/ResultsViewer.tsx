@@ -22,7 +22,6 @@ import {
   EyeOff
 } from 'lucide-react';
 import { AdminHonorsEngine } from './AdminHonorsEngine';
-import { ChurchQualificationFeesCard } from './ChurchQualificationFeesCard';
 import { supabase } from '../utils/supabaseClient';
 import PaginationComponent from './Pagination';
 import * as XLSX from 'xlsx';
@@ -30,6 +29,28 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { withStylesCleaned } from '../utils/oklchCleaner';
 import { CustomAlertDialog, AlertDialogType } from './CustomAlertDialog';
+
+// Helper to normalize Arabic characters to prevent mismatch in churches and stages
+const normalizeArabic = (str: any): string => {
+  if (str === undefined || str === null) return '';
+  return String(str)
+    .trim()
+    .replace(/[\u064B-\u065F\u0670]/g, '') // Remove tashkeel/harakat
+    .replace(/ـ+/g, '') // Remove tatweel
+    .replace(/[أإآ]/g, 'ا') // Normalize alefs
+    .replace(/ة/g, 'ه') // Normalize taa marbuta
+    .replace(/ى/g, 'ي') // Normalize alif maqsura
+    .replace(/[^\u0600-\u06FFa-zA-Z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+};
+
+const stripChurchPrefix = (name: string): string => {
+  return normalizeArabic(name)
+    .replace(/^(كنيسه|كنسيه|مقر|دير|قطاع)\s+/, '')
+    .trim();
+};
 
 export const ResultsViewer: React.FC<{ 
   results?: Result[], 
@@ -310,48 +331,49 @@ export const ResultsViewer: React.FC<{
         } catch (_) {}
       }
 
+      const isMatchingTargetChurch = (rowChurch: string) => {
+        if (!activeUserChurch || !activeUserChurch.trim()) return true;
+        const targetNorm = normalizeArabic(activeUserChurch);
+        const targetStripped = stripChurchPrefix(activeUserChurch);
+        const rowNorm = normalizeArabic(rowChurch);
+        const rowStripped = stripChurchPrefix(rowChurch);
+
+        if (rowNorm === targetNorm || rowStripped === targetStripped) return true;
+        if (targetStripped && (rowNorm.includes(targetStripped) || rowStripped.includes(targetStripped))) return true;
+        if (rowNorm.includes(targetNorm) || targetNorm.includes(rowNorm)) return true;
+        return false;
+      };
+
       let query = supabase
         .from('exam_submissions')
         .select('*');
-      
-      if (!isAdmin) {
-        query = query.eq('is_published', true);
-        if (activeUserChurch && activeUserChurch.trim()) {
-          const cleanChurch = activeUserChurch.trim();
-          query = query.ilike('churchName', `%${cleanChurch}%`);
-        }
-      }
 
       const { data, error } = await query;
 
       if (error) {
         console.warn('Supabase fetch issue on exam_submissions:', error.message);
-        // Fallback retry without strict churchName filter in case of whitespace mismatch
-        if (!isAdmin) {
-          try {
-            const { data: fallbackData } = await supabase
-              .from('exam_submissions')
-              .select('*')
-              .eq('is_published', true);
+        // Fallback retry
+        try {
+          const { data: fallbackData } = await supabase
+            .from('exam_submissions')
+            .select('*');
 
-            if (fallbackData && fallbackData.length > 0) {
-              let filtered = fallbackData;
-              if (activeUserChurch && activeUserChurch.trim()) {
-                const target = activeUserChurch.trim().toLowerCase();
-                filtered = fallbackData.filter((row: any) => 
-                  (row.churchName || '').trim().toLowerCase().includes(target)
-                );
-              }
-              const mapped = mapRowsToResults(filtered);
-              setSupabaseSubmissions(mapped);
-              try {
-                localStorage.setItem('cached_exam_submissions_data', JSON.stringify(filtered));
-              } catch (_) {}
-              return mapped;
+          if (fallbackData && fallbackData.length > 0) {
+            let filtered = fallbackData;
+            if (!isAdmin && activeUserChurch && activeUserChurch.trim()) {
+              filtered = fallbackData.filter((row: any) => 
+                isMatchingTargetChurch(row.churchName || row.church || '')
+              );
             }
-          } catch (retryErr) {
-            console.warn('Fallback fetch attempt also encountered network issue:', retryErr);
+            const mapped = mapRowsToResults(filtered);
+            setSupabaseSubmissions(mapped);
+            try {
+              localStorage.setItem('cached_exam_submissions_data', JSON.stringify(filtered));
+            } catch (_) {}
+            return mapped;
           }
+        } catch (retryErr) {
+          console.warn('Fallback fetch attempt also encountered network issue:', retryErr);
         }
         
         // Attempt restoring from offline cache
@@ -361,8 +383,7 @@ export const ResultsViewer: React.FC<{
             const parsed = JSON.parse(cachedRaw);
             let mapped = mapRowsToResults(parsed);
             if (!isAdmin && activeUserChurch && activeUserChurch.trim()) {
-              const target = activeUserChurch.trim().toLowerCase();
-              mapped = mapped.filter(r => (r.churchName || '').trim().toLowerCase().includes(target));
+              mapped = mapped.filter(r => isMatchingTargetChurch(r.churchName || ''));
             }
             if (mapped.length > 0) {
               setSupabaseSubmissions(mapped);
@@ -375,16 +396,11 @@ export const ResultsViewer: React.FC<{
       }
 
       if (data) {
-        let mapped = mapRowsToResults(data);
-        // Data Isolation: Extra layer of memory filtering for non-admins if activeUserChurch is provided
+        let filtered = data;
         if (!isAdmin && activeUserChurch && activeUserChurch.trim()) {
-          const target = activeUserChurch.trim().toLowerCase();
-          const filtered = mapped.filter(r => (r.churchName || '').trim().toLowerCase().includes(target));
-          // If strict match produced results, use them; otherwise fallback to mapped if not restricted
-          if (filtered.length > 0) {
-            mapped = filtered;
-          }
+          filtered = data.filter((row: any) => isMatchingTargetChurch(row.churchName || row.church || ''));
         }
+        let mapped = mapRowsToResults(filtered);
 
         try {
           localStorage.setItem('cached_exam_submissions_data', JSON.stringify(data));
@@ -401,11 +417,12 @@ export const ResultsViewer: React.FC<{
         const cachedRaw = localStorage.getItem('cached_exam_submissions_data');
         if (cachedRaw) {
           const parsed = JSON.parse(cachedRaw);
-          let mapped = mapRowsToResults(parsed);
+          let filtered = parsed;
           if (!isAdmin && activeUserChurch && activeUserChurch.trim()) {
-            const target = activeUserChurch.trim().toLowerCase();
-            mapped = mapped.filter(r => (r.churchName || '').trim().toLowerCase().includes(target));
+            const targetNorm = normalizeArabic(activeUserChurch);
+            filtered = parsed.filter((r: any) => normalizeArabic(r.churchName || '').includes(targetNorm));
           }
+          let mapped = mapRowsToResults(filtered);
           if (mapped.length > 0) {
             setSupabaseSubmissions(mapped);
             return mapped;
@@ -925,16 +942,18 @@ export const ResultsViewer: React.FC<{
 
       // Configure Base Columns
       const columns = [
-        { header: 'كود الطالب / رقم الطالب', key: 'student_id', width: 22 },
+        { header: 'م', key: 'index', width: 8 },
         { header: 'اسم الطالب', key: 'student_name', width: 30 },
         { header: 'الكنيسة', key: 'church_name', width: 25 },
         { header: 'المرحلة', key: 'stage', width: 20 },
-        { header: 'بيانات الـ QR', key: 'qr_data', width: 22 },
-        { header: 'الدراسي', key: 'الدراسي', width: 15 },
-        { header: 'المحفوظات', key: 'المحفوظات', width: 15 },
+        { header: 'دراسي', key: 'الدراسي', width: 15 },
+        { header: 'محفوظات', key: 'المحفوظات', width: 15 },
         { header: 'قبطي 1', key: 'قبطي 1', width: 15 },
         { header: 'قبطي 2', key: 'قبطي 2', width: 15 },
         { header: 'الدرجة الكلية', key: 'total_score', width: 15 },
+        { header: 'النسبة المئوية', key: 'percentage', width: 15 },
+        { header: 'الترتيب / الحالة', key: 'rank_status', width: 20 },
+        { header: 'كود الطالب / المعرف', key: 'student_id', width: 22 },
         { header: 'إجمالي الأسئلة', key: 'total_questions', width: 15 },
         { header: 'الإجابات الصحيحة', key: 'correct_answers', width: 15 },
         { header: 'الإجابات الخاطئة', key: 'wrong_answers', width: 15 },
@@ -953,7 +972,7 @@ export const ResultsViewer: React.FC<{
       ws.columns = columns;
 
       // Construct Mapped Rows
-      const mappedRows = results.map(row => {
+      const mappedRows = results.map((row, rowIdx) => {
         const hasDetails = row.detailed_answers && Array.isArray(row.detailed_answers) && row.detailed_answers.length > 0;
         
         let totalQuestions: string | number = "N/A";
@@ -968,7 +987,17 @@ export const ResultsViewer: React.FC<{
           wrongCount = row.detailed_answers.filter(a => a.pts === 0 && a.ans !== undefined && a.ans !== null && a.ans !== '').length;
         }
 
+        const d = row.derasy_score ?? 0;
+        const m = row.mahfouzat_score ?? 0;
+        const q1 = row.qebty_lvl1_score ?? 0;
+        const q2 = row.qebty_lvl2_score ?? 0;
+        const total = row.academicScore ?? (d + m + q1 + q2);
+        const honorsInfo = honorsRanks[row.id] || (row.studentName ? honorsRanks[row.studentName] : null);
+        const rankOrStatus = honorsInfo?.rank ? `المركز ${honorsInfo.rank}` : (row.submissionStatus || 'ناجح');
+        const percentageStr = honorsInfo?.percentage !== undefined ? `${honorsInfo.percentage}%` : (total > 0 ? `${total}%` : '-');
+
         const rowData: any = {
+          index: rowIdx + 1,
           student_id: row.id || "N/A",
           student_name: row.studentName || "N/A",
           church_name: row.churchName || "N/A",
@@ -978,7 +1007,9 @@ export const ResultsViewer: React.FC<{
           "المحفوظات": row.mahfouzat_score ?? 'لم يمتحن',
           "قبطي 1": row.qebty_lvl1_score ?? 'لم يمتحن',
           "قبطي 2": row.qebty_lvl2_score ?? 'لم يمتحن',
-          total_score: row.academicScore ?? 0,
+          total_score: total,
+          percentage: percentageStr,
+          rank_status: rankOrStatus,
           total_questions: totalQuestions,
           correct_answers: correctCount,
           wrong_answers: wrongCount,
@@ -1433,7 +1464,6 @@ export const ResultsViewer: React.FC<{
     <div className="space-y-8">
      {/* جعل المحرك يعمل دائماً لتستفيد منه الكنائس، وتمرير صلاحية الأدمن ليرى الواجهة فقط */}
       <AdminHonorsEngine results={supabaseSubmissions} isAdmin={isAdmin} onHonorsUpdate={setHonorsRanks} />
-      {!isAdmin && <ChurchQualificationFeesCard churchName={activeUserChurch} />}
       {/* Admin Action Bar (Only visible if isAdmin is true) */}
       {isAdmin && (
         <div className="bg-gradient-to-r from-slate-50 to-slate-100/50 p-6 border border-slate-200 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm font-arabic text-right animate-fade-in" dir="rtl" id="admin-actions-bar">

@@ -87,6 +87,7 @@ import AdminDisplayGate from './components/AdminDisplayGate';
 import ChurchInquiryForm from './components/ChurchInquiryForm';
 import AdminInquiriesViewer from './components/AdminInquiriesViewer';
 import { ChurchQualificationFeesCard } from './components/ChurchQualificationFeesCard';
+import { ChurchOnlineExamsView } from './components/ChurchOnlineExamsView';
 import { AdminQualificationFeesViewer } from './components/AdminQualificationFeesViewer';
 import { QualificationGapAnalysisChart } from './components/QualificationGapAnalysisChart';
 import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
@@ -5992,7 +5993,7 @@ function AppComponent() {
   const NavItem = ({ id, icon: Icon, label }: { id: string, icon: any, label: string }) => (
     <button
       onClick={() => { 
-        if (id === 'exams_portal' || id === 'exam-login') {
+        if (id === 'exam-login') {
           setIsPortalOpen(true);
         } else {
           setActiveSection(id); 
@@ -6871,6 +6872,31 @@ function AppComponent() {
                 )}
               </div>
             </div>
+          </motion.div>
+        )}
+
+        {(activeSection === 'exams_portal' || activeSection === 'online_exams') && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+            <BackButton />
+            {userRole === 'church' ? (
+              <ChurchOnlineExamsView 
+                churchName={churchName || userProfile?.churchName || userProfile?.church_name || ''}
+                onOpenPortal={() => setIsPortalOpen(true)}
+                allParticipants={participants}
+              />
+            ) : (
+              <div className="max-w-4xl mx-auto">
+                <LiveExamGateway 
+                  setCurrentScreen={(screen) => {
+                    if (screen === 'student-exam') {
+                      setActiveSection('exam-login');
+                    }
+                  }}
+                  setCurrentStudent={() => {}}
+                  setActiveExam={() => {}}
+                />
+              </div>
+            )}
           </motion.div>
         )}
 
