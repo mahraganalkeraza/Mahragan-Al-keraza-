@@ -34,11 +34,11 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
             </div>
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/30 text-indigo-200 rounded-full text-xs font-bold mb-2 border border-indigo-400/30">
-                <QrCode size={14} /> بوابة امتحانات واشتراكات الأونلاين
+                <QrCode size={14} /> امتحانات واشتراكات الأونلاين
               </div>
               <h3 className="text-2xl font-black">امتحانات الأونلاين واشتراكات الكنيسة</h3>
               <p className="text-indigo-200/80 text-sm font-bold mt-1">
-                كنيسة: {churchName || 'غير محددة'} • إدارة اشتراكات الكنائس وكشوف أكواد امتحانات الأسقفية
+                كنيسة: {churchName || 'غير محددة'} • اشتراكات الكنائس  وأكواد امتحانات الأسقفية
               </p>
             </div>
           </div>
@@ -65,7 +65,6 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
           </div>
         </div>
       </div>
-
       {/* Tabs Navigation */}
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-3">
         {/* Sub-Tab 1: اشتراكات الكنائس */}
