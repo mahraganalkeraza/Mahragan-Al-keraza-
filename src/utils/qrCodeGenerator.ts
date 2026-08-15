@@ -1,5 +1,5 @@
 import QRCode from 'qrcode';
-import { saveAs } from 'file-saver';
+import { downloadBlob } from './fileDownload';
 
 export interface StudentQRData {
   id?: string;
@@ -132,7 +132,7 @@ export async function downloadStudentQRCode(student: StudentQRData): Promise<voi
       const safeId = sanitize(studentId) || 'ID';
       const fileName = `QR_${safeName}_${safeId}.png`;
 
-      saveAs(blob, fileName);
+      downloadBlob(blob, fileName);
     }, 'image/png');
 
   } catch (err) {

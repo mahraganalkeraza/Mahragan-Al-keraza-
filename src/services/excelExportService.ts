@@ -1,4 +1,4 @@
-import { saveAs } from 'file-saver';
+import { downloadBlob } from '../utils/fileDownload';
 import { supabase } from '../utils/supabaseClient';
 
 export type TemplateType = 'primary' | 'special' | 'prep_servants';
@@ -88,7 +88,7 @@ export async function handleExportExcel(
   }
 
   const blob = new Blob([arrayBuffer], { type: 'application/vnd.ms-excel' });
-  saveAs(blob, downloadName);
+  downloadBlob(blob, downloadName);
   console.log(`[handleExportExcel] Successfully generated and downloaded: ${downloadName}`);
 }
 

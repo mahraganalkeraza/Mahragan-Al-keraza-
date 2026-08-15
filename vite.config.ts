@@ -4,7 +4,7 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  base: '/Mahragan-Al-keraza-/',
+  base: '/',
   plugins: [
     react(),
     tailwindcss(),
@@ -19,22 +19,22 @@ export default defineConfig({
       },
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-able-icon.png'],
       manifest: {
-        name: 'منصة إدارة الأنشطة والمسابقات', // الاسم الكامل للبرنامج
-        short_name: 'إدارة الأنشطة',          // الاسم اللي هيظهر تحت الأيقونة في الشاشة
+        name: 'منصة إدارة الأنشطة والمسابقات',
+        short_name: 'إدارة الأنشطة',
         description: 'نظام إدارة وتسجيل المشتركين والأنشطة والمسابقات الكنسية',
-        theme_color: '#4f46e5',              // لون شريط النظام العلوي (هنا اخترت لون Indigo)
-        background_color: '#ffffff',          // لون شاشة الترحيب عند فتح الأبلكيشن
-        display: 'standalone',               // يخليه يفتح كبرنامج مستقل بدون شريط المتصفح
-        orientation: 'portrait',             // إجبار التطبيق يفتح بالطول
+        theme_color: '#4f46e5',
+        background_color: '#ffffff',
+        display: 'standalone',
+        orientation: 'portrait',
         start_url: './',
         icons: [
           {
-            src: 'pwa-192x192.png',           // أيقونة بحجم 192
+            src: 'pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: 'pwa-512x512.png',           // أيقونة بحجم 512
+            src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png'
           }
@@ -47,17 +47,18 @@ export default defineConfig({
     host: '0.0.0.0',
   },
   build: {
-    target: 'es2022',
     outDir: 'dist',
-    assetsDir: 'assets',
     emptyOutDir: true,
     sourcemap: false,
-    minify: 'esbuild',
+    chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
-        entryFileNames: `assets/[name]-[hash].js`,
-        chunkFileNames: `assets/[name]-[hash].js`,
-        assetFileNames: `assets/[name]-[hash].[ext]`
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-xlsx': ['xlsx'],
+          'vendor-lucide': ['lucide-react'],
+          'vendor-supabase': ['@supabase/supabase-js']
+        }
       }
     }
   }

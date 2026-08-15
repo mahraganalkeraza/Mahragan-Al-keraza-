@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { saveAs } from 'file-saver';
+import { downloadBlob } from '../utils/fileDownload';
 import { supabase } from '../utils/supabaseClient';
 import { 
   FileSpreadsheet, 
@@ -16,8 +16,12 @@ import {
   FolderArchive,
   ChevronDown,
   Sparkles,
-  Info
+  Info,
+  ShieldCheck,
+  Globe
 } from 'lucide-react';
+import { AdminBishopricExamCodesManager } from './AdminBishopricExamCodesManager';
+import { downloadBlankBishopricTemplate } from '../utils/bishopricExamStorage';
 
 /**
  * Normalizes raw competitions input into a clean string array.
@@ -214,7 +218,7 @@ export async function handleExportExcel(
 ): Promise<void> {
   const { buffer, downloadName } = await fetchExcelBufferFromEdgeFunction(templateType, studentsData);
   const blob = new Blob([buffer], { type: 'application/vnd.ms-excel' });
-  saveAs(blob, downloadName);
+  downloadBlob(blob, downloadName);
   console.log(`[handleExportExcel] Automated download triggered for: ${downloadName}`);
 }
 
@@ -251,7 +255,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
   });
 
   const [selectedChurch, setSelectedChurch] = useState<string>('الكل');
-  const [activeTab, setActiveTab] = useState<'exporter' | 'settings'>('exporter');
+  const [activeTab, setActiveTab] = useState<'exporter' | 'settings' | 'bishopric_codes'>('exporter');
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportProgress, setExportProgress] = useState<string>('');
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' | null }>({ text: '', type: null });
@@ -750,7 +754,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
 
       setExportProgress('جاري ضغط الملفات وإنشاء أرشيف ZIP...');
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, `تسجيل مشتركين - ${churchNameStr} 2026.zip`);
+      downloadBlob(content, `تسجيل مشتركين - ${churchNameStr} 2026.zip`);
 
       setStatusMessage({ 
         text: `تم تصدير ملف الأرشيف المضغوط لكنيسة "${churchNameStr}" بنجاح يحتوي على ${addedFilesCount} ملفات!`, 
@@ -831,7 +835,7 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
 
       setExportProgress('جاري إنشاء وضغط ملف الأرشيف الرئيسي لجميع الكنائس...');
       const content = await mainZip.generateAsync({ type: 'blob' });
-      saveAs(content, `تسجيل المشتركين المجمع - جميع الكنائس 2026.zip`);
+      downloadBlob(content, `تسجيل المشتركين المجمع - جميع الكنائس 2026.zip`);
 
       setStatusMessage({ 
         text: `نجاح! تم تصدير بيانات ${churchNames.length} كنائس وتوليد ${totalFilesCreated} ملفات Excel مهيأة ومقسمة داخل الأرشيف بنجاح!`, 
@@ -899,13 +903,20 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
       </div>
 
       {/* Tabs Switcher */}
-      <div className="flex border-b border-slate-100 bg-slate-50 p-2 gap-2">
+      <div className="flex flex-wrap border-b border-slate-100 bg-slate-50 p-2 gap-2">
         <button
           onClick={() => setActiveTab('exporter')}
           className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${activeTab === 'exporter' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}
         >
           <FileSpreadsheet size={16} />
           لوحة التصدير والملفات
+        </button>
+        <button
+          onClick={() => setActiveTab('bishopric_codes')}
+          className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${activeTab === 'bishopric_codes' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'}`}
+        >
+          <Globe size={16} />
+          أكواد امتحانات الأسقفية (رفع وإدارة)
         </button>
         <button
           onClick={() => setActiveTab('settings')}
@@ -1127,6 +1138,44 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
               </div>
             </div>
 
+            {/* Dedicated Bishopric Exam Template & Codes Banner */}
+            <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-indigo-950 text-white rounded-2xl p-6 mb-8 shadow-md relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
+              <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center border border-white/20 text-indigo-200 shrink-0">
+                    <Globe size={24} />
+                  </div>
+                  <div>
+                    <span className="inline-block px-2.5 py-0.5 bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 rounded-full text-[10px] font-black mb-1">
+                      نظام امتحانات الأسقفية المركزية
+                    </span>
+                    <h4 className="text-base font-black">قالب وإدارة كشوف أكواد امتحانات الأسقفية</h4>
+                    <p className="text-xs text-indigo-200/80 font-bold mt-0.5">
+                      حمل القالب الفارغ المعتمد [اسم المشترك | المرحلة | اسم الكنيسة | كود امتحان الأسقفية] أو ارفع الكشف ليتم توزيعه آلياً على الكنائس.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                  <button
+                    onClick={() => downloadBlankBishopricTemplate()}
+                    className="flex-1 md:flex-none px-4 py-2.5 bg-white text-indigo-950 hover:bg-indigo-50 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                  >
+                    <Download size={14} className="text-indigo-600" />
+                    تحميل القالب الفارغ (Excel)
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('bishopric_codes')}
+                    className="flex-1 md:flex-none px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 border border-indigo-400/30 shadow-sm cursor-pointer"
+                  >
+                    <Globe size={14} />
+                    لوحة رفع وإدارة الكشف
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* Batch Exports Actions Section */}
             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6">
               <h4 className="text-sm font-black text-slate-800 mb-3 flex items-center gap-2">
@@ -1265,6 +1314,12 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'bishopric_codes' && (
+          <div className="animate-fade-in">
+            <AdminBishopricExamCodesManager />
           </div>
         )}
       </div>

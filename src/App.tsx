@@ -6875,7 +6875,7 @@ function AppComponent() {
           </motion.div>
         )}
 
-        {(activeSection === 'exams_portal' || activeSection === 'online_exams') && (
+        {(activeSection === 'exams_portal' || activeSection === 'online_exams' || activeSection === 'online-subscriptions' || activeSection === 'online_subscriptions') && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
             <BackButton />
             {userRole === 'church' ? (
@@ -7051,11 +7051,7 @@ function AppComponent() {
             </div>
 
             <QuickActionsHub userRole={userRole === 'super_admin' ? 'admin' : userRole} onAction={(action) => {
-              if (action === 'exams_portal') {
-                handleOpenExams();
-              } else {
-                setActiveSection(action);
-              }
+              setActiveSection(action);
             }} />
             <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -11472,7 +11468,7 @@ function AppComponent() {
             <ul className="space-y-4 text-slate-400 font-bold text-base">
               <li><button onClick={() => setActiveSection('home')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> الرئيسية</button></li>
               <li><button onClick={() => setActiveSection('news')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> آخر الأخبار</button></li>
-              <li><button onClick={handleOpenExams} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> امتحانات الأونلاين</button></li>
+              <li><button onClick={() => setActiveSection(userRole === 'church' ? 'online-subscriptions' : 'exams')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> امتحانات الأونلاين</button></li>
               <li><button onClick={() => setActiveSection('calculator')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> حاسبة الكتب</button></li>
             </ul>
           </div>

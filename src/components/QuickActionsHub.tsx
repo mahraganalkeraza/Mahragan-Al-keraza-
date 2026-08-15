@@ -19,7 +19,7 @@ interface QuickActionsHubProps {
 
 const QuickActionsHub: React.FC<QuickActionsHubProps> = ({ userRole, onAction }) => {
   const actions: QuickActionItem[] = [
-    { id: 'exams_portal', title: 'امتحانات الأونلاين', description: 'بوابة دخول الامتحانات الإلكترونية', icon: BookOpen },
+    { id: 'online-subscriptions', title: 'امتحانات الأونلاين', description: 'متابعة وإدارة اشتراكات الأونلاين', icon: BookOpen },
     { id: 'results', title: 'نتائج المسابقات', description: 'عرض نتائج المسابقات', icon: Award },
     { id: 'calculator', title: 'حاسبة الكتب', description: 'حساب تكلفة الكتب', icon: Calculator },
   ];
