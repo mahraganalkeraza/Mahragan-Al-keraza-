@@ -238,11 +238,11 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
           </div>
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold mb-1 border border-indigo-100">
-              <QrCode size={13} /> منصة امتحانات أسقفية الشباب 2026
+              <QrCode size={13} /> موقع امتحانات الأسقفية
             </div>
-            <h3 className="text-xl font-black text-slate-800">أكواد ونتائج امتحانات الأسقفية الإلكترونية</h3>
+            <h3 className="text-xl font-black text-slate-800">أكواد ونتائج امتحانات الأسقفية الأونلاين</h3>
             <p className="text-xs text-slate-400 font-bold mt-0.5">
-              كنيسة: <strong className="text-slate-700">{churchName || 'غير محددة'}</strong> • الكشوف الرسمية ورصد الدرجات والتقييمات المركزية
+              كنيسة: <strong className="text-slate-700">{churchName || 'غير محددة'}</strong> •
             </p>
           </div>
         </div>
@@ -329,7 +329,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
             <Building2 size={20} />
           </div>
           <div>
-            <div className="text-[11px] text-slate-400 font-bold">المراحل المشمولة</div>
+            <div className="text-[11px] text-slate-400 font-bold">المراحل</div>
             <div className="text-lg font-black text-slate-800">{uniqueStages.length} مراحل</div>
           </div>
         </div>
@@ -341,10 +341,10 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
           <div>
             <h4 className="text-sm font-black text-slate-800 flex items-center gap-2">
               <FileSpreadsheet className="text-indigo-600 w-4 h-4" />
-              جدول أكواد ونتائج امتحانات الأسقفية المعتمدة
+              جدول أكواد ونتائج امتحانات الأسقفية
             </h4>
             <p className="text-[11px] text-slate-400 font-bold mt-0.5">
-              بيانات المشتركين، الأكواد، ودرجات التقييم المركزية من قاعدة بيانات Supabase
+              بيانات المشتركين، الأكواد، والدرجات
             </p>
           </div>
 
@@ -388,7 +388,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
             <FileSpreadsheet className="mx-auto text-slate-300" size={40} />
             <p className="text-sm font-black text-slate-700">لم يتم رفع كشف أكواد الأسقفية لكنيسة {churchName || ''} حتى الآن</p>
             <p className="text-xs text-slate-400 font-bold max-w-md mx-auto leading-relaxed">
-              سيقوم مسؤولو الكنترول برفع الكشف المعتمد من الأسقفية وستظهر الأكواد هنا تلقائياً فور اعتمادها.
+              ستقوم اللجنة المركزية برفع الأكواد وستظهر الأكواد هنا تلقائيًا فورًا.
             </p>
           </div>
         ) : displayedRecords.length === 0 ? (
@@ -510,7 +510,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
           {/* Header */}
           <div className="text-center pb-6 border-b-2 border-indigo-600 mb-6">
             <h2 className="text-2xl font-black text-indigo-950 mb-1">مهرجان الكرازة المرقسية 2026</h2>
-            <h3 className="text-lg font-black text-slate-800 mb-2">كشف أكواد ونتائج امتحانات الأسقفية الإلكترونية</h3>
+            <h3 className="text-lg font-black text-slate-800 mb-2">كشف أكواد ونتائج امتحانات الأسقفية الأونلاين</h3>
             <div className="flex justify-between items-center text-xs font-bold text-slate-600 mt-3 pt-2 border-t border-slate-200">
               <div>كنيسة: <strong className="text-slate-900">{churchName || 'عام'}</strong></div>
               <div>إجمالي المشتركين: <strong className="text-slate-900">{records.length}</strong></div>
@@ -526,7 +526,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
                 <th className="p-2 border border-slate-300 text-center w-10">م</th>
                 <th className="p-2 border border-slate-300">اسم المشترك</th>
                 <th className="p-2 border border-slate-300 w-24">المرحلة</th>
-                <th className="p-2 border border-slate-300 text-center w-28">رمز الاستجابة (QR)</th>
+                <th className="p-2 border border-slate-300 text-center w-28">QRCode(QR)</th>
                 <th className="p-2 border border-slate-300 text-center w-32">كود الامتحان</th>
                 <th className="p-2 border border-slate-300 text-center w-24">الدرجة</th>
                 <th className="p-2 border border-slate-300 text-center w-20">النسبة %</th>
@@ -574,8 +574,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
 
           {/* Footer Voucher Note */}
           <div className="mt-8 pt-4 border-t border-slate-300 flex justify-between items-center text-[10px] font-bold text-slate-500">
-            <span>ملاحظة: درجات الامتحانات مسجلة مركزياً في نظام امتحانات أسقفية الشباب.</span>
-            <span>كنترول المهرجان • أسقفية الشباب</span>
+            <span>لجنة المهرجان • المنطقة - 18 </span>
           </div>
         </div>
       </div>

@@ -373,11 +373,11 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
           >
             {isExportingPdf ? (
               <>
-                <Loader2 size={18} className="animate-spin" /> جاري التصدير...
+                <Loader2 size={18} className="animate-spin" /> جاري التحميل...
               </>
             ) : (
               <>
-                <Download size={18} /> تحميل مطالبة الرسوم المالية (PDF)
+                <Download size={18} /> تحميل المبلغ المالي المستحق (PDF)
               </>
             )}
           </button>
@@ -394,10 +394,10 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
         <div className="text-center py-12 px-4 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
           <Award className="mx-auto text-slate-300 mb-3" size={44} />
           <p className="text-slate-800 font-black text-base">
-            لا توجد نتائج صاعدين معلنة حالياً لهذه الكنيسة
+            لا توجد نتائج صاعدين معلنة حاليًا لهذه الكنيسة
           </p>
           <p className="text-slate-500 font-bold text-xs mt-1">
-            سيتم تحديث جدول الرسوم المالية تلقائياً فور اعتماد واعلان نتائج التصفيات النهائية من الكنترول.
+            سيتم تحديث جدول الرسوم المالية تلقائياً فور اعتماد واعلان نتائج التصفيات النهائية من قبل اللجنة.
           </p>
         </div>
       ) : (
@@ -444,7 +444,7 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
                 <Sparkles size={24} className="text-emerald-300" />
               </div>
               <div>
-                <p className="text-emerald-200 text-xs font-bold">إجمالي مطالبة الرسوم المالية المستحقة</p>
+                <p className="text-emerald-200 text-xs font-bold">إجمالي المبلغ المستحق</p>
                 <p className="text-xl md:text-2xl font-black mt-0.5">
                   كنيسة {churchName || 'المهرجان'} ({totalQualifiedCount} طالب صاعد)
                 </p>
