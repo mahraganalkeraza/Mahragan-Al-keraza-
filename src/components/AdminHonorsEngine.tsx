@@ -1,0 +1,559 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { supabase } from '../lib/supabaseClient';
+import { Result } from '../types';
+import { Save, Download, Award, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import * as XLSX from 'xlsx';
+
+interface WeightsMap {
+  [stage: string]: {
+    [subject: string]: number;
+  };
+}
+
+export const AdminHonorsEngine: React.FC<{ 
+  results: Result[], 
+  isAdmin?: boolean, 
+  onHonorsUpdate?: (ranks: Record<string, any>) => void 
+}> = ({ results, isAdmin = false, onHonorsUpdate }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [weights, setWeights] = useState<WeightsMap>(() => {
+    try {
+      const cached = localStorage.getItem('honors_weights_matrix');
+      return cached ? JSON.parse(cached) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+  const [minThreshold, setMinThreshold] = useState<number>(() => {
+    try {
+      const cached = localStorage.getItem('honors_min_threshold');
+      return cached ? parseFloat(cached) : 90;
+    } catch (e) {
+      return 90;
+    }
+  });
+  const [stageThresholds, setStageThresholds] = useState<Record<string, number>>(() => {
+    try {
+      const cached = localStorage.getItem('honors_stage_thresholds');
+      if (cached) return JSON.parse(cached);
+      return {};
+    } catch (e) {
+      return {};
+    }
+  });
+  const [stageFees, setStageFees] = useState<Record<string, number>>(() => {
+    try {
+      const cached = localStorage.getItem('honors_stage_fees');
+      if (cached) return JSON.parse(cached);
+      return {};
+    } catch (e) {
+      return {};
+    }
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [systemStages, setSystemStages] = useState<string[]>([]);
+  const [systemSubjects, setSystemSubjects] = useState<string[]>([]);
+
+  // Sync state changes to localStorage
+  useEffect(() => {
+    localStorage.setItem('honors_weights_matrix', JSON.stringify(weights));
+  }, [weights]);
+
+  useEffect(() => {
+    localStorage.setItem('honors_min_threshold', minThreshold.toString());
+  }, [minThreshold]);
+
+  useEffect(() => {
+    localStorage.setItem('honors_stage_thresholds', JSON.stringify(stageThresholds));
+  }, [stageThresholds]);
+
+  useEffect(() => {
+    localStorage.setItem('honors_stage_fees', JSON.stringify(stageFees));
+  }, [stageFees]);
+
+  // تحميل الإعدادات فوراً وتلقائياً عند تشغيل المكون
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    setIsLoading(true);
+    try {
+      const [honorsSnap, sysFeesSnap, stagesSnap, bankSnap] = await Promise.all([
+        supabase.from('honors_settings').select('*').eq('id', 'current_config').maybeSingle(),
+        supabase.from('system_settings').select('*').eq('id', 'stage_fees').maybeSingle(),
+        supabase.from('stage_competitions').select('stage_name'),
+        supabase.from('competition_bank').select('name')
+      ]);
+      if (honorsSnap.data) {
+        const data = honorsSnap.data;
+        if (data.weights_matrix) {
+          const wData = { ...data.weights_matrix };
+          if (wData.__stage_thresholds__) {
+            setStageThresholds(wData.__stage_thresholds__);
+            delete wData.__stage_thresholds__;
+          }
+          if (wData.__stage_fees__) {
+            setStageFees(wData.__stage_fees__);
+            delete wData.__stage_fees__;
+          }
+          setWeights(wData);
+        }
+        if (data.stage_thresholds && typeof data.stage_thresholds === 'object') {
+          setStageThresholds(data.stage_thresholds);
+        }
+        if (data.stage_fees && typeof data.stage_fees === 'object') {
+          setStageFees(data.stage_fees);
+        }
+        if (data.min_threshold !== undefined) setMinThreshold(Number(data.min_threshold));
+      }
+      if (sysFeesSnap.data?.config_data && typeof sysFeesSnap.data.config_data === 'object') {
+        setStageFees(prev => ({ ...prev, ...sysFeesSnap.data.config_data }));
+      }
+      setSystemStages(stagesSnap.data?.map(d => d.stage_name).filter(Boolean) as string[] || []);
+      
+      const dbSubjects = bankSnap.data?.map(d => d.name).filter(Boolean) as string[] || [];
+      const coreSubjects = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];
+      const mergedSubjects = Array.from(new Set([...coreSubjects, ...dbSubjects]));
+      setSystemSubjects(mergedSubjects);
+    } catch (e) {
+      console.error('Failed to load honors config', e);
+    }
+    setIsLoading(false);
+  };
+
+  const saveSettings = async () => {
+    setIsSaving(true);
+    try {
+      const payload: any = {
+        id: 'current_config',
+        min_threshold: minThreshold,
+        stage_thresholds: stageThresholds,
+        stage_fees: stageFees,
+        weights_matrix: {
+          ...weights,
+          __stage_thresholds__: stageThresholds as any,
+          __stage_fees__: stageFees as any
+        },
+        updated_at: new Date().toISOString()
+      };
+      
+      if (!navigator.onLine) {
+        alert("❌ لا يوجد اتصال بالإنترنت! تعذر حفظ إعدادات التكريم.");
+        setIsSaving(false);
+        return;
+      }
+      
+      const { data: upsData, error } = await supabase.from('honors_settings').upsert(payload).select();
+      if (error || !upsData || upsData.length === 0) {
+        // Fallback in case stage_thresholds column is missing in Supabase schema
+        console.warn('Direct upsert with stage_thresholds failed/warned, using weights_matrix fallback:', error);
+        const fallbackPayload = {
+          id: 'current_config',
+          min_threshold: minThreshold,
+          weights_matrix: {
+            ...weights,
+            __stage_thresholds__: stageThresholds as any,
+            __stage_fees__: stageFees as any
+          },
+          updated_at: new Date().toISOString()
+        };
+        const { data: fbData, error: fallbackError } = await supabase.from('honors_settings').upsert(fallbackPayload).select();
+        if (fallbackError || !fbData || fbData.length === 0) {
+          throw fallbackError || new Error('لم يتم تأكيد حفظ إعدادات التكريم في قاعدة البيانات.');
+        }
+      }
+      try {
+        await supabase.from('system_settings').upsert({ id: 'stage_fees', config_data: stageFees });
+      } catch (_) {}
+
+      alert('تم حفظ إعدادات ودرجات ورسوم التكريم بنجاح!');
+    } catch (e) {
+      console.error(e);
+      alert('حدث خطأ أثناء الحفظ.');
+    }
+    setIsSaving(false);
+  };
+
+  const handleWeightChange = (stage: string, subject: string, value: string) => {
+    const num = parseFloat(value) || 0;
+    setWeights(prev => ({
+      ...prev,
+      [stage]: {
+        ...(prev[stage] || {}),
+        [subject]: num
+      }
+    }));
+  };
+
+  const handleStageThresholdChange = (stage: string, value: string) => {
+    const num = parseFloat(value);
+    setStageThresholds(prev => ({
+      ...prev,
+      [stage]: isNaN(num) ? 0 : num
+    }));
+  };
+
+  const handleStageFeeChange = (stage: string, value: string) => {
+    const num = parseFloat(value);
+    setStageFees(prev => ({
+      ...prev,
+      [stage]: isNaN(num) ? 0 : num
+    }));
+  };
+
+  const { studentRanksBySubj, exportData, promotedStudents, filteredHonorsList } = useMemo(() => {
+    // تعديل 2: حذف شرط !isOpen لضمان استمرار عملية حساب التكريم حتى لو كان الكومبوننت مغلقاً
+    if (!results || results?.length === 0) return { studentRanksBySubj: {}, exportData: [], promotedStudents: [], filteredHonorsList: [] };
+
+    // Helper to normalize Arabic characters to prevent mismatch in stages
+    const normalizeArabic = (str: string): string => {
+      if (!str) return '';
+      return str
+        .trim()
+        .replace(/[أإآ]/g, 'ا')
+        .replace(/ة/g, 'ه')
+        .replace(/ى/g, 'ي');
+    };
+
+    const grouped: Record<string, Record<string, Record<string, { result: Result; percentage: number; score: number; maxScore: number }[]>>> = {};
+    const validResults = (results || []).filter(r => r && (r.academicScore !== undefined || r.derasy_score !== undefined || r.score !== undefined || r.data));
+
+    validResults.forEach(r => {
+      const rawStage = r.academicScore !== undefined ? r.stage : r.data?.['دراسي'] || r.stage;
+      const stage = systemStages.find(s => normalizeArabic(s) === normalizeArabic(rawStage)) || rawStage || 'عام';
+      const church = r.churchName || 'غير محدد';
+      
+      // Get weights with normalized stage matching
+      const normStage = normalizeArabic(stage || '');
+      const weightsKey = Object.keys(weights || {}).find(k => normalizeArabic(k) === normStage);
+      const stWeights = weightsKey !== undefined ? weights[weightsKey] : {};
+
+      systemSubjects.forEach(subj => {
+        let score = 0;
+        if (subj === 'دراسي') score = parseFloat((r.derasy_score ?? r.academicScore ?? r.data?.['دراسي']) as any ?? 0);
+        else if (subj === 'محفوظات') score = parseFloat((r.mahfouzat_score ?? r.memorizationScore ?? r.data?.['محفوظات']) as any ?? 0);
+        else if (subj === 'قبطي مستوى أول') score = parseFloat((r.qebty_lvl1_score ?? r.copticL1Score ?? r.data?.['قبطي مستوى أول']) as any ?? 0);
+        else if (subj === 'قبطي مستوى ثاني') score = parseFloat((r.qebty_lvl2_score ?? r.copticL2Score ?? r.data?.['قبطي مستوى ثاني']) as any ?? 0);
+        else score = parseFloat(r.data?.[subj] as any ?? 0);
+
+        score = Number(score) || 0;
+        const maxScore = Number(stWeights[subj]) || 0;
+
+        if (maxScore > 0 && score > 0) {
+          const perc = (score / maxScore) * 100;
+          if (!grouped[church]) grouped[church] = {};
+          if (!grouped[church][stage]) grouped[church][stage] = {};
+          if (!grouped[church][stage][subj]) grouped[church][stage][subj] = [];
+          grouped[church][stage][subj].push({
+            result: r,
+            percentage: perc,
+            score: score,
+            maxScore: maxScore
+          });
+        }
+      });
+    });
+
+    const sRanksSubj: Record<string, { rank: number; colorClass: string; percentage: number; title: string; subject: string }> = {};
+    const eData: any[] = [];
+
+    function assignRank(s: any, rank: number, church: string, stage: string, subject: string) {
+      let color = '';
+      let rankName = '';
+      if (rank === 1) { 
+        color = 'bg-green-100 text-green-800 border-green-300'; 
+        rankName = 'أول'; 
+      } else if (rank === 2) { 
+        color = 'bg-yellow-100 text-yellow-800 border-yellow-300'; 
+        rankName = 'ثاني'; 
+      } else if (rank === 3) { 
+        color = 'bg-orange-100 text-orange-800 border-orange-300'; 
+        rankName = 'ثالث'; 
+      }
+      const title = `مركز ${rankName}`;
+
+      const targetIds = Array.from(new Set([
+        s.result?.id,
+        s.result?.student_id,
+        s.result?.studentCode,
+        s.result?.code
+      ].filter(Boolean)));
+
+      targetIds.forEach(id => {
+        const uniqueRankKey = `${id}_${subject}`;
+        sRanksSubj[uniqueRankKey] = { 
+          rank, 
+          colorClass: color, 
+          percentage: s.percentage, 
+          title, 
+          subject 
+        };
+      });
+
+      eData.push({
+        'الكود': s.result?.code || s.result?.studentCode || s.result?.id || '',
+        'الاسم': s.result?.name || s.result?.fullName || s.result?.studentName || '',
+        'الكنيسة': s.result?.church || s.result?.churchName || church || '',
+        'المرحلة': s.result?.stage || s.result?.grade || stage || '',
+        'المسابقة': s.result?.competition || subject || '',
+        'الدرجة الفعلية': s.score !== undefined ? s.score : (s.result?.score || s.result?.actualScore || 0),
+        'الدرجة الكلية للمسابقة': s.maxScore !== undefined ? s.maxScore : (s.result?.totalScore || s.result?.maxScore || 0),
+        'النسبة المئوية (%)': parseFloat((s.percentage || 0).toFixed(2)),
+        'المركز': title,
+        'رقم المركز': rank,
+        'studentId': s.result?.id || s.result?.student_id || s.result?.code || ''
+      });
+    }
+
+    Object.keys(grouped).forEach(church => {
+      Object.keys(grouped[church]).forEach(stage => {
+        // 1. Strict Stage Threshold Verification (شرط الحد الأدنى للمرحلة أولاً)
+        const normStage = normalizeArabic(stage || '');
+        const thresholdKey = Object.keys(stageThresholds || {}).find(k => normalizeArabic(k) === normStage);
+        const stageMinThreshold = thresholdKey !== undefined 
+          ? Number(stageThresholds[thresholdKey]) 
+          : (minThreshold || 90);
+
+        Object.keys(grouped[church][stage]).forEach(subject => {
+          const students = grouped[church][stage][subject] || [];
+          if (students.length === 0) return;
+
+          // 2. فرز الطلاب تنازلياً حسب النسبة
+          const sortedStudents = [...students].sort((a, b) => b.percentage - a.percentage);
+
+          // 3. فلترة الطلاب الذين حققوا الحد الأدنى للمرحلة فقط (Subject Percentage >= Stage Minimum Threshold)
+          // الطلاب الأقل من النسبة لن يحصلوا على أي ترتيب أو تظليل حتى لو كانوا الأعلى في كنيستهم
+          const eligibleStudents = sortedStudents.filter(s => (s.percentage || 0) >= stageMinThreshold);
+
+          if (eligibleStudents.length === 0) return;
+
+          // 4. استخراج النسب الفريدة للمراكز النسبية داخل الكنيسة والمسابقة المحددة
+          // (الأول لأعلى نسبة، والثاني للنسبة التالية، والثالث للنسبة الثالثة مع مشاركة الترتيب عند التساوي)
+          const uniquePercentages = Array.from(
+            new Set(eligibleStudents.map(s => parseFloat(s.percentage.toFixed(4))))
+          ).sort((a, b) => b - a);
+
+          eligibleStudents.forEach((student) => {
+            const studentPerc = parseFloat(student.percentage.toFixed(4));
+            const distinctIndex = uniquePercentages.indexOf(studentPerc);
+            const currentRank = distinctIndex + 1; // 1, 2, 3
+
+            // تعيين المراكز الثلاثة الأولى فقط
+            if (currentRank >= 1 && currentRank <= 3) {
+              assignRank(student, currentRank, church, stage, subject);
+            }
+          });
+        });
+      });
+    });
+
+    // 5. تمييز المراكز المكررة بنفس الكنيسة والمرحلة والمسابقة
+    eData.forEach(item => {
+      const duplicates = eData.filter(
+        x => x['الكنيسة'] === item['الكنيسة'] && 
+             x['المرحلة'] === item['المرحلة'] && 
+             x['المسابقة'] === item['المسابقة'] &&
+             x['رقم المركز'] === item['رقم المركز']
+      );
+      if (duplicates.length > 1) {
+        item['المركز'] = `${item['المركز']} مكرر`;
+        
+        const sid = item['studentId'] || item['الكود'];
+        const uniqueKey = `${sid}_${item['المسابقة']}`;
+        if (sRanksSubj[uniqueKey]) {
+          sRanksSubj[uniqueKey].title = `${sRanksSubj[uniqueKey].title} مكرر`;
+        }
+      }
+    });
+
+    eData.sort((a, b) => {
+      if (a['الكنيسة'] !== b['الكنيسة']) return a['الكنيسة'].localeCompare(b['الكنيسة']);
+      if (a['المرحلة'] !== b['المرحلة']) return a['المرحلة'].localeCompare(b['المرحلة']);
+      if (a['المسابقة'] !== b['المسابقة']) return a['المسابقة'].localeCompare(b['المسابقة']);
+      return a['رقم المركز'] - b['رقم المركز'];
+    });
+
+    // Explicit declaration of promoted students / filtered honors list aliases to satisfy requirements
+    const promotedStudents = eData;
+    const filteredHonorsList = eData;
+
+    return { 
+      studentRanksBySubj: sRanksSubj, 
+      exportData: eData,
+      promotedStudents,
+      filteredHonorsList
+    };
+    // تعديل 3: إزالة isOpen من مصفوفة التبعيات الخاصة بالـ useMemo لمنع إعادة تصفير الحسابات عند غلق الواجهة
+  }, [results, weights, stageThresholds, minThreshold, systemSubjects]);
+
+  const lastDispatchedRef = useRef<string>('');
+
+  useEffect(() => {
+    if (onHonorsUpdate) {
+      // Avoid dispatching empty object if settings are still loading
+      if (isLoading) return;
+
+      // If we have results but no weights are loaded yet, do not dispatch empty
+      if (results && results.length > 0 && Object.keys(weights).length === 0) return;
+
+      const currentStr = JSON.stringify(studentRanksBySubj);
+      if (currentStr !== lastDispatchedRef.current) {
+        lastDispatchedRef.current = currentStr;
+        onHonorsUpdate(studentRanksBySubj);
+      }
+    }
+  }, [studentRanksBySubj, onHonorsUpdate, isLoading, weights, results]);
+
+  const localEvaluationResults = filteredHonorsList;
+
+  const exportExcel = () => {
+    if (localEvaluationResults.length === 0) {
+      alert('لا توجد بيانات لمكرمين مستوفين الشروط!');
+      return;
+    }
+
+    const localEvaluationResultsMapped = localEvaluationResults.map((row: any) => ({
+      'الكود': row['الكود'] || row.code || row.id || '',
+      'الاسم': row['الاسم'] || row.name || row.fullName || '',
+      'الكنيسة': row['الكنيسة'] || row.church || '',
+      'المرحلة': row['المرحلة'] || row.stage || '',
+      'المسابقة': row['المسابقة'] || row.competition || '',
+      'الدرجة الفعلية': row['الدرجة الفعلية'] !== undefined ? row['الدرجة الفعلية'] : (row.actualScore !== undefined ? row.actualScore : row.score),
+      'الدرجة الكلية للمسابقة': row['الدرجة الكلية للمسابقة'] !== undefined ? row['الدرجة الكلية للمسابقة'] : (row.maxScore !== undefined ? row.maxScore : row.totalScore),
+      'النسبة المئوية (%)': row['النسبة المئوية (%)'] !== undefined ? row['النسبة المئوية (%)'] : row.percentage,
+      'المركز': row['المركز'] || row.rankTitle || row.rankText || '',
+      'رقم المركز': row['رقم المركز'] !== undefined ? row['رقم المركز'] : (row.rankNumber !== undefined ? row.rankNumber : row.rank)
+    }));
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(localEvaluationResultsMapped);
+    XLSX.utils.book_append_sheet(wb, ws, "المكرمين والأوائل");
+    XLSX.writeFile(wb, "Honors_Leaderboard_2026.xlsx");
+  };
+
+  // This ensures the calculations and onHonorsUpdate still run silently in the background for churches, but hides the UI panel
+  if (!isAdmin) return null;
+
+  return (
+    <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mb-8">
+      {/* Header */}
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-6 bg-gradient-to-l from-indigo-50 to-white hover:bg-slate-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <Award className="text-indigo-600" size={24} />
+          <h3 className="text-xl font-black text-indigo-900">محرك أوائل التكريم (Honors Engine)</h3>
+        </div>
+        {isOpen ? <ChevronUp className="text-indigo-400" /> : <ChevronDown className="text-indigo-400" />}
+      </button>
+
+      {/* Expanded Content */}
+      {isOpen && (
+        <div className="p-6 border-t border-slate-100">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-indigo-600 font-bold p-6 justify-center">
+              <Loader2 className="animate-spin" /> جاري تحميل الإعدادات...
+            </div>
+          ) : (
+            <div className="space-y-8">
+              <p className="text-slate-500 text-sm font-bold bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                حدد الدرجة النهائية (الحد الأقصى) والحد الأدنى للتكريم لكل مرحلة/مسابقة. سيقوم النظام بحساب نسبة كل مادة بشكل منفصل تماماً ومستقل عن باقي المواد لترتيب الأوائل الثلاث وتكراراتهم لكل مسابقة على حدة داخل كل كنيسة.
+              </p>
+
+              {/* Global Actions */}
+              <div className="flex flex-col sm:flex-row items-center justify-end bg-slate-50 p-6 rounded-2xl border border-slate-200 gap-4">
+                <button 
+                  onClick={saveSettings}
+                  disabled={isSaving}
+                  className="w-full sm:w-auto px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-indigo-700 transition shadow-lg active:scale-95 disabled:opacity-50"
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                  حفظ مصفوفة الدرجات
+                </button>
+                <button 
+                  onClick={exportExcel}
+                  className="w-full sm:w-auto px-6 py-3 bg-emerald-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-emerald-700 transition shadow-lg active:scale-95"
+                >
+                  <Download size={18} /> تصدير كشف Excel (XLSX)
+                </button>
+              </div>
+
+              {/* Dynamic Matrix View */}
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+                <table className="w-full text-right border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-600 font-black text-sm uppercase">
+                      <th className="p-4 border-b border-l border-slate-200 min-w-[140px]">المرحلة / المسابقة</th>
+                      <th className="p-4 border-b border-l border-slate-200 text-center min-w-[150px] text-indigo-900 bg-indigo-50/70">
+                        الحد الأدنى للتكريم (%)
+                      </th>
+                      <th className="p-4 border-b border-l border-slate-200 text-center min-w-[160px] text-emerald-900 bg-emerald-50/70">
+                        رسم الاشتراك للفرد (ج.م)
+                      </th>
+                      {systemSubjects.map((s, idx) => (
+                        <th key={idx} className="p-4 border-b border-l border-slate-200 text-center min-w-[100px]">{s}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {systemStages.map((stage) => {
+                      const currentThreshold = stageThresholds[stage] !== undefined ? stageThresholds[stage] : 90;
+                      const currentFee = stageFees[stage] !== undefined ? stageFees[stage] : 50;
+                      return (
+                        <tr key={stage} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-4 border-b border-l border-slate-200 font-bold text-indigo-900 bg-slate-50/50">
+                            {stage}
+                          </td>
+                          <td className="p-3 border-b border-l border-slate-200 bg-indigo-50/30 text-center">
+                            <div className="relative inline-flex items-center justify-center w-24">
+                              <input 
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={currentThreshold}
+                                onChange={(e) => handleStageThresholdChange(stage, e.target.value)}
+                                className="w-full px-2 py-1.5 text-center bg-white border border-indigo-200 rounded-lg text-sm font-black text-indigo-900 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm"
+                              />
+                              <span className="absolute left-2 text-indigo-400 font-bold text-xs pointer-events-none">%</span>
+                            </div>
+                          </td>
+                          <td className="p-3 border-b border-l border-slate-200 bg-emerald-50/30 text-center">
+                            <div className="relative inline-flex items-center justify-center w-28">
+                              <input 
+                                type="number"
+                                min="0"
+                                value={currentFee}
+                                onChange={(e) => handleStageFeeChange(stage, e.target.value)}
+                                className="w-full px-2 py-1.5 text-center bg-white border border-emerald-200 rounded-lg text-sm font-black text-emerald-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm"
+                              />
+                              <span className="absolute left-2 text-emerald-600 font-bold text-xs pointer-events-none">ج.م</span>
+                            </div>
+                          </td>
+                          {systemSubjects.map((subj) => (
+                            <td key={subj} className="p-3 border-b border-l border-slate-100 relative text-center">
+                              <input 
+                                type="number"
+                                min="0"
+                                placeholder="-"
+                                value={weights[stage]?.[subj] || ''}
+                                onChange={(e) => handleWeightChange(stage, subj, e.target.value)}
+                                className="w-20 px-2 py-1.5 text-center bg-white border border-slate-200 rounded-lg text-sm font-bold focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none placeholder:text-slate-300"
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
