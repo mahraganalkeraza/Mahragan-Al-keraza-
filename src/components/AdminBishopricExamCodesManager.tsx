@@ -15,7 +15,9 @@ import {
   ShieldCheck,
   Save,
   HelpCircle,
-  FileCheck
+  FileCheck,
+  BookOpen,
+  Award
 } from 'lucide-react';
 import { 
   BishopricExamRecord, 
@@ -28,8 +30,10 @@ import {
   normalizeArabic
 } from '../utils/bishopricExamStorage';
 import PaginationComponent from './Pagination';
+import { AdminBishopricQuestionsManager } from './AdminBishopricQuestionsManager';
 
 export const AdminBishopricExamCodesManager: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'codes' | 'questions'>('codes');
   const [config, setConfig] = useState<BishopricExamConfig>({
     portalUrl: '',
     records: []
@@ -264,8 +268,41 @@ export const AdminBishopricExamCodesManager: React.FC = () => {
         </div>
       )}
 
-      {/* Grid: Action Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Tab Switcher */}
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-3">
+        <button
+          onClick={() => setActiveTab('codes')}
+          className={`px-6 py-3 rounded-2xl font-black text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'codes'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <FileSpreadsheet size={18} />
+          <span>كشوف أكواد الأسقفية (رفع وتصدير)</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('questions')}
+          className={`px-6 py-3 rounded-2xl font-black text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'questions'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <BookOpen size={18} />
+          <span>بنك الأسئلة والنتائج المركزية</span>
+        </button>
+      </div>
+
+      {activeTab === 'questions' ? (
+        <div className="animate-fade-in">
+          <AdminBishopricQuestionsManager />
+        </div>
+      ) : (
+        <>
+          {/* Grid: Action Cards */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Card 1: Official Portal Link Setup */}
         <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
           <div>
@@ -529,6 +566,8 @@ export const AdminBishopricExamCodesManager: React.FC = () => {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 };

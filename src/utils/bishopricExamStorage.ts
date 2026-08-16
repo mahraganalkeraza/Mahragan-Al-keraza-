@@ -10,6 +10,31 @@ export interface BishopricExamRecord {
   created_at?: string;
 }
 
+export interface BishopricExamQuestion {
+  id?: string;
+  stage: string;
+  subject_name: string;
+  question_text: string;
+  options: string[];
+  correct_answer: string;
+  score: number;
+  created_at?: string;
+}
+
+export interface BishopricExamResult {
+  id?: string;
+  exam_code: string;
+  student_name: string;
+  church_name: string;
+  stage: string;
+  subject_name?: string;
+  total_score: number;
+  max_score: number;
+  percentage: number;
+  status?: string;
+  completed_at?: string;
+}
+
 export interface BishopricExamConfig {
   portalUrl: string;
   records: BishopricExamRecord[];
@@ -405,4 +430,290 @@ export const filterBishopricRecordsForChurch = (
 ): BishopricExamRecord[] => {
   if (!targetChurch || !targetChurch.trim()) return allRecords;
   return allRecords.filter(r => isChurchMatch(r.church_name, targetChurch));
+};
+
+// ==========================================
+// BISHOPRIC EXAM QUESTIONS (bishopric_exam_questions)
+// ==========================================
+
+/**
+ * Fetch questions from bishopric_exam_questions
+ */
+export const fetchBishopricQuestions = async (
+  stage?: string,
+  subject_name?: string
+): Promise<BishopricExamQuestion[]> => {
+  try {
+    let query = supabase
+      .from('bishopric_exam_questions')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (stage && stage !== 'الكل') {
+      query = query.eq('stage', stage);
+    }
+    if (subject_name && subject_name !== 'الكل') {
+      query = query.eq('subject_name', subject_name);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Error fetching bishopric_exam_questions:', error.message);
+      // Check local storage backup if table is fresh
+      const cached = localStorage.getItem('bishopric_exam_questions_cache');
+      if (cached) {
+        try {
+          const parsed: BishopricExamQuestion[] = JSON.parse(cached);
+          return parsed.filter(q => (!stage || stage === 'الكل' || q.stage === stage) && (!subject_name || subject_name === 'الكل' || q.subject_name === subject_name));
+        } catch {}
+      }
+      return [];
+    }
+
+    if (data) {
+      try {
+        localStorage.setItem('bishopric_exam_questions_cache', JSON.stringify(data));
+      } catch {}
+      return data;
+    }
+    return [];
+  } catch (err) {
+    console.error('Fetch bishopric questions error:', err);
+    return [];
+  }
+};
+
+/**
+ * Save / Upsert a question to bishopric_exam_questions
+ */
+export const saveBishopricQuestion = async (
+  question: BishopricExamQuestion
+): Promise<{ success: boolean; data?: BishopricExamQuestion; error?: string }> => {
+  try {
+    const payload: any = {
+      stage: question.stage,
+      subject_name: question.subject_name,
+      question_text: question.question_text,
+      options: question.options || [],
+      correct_answer: question.correct_answer,
+      score: Number(question.score) || 1
+    };
+
+    if (question.id) {
+      payload.id = question.id;
+    }
+
+    const { data, error } = await supabase
+      .from('bishopric_exam_questions')
+      .upsert(payload)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error saving bishopric question:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    console.error('Save bishopric question error:', err);
+    return { success: false, error: err.message || 'فشل في حفظ السؤال' };
+  }
+};
+
+/**
+ * Delete a question from bishopric_exam_questions
+ */
+export const deleteBishopricQuestion = async (
+  id: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { error } = await supabase
+      .from('bishopric_exam_questions')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting bishopric question:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Delete bishopric question error:', err);
+    return { success: false, error: err.message || 'فشل في حذف السؤال' };
+  }
+};
+
+// ==========================================
+// BISHOPRIC EXAM RESULTS (bishopric_exam_results)
+// ==========================================
+
+/**
+ * Fetch results from bishopric_exam_results
+ */
+export const fetchBishopricExamResults = async (
+  churchName?: string
+): Promise<BishopricExamResult[]> => {
+  try {
+    let query = supabase
+      .from('bishopric_exam_results')
+      .select('*')
+      .order('completed_at', { ascending: false });
+
+    if (churchName && churchName.trim()) {
+      query = query.eq('church_name', churchName);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Error fetching bishopric_exam_results:', error.message);
+      // Fallback in case of subtle church naming variation
+      if (churchName) {
+        const { data: allData, error: allErr } = await supabase
+          .from('bishopric_exam_results')
+          .select('*')
+          .order('completed_at', { ascending: false });
+        
+        if (!allErr && allData) {
+          return allData.filter(r => isChurchMatch(r.church_name, churchName));
+        }
+      }
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error('Fetch bishopric exam results error:', err);
+    return [];
+  }
+};
+
+/**
+ * Fetch a specific student's result by exam_code
+ */
+export const fetchBishopricStudentResult = async (
+  exam_code: string
+): Promise<BishopricExamResult | null> => {
+  if (!exam_code || !exam_code.trim()) return null;
+  try {
+    const { data, error } = await supabase
+      .from('bishopric_exam_results')
+      .select('*')
+      .eq('exam_code', exam_code.trim())
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Error querying student result:', error.message);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.error('Fetch student result error:', err);
+    return null;
+  }
+};
+
+/**
+ * Submit / Upsert student exam result into bishopric_exam_results
+ * Strict Network Handshake with auto-retry loop and Supabase confirmation
+ */
+export const submitBishopricExamResult = async (
+  result: BishopricExamResult,
+  maxRetries = 3,
+  onAttempt?: (attempt: number) => void
+): Promise<{ success: boolean; data?: BishopricExamResult; error?: string }> => {
+  const payload = {
+    exam_code: result.exam_code.trim(),
+    student_name: result.student_name.trim(),
+    church_name: result.church_name.trim(),
+    stage: result.stage,
+    subject_name: result.subject_name || 'امتحان الأسقفية',
+    total_score: Number(result.total_score) || 0,
+    max_score: Number(result.max_score) || 0,
+    percentage: Number(result.percentage) || 0,
+    status: result.status || 'completed',
+    completed_at: result.completed_at || new Date().toISOString()
+  };
+
+  let lastError = '';
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    if (onAttempt) onAttempt(attempt);
+    try {
+      const { data, error } = await supabase
+        .from('bishopric_exam_results')
+        .upsert([payload], { onConflict: 'exam_code' })
+        .select();
+
+      if (error || !data || data.length === 0) {
+        throw new Error(error?.message || "فشل التأكيد من السيرفر، جاري إعطاء محاولة أخرى...");
+      }
+
+      // Verified 200 OK insertion confirmation from Supabase
+      return { success: true, data: data[0] as BishopricExamResult };
+    } catch (err: any) {
+      console.warn(`[BishopricHandshake] Attempt ${attempt}/${maxRetries} failed:`, err);
+      lastError = err.message || 'فشل التأكيد من السيرفر، جاري إعطاء محاولة أخرى...';
+      if (attempt < maxRetries) {
+        await new Promise(res => setTimeout(res, 1500));
+      }
+    }
+  }
+
+  return { success: false, error: lastError };
+};
+
+/**
+ * Verify student by exam code strictly against bishopric_exam_codes
+ */
+export const verifyBishopricStudentCode = async (
+  examCode: string
+): Promise<{
+  success: boolean;
+  student?: BishopricExamRecord;
+  alreadySubmitted?: BishopricExamResult | null;
+  error?: string;
+}> => {
+  if (!examCode || !examCode.trim()) {
+    return { success: false, error: 'يرجى إدخال كود امتحان الأسقفية' };
+  }
+
+  const cleanCode = examCode.trim();
+
+  try {
+    // 1. Check in bishopric_exam_codes
+    const { data, error } = await supabase
+      .from('bishopric_exam_codes')
+      .select('*')
+      .eq('exam_code', cleanCode)
+      .maybeSingle();
+
+    let studentRecord: BishopricExamRecord | undefined = data;
+
+    // Fallback: check case-insensitive or in local storage config if offline
+    if (!studentRecord) {
+      const allDb = await fetchAllBishopricRecordsFromDb();
+      studentRecord = allDb.find(r => r.exam_code.trim().toLowerCase() === cleanCode.toLowerCase());
+    }
+
+    if (!studentRecord) {
+      return { 
+        success: false, 
+        error: 'كود الامتحان غير مسجل في كشوف أكواد الأسقفية المعتمدة. يرجى مراجعة مسؤول الكنيسة.' 
+      };
+    }
+
+    // 2. Check if already submitted in bishopric_exam_results
+    const previousResult = await fetchBishopricStudentResult(cleanCode);
+
+    return {
+      success: true,
+      student: studentRecord,
+      alreadySubmitted: previousResult
+    };
+  } catch (err: any) {
+    console.error('Verification error:', err);
+    return { success: false, error: err.message || 'حدث خطأ أثناء التحقق من الكود' };
+  }
 };

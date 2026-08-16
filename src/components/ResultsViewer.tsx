@@ -22,6 +22,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { AdminHonorsEngine } from './AdminHonorsEngine';
+import { BishopricExamResultsTable } from './BishopricExamResultsTable';
 import { supabase } from '../utils/supabaseClient';
 import PaginationComponent from './Pagination';
 import * as XLSX from 'xlsx';
@@ -144,6 +145,7 @@ export const ResultsViewer: React.FC<{
 
   // Bulk Score Entry States
   const [showBulkScoreDashboard, setShowBulkScoreDashboard] = useState(false);
+  const [showBishopricResults, setShowBishopricResults] = useState(false);
   const [bulkStage, setBulkStage] = useState('الكل');
   const [bulkChurch, setBulkChurch] = useState('الكل');
   const [bulkStudents, setBulkStudents] = useState<any[]>([]);
@@ -1509,8 +1511,11 @@ export const ResultsViewer: React.FC<{
 
           {/* العمود الثاني - سطر 2 */}
           <button 
-            onClick={() => setShowBulkScoreDashboard(!showBulkScoreDashboard)}
-            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all shadow-sm border ${
+            onClick={() => {
+              setShowBulkScoreDashboard(!showBulkScoreDashboard);
+              setShowBishopricResults(false);
+            }}
+            className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all shadow-sm border cursor-pointer ${
               showBulkScoreDashboard 
                 ? "bg-cyan-400 border-cyan-300 hover:bg-cyan-500 text-black animate-pulse" 
                 : "bg-teal-500 border-teal-400 hover:bg-teal-600 text-black"
@@ -1518,6 +1523,22 @@ export const ResultsViewer: React.FC<{
           >
             <Award size={14} />
             {showBulkScoreDashboard ? "العودة لجدول النتائج " : "رصد الدرجات الجماعي "}
+          </button>
+
+          {/* زر نتائج أونلاين الأسقفية */}
+          <button 
+            onClick={() => {
+              setShowBishopricResults(!showBishopricResults);
+              setShowBulkScoreDashboard(false);
+            }}
+            className={`w-full col-span-2 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all shadow-sm border cursor-pointer ${
+              showBishopricResults
+                ? "bg-indigo-600 text-white border-indigo-500 shadow-md font-black" 
+                : "bg-indigo-50 border-indigo-200 text-indigo-900 hover:bg-indigo-100"
+            }`}
+          >
+            <BookOpen size={15} />
+            {showBishopricResults ? "العودة لجدول نتائج التصفية المحلية" : "نتائج أونلاين الأسقفية 🏛️"}
           </button>
 
           {/* زر الإعلان عن النتائج (يأخذ العمودين بالكامل في السطر الثالث ليكون مميزاً) */}
@@ -1552,7 +1573,9 @@ export const ResultsViewer: React.FC<{
       </div>
     )}
 
-      {!showBulkScoreDashboard ? (
+      {showBishopricResults ? (
+        <BishopricExamResultsTable userChurchName={activeUserChurch} />
+      ) : !showBulkScoreDashboard ? (
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm overflow-hidden font-arabic" id="results-table-main-wrapper">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-100 pb-4" dir="rtl">
           <h4 className="text-lg font-black text-slate-800">

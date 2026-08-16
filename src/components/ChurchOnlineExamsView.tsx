@@ -36,36 +36,13 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/30 text-indigo-200 rounded-full text-xs font-bold mb-2 border border-indigo-400/30">
                 <QrCode size={14} /> امتحانات واشتراكات الأونلاين
               </div>
-              <h3 className="text-2xl font-black">امتحانات الأونلاين واشتراكات الكنيسة</h3>
+              <h3 className="text-2xl font-black">امتحانات الأسقفية واشتراكات الكنيسة</h3>
               <p className="text-indigo-200/80 text-sm font-bold mt-1">
-                كنيسة: {churchName || 'غير محددة'} • اشتراكات الكنائس  وأكواد امتحانات الأسقفية
+                كنيسة: {churchName || 'غير محددة'} • اشتراكات الكنيسة  وأكواد امتحانات الأسقفية
               </p>
             </div>
           </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {onOpenPortal && (
-              <button
-                onClick={onOpenPortal}
-                className="px-6 py-3.5 bg-white text-indigo-950 rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-indigo-50 transition-all shadow-lg hover:scale-105 active:scale-95 cursor-pointer"
-              >
-                <QrCode size={18} className="text-indigo-600" />
-                بدء دخول الامتحان الإلكتروني (QR)
-              </button>
-            )}
-            <button
-              onClick={() => {
-                setRefreshTrigger(prev => prev + 1);
-              }}
-              className="p-3.5 bg-white/10 hover:bg-white/20 text-white rounded-2xl transition-all cursor-pointer border border-white/10"
-              title="تحديث البيانات"
-            >
-              <RefreshCw size={18} />
-            </button>
-          </div>
-        </div>
-      </div>
-      {/* Tabs Navigation */}
+            {/* Tabs Navigation */}
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-3">
         {/* Sub-Tab 1: اشتراكات الكنائس */}
         <button
@@ -77,7 +54,7 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
           }`}
         >
           <Receipt size={18} />
-          <span>اشتراكات الكنائس</span>
+          <span>اشتراكات الكنيسة</span>
         </button>
 
         {/* Sub-Tab 2: أكواد أونلاين الأسقفية */}

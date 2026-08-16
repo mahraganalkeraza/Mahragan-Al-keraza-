@@ -11,19 +11,27 @@ import {
   Globe, 
   QrCode, 
   RefreshCw,
-  Printer
+  Printer,
+  Award,
+  BookOpen,
+  Play,
+  X
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import QRCode from 'qrcode';
 // @ts-ignore
 import html2pdf from 'html2pdf.js';
 import { withStylesCleaned } from '../utils/oklchCleaner';
 import { 
   BishopricExamRecord, 
+  BishopricExamResult,
   fetchBishopricExamConfig, 
   fetchChurchBishopricRecordsFromDb,
+  fetchBishopricExamResults,
   normalizeArabic
 } from '../utils/bishopricExamStorage';
 import PaginationComponent from './Pagination';
+import { BishopricStudentExamEngine } from './BishopricStudentExamEngine';
 
 interface ChurchBishopricExamCodesViewProps {
   churchName: string;
@@ -31,15 +39,49 @@ interface ChurchBishopricExamCodesViewProps {
 
 export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesViewProps> = ({ churchName }) => {
   const [records, setRecords] = useState<BishopricExamRecord[]>([]);
+  const [results, setResults] = useState<BishopricExamResult[]>([]);
   const [portalUrl, setPortalUrl] = useState<string>('https://mahragan-al-karma.org/exams');
   const [isLoading, setIsLoading] = useState(true);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStage, setSelectedStage] = useState('الكل');
+  const [selectedStatus, setSelectedStatus] = useState<'all' | 'completed' | 'pending'>('all');
   const [currentPage, setCurrentPage] = useState(1);
+  const [takingExamCode, setTakingExamCode] = useState<string | null>(null);
+  const [qrDataUrls, setQrDataUrls] = useState<Record<string, string>>({});
   const printableRef = useRef<HTMLDivElement>(null);
 
   const ITEMS_PER_PAGE = 15;
+
+  // Generate QR Codes for PDF export
+  useEffect(() => {
+    const generateQrs = async () => {
+      const urls: Record<string, string> = {};
+      const baseUrl = window.location.origin + window.location.pathname;
+      for (const r of records) {
+        if (r.exam_code && r.exam_code !== '-') {
+          try {
+            const cleanCode = r.exam_code.trim();
+            const targetUrl = `${baseUrl}#/bishopric-exam?code=${encodeURIComponent(cleanCode)}`;
+            const dataUrl = await QRCode.toDataURL(targetUrl, {
+              width: 150,
+              margin: 1,
+              color: { dark: '#000000', light: '#ffffff' },
+              errorCorrectionLevel: 'H'
+            });
+            urls[cleanCode.toLowerCase()] = dataUrl;
+          } catch (err) {
+            console.warn('QR generation error for code:', r.exam_code, err);
+          }
+        }
+      }
+      setQrDataUrls(urls);
+    };
+
+    if (records.length > 0) {
+      generateQrs();
+    }
+  }, [records]);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -51,8 +93,12 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
       }
 
       // 2. Fetch records strictly from bishopric_exam_codes table for this church
-      const churchData = await fetchChurchBishopricRecordsFromDb(churchName);
+      const [churchData, churchResults] = await Promise.all([
+        fetchChurchBishopricRecordsFromDb(churchName),
+        fetchBishopricExamResults(churchName)
+      ]);
       setRecords(churchData);
+      setResults(churchResults);
     } catch (e) {
       console.error('Error loading bishopric exam codes for church:', e);
     } finally {
@@ -64,6 +110,17 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
     loadData();
   }, [churchName]);
 
+  // Results Map by exam_code
+  const resultsMap = useMemo(() => {
+    const map = new Map<string, BishopricExamResult>();
+    results.forEach(res => {
+      if (res.exam_code) {
+        map.set(res.exam_code.trim().toLowerCase(), res);
+      }
+    });
+    return map;
+  }, [results]);
+
   // Unique stages for filter
   const uniqueStages = useMemo(() => {
     const s = new Set<string>();
@@ -73,7 +130,23 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
     return Array.from(s).sort();
   }, [records]);
 
-  // Filtered records by search & stage
+  // Stats
+  const completedCount = useMemo(() => {
+    return records.filter(r => resultsMap.has(r.exam_code.trim().toLowerCase())).length;
+  }, [records, resultsMap]);
+
+  const avgPercentage = useMemo(() => {
+    const scores = records
+      .map(r => resultsMap.get(r.exam_code.trim().toLowerCase()))
+      .filter((res): res is BishopricExamResult => !!res)
+      .map(res => Number(res.percentage) || 0);
+
+    if (scores.length === 0) return 0;
+    const sum = scores.reduce((acc, v) => acc + v, 0);
+    return Math.round(sum / scores.length);
+  }, [records, resultsMap]);
+
+  // Filtered records by search, stage, and status
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
       const normSearch = normalizeArabic(searchTerm);
@@ -86,9 +159,14 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
 
       const matchesStage = selectedStage === 'الكل' || r.stage === selectedStage;
 
-      return matchesSearch && matchesStage;
+      const isCompleted = resultsMap.has(r.exam_code.trim().toLowerCase());
+      const matchesStatus = selectedStatus === 'all' || 
+        (selectedStatus === 'completed' && isCompleted) ||
+        (selectedStatus === 'pending' && !isCompleted);
+
+      return matchesSearch && matchesStage && matchesStatus;
     });
-  }, [records, searchTerm, selectedStage]);
+  }, [records, searchTerm, selectedStage, selectedStatus, resultsMap]);
 
   const totalPages = Math.ceil(filteredRecords.length / ITEMS_PER_PAGE);
   const displayedRecords = filteredRecords.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -97,18 +175,26 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
   const handleExportExcel = () => {
     if (records.length === 0) return;
 
-    const rows = records.map((r, idx) => ({
-      'م': idx + 1,
-      'اسم المشترك': r.student_name,
-      'المرحلة': r.stage,
-      'اسم الكنيسة': r.church_name,
-      'كود امتحان الأسقفية': r.exam_code
-    }));
+    const rows = records.map((r, idx) => {
+      const res = resultsMap.get(r.exam_code.trim().toLowerCase());
+      return {
+        'م': idx + 1,
+        'اسم المشترك': r.student_name,
+        'المرحلة': r.stage,
+        'اسم الكنيسة': r.church_name,
+        'كود امتحان الأسقفية': r.exam_code,
+        'حالة الامتحان': res ? 'تم أداء الامتحان' : 'في انتظار الاختبار',
+        'الدرجة الحاصل عليها': res ? res.total_score : '-',
+        'الدرجة النهائية': res ? res.max_score : '-',
+        'النسبة المئوية %': res ? `${res.percentage}%` : '-',
+        'تاريخ التسليم': res?.completed_at ? new Date(res.completed_at).toLocaleString('ar-EG') : '-'
+      };
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'أكواد امتحانات الأسقفية');
-    XLSX.writeFile(workbook, `أكواد_امتحانات_الأسقفية_${(churchName || 'الكنيسة').replace(/\s+/g, '_')}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'أكواد ونتائج الأسقفية');
+    XLSX.writeFile(workbook, `أكواد_ونتائج_الأسقفية_${(churchName || 'الكنيسة').replace(/\s+/g, '_')}.xlsx`);
   };
 
   // Handle PDF Export / Printable Voucher Sheet
@@ -125,7 +211,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
       const element = printableRef.current;
       const opt = {
         margin: [8, 8, 8, 8],
-        filename: `كشف_أكواد_امتحانات_الأسقفية_${(churchName || 'الكنيسة').replace(/\s+/g, '_')}.pdf`,
+        filename: `كشف_أكواد_ونتائج_الأسقفية_${(churchName || 'الكنيسة').replace(/\s+/g, '_')}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 3, useCORS: true, allowTaint: true },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
@@ -152,36 +238,34 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
           </div>
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold mb-1 border border-indigo-100">
-              <QrCode size={13} /> منصة امتحانات أسقفية الشباب
+              <QrCode size={13} /> منصة امتحانات أسقفية الشباب 2026
             </div>
-            <h3 className="text-xl font-black text-slate-800">أكواد امتحانات الأسقفية الإلكترونية</h3>
+            <h3 className="text-xl font-black text-slate-800">أكواد ونتائج امتحانات الأسقفية الإلكترونية</h3>
             <p className="text-xs text-slate-400 font-bold mt-0.5">
-              كنيسة: <strong className="text-slate-700">{churchName || 'غير محددة'}</strong> • الكشوف الرسمية المعتمدة للامتحانات المركزية
+              كنيسة: <strong className="text-slate-700">{churchName || 'غير محددة'}</strong> • الكشوف الرسمية ورصد الدرجات والتقييمات المركزية
             </p>
           </div>
         </div>
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          {/* Header Action Button: الانتقال إلى منصة امتحانات الأسقفية */}
-          <a
-            href={portalUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          {/* Direct Exam Login Launcher */}
+          <button
+            onClick={() => setTakingExamCode('')}
             className="flex-1 md:flex-none px-6 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs md:text-sm font-black flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/20 hover:scale-105 active:scale-95 transition-all cursor-pointer"
           >
-            <ExternalLink size={16} />
-            الانتقال إلى منصة امتحانات الأسقفية
-          </a>
+            <BookOpen size={16} />
+            دخول وبدء الامتحان الإلكتروني
+          </button>
 
-          {/* PDF Export Button: تحميل كشف أكواد الأسقفية (PDF) */}
+          {/* PDF Export Button */}
           <button
             onClick={handleExportPdf}
             disabled={isExportingPdf || records.length === 0}
             className="flex-1 md:flex-none px-5 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs md:text-sm font-black flex items-center justify-center gap-2 shadow-md shadow-emerald-600/10 transition-all disabled:opacity-50 cursor-pointer"
           >
             <FileText size={16} />
-            {isExportingPdf ? 'جاري تجهيز الـ PDF...' : 'تحميل كشف أكواد الأسقفية (PDF)'}
+            {isExportingPdf ? 'جاري تجهيز الـ PDF...' : 'تحميل كشف الأكواد والنتائج (PDF)'}
           </button>
 
           {/* Excel Export */}
@@ -207,7 +291,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
       </div>
 
       {/* Metrics Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="bg-white border border-slate-200/80 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
           <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center font-bold shrink-0">
             <Users size={20} />
@@ -219,24 +303,34 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
         </div>
 
         <div className="bg-white border border-slate-200/80 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
-          <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center font-bold shrink-0">
-            <Building2 size={20} />
-          </div>
-          <div>
-            <div className="text-[11px] text-slate-400 font-bold">المراحل المشمولة للكنيسة</div>
-            <div className="text-lg font-black text-slate-800">{uniqueStages.length} مراحل</div>
-          </div>
-        </div>
-
-        <div className="col-span-2 sm:col-span-1 bg-white border border-slate-200/80 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
           <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center font-bold shrink-0">
             <CheckCircle2 size={20} />
           </div>
           <div>
-            <div className="text-[11px] text-slate-400 font-bold">حالة الكشف الرسمي</div>
-            <div className="text-sm font-black text-emerald-700">
-              {records.length > 0 ? 'معتمد ومحدث' : 'في انتظار الرفع المركزي'}
+            <div className="text-[11px] text-slate-400 font-bold">تم أداء الامتحان</div>
+            <div className="text-lg font-black text-emerald-700">
+              {completedCount} <span className="text-xs text-slate-400 font-bold">({records.length > 0 ? Math.round((completedCount / records.length) * 100) : 0}%)</span>
             </div>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+          <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center font-bold shrink-0">
+            <Award size={20} />
+          </div>
+          <div>
+            <div className="text-[11px] text-slate-400 font-bold">متوسط درجات الكنيسة</div>
+            <div className="text-lg font-black text-purple-700">{avgPercentage}%</div>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 flex items-center gap-3 shadow-sm">
+          <div className="w-10 h-10 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center font-bold shrink-0">
+            <Building2 size={20} />
+          </div>
+          <div>
+            <div className="text-[11px] text-slate-400 font-bold">المراحل المشمولة</div>
+            <div className="text-lg font-black text-slate-800">{uniqueStages.length} مراحل</div>
           </div>
         </div>
       </div>
@@ -247,15 +341,15 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
           <div>
             <h4 className="text-sm font-black text-slate-800 flex items-center gap-2">
               <FileSpreadsheet className="text-indigo-600 w-4 h-4" />
-              جدول أكواد امتحانات الأسقفية [اسم المشترك | المرحلة | كود امتحان الأسقفية]
+              جدول أكواد ونتائج امتحانات الأسقفية المعتمدة
             </h4>
             <p className="text-[11px] text-slate-400 font-bold mt-0.5">
-              يمكن استخدام هذه الأكواد للدخول لمنصة امتحانات الأسقفية مباشرة
+              بيانات المشتركين، الأكواد، ودرجات التقييم المركزية من قاعدة بيانات Supabase
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative min-w-[220px]">
+            <div className="relative min-w-[200px]">
               <Search size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
@@ -275,6 +369,16 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
               {uniqueStages.map(stg => (
                 <option key={stg} value={stg}>{stg}</option>
               ))}
+            </select>
+
+            <select
+              value={selectedStatus}
+              onChange={(e) => { setSelectedStatus(e.target.value as any); setCurrentPage(1); }}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="all">كل الحالات</option>
+              <option value="completed">تم الامتحان فقط</option>
+              <option value="pending">في انتظار الامتحان</option>
             </select>
           </div>
         </div>
@@ -301,11 +405,16 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
                   <th className="p-3.5">اسم المشترك</th>
                   <th className="p-3.5">المرحلة</th>
                   <th className="p-3.5 text-center">كود امتحان الأسقفية</th>
+                  <th className="p-3.5 text-center">حالة ونتيجة الامتحان</th>
+                  <th className="p-3.5 text-center">الإجراء</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
                 {displayedRecords.map((r, idx) => {
                   const globalIdx = (currentPage - 1) * ITEMS_PER_PAGE + idx + 1;
+                  const res = resultsMap.get(r.exam_code.trim().toLowerCase());
+                  const isCompleted = !!res;
+
                   return (
                     <tr key={r.id || idx} className="hover:bg-slate-50/80 transition-colors">
                       <td className="p-3.5 text-slate-400 font-black text-[11px]">{globalIdx}</td>
@@ -319,6 +428,40 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
                         <code className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg font-mono font-black text-xs inline-block">
                           {r.exam_code}
                         </code>
+                      </td>
+                      <td className="p-3.5 text-center">
+                        {isCompleted ? (
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full font-black text-xs">
+                            <CheckCircle2 size={13} className="text-emerald-600" />
+                            <span>{res.total_score}/{res.max_score} ({res.percentage}%)</span>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[11px] font-bold">
+                            في انتظار الاختبار
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-center">
+                        <button
+                          onClick={() => setTakingExamCode(r.exam_code)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 mx-auto cursor-pointer ${
+                            isCompleted 
+                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' 
+                              : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm shadow-indigo-600/20'
+                          }`}
+                        >
+                          {isCompleted ? (
+                            <>
+                              <Award size={13} />
+                              <span>عرض النتيجة</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play size={13} />
+                              <span>بدء الامتحان</span>
+                            </>
+                          )}
+                        </button>
                       </td>
                     </tr>
                   );
@@ -340,50 +483,98 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
         )}
       </div>
 
+      {/* STUDENT EXAM MODAL */}
+      {takingExamCode !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
+          <div className="bg-slate-50 w-full max-w-3xl rounded-3xl p-4 md:p-6 shadow-2xl relative my-8">
+            <button
+              onClick={() => { setTakingExamCode(null); loadData(); }}
+              className="absolute top-6 left-6 p-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-500 hover:text-slate-800 transition-colors z-10 cursor-pointer"
+              title="إغلاق"
+            >
+              <X size={20} />
+            </button>
+
+            <BishopricStudentExamEngine
+              initialExamCode={takingExamCode}
+              onClose={() => { setTakingExamCode(null); loadData(); }}
+              onComplete={() => { loadData(); }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Hidden Printable PDF Container */}
       <div className="hidden">
         <div ref={printableRef} className="p-8 bg-white font-arabic text-slate-900" dir="rtl">
           {/* Header */}
           <div className="text-center pb-6 border-b-2 border-indigo-600 mb-6">
             <h2 className="text-2xl font-black text-indigo-950 mb-1">مهرجان الكرازة المرقسية 2026</h2>
-            <h3 className="text-lg font-black text-slate-800 mb-2">كشف أكواد امتحانات الأسقفية الإلكترونية</h3>
+            <h3 className="text-lg font-black text-slate-800 mb-2">كشف أكواد ونتائج امتحانات الأسقفية الإلكترونية</h3>
             <div className="flex justify-between items-center text-xs font-bold text-slate-600 mt-3 pt-2 border-t border-slate-200">
               <div>كنيسة: <strong className="text-slate-900">{churchName || 'عام'}</strong></div>
               <div>إجمالي المشتركين: <strong className="text-slate-900">{records.length}</strong></div>
+              <div>تم أداء الامتحان: <strong className="text-slate-900">{completedCount}</strong></div>
               <div>تاريخ الطباعة: {new Date().toLocaleDateString('ar-EG')}</div>
             </div>
-            {portalUrl && (
-              <div className="text-[11px] font-mono text-indigo-700 mt-2 bg-indigo-50 p-2 rounded-lg border border-indigo-100">
-                رابط المنصة: {portalUrl}
-              </div>
-            )}
           </div>
 
           {/* Table */}
           <table className="w-full text-right border-collapse text-xs border border-slate-300">
             <thead>
               <tr className="bg-slate-100 font-black text-slate-800 border-b border-slate-300">
-                <th className="p-2 border border-slate-300 text-center w-12">م</th>
+                <th className="p-2 border border-slate-300 text-center w-10">م</th>
                 <th className="p-2 border border-slate-300">اسم المشترك</th>
-                <th className="p-2 border border-slate-300 w-32">المرحلة</th>
-                <th className="p-2 border border-slate-300 text-center w-40">كود امتحان الأسقفية</th>
+                <th className="p-2 border border-slate-300 w-24">المرحلة</th>
+                <th className="p-2 border border-slate-300 text-center w-28">رمز الاستجابة (QR)</th>
+                <th className="p-2 border border-slate-300 text-center w-32">كود الامتحان</th>
+                <th className="p-2 border border-slate-300 text-center w-24">الدرجة</th>
+                <th className="p-2 border border-slate-300 text-center w-20">النسبة %</th>
               </tr>
             </thead>
             <tbody>
-              {records.map((r, idx) => (
-                <tr key={idx} className="border-b border-slate-200 font-bold">
-                  <td className="p-2 border border-slate-300 text-center text-slate-600">{idx + 1}</td>
-                  <td className="p-2 border border-slate-300 font-black text-slate-900">{r.student_name}</td>
-                  <td className="p-2 border border-slate-300 text-slate-700">{r.stage}</td>
-                  <td className="p-2 border border-slate-300 text-center font-mono font-black text-indigo-900">{r.exam_code}</td>
-                </tr>
-              ))}
+              {records.map((r, idx) => {
+                const cleanCode = r.exam_code.trim().toLowerCase();
+                const res = resultsMap.get(cleanCode);
+                const qrUrl = qrDataUrls[cleanCode];
+
+                return (
+                  <tr key={idx} className="border-b border-slate-200 font-bold">
+                    <td className="p-2 border border-slate-300 text-center text-slate-600">{idx + 1}</td>
+                    <td className="p-2 border border-slate-300 font-black text-slate-900">{r.student_name}</td>
+                    <td className="p-2 border border-slate-300 text-slate-700">{r.stage}</td>
+                    <td className="p-1.5 border border-slate-300 text-center">
+                      {qrUrl ? (
+                        <img 
+                          src={qrUrl} 
+                          alt="QR" 
+                          style={{ width: '1.2cm', height: '1.2cm' }}
+                          className="object-contain mx-auto border border-slate-300 rounded p-0.5 bg-white inline-block"
+                        />
+                      ) : (
+                        <span className="text-[9px] font-mono text-slate-400">QR</span>
+                      )}
+                    </td>
+                    <td className="p-2 border border-slate-300 text-center">
+                      <span className="font-mono font-black text-indigo-900 text-xs tracking-wider inline-block px-2 py-0.5 bg-slate-50 border border-slate-200 rounded">
+                        {r.exam_code}
+                      </span>
+                    </td>
+                    <td className="p-2 border border-slate-300 text-center text-slate-800">
+                      {res ? `${res.total_score} / ${res.max_score}` : '-'}
+                    </td>
+                    <td className="p-2 border border-slate-300 text-center font-black text-emerald-800">
+                      {res ? `${res.percentage}%` : 'في الانتظار'}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
           {/* Footer Voucher Note */}
           <div className="mt-8 pt-4 border-t border-slate-300 flex justify-between items-center text-[10px] font-bold text-slate-500">
-            <span>ملاحظة: يتم استخدام هذه الأكواد لتسجيل الدخول وأداء الامتحان عبر منصة الأسقفية المركزية.</span>
+            <span>ملاحظة: درجات الامتحانات مسجلة مركزياً في نظام امتحانات أسقفية الشباب.</span>
             <span>كنترول المهرجان • أسقفية الشباب</span>
           </div>
         </div>

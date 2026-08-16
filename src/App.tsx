@@ -88,7 +88,9 @@ import ChurchInquiryForm from './components/ChurchInquiryForm';
 import AdminInquiriesViewer from './components/AdminInquiriesViewer';
 import { ChurchQualificationFeesCard } from './components/ChurchQualificationFeesCard';
 import { ChurchOnlineExamsView } from './components/ChurchOnlineExamsView';
+import { BishopricStudentExamEngine } from './components/BishopricStudentExamEngine';
 import { AdminQualificationFeesViewer } from './components/AdminQualificationFeesViewer';
+import { AdminBishopricQuestionsManager } from './components/AdminBishopricQuestionsManager';
 import { QualificationGapAnalysisChart } from './components/QualificationGapAnalysisChart';
 import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
 import { setupForceRefreshListener } from './utils/forceRefreshManager';
@@ -1029,7 +1031,7 @@ function AppComponent() {
   const [rememberMe, setRememberMe] = useState(false);
   const [adminFilterChurch, setAdminFilterChurch] = useState('الكل');
   const [adminActiveTab, setAdminActiveTab] = useState('dashboard');
-  const [examsManagementSubTab, setExamsManagementSubTab] = useState<'electronic' | 'paper_models'>('electronic');
+  const [examsManagementSubTab, setExamsManagementSubTab] = useState<'electronic' | 'bishopric' | 'paper_models'>('electronic');
   const [newsSearch, setNewsSearch] = useState('');
   const [newsFilterDate, setNewsFilterDate] = useState('');
   const [newsPage, setNewsPage] = useState(1);
@@ -1685,6 +1687,14 @@ function AppComponent() {
   // Background check on Firestore to warn with real-time duplicate checks in church context
   const [participantDuplicateWarning, setParticipantDuplicateWarning] = useState<string | null>(null);
   const [isCheckingParticipantDuplicate, setIsCheckingParticipantDuplicate] = useState(false);
+  const [participantNameError, setParticipantNameError] = useState<string | null>(null);
+
+  // Helper to validate subscriber name has at least 3 distinct words ignoring extra whitespace
+  const validateParticipantName = (inputName: string): boolean => {
+    if (!inputName) return false;
+    const nameWords = inputName.trim().split(/\s+/).filter(word => word.length > 0);
+    return nameWords.length >= 3;
+  };
 
   // Helper to normalize Arabic names for smarter matching (typos, hamzas, etc.)
   const normalizeArabic = (text: string): string => {
@@ -1758,6 +1768,12 @@ function AppComponent() {
   // Handle onBlur of the name input field in registration form
   const handleNameBlur = async () => {
     const trimmedName = newParticipant.name ? newParticipant.name.trim() : '';
+    if (newParticipant.name && !validateParticipantName(newParticipant.name)) {
+      setParticipantNameError('يرجى كتابة الاسم ثلاثياً على الأقل (الاسم الأول والثاني والثالث)');
+    } else {
+      setParticipantNameError(null);
+    }
+
     if (!trimmedName || trimmedName.length < 3 || !churchName) {
       return;
     }
@@ -5461,6 +5477,7 @@ function AppComponent() {
       competitions: [...(participant.competitions || []), '', '', ''].slice(0, 3)
     });
     setEditingParticipant(participant);
+    setParticipantNameError(null);
     setRegistrationStep(1);
     // Scroll to form
     const formElement = document.getElementById('registration-form');
@@ -5649,9 +5666,19 @@ function AppComponent() {
     }
 
     if (!newParticipant.name || !newParticipant.stage || !newParticipant.gender) {
+      if (newParticipant.name && !validateParticipantName(newParticipant.name)) {
+        setParticipantNameError('يرجى كتابة الاسم ثلاثياً على الأقل (الاسم الأول والثاني والثالث)');
+      }
       alert('يرجى ملء جميع الحقول المطلوبة (الاسم، المرحلة، النوع)');
       return;
     }
+
+    if (!validateParticipantName(newParticipant.name)) {
+      setParticipantNameError('يرجى كتابة الاسم ثلاثياً على الأقل (الاسم الأول والثاني والثالث)');
+      alert('يرجى كتابة الاسم ثلاثياً على الأقل (الاسم الأول والثاني والثالث)');
+      return;
+    }
+    setParticipantNameError(null);
 
     if (isRegistrationDisabledForCurrent(churchName, newParticipant.stage)) {
       alert('خطأ: التسجيل مغلق حالياً لهذه المرحلة الدراسية أو الكنيسة بقرار مركزي سيادي 🔒');
@@ -5802,6 +5829,7 @@ function AppComponent() {
         gender: '',
         competitions: ['دراسي', '', ''] 
       });
+      setParticipantNameError(null);
       await updateChurchSubscribers(churchName);
     } catch (error: any) {
       console.error("Supabase Save Error: ", error);
@@ -6897,6 +6925,18 @@ function AppComponent() {
                 />
               </div>
             )}
+          </motion.div>
+        )}
+
+        {(activeSection === 'bishopric-exam' || activeSection === 'bishopric_exam') && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+            <BackButton />
+            <div className="max-w-4xl mx-auto">
+              <BishopricStudentExamEngine 
+                onClose={() => setActiveSection('home')}
+                onComplete={() => {}}
+              />
+            </div>
           </motion.div>
         )}
 
@@ -8532,11 +8572,11 @@ function AppComponent() {
                   <div className="flex items-center gap-2">
                     <BookOpen className="text-primary" size={24} />
                     <h4 className="text-xl font-black text-slate-800">
-                      بناء وتوليد نماذج الامتحانات
+                      وضع نماذج وبنك أسئلة الامتحانات
                     </h4>
                   </div>
                   
-                  <div className="flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto shadow-inner">
+                  <div className="flex bg-slate-100 p-1 rounded-xl self-start sm:self-auto shadow-inner flex-wrap gap-1">
                     <button
                       onClick={() => setExamsManagementSubTab('electronic')}
                       className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
@@ -8545,7 +8585,17 @@ function AppComponent() {
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      الامتحانات الإلكترونية 💻
+                      أسئلة التصفية المحلية 📝
+                    </button>
+                    <button
+                      onClick={() => setExamsManagementSubTab('bishopric')}
+                      className={`px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                        examsManagementSubTab === 'bishopric'
+                          ? 'bg-indigo-600 text-white shadow-sm font-black'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      أسئلة أونلاين الأسقفية 🏛️
                     </button>
                     <button
                       onClick={() => setExamsManagementSubTab('paper_models')}
@@ -8555,16 +8605,24 @@ function AppComponent() {
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      النماذج الورقية الذكية (أوفلاين) 📝
+                      النماذج الورقية الذكية (أوفلاين) 📄
                     </button>
                   </div>
                 </div>
 
-                {examsManagementSubTab === 'electronic' ? (
+                {examsManagementSubTab === 'electronic' && (
                   <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200">
                     <ExamBuilder stages={dynamicLevels} />
                   </div>
-                ) : (
+                )}
+
+                {examsManagementSubTab === 'bishopric' && (
+                  <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200">
+                    <AdminBishopricQuestionsManager />
+                  </div>
+                )}
+
+                {examsManagementSubTab === 'paper_models' && (
                   <ExamModelsDashboard />
                 )}
               </section>
@@ -10669,11 +10727,24 @@ function AppComponent() {
                                 type="text" 
                                 placeholder="أدخل الاسم الثلاثي"
                                 value={newParticipant.name}
-                                onChange={e => setNewParticipant({...newParticipant, name: e.target.value})}
+                                onChange={e => {
+                                  const val = e.target.value;
+                                  setNewParticipant({...newParticipant, name: val});
+                                  const words = val.trim().split(/\s+/).filter(w => w.length > 0);
+                                  if (participantNameError && words.length >= 3) {
+                                    setParticipantNameError(null);
+                                  }
+                                }}
                                 onBlur={handleNameBlur}
-                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none"
+                                className={`w-full px-5 py-4 bg-slate-50 border ${participantNameError ? 'border-red-500 bg-red-50/20 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:border-primary focus:ring-0'} rounded-lg text-sm outline-none focus:bg-white transition-all shadow-none`}
                                 required
                               />
+                              {participantNameError && (
+                                <div className="p-3 bg-red-50 border border-red-200 rounded-lg mt-1.5 flex items-start gap-2 text-red-800 text-[11px] font-bold leading-relaxed shadow-sm transition-all animate-fade-in">
+                                  <span className="shrink-0 text-red-500 font-bold">⚠️</span>
+                                  <span>{participantNameError}</span>
+                                </div>
+                              )}
                               {isCheckingParticipantDuplicate && (
                                 <p className="text-[10px] text-slate-400 animate-pulse font-medium mt-1">جاري التحقق من قاعدة البيانات...</p>
                               )}
