@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/Mahragan-Al-keraza-/service-worker.js', { scope: '/Mahragan-Al-keraza-/' })})}
