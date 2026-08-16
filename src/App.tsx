@@ -7078,7 +7078,7 @@ function AppComponent() {
                     onClick={() => generateMasterExcel(allChurchParticipants, churchName)}
                     className="px-6 py-3 bg-emerald-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-xl hover:scale-105 active:scale-95"
                   >
-                    <Download size={18} /> التصدير الشامل الموحد (Excel)
+                    <Download size={18} /> تحميل البيانات (Excel)
                   </button>
                 </div>
               </div>
@@ -7086,7 +7086,7 @@ function AppComponent() {
               {/* Local Church Analytics Dashboard */}
               <div className="mb-8 space-y-6">
                 <h4 className="font-black text-slate-800 text-xl flex items-center gap-2 mb-6">
-                    <Layers size={24} className="text-coptic-blue" /> إحصائيات وتتبع الكنيسة
+                    <Layers size={24} className="text-coptic-blue" /> إحصائيات الكنيسة
                 </h4>
                 
                 {(() => {
@@ -7323,7 +7323,7 @@ function AppComponent() {
                 onClick={() => fetchLargeData(true)}
                 className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 flex flex-row gap-2 transition"
               >
-                 تحديث البيانات
+                  Refresh
               </button>
             </div>
             <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden min-h-[700px] flex flex-col lg:flex-row w-full min-w-0">
@@ -7476,7 +7476,7 @@ function AppComponent() {
                         onClick={() => downloadMasterTemplate()}
                         className="px-6 py-3 bg-coptic-red text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                       >
-                        <Award size={20} /> تحميل قالب التسجيل المعتمد
+                        <Award size={20} /> تحميل قالب التسجيل
                       </button>
                       <button 
                         onClick={() => generateMasterExcel(allChurchParticipants, userRole === 'admin' ? null : churchName)}
