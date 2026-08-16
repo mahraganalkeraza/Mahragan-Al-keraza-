@@ -710,16 +710,11 @@ export const ResultsViewer: React.FC<{
     return Array.from(new Set(supabaseSubmissions.map(r => r.stage).filter(Boolean)));
   }, [supabaseSubmissions]);
 
-  // 2. استخراج أسماء المراحل المسجلة في جدول stage_competitions فقط (مثل: DB / API Data)
-  const dbStageNames = useMemo(() => {
-    return stageCompetitions?.map(item => item.stage_name).filter(Boolean) || [];
-  }, [stageCompetitions]);
-
-  // 3. دمج المراحل الحقيقية فقط (المسجلة في الجدول + الموجودة في التسجيلات)
+  // 2. دمج المراحل الحقيقية فقط (المسجلة في الجدول + الموجودة في التسجيلات)
   const finalStageOptions = useMemo(() => {
-    const set = new Set([...dbStageNames, ...uniqueStagesList]);
+    const set = new Set([...stageOptions, ...uniqueStagesList]);
     return Array.from(set).filter(Boolean).sort();
-  }, [dbStageNames, uniqueStagesList]);
+  }, [stageOptions, uniqueStagesList]);
 
   // 4. الكنائس (كما هي)
   const uniqueChurches = useMemo(() => {
