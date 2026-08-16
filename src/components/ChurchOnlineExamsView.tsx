@@ -42,7 +42,10 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
               </p>
             </div>
           </div>
-            {/* Tabs Navigation */}
+        </div>
+      </div>
+
+      {/* Tabs Navigation */}
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-3">
         {/* Sub-Tab 1: اشتراكات الكنائس */}
         <button
