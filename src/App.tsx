@@ -7053,44 +7053,7 @@ function AppComponent() {
               </button>
             </div>
 
-            {/* Universal Filter Engine - Church View */}
-            <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 space-y-4">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Search size={20} className="text-primary" />
-                    <h4 className="font-black text-slate-800 text-lg">محرك البحث الشامل</h4>
-                  </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="relative">
-                  <input 
-                    type="text"
-                    placeholder="ابحث بالاسم..."
-                    value={globalNameFilter}
-                    onChange={(e) => setGlobalNameFilter(e.target.value)}
-                    className="w-full pr-4 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
-                  />
-                </div>
-                <select 
-                  value={globalStageFilter}
-                  onChange={(e) => setGlobalStageFilter(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
-                >
-                  <option value="الكل">كل المراحل</option>
-                  {dynamicLevels.map(l => <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>{typeof l === 'string' ? l : l.name}</option>)}
-                </select>
-                <select 
-                  value={globalCompetitionFilter}
-                  onChange={(e) => setGlobalCompetitionFilter(e.target.value)}
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
-                >
-                  <option value="الكل">كل المسابقات</option>
-                  {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثان'].map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <QuickActionsHub userRole={userRole === 'super_admin' ? 'admin' : userRole} onAction={(action) => {
+                       <QuickActionsHub userRole={userRole === 'super_admin' ? 'admin' : userRole} onAction={(action) => {
               setActiveSection(action);
             }} />
             <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
