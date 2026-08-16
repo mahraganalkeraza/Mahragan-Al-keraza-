@@ -417,23 +417,22 @@ const HYMNS_SITE_URL = "https://mahraganalkeraza.github.io/Hymens_comptetion/";
 
 const ALL_ADMIN_TABS = [
   { id: 'dashboard', label: 'Data Analysis', icon: LayoutDashboard },
-  { id: 'hymns_judging', label: 'انتقال للجنة تحكيم الألحان', icon: Music, isExternal: true, url: HYMNS_SITE_URL },
-  { id: 'news', label: 'الأخبار والـ Slider', icon: Newspaper },
   { id: 'participants', label: 'إدارة المشتركين', icon: Users },
   { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
-  { id: 'results', label: 'نتائج التصفية المحلية', icon: Award },
-  { id: 'omr', label: ' Babble sheets & QR  ', icon: FileScan },
   { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
+  { id: 'calculator', label: 'تسعير الكتب', icon: Calculator },
+  { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
+  { id: 'exams_management', label: 'الامتحانات', icon: BookOpen },
+  { id: 'omr', label: ' Babble sheets & QR  ', icon: FileScan },
+  { id: 'rotating_gate', label: ' Daily QR  ', icon: QrCode },
+  { id: 'results', label: 'النتائج', icon: Award },
   { id: 'qualification_fees', label: 'اشتراكات الكنائس', icon: Receipt },
   { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
-  { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
-  { id: 'calculator', label: 'تسعير الكتب', icon: Calculator },
-  { id: 'exams_management', label: 'وضع نماذج الامتحانات', icon: BookOpen },
-  { id: 'rotating_gate', label: ' Daily QR  ', icon: QrCode },
-  { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
+  { id: 'news', label: 'الأخبار والـ Slider', icon: Newspaper },
   { id: 'dynamic_management', label: 'إعدادات المهرجان ', icon: Settings },
-  { id: 'official_templates', label: 'تصدير القوالب الرسمية', icon: FileSpreadsheet },
-  { id: 'system_settings', label: 'إعدادات الموقع', icon: Settings }
+  { id: 'official_templates', label: 'إعدادات الأسقفية', icon: Settings },
+  { id: 'system_settings', label: 'إعدادات الموقع', icon: Settings },
+  { id: 'hymns_judging', label: 'انتقال للجنة تحكيم الألحان', icon: Music, isExternal: true, url: HYMNS_SITE_URL } ,
 ];
 
 const getValidLogoUrl = (url: string | null | undefined, fallback: string | null = null): string => {
@@ -6034,7 +6033,7 @@ function AppComponent() {
           : 'text-slate-600 hover:bg-accent/10 hover:text-primary'
       }`}
     >
-      <Icon size={22} className={activeSection === id ? 'text-accent' : 'text-slate-400'} />
+      {Icon && <Icon size={22} className={activeSection === id ? 'text-accent' : 'text-slate-400'} />}
       <span className="font-bold">{label}</span>
     </button>
   );
@@ -7378,6 +7377,7 @@ function AppComponent() {
                 <div className="p-4 flex flex-col gap-2 h-auto lg:h-full overflow-x-auto lg:overflow-y-auto no-scrollbar lg:custom-scrollbar">
                   <div className="flex gap-2 lg:flex-col lg:space-y-1">
                     {visibleAdminTabs.map(tab => {
+                      const TabIcon = tab.icon || LayoutDashboard;
                       if ((tab as any).isExternal) {
                         return (
                           <a 
@@ -7387,7 +7387,7 @@ function AppComponent() {
                             rel="noopener noreferrer"
                             className="flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm text-right cursor-pointer bg-slate-800/90 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 border border-amber-500/30 shadow-sm group"
                           >
-                            <tab.icon size={18} className="text-amber-400 group-hover:scale-110 transition-transform" />
+                            <TabIcon size={18} className="text-amber-400 group-hover:scale-110 transition-transform" />
                             <span className="flex-1 whitespace-nowrap">{tab.label}</span>
                             <ExternalLink size={16} className="text-amber-400/80 group-hover:translate-x-[-2px] transition-transform" />
                           </a>
@@ -7404,7 +7404,7 @@ function AppComponent() {
                               : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/60'
                           }`}
                         >
-                          <tab.icon size={18} className={adminActiveTab === tab.id ? 'text-white' : 'text-slate-400'} />
+                          <TabIcon size={18} className={adminActiveTab === tab.id ? 'text-white' : 'text-slate-400'} />
                           <span className="flex-1 whitespace-nowrap">{tab.label}</span>
                           {adminActiveTab === tab.id && <ChevronLeft size={16} className="text-white/50 hidden lg:block" />}
                         </button>

@@ -53,6 +53,21 @@ const stripChurchPrefix = (name: string): string => {
     .trim();
 };
 
+const MASTER_HEADERS = [
+  'وقت التسليم',
+  'الاسم',
+  'الكنيسة/البلد',
+  'المرحلة',
+  'دراسي',
+  'محفوظات',
+  'قبطي 1',
+  'قبطي 2',
+  'نوع الامتحان',
+  'النوع',
+  'الدرجة الكلية',
+  'حالة التسليم'
+];
+
 export const ResultsViewer: React.FC<{ 
   results?: Result[], 
   onReset?: (id: string) => void,
@@ -704,8 +719,7 @@ export const ResultsViewer: React.FC<{
 
   const results = filteredResults;
 
-  // Derive dynamic list of churches and stages encountered to help with autocompletes
-  const uniqueChurches = useMemo(() => {
+ const uniqueChurches = useMemo(() => {
     return Array.from(new Set(supabaseSubmissions.map(r => r.churchName).filter(Boolean)));
   }, [supabaseSubmissions]);
 
@@ -719,7 +733,8 @@ export const ResultsViewer: React.FC<{
   }, [churchOptions, uniqueChurches]);
 
   const finalStageOptions = useMemo(() => {
-    const set = new Set([...stageOptions, ...uniqueStagesList, 'حضونة', 'أولى ابتدائي', 'ثانية ابتدائي', 'ثالثة ابتدائي', 'رابعة ابتدائي', 'خامسة ابتدائي', 'سادسة ابتدائي', 'إعدادي', 'ثانوي', 'جامعة', 'خدام']);
+    // ندمج stageOptions القادمة من الـ props مع المراحل المسجلة بالفعل في النتائج بدون أي إضافة يدوية
+    const set = new Set([...(stageOptions || []), ...uniqueStagesList]);
     return Array.from(set).filter(Boolean).sort();
   }, [stageOptions, uniqueStagesList]);
 
