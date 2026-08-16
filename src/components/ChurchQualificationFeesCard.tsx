@@ -361,7 +361,7 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
             onClick={fetchFeesAndSubmissions}
             disabled={isLoading}
             className="p-3 bg-slate-50 text-slate-600 hover:bg-slate-100 rounded-2xl transition border border-slate-200"
-            title="تحديث البيانات"
+            title="Refresh "
           >
             <RefreshCw size={18} className={isLoading ? 'animate-spin text-emerald-600' : ''} />
           </button>

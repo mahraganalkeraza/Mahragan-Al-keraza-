@@ -283,7 +283,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
             onClick={loadData}
             disabled={isLoading}
             className="p-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl transition-all cursor-pointer"
-            title="تحديث البيانات"
+            title="Refresh "
           >
             <RefreshCw size={18} className={isLoading ? 'animate-spin text-indigo-600' : ''} />
           </button>

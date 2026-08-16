@@ -1608,7 +1608,7 @@ export const ResultsViewer: React.FC<{
               <button 
                 onClick={() => fetchSubmissionsFromSupabase(true)}
                 className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-all"
-                title="تحديث البيانات"
+                title="Refresh"
               >
                 <RefreshCcw size={14} className={isLoading ? 'animate-spin' : ''} />
               </button>

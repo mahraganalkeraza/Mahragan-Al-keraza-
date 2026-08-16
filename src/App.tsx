@@ -6337,8 +6337,7 @@ function AppComponent() {
           <div className="space-y-2">
             <h1 className="text-2xl font-black text-rose-500">عذراً، المنصة مغلقة مؤقتاً</h1>
             <p className="text-slate-400 font-bold text-sm leading-relaxed">
-              لقد جرى إيقاف الموقع بالكامل للصيانة الإدارية وتحديث البيانات بقرار مركزي من الكنترول.
-            </p>
+تم تعطيل الموقع لإعادة الهيكلة            </p>
           </div>
           <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800/50 text-xs font-mono text-slate-500 max-w-xs mx-auto">
             SYSTEM_STATUS: MAINTENANCE_LOCK
@@ -7049,7 +7048,7 @@ function AppComponent() {
                 onClick={() => fetchLargeData(true)}
                 className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 flex flex-row gap-2 transition"
               >
-                 تحديث البيانات
+                  Refresh
               </button>
             </div>
 
@@ -10127,7 +10126,7 @@ function AppComponent() {
                         disabled={isParticipantsLoading}
                         className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition flex items-center gap-2"
                       >
-                         <RotateCw size={14} className={isParticipantsLoading ? 'animate-spin' : ''} /> تحديث البيانات
+                         <RotateCw size={14} className={isParticipantsLoading ? 'animate-spin' : ''} />  Refresh
                       </button>
                     </div>
                   </div>
