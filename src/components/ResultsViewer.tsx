@@ -27,6 +27,7 @@ import { supabase } from '../utils/supabaseClient';
 import PaginationComponent from './Pagination';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 import { withStylesCleaned } from '../utils/oklchCleaner';
 import { CustomAlertDialog, AlertDialogType } from './CustomAlertDialog';
@@ -832,14 +833,45 @@ export const ResultsViewer: React.FC<{
     setPdfProgress(5);
     setPdfStatus("جاري تحضير البيانات وتقسيم الجداول لملفات متعددة الأوراق...");
 
-    // Setup the headers and row values schema explicitly as requested
-    const pdfTableHeaders = ["الدراسي", "المحفوظات", "قبطي 1", "قبطي 2"];
-    const pdfRowDataValues = results.map(row => [
-      row.derasy_score ?? '-',
-      row.mahfouzat_score ?? '-',
-      row.qebty_lvl1_score ?? '-',
-      row.qebty_lvl2_score ?? '-'
-    ]);
+    // Setup the headers and row values schema explicitly
+    const headers = [
+      "م", 
+      "اسم الطالب", 
+      "الكنيسة/البلد", 
+      "المرحلة", 
+      "دراسي", 
+      "محفوظات", 
+      "قبطي 1", 
+      "قبطي 2", 
+      "الدرجة الكلية", 
+      "الامتحان"
+    ];
+
+    const tableRows = results.map((row, idx) => {
+      const d = row.derasy_score ?? 0;
+      const m = row.mahfouzat_score ?? 0;
+      const q1 = row.qebty_lvl1_score ?? 0;
+      const q2 = row.qebty_lvl2_score ?? 0;
+      const total = row.academicScore ?? (d + m + q1 + q2);
+      const examType = row.submissionType === 'bubble_sheet' 
+        ? 'بابل شيت' 
+        : row.submissionType === 'paper' 
+          ? 'ورقي' 
+          : 'أونلاين';
+
+      return [
+        String(idx + 1),
+        row.studentName || '-',
+        row.churchName || '-',
+        row.stage || 'عام',
+        String(d),
+        String(m),
+        String(q1),
+        String(q2),
+        String(total),
+        examType
+      ];
+    });
 
     // Wait short time to let the DOM render the hidden element
     setTimeout(async () => {
@@ -849,32 +881,103 @@ export const ResultsViewer: React.FC<{
           const totalPages = Math.ceil((results?.length || 0) / rowsPerPage);
           
           // Setup jsPDF with Landscape orientation
-          const pdf = new jsPDF({
+          const doc = new jsPDF({
             orientation: 'landscape',
             unit: 'mm',
             format: 'a4'
           });
 
+          // === REAL FIX FOR HEADER OVERLAP IN MULTI-PAGE EXPORTS ===
+          // Header finishes at Y = 45 -> HEADER_HEIGHT = 48
+          const HEADER_HEIGHT = 48;
+
+          // Helper to draw Header & Meta programmatically
+          const drawHeader = (pdfDoc: jsPDF, pageNum: number, totalPgs: number) => {
+            const pageWidth = pdfDoc.internal.pageSize.width || 297;
+            const pageHeight = pdfDoc.internal.pageSize.height || 210;
+
+            // Header Logo Box & Title
+            pdfDoc.setFillColor(79, 70, 229); // indigo-600
+            pdfDoc.roundedRect(pageWidth - 25, 10, 15, 14, 3, 3, 'F');
+            pdfDoc.setTextColor(255, 255, 255);
+            pdfDoc.setFontSize(13);
+            pdfDoc.text('م', pageWidth - 17.5, 19, { align: 'center' });
+
+            pdfDoc.setTextColor(30, 27, 75); // indigo-950
+            pdfDoc.setFontSize(12);
+            pdfDoc.text('بيان رصد الدرجات وتحليل نتائج الامتحانات', pageWidth - 30, 16, { align: 'right' });
+
+            pdfDoc.setTextColor(100, 116, 139); // slate-500
+            pdfDoc.setFontSize(8.5);
+            pdfDoc.text('مهرجان الكرازة المرقسية ٢٠٢٦', pageWidth - 30, 21.5, { align: 'right' });
+
+            // Page Number Badge
+            pdfDoc.setFillColor(238, 242, 255); // indigo-50
+            pdfDoc.roundedRect(10, 10, 36, 7, 3, 3, 'F');
+            pdfDoc.setTextColor(67, 56, 202); // indigo-700
+            pdfDoc.setFontSize(7.5);
+            pdfDoc.text(`صفحة ${pageNum} من ${totalPgs}`, 28, 14.8, { align: 'center' });
+
+            // Date
+            pdfDoc.setTextColor(148, 163, 184); // slate-400
+            pdfDoc.setFontSize(7);
+            pdfDoc.text(`تاريخ الطباعة: ${new Date().toLocaleDateString('ar-EG')}`, 10, 21.5, { align: 'left' });
+
+            // Metadata Chips Bar
+            pdfDoc.setFillColor(248, 250, 252);
+            pdfDoc.setDrawColor(226, 232, 240);
+            pdfDoc.roundedRect(10, 25, pageWidth - 20, 13, 2, 2, 'FD');
+
+            pdfDoc.setTextColor(71, 85, 105);
+            pdfDoc.setFontSize(7.5);
+            const churchText = `كنيسة / جهة: ${!isAdmin && activeUserChurch ? activeUserChurch : 'جميع الكنائس'}`;
+            const stageText = `المرحلة: ${filterStage === 'الكل' ? 'كل المراحل' : filterStage}`;
+            const compText = `نوع المسابقة: ${filterCompetition === 'الكل' ? 'كل المسابقات' : filterCompetition}`;
+            const countText = `إجمالي المقيدين: ${results?.length || 0} طالب`;
+
+            pdfDoc.text(churchText, pageWidth - 16, 33, { align: 'right' });
+            pdfDoc.text(stageText, pageWidth - 90, 33, { align: 'right' });
+            pdfDoc.text(compText, pageWidth - 150, 33, { align: 'right' });
+            pdfDoc.text(countText, 16, 33, { align: 'left' });
+
+            // Blue Separator Line at bottom of header (Y = HEADER_HEIGHT)
+            pdfDoc.setDrawColor(79, 70, 229); // indigo-600
+            pdfDoc.setLineWidth(0.8);
+            pdfDoc.line(10, HEADER_HEIGHT, pageWidth - 10, HEADER_HEIGHT);
+
+            // Footer
+            pdfDoc.setDrawColor(226, 232, 240);
+            pdfDoc.setLineWidth(0.3);
+            pdfDoc.line(10, pageHeight - 12, pageWidth - 10, pageHeight - 12);
+
+            pdfDoc.setTextColor(148, 163, 184);
+            pdfDoc.setFontSize(7.5);
+            pdfDoc.text('الكنترول - مهرجان الكرازة المرقسية', pageWidth - 15, pageHeight - 6, { align: 'right' });
+            pdfDoc.text('كشف النتائج الرسمي', 15, pageHeight - 6, { align: 'left' });
+          };
+
+          // Render high-definition visual pages with html2canvas (one independent canvas per 12 rows page)
           for (let i = 0; i < totalPages; i++) {
             setPdfProgress(Math.round((i / totalPages) * 100));
             setPdfStatus(`جاري معالجة وتصدير الصفحة ${i + 1} من ${totalPages}...`);
             
             const element = document.getElementById(`pdf-page-${i}`);
             if (element) {
-              // Options for html2canvas
               const canvas = await html2canvas(element, {
-                scale: 2, // Sharpness
+                scale: 2.5, // Crisp HD rendering
                 useCORS: true,
                 logging: false,
                 backgroundColor: '#ffffff'
               });
               const imgData = canvas.toDataURL('image/jpeg', 0.95);
               
-              // On A4 Landscape (297mm x 210mm)
               if (i > 0) {
-                pdf.addPage('a4', 'landscape');
+                doc.addPage('a4', 'landscape');
               }
-              pdf.addImage(imgData, 'JPEG', 0, 0, 297, 210, `page-${i}`, 'FAST');
+              doc.addImage(imgData, 'JPEG', 0, 0, 297, 210, `page-${i}`, 'FAST');
+              
+              canvas.width = 0;
+              canvas.height = 0;
             }
           }
 
@@ -884,7 +987,7 @@ export const ResultsViewer: React.FC<{
           console.log('Fetched rows for PDF:', results?.length || 0);
           const timestamp = new Date().toISOString().slice(0, 10);
           const fileName = `تقرير_النتائج_النهائي_${timestamp}.pdf`;
-          pdf.save(fileName);
+          doc.save(fileName);
         });
       } catch (err: any) {
         console.error("Advanced export PDF error:", err);
