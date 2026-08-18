@@ -421,18 +421,18 @@ const ALL_ADMIN_TABS = [
   { id: 'news', label: 'الأخبار والـ Slider', icon: Newspaper },
   { id: 'participants', label: 'إدارة المشتركين', icon: Users },
   { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
-  { id: 'results', label: 'نتائج التصفية المحلية', icon: Award },
+  { id: 'results', label: 'النتائج ', icon: Award },
   { id: 'omr', label: ' Babble sheets & QR  ', icon: FileScan },
   { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
   { id: 'qualification_fees', label: 'اشتراكات الكنائس', icon: Receipt },
   { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
   { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
   { id: 'calculator', label: 'تسعير الكتب', icon: Calculator },
-  { id: 'exams_management', label: 'وضع نماذج الامتحانات', icon: BookOpen },
+  { id: 'exams_management', label: 'الإمتحانات', icon: BookOpen },
   { id: 'rotating_gate', label: ' Daily QR  ', icon: QrCode },
   { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
   { id: 'dynamic_management', label: 'إعدادات المهرجان ', icon: Settings },
-  { id: 'official_templates', label: 'تصدير القوالب الرسمية', icon: FileSpreadsheet },
+  { id: 'official_templates', label: 'إعدادات الأسقفية', icon: FileSpreadsheet },
   { id: 'system_settings', label: 'إعدادات الموقع', icon: Settings }
 ];
 
