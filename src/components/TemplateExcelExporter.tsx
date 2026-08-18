@@ -323,11 +323,13 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
       return false;
     }
 
-    // 2. Explicit positive qualification / honor flags
+    // 2. Explicit positive qualification / honor flags or promotion status
+    const statusStr = String(student.status || student.qualification_status || student.promotion_status || student.data?.['الحالة'] || '').trim();
     if (
       student.is_qualified === true || student.is_qualified === 'true' || student.is_qualified === 1 ||
       student.is_qualified_next_stage === true || student.isQualifiedForNextStage === true ||
-      student.isHonored === true || student.isMokaram === true || student.is_honored === true
+      student.isHonored === true || student.isMokaram === true || student.is_honored === true ||
+      statusStr.includes('صاعد') || statusStr.includes('مؤهل') || statusStr.includes('تصعيد') || statusStr.includes('تكريم')
     ) {
       return true;
     }
@@ -404,13 +406,13 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
     setIsLoadingResults(true);
     try {
       // 1. Query honors settings for threshold percentages & weights
-      let subQuery = supabase.from('exam_submissions').select('*');
+      let subQuery = supabase.from('exam_submissions').select('*').range(0, 99999);
       if (!isAdmin && userChurch) {
         const quotedChurch = escapePostgrestValue(userChurch);
         subQuery = subQuery.or(`churchName.eq.${quotedChurch},church.eq.${quotedChurch},church_name.eq.${quotedChurch}`);
       }
 
-      let regQuery = supabase.from('registrations').select('*');
+      let regQuery = supabase.from('registrations').select('*').range(0, 99999);
       if (!isAdmin && userChurch) {
         regQuery = regQuery.eq('churchName', userChurch);
       }

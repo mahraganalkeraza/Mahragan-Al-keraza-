@@ -65,8 +65,8 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
       const [honorsSnap, sysFeesSnap, submissionsSnap, stagesSnap] = await Promise.all([
         supabase.from('honors_settings').select('*').eq('id', 'current_config').maybeSingle(),
         supabase.from('system_settings').select('*').eq('id', 'stage_fees').maybeSingle(),
-        supabase.from('exam_submissions').select('*'),
-        supabase.from('stage_competitions').select('stage_name')
+        supabase.from('exam_submissions').select('*').range(0, 99999),
+        supabase.from('stage_competitions').select('stage_name').range(0, 9999)
       ]);
 
       let feesMap: Record<string, number> = {};
@@ -164,8 +164,9 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
       const isMatchingChurch = (subChurchName: string) => {
         if (!targetNormChurch) return true;
         if (!subChurchName) return false;
-        const normSub = normalizeArabic(subChurchName);
-        const strippedSub = stripChurchPrefix(subChurchName);
+        const cleanSub = String(subChurchName).trim();
+        const normSub = normalizeArabic(cleanSub);
+        const strippedSub = stripChurchPrefix(cleanSub);
         if (normSub === targetNormChurch || strippedSub === targetStrippedChurch) return true;
         if (targetStrippedChurch && (normSub.includes(targetStrippedChurch) || strippedSub.includes(targetStrippedChurch))) return true;
         if (normSub.includes(targetNormChurch) || targetNormChurch.includes(normSub)) return true;
@@ -174,7 +175,7 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
 
       const churchSubmissions = churchName 
         ? allSubmissions.filter((s: any) => {
-            const rawChurch = s.churchName || s.church || s.data?.['الكنيسة'] || s.data?.['كنيسة'] || '';
+            const rawChurch = (s.churchName || s.church || s.data?.['الكنيسة'] || s.data?.['كنيسة'] || '').trim();
             return isMatchingChurch(rawChurch);
           })
         : allSubmissions;
@@ -198,6 +199,14 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
 
         const stWeights = getStageWeights(stage);
         const stThreshold = getStageThreshold(stage);
+
+        // Check explicit qualification & status flags (e.g., صاعد or مؤهل or is_qualified)
+        const statusStr = String(sub.status || sub.qualification_status || sub.promotion_status || sub.data?.['الحالة'] || '').trim();
+        const isStatusPromoted = statusStr.includes('صاعد') || statusStr.includes('مؤهل') || statusStr.includes('تصعيد') || statusStr.includes('تكريم');
+        const isExplicitQualified = 
+          sub.is_qualified === true || sub.is_qualified === 'true' || sub.is_qualified === 1 ||
+          sub.is_qualified_next_stage === true || sub.isQualifiedForNextStage === true ||
+          sub.isHonored === true || sub.isMokaram === true || sub.is_honored === true;
 
         // Calculate max percentage achieved by this submission across subjects
         let maxPerc = 0;
@@ -258,15 +267,18 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
           if (p > maxPerc) maxPerc = p;
         }
 
-        // Check if student qualifies according to threshold
-        if (maxPerc >= stThreshold) {
+        // Check if student qualifies according to threshold OR explicit qualification/promotion status
+        const isQualified = isExplicitQualified || isStatusPromoted || (maxPerc >= stThreshold);
+
+        if (isQualified && sub.is_qualified !== false && sub.is_qualified !== 'false' && sub.is_qualified !== 0) {
           if (!stageMap[stage]) {
             stageMap[stage] = new Map();
           }
           // Store distinct student entry (deduplicate across subjects)
           const existing = stageMap[stage].get(studentId);
-          if (!existing || maxPerc > existing.percentage) {
-            stageMap[stage].set(studentId, { id: studentId, name: studentName, percentage: maxPerc });
+          const effectivePerc = maxPerc > 0 ? maxPerc : (isQualified ? stThreshold : 0);
+          if (!existing || effectivePerc > existing.percentage) {
+            stageMap[stage].set(studentId, { id: studentId, name: studentName, percentage: effectivePerc });
           }
         }
       });
@@ -316,6 +328,9 @@ export const ChurchQualificationFeesCard: React.FC<ChurchQualificationFeesCardPr
 
     try {
       const element = invoiceRef.current;
+      const totalStudentsForPdf = breakdown.reduce((acc, item) => acc + item.qualifiedCount, 0);
+      console.log('Fetched rows for PDF:', totalStudentsForPdf);
+
       const opt = {
         margin: [8, 8, 8, 8],
         filename: `مطالبة_رسوم_التصفيات_${(churchName || 'الكنيسة').replace(/\s+/g, '_')}.pdf`,

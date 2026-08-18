@@ -348,7 +348,8 @@ export const ResultsViewer: React.FC<{
 
       let query = supabase
         .from('exam_submissions')
-        .select('*');
+        .select('*')
+        .range(0, 99999);
 
       const { data, error } = await query;
 
@@ -358,7 +359,8 @@ export const ResultsViewer: React.FC<{
         try {
           const { data: fallbackData } = await supabase
             .from('exam_submissions')
-            .select('*');
+            .select('*')
+            .range(0, 99999);
 
           if (fallbackData && fallbackData.length > 0) {
             let filtered = fallbackData;
@@ -879,6 +881,7 @@ export const ResultsViewer: React.FC<{
           setPdfProgress(100);
           setPdfStatus("جاري تحفيظ وتصدير ملف الـ PDF النهائي...");
           
+          console.log('Fetched rows for PDF:', results?.length || 0);
           const timestamp = new Date().toISOString().slice(0, 10);
           const fileName = `تقرير_النتائج_النهائي_${timestamp}.pdf`;
           pdf.save(fileName);

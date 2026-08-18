@@ -126,6 +126,7 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
     setIsExportingPDF(true);
 
     try {
+      console.log('Fetched rows for PDF:', filteredResults.length);
       const opt = {
         margin: [8, 8, 8, 8],
         filename: `نتائج_امتحانات_أونلاين_الأسقفية_${new Date().toISOString().slice(0, 10)}.pdf`,

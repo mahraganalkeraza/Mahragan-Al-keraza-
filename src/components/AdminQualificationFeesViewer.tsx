@@ -68,9 +68,9 @@ export const AdminQualificationFeesViewer: React.FC = () => {
       const [honorsSnap, sysFeesSnap, submissionsSnap, stagesSnap, churchesSnap] = await Promise.all([
         supabase.from('honors_settings').select('*').eq('id', 'current_config').maybeSingle(),
         supabase.from('system_settings').select('*').eq('id', 'stage_fees').maybeSingle(),
-        supabase.from('exam_submissions').select('*'),
-        supabase.from('stage_competitions').select('stage_name'),
-        supabase.from('church_access_codes').select('church_name').order('church_name')
+        supabase.from('exam_submissions').select('*').range(0, 99999),
+        supabase.from('stage_competitions').select('stage_name').range(0, 9999),
+        supabase.from('church_access_codes').select('church_name').order('church_name').range(0, 9999)
       ]);
 
       let feesMap: Record<string, number> = {};
@@ -284,17 +284,28 @@ export const AdminQualificationFeesViewer: React.FC = () => {
           if (p > maxPerc) maxPerc = p;
         }
 
+        // Check explicit qualification & status flags (e.g., صاعد or مؤهل or is_qualified)
+        const statusStr = String(sub.status || sub.qualification_status || sub.promotion_status || sub.data?.['الحالة'] || '').trim();
+        const isStatusPromoted = statusStr.includes('صاعد') || statusStr.includes('مؤهل') || statusStr.includes('تصعيد') || statusStr.includes('تكريم');
+        const isExplicitQualified = 
+          sub.is_qualified === true || sub.is_qualified === 'true' || sub.is_qualified === 1 ||
+          sub.is_qualified_next_stage === true || sub.isQualifiedForNextStage === true ||
+          sub.isHonored === true || sub.isMokaram === true || sub.is_honored === true;
+
         // D. Qualification Check (Applies uniformly across all stages without bypassing early childhood)
-        if (maxPerc >= stThreshold) {
+        const isQualified = isExplicitQualified || isStatusPromoted || (maxPerc >= stThreshold);
+
+        if (isQualified && sub.is_qualified !== false && sub.is_qualified !== 'false' && sub.is_qualified !== 0) {
           if (!churchMap[matchedChurch]) churchMap[matchedChurch] = {};
           if (!churchMap[matchedChurch][matchedStage]) churchMap[matchedChurch][matchedStage] = new Map();
 
           const existing = churchMap[matchedChurch][matchedStage].get(studentId);
-          if (!existing || maxPerc > existing.percentage) {
+          const effectivePerc = maxPerc > 0 ? maxPerc : (isQualified ? stThreshold : 0);
+          if (!existing || effectivePerc > existing.percentage) {
             churchMap[matchedChurch][matchedStage].set(studentId, {
               id: studentId,
               name: studentName,
-              percentage: maxPerc
+              percentage: effectivePerc
             });
           }
         }
@@ -397,6 +408,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
 
       try {
         const element = singleInvoiceRef.current;
+        console.log('Fetched rows for PDF:', churchItem.totalQualifiedCount);
         const opt = {
           margin: [8, 8, 8, 8],
           filename: `مطالبة_رسوم_التصفيات_${churchItem.churchName.replace(/\s+/g, '_')}.pdf`,
@@ -430,6 +442,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
 
       try {
         const element = masterReportRef.current;
+        console.log('Fetched rows for PDF:', churchesSummary.length);
         const opt = {
           margin: [8, 8, 8, 8],
           filename: `تقرير_إجمالي_اشتراكات_الكنائس_${new Date().toLocaleDateString('ar-EG').replace(/\//g, '-')}.pdf`,

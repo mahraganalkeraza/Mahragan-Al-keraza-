@@ -209,6 +209,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
 
     try {
       const element = printableRef.current;
+      console.log('Fetched rows for PDF:', records.length);
       const opt = {
         margin: [8, 8, 8, 8],
         filename: `كشف_أكواد_ونتائج_الأسقفية_${(churchName || 'الكنيسة').replace(/\s+/g, '_')}.pdf`,

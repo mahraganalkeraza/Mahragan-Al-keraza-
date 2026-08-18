@@ -559,10 +559,12 @@ export const fetchBishopricExamResults = async (
     let query = supabase
       .from('bishopric_exam_results')
       .select('*')
-      .order('completed_at', { ascending: false });
+      .order('completed_at', { ascending: false })
+      .range(0, 99999);
 
     if (churchName && churchName.trim()) {
-      query = query.eq('church_name', churchName);
+      const cleanChurch = churchName.trim();
+      query = query.eq('church_name', cleanChurch);
     }
 
     const { data, error } = await query;
@@ -573,10 +575,11 @@ export const fetchBishopricExamResults = async (
         const { data: allData, error: allErr } = await supabase
           .from('bishopric_exam_results')
           .select('*')
-          .order('completed_at', { ascending: false });
+          .order('completed_at', { ascending: false })
+          .range(0, 99999);
         
         if (!allErr && allData) {
-          return allData.filter(r => isChurchMatch(r.church_name, churchName));
+          return allData.filter(r => isChurchMatch(String(r.church_name || '').trim(), churchName.trim()));
         }
       }
       return [];
