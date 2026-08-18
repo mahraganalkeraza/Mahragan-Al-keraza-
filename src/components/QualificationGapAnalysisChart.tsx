@@ -374,7 +374,7 @@ export const QualificationGapAnalysisChart: React.FC = () => {
             onClick={fetchData}
             disabled={isLoading}
             className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition border border-slate-200"
-            title="Refresh "
+            title="تحديث البيانات"
           >
             <RefreshCw size={18} className={isLoading ? 'animate-spin text-indigo-600' : ''} />
           </button>

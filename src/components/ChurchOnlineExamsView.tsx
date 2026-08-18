@@ -38,14 +38,22 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
               </div>
               <h3 className="text-2xl font-black">امتحانات الأسقفية واشتراكات الكنيسة</h3>
               <p className="text-indigo-200/80 text-sm font-bold mt-1">
-                كنيسة: {churchName || 'غير محددة'} • اشتراكات الكنيسة  وأكواد امتحانات الأسقفية
+                كنيسة: {churchName || 'غير محددة'} • اشتراكات الكنائس  وأكواد امتحانات الأسقفية
               </p>
             </div>
           </div>
+          {onOpenPortal && (
+            <button
+              onClick={onOpenPortal}
+              className="px-6 py-3.5 bg-white text-indigo-900 rounded-2xl font-black text-sm hover:bg-indigo-50 transition-all shadow-lg hover:scale-105 active:scale-95 flex items-center gap-2 cursor-pointer"
+            >
+              <BookOpen size={18} />
+              <span>دخول بوابة الامتحانات</span>
+            </button>
+          )}
         </div>
       </div>
-
-      {/* Tabs Navigation */}
+            {/* Tabs Navigation */}
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-3">
         {/* Sub-Tab 1: اشتراكات الكنائس */}
         <button
@@ -57,7 +65,7 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
           }`}
         >
           <Receipt size={18} />
-          <span>اشتراكات الكنيسة</span>
+          <span>اشتراكات الكنائس</span>
         </button>
 
         {/* Sub-Tab 2: أكواد أونلاين الأسقفية */}

@@ -477,7 +477,7 @@ export const AdminQualificationFeesViewer: React.FC = () => {
               onClick={fetchAllChurchesFeesData}
               disabled={isLoading}
               className="p-3.5 bg-white/10 hover:bg-white/20 text-white rounded-2xl transition border border-white/10"
-              title="Refresh "
+              title="تحديث البيانات"
             >
               <RefreshCw size={20} className={isLoading ? 'animate-spin text-emerald-400' : ''} />
             </button>

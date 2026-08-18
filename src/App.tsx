@@ -417,22 +417,23 @@ const HYMNS_SITE_URL = "https://mahraganalkeraza.github.io/Hymens_comptetion/";
 
 const ALL_ADMIN_TABS = [
   { id: 'dashboard', label: 'Data Analysis', icon: LayoutDashboard },
+  { id: 'hymns_judging', label: 'انتقال للجنة تحكيم الألحان', icon: Music, isExternal: true, url: HYMNS_SITE_URL },
+  { id: 'news', label: 'الأخبار والـ Slider', icon: Newspaper },
   { id: 'participants', label: 'إدارة المشتركين', icon: Users },
   { id: 'activity_teams', label: 'إدارة الفرق', icon: Users },
-  { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
-  { id: 'calculator', label: 'تسعير الكتب', icon: Calculator },
-  { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
-  { id: 'exams_management', label: 'الامتحانات', icon: BookOpen },
+  { id: 'results', label: 'نتائج التصفية المحلية', icon: Award },
   { id: 'omr', label: ' Babble sheets & QR  ', icon: FileScan },
-  { id: 'rotating_gate', label: ' Daily QR  ', icon: QrCode },
-  { id: 'results', label: 'النتائج', icon: Award },
+  { id: 'orders', label: 'طلبات الكتب', icon: ShoppingCart },
   { id: 'qualification_fees', label: 'اشتراكات الكنائس', icon: Receipt },
   { id: 'inquiries', label: 'الاستفسارات', icon: MessageSquare },
-  { id: 'news', label: 'الأخبار والـ Slider', icon: Newspaper },
+  { id: 'schedules', label: 'جدول المواعيد', icon: Calendar },
+  { id: 'calculator', label: 'تسعير الكتب', icon: Calculator },
+  { id: 'exams_management', label: 'وضع نماذج الامتحانات', icon: BookOpen },
+  { id: 'rotating_gate', label: ' Daily QR  ', icon: QrCode },
+  { id: 'users_management', label: 'المستخدمين والكنائس', icon: Users },
   { id: 'dynamic_management', label: 'إعدادات المهرجان ', icon: Settings },
-  { id: 'official_templates', label: 'إعدادات الأسقفية', icon: Settings },
-  { id: 'system_settings', label: 'إعدادات الموقع', icon: Settings },
-  { id: 'hymns_judging', label: 'انتقال للجنة تحكيم الألحان', icon: Music, isExternal: true, url: HYMNS_SITE_URL } ,
+  { id: 'official_templates', label: 'تصدير القوالب الرسمية', icon: FileSpreadsheet },
+  { id: 'system_settings', label: 'إعدادات الموقع', icon: Settings }
 ];
 
 const getValidLogoUrl = (url: string | null | undefined, fallback: string | null = null): string => {
@@ -6033,7 +6034,7 @@ function AppComponent() {
           : 'text-slate-600 hover:bg-accent/10 hover:text-primary'
       }`}
     >
-      {Icon && <Icon size={22} className={activeSection === id ? 'text-accent' : 'text-slate-400'} />}
+      <Icon size={22} className={activeSection === id ? 'text-accent' : 'text-slate-400'} />
       <span className="font-bold">{label}</span>
     </button>
   );
@@ -6336,7 +6337,8 @@ function AppComponent() {
           <div className="space-y-2">
             <h1 className="text-2xl font-black text-rose-500">عذراً، المنصة مغلقة مؤقتاً</h1>
             <p className="text-slate-400 font-bold text-sm leading-relaxed">
-تم تعطيل الموقع لإعادة الهيكلة            </p>
+              لقد جرى إيقاف الموقع بالكامل للصيانة الإدارية وتحديث البيانات بقرار مركزي من الكنترول.
+            </p>
           </div>
           <div className="p-4 bg-slate-950/50 rounded-2xl border border-slate-800/50 text-xs font-mono text-slate-500 max-w-xs mx-auto">
             SYSTEM_STATUS: MAINTENANCE_LOCK
@@ -7047,11 +7049,48 @@ function AppComponent() {
                 onClick={() => fetchLargeData(true)}
                 className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 flex flex-row gap-2 transition"
               >
-                  Refresh
+                 تحديث البيانات
               </button>
             </div>
 
-                       <QuickActionsHub userRole={userRole === 'super_admin' ? 'admin' : userRole} onAction={(action) => {
+            {/* Universal Filter Engine - Church View */}
+            <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Search size={20} className="text-primary" />
+                    <h4 className="font-black text-slate-800 text-lg">محرك البحث الشامل</h4>
+                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="relative">
+                  <input 
+                    type="text"
+                    placeholder="ابحث بالاسم..."
+                    value={globalNameFilter}
+                    onChange={(e) => setGlobalNameFilter(e.target.value)}
+                    className="w-full pr-4 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
+                  />
+                </div>
+                <select 
+                  value={globalStageFilter}
+                  onChange={(e) => setGlobalStageFilter(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
+                >
+                  <option value="الكل">كل المراحل</option>
+                  {dynamicLevels.map(l => <option key={l.id || (typeof l === 'string' ? l : l.name)} value={typeof l === 'string' ? l : l.name}>{typeof l === 'string' ? l : l.name}</option>)}
+                </select>
+                <select 
+                  value={globalCompetitionFilter}
+                  onChange={(e) => setGlobalCompetitionFilter(e.target.value)}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-primary font-bold"
+                >
+                  <option value="الكل">كل المسابقات</option>
+                  {['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثان'].map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <QuickActionsHub userRole={userRole === 'super_admin' ? 'admin' : userRole} onAction={(action) => {
               setActiveSection(action);
             }} />
             <div className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100">
@@ -7076,7 +7115,7 @@ function AppComponent() {
                     onClick={() => generateMasterExcel(allChurchParticipants, churchName)}
                     className="px-6 py-3 bg-emerald-600 text-white rounded-2xl text-sm font-black flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-xl hover:scale-105 active:scale-95"
                   >
-                    <Download size={18} /> تحميل البيانات (Excel)
+                    <Download size={18} /> التصدير الشامل الموحد (Excel)
                   </button>
                 </div>
               </div>
@@ -7084,7 +7123,7 @@ function AppComponent() {
               {/* Local Church Analytics Dashboard */}
               <div className="mb-8 space-y-6">
                 <h4 className="font-black text-slate-800 text-xl flex items-center gap-2 mb-6">
-                    <Layers size={24} className="text-coptic-blue" /> إحصائيات الكنيسة
+                    <Layers size={24} className="text-coptic-blue" /> إحصائيات وتتبع الكنيسة
                 </h4>
                 
                 {(() => {
@@ -7321,7 +7360,7 @@ function AppComponent() {
                 onClick={() => fetchLargeData(true)}
                 className="px-4 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 flex flex-row gap-2 transition"
               >
-                  Refresh
+                 تحديث البيانات
               </button>
             </div>
             <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden min-h-[700px] flex flex-col lg:flex-row w-full min-w-0">
@@ -7377,7 +7416,6 @@ function AppComponent() {
                 <div className="p-4 flex flex-col gap-2 h-auto lg:h-full overflow-x-auto lg:overflow-y-auto no-scrollbar lg:custom-scrollbar">
                   <div className="flex gap-2 lg:flex-col lg:space-y-1">
                     {visibleAdminTabs.map(tab => {
-                      const TabIcon = tab.icon || LayoutDashboard;
                       if ((tab as any).isExternal) {
                         return (
                           <a 
@@ -7387,7 +7425,7 @@ function AppComponent() {
                             rel="noopener noreferrer"
                             className="flex-shrink-0 lg:w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-black text-sm text-right cursor-pointer bg-slate-800/90 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200 border border-amber-500/30 shadow-sm group"
                           >
-                            <TabIcon size={18} className="text-amber-400 group-hover:scale-110 transition-transform" />
+                            <tab.icon size={18} className="text-amber-400 group-hover:scale-110 transition-transform" />
                             <span className="flex-1 whitespace-nowrap">{tab.label}</span>
                             <ExternalLink size={16} className="text-amber-400/80 group-hover:translate-x-[-2px] transition-transform" />
                           </a>
@@ -7404,7 +7442,7 @@ function AppComponent() {
                               : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/60'
                           }`}
                         >
-                          <TabIcon size={18} className={adminActiveTab === tab.id ? 'text-white' : 'text-slate-400'} />
+                          <tab.icon size={18} className={adminActiveTab === tab.id ? 'text-white' : 'text-slate-400'} />
                           <span className="flex-1 whitespace-nowrap">{tab.label}</span>
                           {adminActiveTab === tab.id && <ChevronLeft size={16} className="text-white/50 hidden lg:block" />}
                         </button>
@@ -7475,7 +7513,7 @@ function AppComponent() {
                         onClick={() => downloadMasterTemplate()}
                         className="px-6 py-3 bg-coptic-red text-white rounded-2xl font-black flex items-center gap-2 hover:bg-opacity-90 transition-all shadow-lg"
                       >
-                        <Award size={20} /> تحميل قالب التسجيل
+                        <Award size={20} /> تحميل قالب التسجيل المعتمد
                       </button>
                       <button 
                         onClick={() => generateMasterExcel(allChurchParticipants, userRole === 'admin' ? null : churchName)}
@@ -10126,7 +10164,7 @@ function AppComponent() {
                         disabled={isParticipantsLoading}
                         className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition flex items-center gap-2"
                       >
-                         <RotateCw size={14} className={isParticipantsLoading ? 'animate-spin' : ''} />  Refresh
+                         <RotateCw size={14} className={isParticipantsLoading ? 'animate-spin' : ''} /> تحديث البيانات
                       </button>
                     </div>
                   </div>

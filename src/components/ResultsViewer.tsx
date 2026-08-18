@@ -705,26 +705,24 @@ export const ResultsViewer: React.FC<{
   const results = filteredResults;
 
   // Derive dynamic list of churches and stages encountered to help with autocompletes
- // 1. استخراج المراحل الفريدة من تسليمات/تسجيلات الطلاب في السوبابيز
-  const uniqueStagesList = useMemo(() => {
-    return Array.from(new Set(supabaseSubmissions.map(r => r.stage).filter(Boolean)));
-  }, [supabaseSubmissions]);
-
-  // 2. دمج المراحل الحقيقية فقط (المسجلة في الجدول + الموجودة في التسجيلات)
-  const finalStageOptions = useMemo(() => {
-    const set = new Set([...stageOptions, ...uniqueStagesList]);
-    return Array.from(set).filter(Boolean).sort();
-  }, [stageOptions, uniqueStagesList]);
-
-  // 4. الكنائس (كما هي)
   const uniqueChurches = useMemo(() => {
     return Array.from(new Set(supabaseSubmissions.map(r => r.churchName).filter(Boolean)));
+  }, [supabaseSubmissions]);
+
+  const uniqueStagesList = useMemo(() => {
+    return Array.from(new Set(supabaseSubmissions.map(r => r.stage).filter(Boolean)));
   }, [supabaseSubmissions]);
 
   const finalChurchOptions = useMemo(() => {
     const set = new Set([...churchOptions, ...uniqueChurches]);
     return Array.from(set).filter(Boolean).sort();
   }, [churchOptions, uniqueChurches]);
+
+  const finalStageOptions = useMemo(() => {
+    const set = new Set([...stageOptions, ...uniqueStagesList, 'حضونة', 'أولى ابتدائي', 'ثانية ابتدائي', 'ثالثة ابتدائي', 'رابعة ابتدائي', 'خامسة ابتدائي', 'سادسة ابتدائي', 'إعدادي', 'ثانوي', 'جامعة', 'خدام']);
+    return Array.from(set).filter(Boolean).sort();
+  }, [stageOptions, uniqueStagesList]);
+
   // Discover dynamic headers
   const dynamicHeaders = useMemo(() => {
     return [] as string[];
@@ -1610,7 +1608,7 @@ export const ResultsViewer: React.FC<{
               <button 
                 onClick={() => fetchSubmissionsFromSupabase(true)}
                 className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-all"
-                title="Refresh"
+                title="تحديث البيانات"
               >
                 <RefreshCcw size={14} className={isLoading ? 'animate-spin' : ''} />
               </button>

@@ -240,7 +240,7 @@ export const AdminBishopricExamCodesManager: React.FC = () => {
             <button
               onClick={loadConfig}
               className="p-3.5 bg-white/10 hover:bg-white/20 text-white rounded-2xl transition-all cursor-pointer border border-white/10"
-              title="Refresh "
+              title="تحديث البيانات"
             >
               <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
             </button>

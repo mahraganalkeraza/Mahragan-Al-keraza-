@@ -131,10 +131,10 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
         filename: `نتائج_امتحانات_أونلاين_الأسقفية_${new Date().toISOString().slice(0, 10)}.pdf`,
         image: { type: 'jpeg' as const, quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, logging: false },
-        jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'landscape' as const }
-      };
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      } as any;
 
-      await (html2pdf() as any).set(opt).from(printRef.current).save();
+      await html2pdf().set(opt).from(printRef.current).save();
     } catch (err) {
       console.error('PDF Export Error:', err);
       alert('حدث خطأ أثناء تصدير ملف PDF');

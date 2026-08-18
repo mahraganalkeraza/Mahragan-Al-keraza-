@@ -895,10 +895,10 @@ export const TemplateExcelExporter: React.FC<TemplateExcelExporterProps> = ({
         </div>
         <h2 className="text-2xl font-black mb-2 flex items-center gap-3">
           <FileSpreadsheet className="w-8 h-8" />
-          تحميل القوالب الرسمية لمهرجان الكرازة
+          تصدير القوالب الرسمية لمهرجان الكرازة 2026
         </h2>
         <p className="text-emerald-50 text-sm max-w-2xl leading-relaxed">
-          نظام متكامل لتصدير وتعبئة بيانات المشتركين مباشرة في قوالب Excel المعتمدة الاسقفية مع حماية التنسيق والقوائم المنسدلة.
+          نظام متكامل لتصدير وتعبئة بيانات المشتركين مباشرة في قوالب Excel المعتمدة للوزارة مع حماية التنسيق والقوائم المنسدلة، مع توليد ذكي وتلقائي لبيانات تواريخ الميلاد والأرقام البديلة.
         </p>
       </div>
 
