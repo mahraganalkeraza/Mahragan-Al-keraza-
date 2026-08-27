@@ -1150,6 +1150,10 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     null,
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [isStartingExam, setIsStartingExam] = useState(false);
+  const [startingCompetition, setStartingCompetition] = useState<string | null>(null);
+  const [isSubmittingExam, setIsSubmittingExam] = useState(false);
+  const [submittingStepText, setSubmittingStepText] = useState<string | null>(null);
   const [hasSubmissionFailed, setHasSubmissionFailed] = useState(false);
   const [isTerminated, setIsTerminated] = useState(false);
   const [completedSubjects, setCompletedSubjects] = useState<
@@ -1633,6 +1637,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   const startExam = async (competitionType: string) => {
     try {
       if (!activeStudent) return;
+      setIsStartingExam(true);
+      setStartingCompetition(competitionType);
       setIsLoading(true);
       setErrors(null);
 
@@ -1640,6 +1646,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (globalSettings.is_exam_locked) {
         setIsLoading(false);
+        setIsStartingExam(false);
+        setStartingCompetition(null);
         showBubble({
           type: 'warning',
           title: 'الامتحانات مغلقة',
@@ -1653,6 +1661,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       if (examConfig) {
         if (!examConfig.isExamLive) {
           setIsLoading(false);
+          setIsStartingExam(false);
+          setStartingCompetition(null);
           showBubble({
             type: 'warning',
             title: 'الامتحانات مغلقة',
@@ -1671,6 +1681,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
           if (now > closeTime) {
             setIsLoading(false);
+            setIsStartingExam(false);
+            setStartingCompetition(null);
             showBubble({
               type: 'warning',
               title: 'انتهاء الوقت',
@@ -1681,6 +1693,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         }
         if (examConfig.churchOverrides?.[activeStudent.churchName] === false) {
           setIsLoading(false);
+          setIsStartingExam(false);
+          setStartingCompetition(null);
           showBubble({
             type: 'warning',
             title: 'الامتحانات مغلقة للكنيسة',
@@ -1690,6 +1704,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         }
         if (examConfig.stageOverrides?.[stage] === false) {
           setIsLoading(false);
+          setIsStartingExam(false);
+          setStartingCompetition(null);
           showBubble({
             type: 'warning',
             title: 'الامتحانات مغلقة للمرحلة',
@@ -1701,6 +1717,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (!isStudentEnrolledInCompetition(activeStudent, competitionType)) {
         setIsLoading(false);
+        setIsStartingExam(false);
+        setStartingCompetition(null);
         showBubble({
           type: 'warning',
           title: 'غير مسجل بالمسابقة',
@@ -1714,6 +1732,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         Number(activeStudent.coptic_level) === 2
       ) {
         setIsLoading(false);
+        setIsStartingExam(false);
+        setStartingCompetition(null);
         showBubble({
           type: 'error',
           title: 'المستوى القبطي',
@@ -1726,6 +1746,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         Number(activeStudent.coptic_level) === 1
       ) {
         setIsLoading(false);
+        setIsStartingExam(false);
+        setStartingCompetition(null);
         showBubble({
           type: 'error',
           title: 'المستوى القبطي',
@@ -1757,6 +1779,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           activeStudent[studentField] !== null)
       ) {
         setIsLoading(false);
+        setIsStartingExam(false);
+        setStartingCompetition(null);
         setScore(
           subKey && completedSubjects[subKey] !== null
             ? completedSubjects[subKey]!
@@ -1801,6 +1825,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       if (hasTakenThisCompetition) {
         setErrors("لقد قمت بتقديم هذه المسابقة مسبقاً ولا يمكنك الدخول إليها مرة أخرى.");
         setIsLoading(false);
+        setIsStartingExam(false);
+        setStartingCompetition(null);
         return;
       }
 
@@ -1818,6 +1844,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (availableExams.length === 0) {
         setIsLoading(false);
+        setIsStartingExam(false);
+        setStartingCompetition(null);
         showBubble({
           type: 'warning',
           title: 'لا يوجد امتحان متاح',
@@ -1927,9 +1955,13 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       // }
 
       setIsLoading(false);
+      setIsStartingExam(false);
+      setStartingCompetition(null);
     } catch (e: any) {
       console.error(e);
       setIsLoading(false);
+      setIsStartingExam(false);
+      setStartingCompetition(null);
       showBubble({
         type: 'error',
         title: 'خطأ في بدء الامتحان',
@@ -1937,6 +1969,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       });
     }
   };
+
+  const handleStartExam = (competitionType: string) => startExam(competitionType);
 
   const handleAnswer = useCallback((qid: string, val: any) => {
     setAnswers((prev) => {
@@ -2077,17 +2111,28 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   };
 
   const handleSubmitExam = async (e?: React.FormEvent) => {
-    await handleConfirmAndReturn(e);
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    if (isSubmittingExam) return;
+    setIsSubmittingExam(true);
+    setSubmittingStepText(`جاري حفظ وتوثيق إجابات مسابقة (${selectedCompetition || 'الامتحان'})...`);
+    try {
+      await handleConfirmAndReturn(e);
+    } finally {
+      setIsSubmittingExam(false);
+      setSubmittingStepText(null);
+    }
   };
 
   const handleFinalSubmission = async (e?: React.FormEvent) => {
     if (e) e.preventDefault(); // 👈 CRITICAL: Prevents HTML form locking/reloading behavior
-    if (isLoading) return; // 👈 Prevent duplicate invocation if clicked extremely quickly
+    if (isLoading || isSubmittingExam) return; // 👈 Prevent duplicate invocation if clicked extremely quickly
 
     if (middleNameValidation.trim() !== '') {
       setIsLoading(true);
+      setIsSubmittingExam(true);
       setTimeout(() => {
         setIsLoading(false);
+        setIsSubmittingExam(false);
         setIsExamCompleted(true);
         // Simulate a success alert to prevent bot retry
         showBubble({
@@ -2098,6 +2143,9 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       }, 800);
       return;
     }
+
+    setIsSubmittingExam(true);
+    setSubmittingStepText("جاري إرسال النتيجة الشاملة وتأكيد الحفظ في السيرفر...");
 
     let currentStudentObj = activeStudent;
     let currentCompletedSubjects = completedSubjects;
@@ -2400,6 +2448,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         });
         setHasSubmissionFailed(true);
         setIsLoading(false);
+        setIsSubmittingExam(false);
+        setSubmittingStepText(null);
         return;
       }
 
@@ -2437,6 +2487,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         });
         setHasSubmissionFailed(true);
         setIsLoading(false);
+        setIsSubmittingExam(false);
+        setSubmittingStepText(null);
         return;
       }
 
@@ -2450,6 +2502,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         });
         setHasSubmissionFailed(true);
         setIsLoading(false);
+        setIsSubmittingExam(false);
+        setSubmittingStepText(null);
         return;
       }
 
@@ -2516,10 +2570,14 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         setCurrentScreen('student-exam');
       }
       setIsLoading(false);
+      setIsSubmittingExam(false);
+      setSubmittingStepText(null);
     } catch (e: any) {
       console.error("Critical crash during submission handler:", e);
       setHasSubmissionFailed(true);
       setIsLoading(false);
+      setIsSubmittingExam(false);
+      setSubmittingStepText(null);
       showBubble({
         type: 'error',
         title: 'خطأ غير متوقع',
@@ -2832,6 +2890,8 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
               const isExamInCompletedExams = currentExamId ? completedExams.includes(currentExamId) : false;
               const isSubmitted = isExamInCompletedExams || isSaved;
 
+              const isStartingThis = isStartingExam && startingCompetition === type;
+
               if (isSubmitted) {
                 return (
                   <button
@@ -2855,14 +2915,15 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
                   key={type}
                   id={`competition-btn-${subKey}`}
                   onClick={() => startExam(type)}
-                  disabled={isLoading}
-                  className="bg-gradient-to-br from-amber-400 to-yellow-500 rounded-xl p-5 shadow-lg transform hover:-translate-y-1 transition-all duration-300 cursor-pointer border border-amber-300 text-center flex flex-col justify-between w-full"
+                  disabled={isLoading || isStartingExam}
+                  className="bg-gradient-to-br from-amber-400 to-yellow-500 rounded-xl p-5 shadow-lg transform hover:-translate-y-1 transition-all duration-300 cursor-pointer border border-amber-300 text-center flex flex-col justify-between w-full disabled:opacity-80 disabled:cursor-not-allowed"
                 >
-                  <h5 className="text-[#4a000b] font-black text-xl mb-1">
-                    {type}
+                  <h5 className="text-[#4a000b] font-black text-xl mb-1 flex items-center justify-center gap-2">
+                    {isStartingThis && <Loader2 size={20} className="animate-spin text-[#4a000b]" />}
+                    <span>{type}</span>
                   </h5>
                   <span className="text-[#6b0311]/80 font-medium text-sm block">
-                    اضغط هنا لبدء الاختبار
+                    {isStartingThis ? "جاري بدء الاختبار وتحميل الأسئلة..." : "اضغط هنا لبدء الاختبار"}
                   </span>
                 </button>
               );
@@ -2910,16 +2971,28 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
               type="button"
               id="final-exam-submit-btn"
               onClick={handleFinalSubmission}
-              disabled={isLoading}
-              className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl transition-all font-sans flex items-center justify-center gap-2 ${
+              disabled={isLoading || isSubmittingExam}
+              className={`w-full py-4 rounded-2xl font-black text-lg shadow-xl transition-all font-sans flex items-center justify-center gap-2.5 disabled:opacity-75 disabled:cursor-not-allowed ${
                 hasSubmissionFailed 
                   ? "bg-amber-500 hover:bg-amber-600 hover:shadow-amber-950/40 text-[#4a000b]" 
                   : "bg-[#4a000b] hover:bg-[#6b0311] hover:shadow-lg text-white"
               }`}
             >
-              {isLoading 
-                ? (hasSubmissionFailed ? "جاري إعادة محاولة إرسال الإجابات... ⏳" : "جاري إرسال الإجابات... ⏳") 
-                : (hasSubmissionFailed ? "إعادة تسليم الامتحان بالكامل 🔄" : "إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام")}
+              {isSubmittingExam ? (
+                <>
+                  <Loader2 size={22} className="animate-spin text-amber-400" />
+                  <span>جاري إرسال الإجابات والتحقق من السيرفر... ⏳</span>
+                </>
+              ) : isLoading ? (
+                <>
+                  <Loader2 size={22} className="animate-spin" />
+                  <span>{hasSubmissionFailed ? "جاري إعادة محاولة إرسال الإجابات... ⏳" : "جاري إرسال الإجابات... ⏳"}</span>
+                </>
+              ) : (
+                <>
+                  <span>{hasSubmissionFailed ? "إعادة تسليم الامتحان بالكامل 🔄" : "إرسال وتسليم الامتحان بالكامل ليظهر في السجل العام"}</span>
+                </>
+              )}
             </button>
 
             <button
@@ -2937,32 +3010,75 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
           </div>
         </div>
         </div>
+
+        {/* Global Submitting Modal Overlay if submitting from portal */}
+        {isSubmittingExam && (
+          <div
+            className="fixed inset-0 z-[350] bg-black/75 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center font-arabic animate-in fade-in duration-200"
+            id="portal-submit-loading-overlay"
+            dir="rtl"
+          >
+            <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl border border-amber-200 space-y-6">
+              <div className="relative w-20 h-20 bg-amber-50 border-2 border-amber-300 rounded-full mx-auto flex items-center justify-center shadow-inner">
+                <Loader2 size={42} className="text-[#6b0311] animate-spin" />
+                <div className="absolute inset-0 rounded-full border-2 border-amber-400 border-t-transparent animate-ping opacity-25" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-black text-slate-900">
+                  جاري توثيق وإرسال النتيجة...
+                </h3>
+                <p className="text-sm font-bold text-slate-600">
+                  {submittingStepText || "يتم الآن تأكيد حفظ الدرجات بالسيرفر المركزي"}
+                </p>
+                <p className="text-xs text-slate-400 font-medium">
+                  برجاء الانتظار ثوانٍ معدودة وعدم إغلاق الصفحة
+                </p>
+              </div>
+              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center justify-center gap-2">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                <span>إجاباتك مسجلة بأمان في السجل</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
-  if (isLoading) {
+  if (isLoading || isStartingExam) {
     return (
       <div
-        className="relative min-h-screen w-full overflow-x-hidden overflow-y-auto z-[250] bg-[#4a000b] flex flex-col items-center justify-center p-4 text-center"
+        className="relative min-h-screen w-full overflow-x-hidden overflow-y-auto z-[250] bg-gradient-to-br from-[#4a000b] via-[#6b0311] to-[#2b0006] flex flex-col items-center justify-center p-4 text-center font-arabic"
         id="live-loader-outer-container"
+        dir="rtl"
       >
-        <div className="w-full max-w-lg" id="loader-card">
-          <h2 className="text-3xl sm:text-4xl font-black text-amber-300 mb-8 drop-shadow-md">
+        <div className="w-full max-w-md bg-white/10 backdrop-blur-md border border-amber-400/30 p-8 rounded-3xl shadow-2xl space-y-6" id="loader-card">
+          <h2 className="text-2xl sm:text-3xl font-black text-amber-300 drop-shadow-md">
             أهلاً بك يا {activeStudent?.studentName || "طالب"}
           </h2>
-          <div className="flex justify-center mb-8">
-            <div 
-              className="animate-spin rounded-full h-16 w-16 border-4 border-amber-100 border-t-amber-500 shadow-[0_0_15px_rgba(212,175,55,0.4)]" 
-              id="loader-spin-icon"
-            />
+
+          {/* Dual Ring Golden Animated Spinner */}
+          <div className="relative w-24 h-24 mx-auto flex items-center justify-center" id="loader-spin-icon">
+            <div className="absolute inset-0 rounded-full border-4 border-amber-400/20 border-t-amber-400 animate-spin" />
+            <div className="absolute inset-2 rounded-full border-4 border-amber-300/30 border-b-amber-300 animate-spin [animation-direction:reverse] [animation-duration:1.5s]" />
+            <div className="w-12 h-12 bg-amber-400/20 rounded-full flex items-center justify-center text-amber-300 shadow-inner">
+              <BookOpen size={24} className="animate-pulse" />
+            </div>
           </div>
-          <p className="text-white font-bold text-2xl drop-shadow-md mb-3" id="loader-text-status">
-            جاري تحميل أسئلة وتهيئة امتحان {selectedCompetition}...
-          </p>
-          <p className="text-white text-lg font-medium opacity-100 drop-shadow-md">
-            برجاء الانتظار قليلاً وعدم إغلاق الصفحة
-          </p>
+
+          <div className="space-y-2">
+            <p className="text-white font-bold text-xl drop-shadow-md" id="loader-text-status">
+              جاري تحميل أسئلة وتهيئة امتحان {startingCompetition || selectedCompetition || "المسابقة"}...
+            </p>
+            <p className="text-amber-100/70 text-sm font-medium drop-shadow-sm">
+              برجاء الانتظار قليلاً وعدم إغلاق الصفحة
+            </p>
+          </div>
+
+          <div className="pt-2 border-t border-white/10 flex items-center justify-center gap-2 text-xs font-bold text-amber-200 bg-black/20 p-3 rounded-2xl">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping shrink-0" />
+            <span>الاتصال السحابي بقاعدة البيانات نشط ومؤمن 🔒</span>
+          </div>
         </div>
       </div>
     );
@@ -3040,12 +3156,39 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         id="active-exam-questions-outer-container"
       >
         <div
-          className="overflow-hidden flex flex-col transition-all duration-500 ease-in-out hover:-translate-y-2"
+          className="overflow-hidden flex flex-col transition-all duration-500 ease-in-out hover:-translate-y-2 relative"
           id="active-exam-questions-card"
           style={floatingCardStyle}
           onMouseEnter={() => setIsExamCardHovered(true)}
           onMouseLeave={() => setIsExamCardHovered(false)}
         >
+          {/* Loading Overlay during single-competition submission in active exam */}
+          {isSubmittingExam && (
+            <div
+              className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center font-arabic animate-in fade-in duration-200"
+              id="active-exam-submitting-overlay"
+              dir="rtl"
+            >
+              <div className="w-full max-w-sm p-6 space-y-4">
+                <div className="relative w-16 h-16 bg-amber-50 border-2 border-amber-300 rounded-full mx-auto flex items-center justify-center shadow-inner">
+                  <Loader2 size={36} className="text-[#6b0311] animate-spin" />
+                  <div className="absolute inset-0 rounded-full border-2 border-amber-400 border-t-transparent animate-ping opacity-25" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-lg font-black text-slate-900">
+                    جاري حفظ وتوثيق الإجابات...
+                  </h3>
+                  <p className="text-xs font-bold text-slate-600">
+                    {submittingStepText || `يتم توثيق إجابات (${selectedCompetition}) بالسيرفر`}
+                  </p>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    برجاء عدم مغادرة الصفحة حتى يتم التأكيد
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Sticky Header with micro progress bar and countdown timer */}
           <div 
             className="p-5 sm:p-6 border-b border-rose-50/20 bg-slate-50/90 backdrop-blur-md sticky top-0 z-10 flex flex-col gap-3 select-none"
@@ -3133,8 +3276,9 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             {currentQuestionIdx < activeExam.questions.length - 1 ? (
               <button
                 type="button"
+                disabled={isSubmittingExam}
                 onClick={() => setCurrentQuestionIdx(prev => prev + 1)}
-                className="px-4 sm:px-5 py-3 cursor-pointer rounded-xl font-bold bg-[#4a000b] hover:bg-[#6b0311] text-white flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-[#4a000b]/20"
+                className="px-4 sm:px-5 py-3 cursor-pointer rounded-xl font-bold bg-[#4a000b] hover:bg-[#6b0311] text-white flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-[#4a000b]/20 disabled:opacity-50"
               >
                 <span className="text-xs sm:text-sm">السؤال التالي</span>
                 <ChevronLeft size={18} />
@@ -3142,11 +3286,21 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
             ) : (
               <button
                 type="button"
+                disabled={isSubmittingExam}
                 onClick={handleSubmitExam}
-                className="px-5 sm:px-6 py-3 cursor-pointer rounded-xl font-black bg-amber-500 hover:bg-amber-600 text-[#4a000b] flex items-center gap-1.5 transition-all outline-none active:scale-95 shadow-md shadow-amber-500/20 text-xs sm:text-sm animate-pulse"
+                className="px-5 sm:px-6 py-3 cursor-pointer rounded-xl font-black bg-amber-500 hover:bg-amber-600 text-[#4a000b] flex items-center gap-2 transition-all outline-none active:scale-95 shadow-md shadow-amber-500/20 text-xs sm:text-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <span>إرسال نهائي للاختبار</span>
-                <Check size={18} className="stroke-[3px]" />
+                {isSubmittingExam ? (
+                  <>
+                    <Loader2 size={18} className="animate-spin text-[#4a000b]" />
+                    <span>جاري إرسال الإجابات والتأكيد...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>إرسال نهائي للاختبار</span>
+                    <Check size={18} className="stroke-[3px]" />
+                  </>
+                )}
               </button>
             )}
           </div>
