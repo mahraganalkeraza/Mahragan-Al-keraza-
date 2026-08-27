@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { supabase } from '../utils/supabaseClient';
 import { 
   BookOpen, 
   Plus, 
@@ -23,30 +24,19 @@ import {
   normalizeArabic
 } from '../utils/bishopricExamStorage';
 
-const DEFAULT_STAGES = [
-  'أولى وتانية',
-  'ثالثة ورابعة',
-  'خامسة وسادسة',
-  'إعدادي',
-  'ثانوي',
-  'جامعة',
-  'خريجين',
-  'عام'
-];
-
-const DEFAULT_SUBJECTS = [
-  'دراسي',
-  'محفوظات',
-  'طقس',
-  'عقيدة',
-  'قبطي',
-  'تاريخ كنيسة',
-  'عام'
+// قائمة المسابقات الثابتة
+const competitionOptions = [
+  "دراسي",
+  "محفوظات",
+  "قبطي مستوى أول",
+  "قبطي مستوى ثانٍ"
 ];
 
 export const AdminBishopricQuestionsManager: React.FC = () => {
   const [questions, setQuestions] = useState<BishopricExamQuestion[]>([]);
+  const [stageOptions, setStageOptions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingStages, setIsLoadingStages] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' | null }>({ text: '', type: null });
 
@@ -58,6 +48,30 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
   // Form State for inline editing or adding
   const [editingQuestion, setEditingQuestion] = useState<Partial<BishopricExamQuestion> | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Dynamic fetch stages from Supabase
+  useEffect(() => {
+    const fetchStages = async () => {
+      setIsLoadingStages(true);
+      try {
+        const { data, error } = await supabase
+          .from('stage_competitions')
+          .select('stage_name');
+        
+        if (!error && data) {
+          // استخراج المراحل بدون تكرار
+          const uniqueStages = Array.from(new Set(data.map((item: any) => item.stage_name).filter(Boolean))) as string[];
+          setStageOptions(uniqueStages);
+        }
+      } catch (err) {
+        console.error('Error fetching stages from Supabase:', err);
+      } finally {
+        setIsLoadingStages(false);
+      }
+    };
+
+    fetchStages();
+  }, []);
 
   // Load questions
   const loadQuestions = async () => {
@@ -78,8 +92,8 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
 
   const handleOpenAdd = () => {
     setEditingQuestion({
-      stage: stageFilter !== 'الكل' ? stageFilter : DEFAULT_STAGES[0],
-      subject_name: subjectFilter !== 'الكل' ? subjectFilter : DEFAULT_SUBJECTS[0],
+      stage: stageFilter !== 'الكل' ? stageFilter : (stageOptions[0] || 'عام'),
+      subject_name: subjectFilter !== 'الكل' ? subjectFilter : competitionOptions[0],
       question_text: '',
       options: ['', '', '', ''],
       correct_answer: '',
@@ -91,8 +105,8 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
   const handleOpenEdit = (q: BishopricExamQuestion) => {
     setEditingQuestion({
       id: q.id,
-      stage: q.stage || DEFAULT_STAGES[0],
-      subject_name: q.subject_name || DEFAULT_SUBJECTS[0],
+      stage: q.stage || (stageOptions[0] || 'عام'),
+      subject_name: q.subject_name || competitionOptions[0],
       question_text: q.question_text || '',
       options: Array.isArray(q.options) && q.options.length > 0 ? [...q.options] : ['', '', '', ''],
       correct_answer: q.correct_answer || '',
@@ -197,7 +211,7 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
             onChange={(e) => setStageFilter(e.target.value)}
           >
             <option value="الكل">كل المراحل</option>
-            {DEFAULT_STAGES.map(s => (
+            {stageOptions.map(s => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -208,7 +222,7 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
             onChange={(e) => setSubjectFilter(e.target.value)}
           >
             <option value="الكل">كل المسابقات</option>
-            {DEFAULT_SUBJECTS.map(sub => (
+            {competitionOptions.map(sub => (
               <option key={sub} value={sub}>{sub}</option>
             ))}
           </select>
@@ -382,11 +396,11 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
               <div>
                 <label className="text-xs font-black text-slate-700 block mb-1">المرحلة الدراسية</label>
                 <select
-                  value={editingQuestion.stage || DEFAULT_STAGES[0]}
+                  value={editingQuestion.stage || (stageOptions.length > 0 ? stageOptions[0] : '')}
                   onChange={(e) => setEditingQuestion({ ...editingQuestion, stage: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold bg-white focus:ring-2 focus:ring-indigo-500"
                 >
-                  {DEFAULT_STAGES.map(s => (
+                  {stageOptions.map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
@@ -395,11 +409,11 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
               <div>
                 <label className="text-xs font-black text-slate-700 block mb-1">المسابقة / المادة</label>
                 <select
-                  value={editingQuestion.subject_name || DEFAULT_SUBJECTS[0]}
+                  value={editingQuestion.subject_name || competitionOptions[0]}
                   onChange={(e) => setEditingQuestion({ ...editingQuestion, subject_name: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold bg-white focus:ring-2 focus:ring-indigo-500"
                 >
-                  {DEFAULT_SUBJECTS.map(sub => (
+                  {competitionOptions.map(sub => (
                     <option key={sub} value={sub}>{sub}</option>
                   ))}
                 </select>

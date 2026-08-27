@@ -184,7 +184,15 @@ const COMPETITION_TYPES = [
   "دراسي",
   "محفوظات",
   "قبطي مستوى أول",
-  "قبطي مستوى ثاني",
+  "قبطي مستوى ثانٍ",
+];
+
+// قائمة المسابقات الثابتة
+const competitionOptions = [
+  "دراسي",
+  "محفوظات",
+  "قبطي مستوى أول",
+  "قبطي مستوى ثانٍ"
 ];
 
 const SCORE_FIELD_MAP: Record<string, string> = {
@@ -192,6 +200,8 @@ const SCORE_FIELD_MAP: Record<string, string> = {
   محفوظات: "memorizationScore",
   "قبطي مستوى أول": "copticL1Score",
   "قبطي مستوى ثاني": "copticL2Score",
+  "قبطي مستوى ثانٍ": "copticL2Score",
+  "قبطي مستوى ثان": "copticL2Score",
 };
 
 interface ExamEngineProps {
@@ -200,12 +210,44 @@ interface ExamEngineProps {
 
 export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
   const [exams, setExams] = useState<Exam[]>([]);
+  const [stageOptions, setStageOptions] = useState<string[]>([]);
+  const [isLoadingStages, setIsLoadingStages] = useState(false);
   const [selectedStage, setSelectedStage] = useState("");
   const [selectedCompetition, setSelectedCompetition] = useState("دراسي");
   const [selectedModel, setSelectedModel] = useState("A");
   const [currentQuestions, setCurrentQuestions] = useState<Question[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const isCopticFont = selectedCompetition && selectedCompetition.includes("قبطي");
+
+  useEffect(() => {
+    const fetchStages = async () => {
+      setIsLoadingStages(true);
+      try {
+        const { data, error } = await supabase
+          .from('stage_competitions')
+          .select('stage_name');
+        
+        if (!error && data) {
+          // استخراج المراحل بدون تكرار
+          const uniqueStages = Array.from(new Set(data.map((item: any) => item.stage_name).filter(Boolean))) as string[];
+          setStageOptions(uniqueStages);
+        } else if (stages && stages.length > 0) {
+          const fallbackStages = stages.map(s => typeof s === 'string' ? s : s.name || s.id).filter(Boolean);
+          setStageOptions(fallbackStages);
+        }
+      } catch (err) {
+        console.error("Error fetching stages:", err);
+        if (stages && stages.length > 0) {
+          const fallbackStages = stages.map(s => typeof s === 'string' ? s : s.name || s.id).filter(Boolean);
+          setStageOptions(fallbackStages);
+        }
+      } finally {
+        setIsLoadingStages(false);
+      }
+    };
+
+    fetchStages();
+  }, [stages]);
 
   const fetchExamsPool = async () => {
     try {
@@ -372,13 +414,13 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
           value={selectedStage}
           onChange={(e) => setSelectedStage(e.target.value)}
         >
-          <option value="">اختر المرحلة</option>
-          {stages.map((s) => (
+          <option value="">{isLoadingStages ? "جاري تحميل المراحل..." : "اختر المرحلة"}</option>
+          {stageOptions.map((s) => (
             <option
-              key={typeof s === "string" ? s : s.name}
-              value={typeof s === "string" ? s : s.name}
+              key={s}
+              value={s}
             >
-              {typeof s === "string" ? s : s.name}
+              {s}
             </option>
           ))}
         </select>
@@ -387,7 +429,7 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
           value={selectedCompetition}
           onChange={(e) => setSelectedCompetition(e.target.value)}
         >
-          {COMPETITION_TYPES.map((type) => (
+          {competitionOptions.map((type) => (
             <option key={type} value={type}>
               {type}
             </option>

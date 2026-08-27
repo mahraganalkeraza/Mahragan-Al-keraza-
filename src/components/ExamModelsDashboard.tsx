@@ -15,76 +15,51 @@ import {
   FileText
 } from 'lucide-react';
 
+// قائمة المسابقات الثابتة
+const competitionOptions = [
+  "دراسي",
+  "محفوظات",
+  "قبطي مستوى أول",
+  "قبطي مستوى ثانٍ"
+];
+
 export const ExamModelsDashboard: React.FC = () => {
   const [stages, setStages] = useState<string[]>([]);
-  const [subjects, setSubjects] = useState<string[]>([]);
+  const [subjects, setSubjects] = useState<string[]>(competitionOptions);
   const [isLoadingMeta, setIsLoadingMeta] = useState(false);
 
   // Form selections
   const [selectedStage, setSelectedStage] = useState('');
-  const [selectedSubject, setSelectedSubject] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState(competitionOptions[0]);
   const [questionsCount, setQuestionsCount] = useState<number>(10);
 
   // Smart exam hook
   const { questions, loading: isLoadingSimulation, error: simulationError, startExam, clearCurrentExam } = useSmartExam();
 
   useEffect(() => {
-    const loadMetadata = async () => {
+    const fetchStages = async () => {
       setIsLoadingMeta(true);
       try {
-        // First try fetching from questions table
-        const { data: qData, error: qErr } = await supabase
-          .from('questions')
-          .select('stage_name, subject_name');
+        const { data, error } = await supabase
+          .from('stage_competitions')
+          .select('stage_name');
         
-        if (qData && qData.length > 0) {
-          const uniqueStages = Array.from(new Set(qData.map((q: any) => q.stage_name).filter(Boolean))) as string[];
-          const uniqueSubjects = Array.from(new Set(qData.map((q: any) => q.subject_name).filter(Boolean))) as string[];
-          
-          setStages(uniqueStages.sort());
-          setSubjects(uniqueSubjects.sort());
-
+        if (!error && data) {
+          // استخراج المراحل بدون تكرار
+          const uniqueStages = Array.from(new Set(data.map((item: any) => item.stage_name).filter(Boolean))) as string[];
+          setStages(uniqueStages);
           if (uniqueStages.length > 0) setSelectedStage(uniqueStages[0]);
-          if (uniqueSubjects.length > 0) setSelectedSubject(uniqueSubjects[0]);
-        } else {
-          // Fallback to stage_competitions
-          const { data: scData } = await supabase
-            .from('stage_competitions')
-            .select('stage_name, allowed_competitions');
-          
-          if (scData && scData.length > 0) {
-            const uniqueStages = Array.from(new Set(scData.map((s: any) => s.stage_name).filter(Boolean))) as string[];
-            const uniqueSubjects = Array.from(new Set(scData.flatMap((s: any) => s.allowed_competitions || []).filter(Boolean))) as string[];
-            
-            setStages(uniqueStages.sort());
-            setSubjects(uniqueSubjects.sort());
-
-            if (uniqueStages.length > 0) setSelectedStage(uniqueStages[0]);
-            if (uniqueSubjects.length > 0) setSelectedSubject(uniqueSubjects[0]);
-          } else {
-            // Static fallbacks
-            const defaultStages = ['ابتدائي', 'اعدادي', 'ثانوي', 'جامعيين', 'خدام'];
-            const defaultSubjects = ['دراسي', 'طقس', 'عقيدة', 'ألحان'];
-            setStages(defaultStages);
-            setSubjects(defaultSubjects);
-            setSelectedStage(defaultStages[0]);
-            setSelectedSubject(defaultSubjects[0]);
-          }
         }
       } catch (err) {
-        console.error("Error loading exam metadata:", err);
-        const defaultStages = ['ابتدائي', 'اعدادي', 'ثانوي', 'جامعيين', 'خدام'];
-        const defaultSubjects = ['دراسي', 'طقس', 'عقيدة', 'ألحان'];
-        setStages(defaultStages);
-        setSubjects(defaultSubjects);
-        setSelectedStage(defaultStages[0]);
-        setSelectedSubject(defaultSubjects[0]);
+        console.error("Error loading stages:", err);
       } finally {
         setIsLoadingMeta(false);
       }
     };
-    
-    loadMetadata();
+
+    fetchStages();
+    setSubjects(competitionOptions);
+    setSelectedSubject(competitionOptions[0]);
   }, []);
 
   const handleStartSimulation = async () => {
