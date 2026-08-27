@@ -32,6 +32,7 @@ import {
   fetchBishopricQuestions,
   submitBishopricExamResult
 } from '../utils/bishopricExamStorage';
+import { useNotificationBubble } from '../context/NotificationContext';
 
 interface BishopricStudentExamEngineProps {
   initialExamCode?: string;
@@ -44,6 +45,8 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   onClose,
   onComplete
 }) => {
+  const { showBubble, showSuccess, showError, showWarning, showInfo, showConfirmDialog } = useNotificationBubble();
+
   // Step 1: 'login' | 'preview' | 'exam' | 'submitted'
   const [step, setStep] = useState<'login' | 'preview' | 'exam' | 'submitted'>('login');
   
@@ -131,32 +134,65 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   const handleVerifyCode = async (codeToVerify?: string) => {
     const code = (codeToVerify || examCodeInput).trim();
     if (!code) {
-      setAuthError('يرجى إدخال كود امتحان الأسقفية الخاص بك');
+      showBubble({
+        type: 'warning',
+        title: 'تنبيه',
+        message: 'يرجى إدخال كود امتحان الأسقفية الخاص بك أولاً.'
+      });
       return;
     }
+    if (isVerifying) return; // حماية من الضغط المتكرر ومنع الـ Loop
 
     setIsVerifying(true);
     setAuthError(null);
+    try {
+      const res = await verifyBishopricStudentCode(code);
+      if (!res.success || !res.student) {
+        const errorMsg = res.error || 'الكود غير صحيح أو غير مسجل بالنظام.';
+        setAuthError(errorMsg);
+        showBubble({
+          type: 'error',
+          title: 'خطأ في الكود',
+          message: errorMsg
+        });
+        return;
+      }
 
-    const res = await verifyBishopricStudentCode(code);
-    setIsVerifying(false);
+      setStudent(res.student);
 
-    if (!res.success || !res.student) {
-      setAuthError(res.error || 'كود الامتحان غير صالح');
-      return;
+      // Duplicate Exam Prevention: If a result record exists for exam_code with status == 'completed', block entry
+      if (res.alreadySubmitted && (res.alreadySubmitted.status === 'completed' || res.alreadySubmitted.percentage !== undefined)) {
+        const alreadySubmittedMsg = 'عفواً، تم استخدام هذا الكود في الامتحان مسبقاً.';
+        setAuthError(alreadySubmittedMsg);
+        showBubble({
+          type: 'error',
+          title: 'كود مستخدم مسبقاً',
+          message: alreadySubmittedMsg
+        });
+        setStep('login');
+        return;
+      }
+
+      showBubble({
+        type: 'success',
+        title: 'تم التحقق بنجاح',
+        message: `أهلاً بك يا ${res.student.student_name} (${res.student.stage})، تم التحقق من الكود بنجاح.`
+      });
+
+      // Otherwise load questions for this student's stage
+      await loadQuestionsForStudent(res.student);
+    } catch (err) {
+      console.error('Code verification error:', err);
+      const networkErrorMsg = 'حدث خطأ في الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.';
+      setAuthError(networkErrorMsg);
+      showBubble({
+        type: 'error',
+        title: 'خطأ اتصال',
+        message: networkErrorMsg
+      });
+    } finally {
+      setIsVerifying(false);
     }
-
-    setStudent(res.student);
-
-    // Duplicate Exam Prevention: If a result record exists for exam_code with status == 'completed', block entry
-    if (res.alreadySubmitted && (res.alreadySubmitted.status === 'completed' || res.alreadySubmitted.percentage !== undefined)) {
-      setAuthError('عفواً، تم أداء هذا الامتحان بالفعل بهذا الكود.');
-      setStep('login');
-      return;
-    }
-
-    // Otherwise load questions for this student's stage
-    loadQuestionsForStudent(res.student);
   };
 
   const loadQuestionsForStudent = async (studentData: BishopricExamRecord) => {
@@ -167,7 +203,13 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       setStep('preview');
     } catch (err) {
       console.error('Error fetching questions for student:', err);
-      setAuthError('تعذر تحميل أسئلة الامتحان. يرجى إعادة المحاولة.');
+      const qErr = 'تعذر تحميل أسئلة الامتحان. يرجى إعادة المحاولة.';
+      setAuthError(qErr);
+      showBubble({
+        type: 'error',
+        title: 'خطأ تحميل الأسئلة',
+        message: qErr
+      });
     } finally {
       setIsLoadingQuestions(false);
     }
@@ -176,7 +218,11 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   // Start Exam
   const handleStartExam = () => {
     if (questions.length === 0) {
-      alert('لم يتم إضافة أسئلة بعد لهذه المرحلة الدراسية. يرجى مراجعة المسؤول.');
+      showBubble({
+        type: 'warning',
+        title: 'تنبيه',
+        message: 'لم يتم إضافة أسئلة بعد لهذه المرحلة الدراسية. يرجى مراجعة المسؤول.'
+      });
       return;
     }
 
@@ -202,6 +248,11 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     setTimeLeft(Math.max(questions.length * 3 * 60, 15 * 60)); // 3 mins per question
     setIsTimerRunning(true);
     setStep('exam');
+    showBubble({
+      type: 'info',
+      title: 'بدء الامتحان',
+      message: 'بدأ وقت الامتحان الآن، ركّز في الإجابات وبالتوفيق والبركة!'
+    });
   };
 
   const handleSelectOption = (option: string) => {
@@ -212,13 +263,18 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   };
 
   const handleAutoSubmitOnTimeout = () => {
-    alert('انتهى الوقت المحدد للامتحان! سيتم إرسال إجاباتك تلقائياً.');
+    showBubble({
+      type: 'warning',
+      title: 'انتهاء الوقت',
+      message: 'انتهى الوقت المحدد للامتحان! جاري إرسال إجاباتك تلقائياً للسيرفر...'
+    });
     executeSubmission();
   };
 
-  // Calculate scores & submit
+  // Calculate scores & submit (Strict server confirmed save)
   const executeSubmission = async () => {
-    if (!student) return;
+    if (!student || isSubmitting) return; // منع التكرار والضغط المتوازي
+
     setIsSubmitting(true);
     setSubmitError(null);
     setSubmissionAttemptNumber(1);
@@ -227,7 +283,6 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
     let calculatedTotalScore = 0;
     let calculatedMaxScore = 0;
-
     questions.forEach((q, idx) => {
       const qScore = Number(q.score) || 1;
       calculatedMaxScore += qScore;
@@ -243,6 +298,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
     const resultPayload: BishopricExamResult = {
       exam_code: student.exam_code,
+      student_code: student.exam_code,
       student_name: student.student_name,
       church_name: student.church_name,
       stage: student.stage,
@@ -250,31 +306,61 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       total_score: calculatedTotalScore,
       max_score: calculatedMaxScore,
       percentage: percentage,
+      answers: selectedAnswers,
       status: 'completed',
+      submitted_at: new Date().toISOString(),
       completed_at: new Date().toISOString()
     };
 
-    // Strict handshake with up to 3 automatic retries
-    const res = await submitBishopricExamResult(resultPayload, 3, (attempt) => {
-      setSubmissionAttemptNumber(attempt);
-    });
+    try {
+      // Strict handshake with up to 3 automatic retries
+      const res = await submitBishopricExamResult(resultPayload, 3, (attempt) => {
+        setSubmissionAttemptNumber(attempt);
+        if (attempt > 1) {
+          showBubble({
+            type: 'warning',
+            title: 'إعادة محاولة الحفظ',
+            message: `جاري إعادة محاولة تأكيد الحفظ على السيرفر (المحاولة ${attempt} من 3)...`
+          });
+        }
+      });
 
-    setIsSubmitting(false);
-
-    if (res.success && res.data) {
-      // Clear local progress cache strictly AFTER verified DB insert confirmation
-      try {
-        localStorage.removeItem(`bishopric_exam_progress_${student.exam_code.trim()}`);
-      } catch (e) {}
-
-      setFinalResult(res.data);
-      setStep('submitted');
-      if (onComplete) {
-        onComplete(res.data);
+      if (res.success && res.data) {
+        // Clear local progress cache strictly AFTER verified DB insert confirmation
+        try {
+          localStorage.removeItem(`bishopric_exam_progress_${student.exam_code.trim()}`);
+        } catch (e) {}
+        setFinalResult(res.data);
+        setStep('submitted');
+        showBubble({
+          type: 'success',
+          title: 'تأكيد الحفظ',
+          message: 'تم حفظ إجابتك بنجاح وتسجيل النتيجة في السيرفر! 🎉'
+        });
+        if (onComplete) {
+          onComplete(res.data);
+        }
+      } else {
+        // Strict constraint: Do NOT clear localStorage or show completion screen on failure
+        const failMsg = res.error || 'لم يتم تأكيد حفظ الإجابة على السيرفر! إجاباتك محفوظة على الجهاز، يرجى إعادة محاولة الإرسال.';
+        setSubmitError(failMsg);
+        showBubble({
+          type: 'error',
+          title: 'فشل الحفظ',
+          message: failMsg
+        });
       }
-    } else {
-      // Strict constraint: Do NOT clear localStorage or show completion screen on failure
-      setSubmitError(res.error || 'فشل التأكيد من السيرفر، يرجى المحاولة مرة أخرى.');
+    } catch (err: any) {
+      console.error('Submission error:', err);
+      const errTxt = 'لم يتم تأكيد حفظ الإجابة على السيرفر! إجاباتك محفوظة على الجهاز، يرجى إعادة محاولة الإرسال.';
+      setSubmitError(errTxt);
+      showBubble({
+        type: 'error',
+        title: 'فشل في الاتصال',
+        message: errTxt
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -798,3 +884,6 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     </div>
   );
 };
+
+export const BishopricExamModule = BishopricStudentExamEngine;
+

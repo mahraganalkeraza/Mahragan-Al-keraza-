@@ -7,6 +7,11 @@ export interface BishopricExamRecord {
   stage: string;        // المرحلة
   church_name: string;  // اسم الكنيسة
   exam_code: string;    // كود امتحان الأسقفية
+  code?: string;        // alias for code
+  student_code?: string;
+  is_used?: boolean;    // حالة استخدام الكود
+  used_at?: string;
+  status?: string;
   created_at?: string;
 }
 
@@ -24,6 +29,7 @@ export interface BishopricExamQuestion {
 export interface BishopricExamResult {
   id?: string;
   exam_code: string;
+  student_code?: string;
   student_name: string;
   church_name: string;
   stage: string;
@@ -31,7 +37,9 @@ export interface BishopricExamResult {
   total_score: number;
   max_score: number;
   percentage: number;
+  answers?: any;
   status?: string;
+  submitted_at?: string;
   completed_at?: string;
 }
 
@@ -620,23 +628,30 @@ export const fetchBishopricStudentResult = async (
 /**
  * Submit / Upsert student exam result into bishopric_exam_results
  * Strict Network Handshake with auto-retry loop and Supabase confirmation
+ * Crucial Rule: update bishopric_exam_codes (is_used = true) ONLY AFTER verified results insert.
  */
 export const submitBishopricExamResult = async (
   result: BishopricExamResult,
   maxRetries = 3,
   onAttempt?: (attempt: number) => void
 ): Promise<{ success: boolean; data?: BishopricExamResult; error?: string }> => {
+  const code = (result.exam_code || result.student_code || '').trim();
+  const nowIso = new Date().toISOString();
+
   const payload = {
-    exam_code: result.exam_code.trim(),
-    student_name: result.student_name.trim(),
-    church_name: result.church_name.trim(),
+    exam_code: code,
+    student_code: code,
+    student_name: (result.student_name || '').trim(),
+    church_name: (result.church_name || '').trim(),
     stage: result.stage,
     subject_name: result.subject_name || 'امتحان الأسقفية',
     total_score: Number(result.total_score) || 0,
     max_score: Number(result.max_score) || 0,
     percentage: Number(result.percentage) || 0,
+    answers: result.answers || null,
     status: result.status || 'completed',
-    completed_at: result.completed_at || new Date().toISOString()
+    submitted_at: result.submitted_at || nowIso,
+    completed_at: result.completed_at || nowIso
   };
 
   let lastError = '';
@@ -644,31 +659,53 @@ export const submitBishopricExamResult = async (
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     if (onAttempt) onAttempt(attempt);
     try {
-      const { data, error } = await supabase
+      // 1. أ) حفظ النتائج والتأكد عبر .select()
+      const { data: resultData, error: resultError } = await supabase
         .from('bishopric_exam_results')
         .upsert([payload], { onConflict: 'exam_code' })
         .select();
 
-      if (error || !data || data.length === 0) {
-        throw new Error(error?.message || "فشل التأكيد من السيرفر، جاري إعطاء محاولة أخرى...");
+      if (resultError || !resultData || resultData.length === 0) {
+        throw new Error(resultError?.message || 'لم يتلق السيرفر إشارة تأكيد الحفظ.');
       }
 
-      // Verified 200 OK insertion confirmation from Supabase
-      return { success: true, data: data[0] as BishopricExamResult };
+      // 2. ب) تحديث حالة الكود كـ مستخدم فقط بعد تأكيد حفظ النتيجة
+      try {
+        await supabase
+          .from('bishopric_exam_codes')
+          .update({ 
+            is_used: true, 
+            used_at: nowIso, 
+            status: 'used' 
+          })
+          .or(`exam_code.eq.${code},code.eq.${code}`);
+      } catch (updateErr) {
+        console.warn('Note updating bishopric_exam_codes is_used status:', updateErr);
+      }
+
+      // 3. ج) إرجاع النجاح فقط بعد استلام التأكيد المباشر من السيرفر
+      return { success: true, data: resultData[0] as BishopricExamResult };
     } catch (err: any) {
       console.warn(`[BishopricHandshake] Attempt ${attempt}/${maxRetries} failed:`, err);
-      lastError = err.message || 'فشل التأكيد من السيرفر، جاري إعطاء محاولة أخرى...';
+      lastError = err.message || 'لم يتم تأكيد حفظ الإجابة على السيرفر!';
       if (attempt < maxRetries) {
         await new Promise(res => setTimeout(res, 1500));
       }
     }
   }
 
-  return { success: false, error: lastError };
+  return { 
+    success: false, 
+    error: lastError || 'لم يتم تأكيد حفظ الإجابة على السيرفر! إجاباتك محفوظة على الجهاز، يرجى إعادة محاولة الإرسال.' 
+  };
 };
 
 /**
  * Verify student by exam code strictly against bishopric_exam_codes
+ * Strict rules:
+ * 1. Check if the entered code exists in bishopric_exam_codes
+ * 2. Verify is_used is false (or status = 'active')
+ * 3. Block access completely if invalid or already used
  */
 export const verifyBishopricStudentCode = async (
   examCode: string
@@ -679,44 +716,81 @@ export const verifyBishopricStudentCode = async (
   error?: string;
 }> => {
   if (!examCode || !examCode.trim()) {
-    return { success: false, error: 'يرجى إدخال كود امتحان الأسقفية' };
+    return { success: false, error: 'يرجى إدخال كود امتحان الأسقفية الخاص بك' };
   }
 
   const cleanCode = examCode.trim();
 
   try {
-    // 1. Check in bishopric_exam_codes
-    const { data, error } = await supabase
+    // 1. Strict Server Check in bishopric_exam_codes
+    let studentRecord: BishopricExamRecord | null = null;
+
+    const { data: codeData, error: codeError } = await supabase
       .from('bishopric_exam_codes')
       .select('*')
-      .eq('exam_code', cleanCode)
+      .or(`exam_code.eq.${cleanCode},code.eq.${cleanCode}`)
       .maybeSingle();
 
-    let studentRecord: BishopricExamRecord | undefined = data;
+    if (!codeError && codeData) {
+      studentRecord = {
+        ...codeData,
+        exam_code: codeData.exam_code || codeData.code || cleanCode
+      };
+    } else {
+      const { data: directData } = await supabase
+        .from('bishopric_exam_codes')
+        .select('*')
+        .eq('exam_code', cleanCode)
+        .maybeSingle();
 
-    // Fallback: check case-insensitive or in local storage config if offline
+      if (directData) {
+        studentRecord = directData;
+      }
+    }
+
+    // Fallback: check all records if offline/local cache exists
     if (!studentRecord) {
       const allDb = await fetchAllBishopricRecordsFromDb();
-      studentRecord = allDb.find(r => r.exam_code.trim().toLowerCase() === cleanCode.toLowerCase());
+      studentRecord = allDb.find(
+        r => (r.exam_code && r.exam_code.trim().toLowerCase() === cleanCode.toLowerCase()) ||
+             (r.code && r.code.trim().toLowerCase() === cleanCode.toLowerCase())
+      ) || null;
     }
 
     if (!studentRecord) {
-      return { 
-        success: false, 
-        error: 'كود الامتحان غير مسجل في كشوف أكواد الأسقفية المعتمدة. يرجى مراجعة مسؤول الكنيسة.' 
+      return {
+        success: false,
+        error: 'الكود غير صحيح أو غير موجود بالنظام.'
       };
     }
 
-    // 2. Check if already submitted in bishopric_exam_results
+    // 2. Check if is_used is true or status is 'used' / 'completed'
+    if (studentRecord.is_used || studentRecord.status === 'used' || studentRecord.status === 'completed') {
+      return {
+        success: false,
+        student: studentRecord,
+        error: 'عفواً، تم استخدام هذا الكود في الامتحان مسبقاً.'
+      };
+    }
+
+    // 3. Double-check against bishopric_exam_results table
     const previousResult = await fetchBishopricStudentResult(cleanCode);
+    if (previousResult && (previousResult.status === 'completed' || previousResult.percentage !== undefined)) {
+      return {
+        success: false,
+        student: studentRecord,
+        alreadySubmitted: previousResult,
+        error: 'عفواً، تم استخدام هذا الكود في الامتحان مسبقاً.'
+      };
+    }
 
     return {
       success: true,
       student: studentRecord,
-      alreadySubmitted: previousResult
+      alreadySubmitted: null
     };
   } catch (err: any) {
-    console.error('Verification error:', err);
-    return { success: false, error: err.message || 'حدث خطأ أثناء التحقق من الكود' };
+    console.error('Code verification error:', err);
+    return { success: false, error: 'حدث خطأ في الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.' };
   }
 };

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { QRScanner } from "./QRScanner";
 import { getDeviceFingerprint, DeviceFingerprint } from "../lib/deviceTracking";
+import { useNotificationBubble } from "../context/NotificationContext";
 import logo from "../by-logo.jpeg";
 
 const CURRENT_YEAR = "2026";
@@ -209,6 +210,7 @@ interface ExamEngineProps {
 }
 
 export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
+  const { showBubble, showSuccess, showError, showWarning } = useNotificationBubble();
   const [exams, setExams] = useState<Exam[]>([]);
   const [stageOptions, setStageOptions] = useState<string[]>([]);
   const [isLoadingStages, setIsLoadingStages] = useState(false);
@@ -365,7 +367,11 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
 
       // ✅ التعديل السحري الجديد: أخبر سوبابايس أن التحديث يتم فقط لو تطابق الطالب مع نفس المسابقة
       if (!navigator.onLine) {
-        alert("❌ لا يوجد اتصال بالإنترنت! تعذر حفظ النموذج.");
+        showBubble({
+          type: 'error',
+          title: 'لا يوجد اتصال',
+          message: '❌ لا يوجد اتصال بالإنترنت! تعذر حفظ النموذج.'
+        });
         return;
       }
 
@@ -398,11 +404,21 @@ export const ExamBuilder: React.FC<ExamEngineProps> = ({ stages }) => {
 
       if (!isAuto) {
         console.log("Mission Accomplished: Exam saved/updated successfully!");
-        alert("تم حفظ الامتحان بنجاح.");
+        showBubble({
+          type: 'success',
+          title: 'تم الحفظ بنجاح',
+          message: `تم حفظ نموذج (${selectedCompetition} - ${selectedStage} - نموذج ${selectedModel}) بنجاح.`
+        });
       }
     } catch (error: any) {
       console.error("Critical Failure:", error.message);
-      if (!isAuto) alert("فشلت عملية الحفظ: " + error.message);
+      if (!isAuto) {
+        showBubble({
+          type: 'error',
+          title: 'فشل الحفظ',
+          message: 'فشلت عملية الحفظ: ' + (error.message || 'خطأ غير معروف')
+        });
+      }
     }
   };
 
@@ -1106,6 +1122,7 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
   setCurrentStudent,
   setActiveExam: setParentActiveExam
 }) => {
+  const { showBubble, showSuccess, showError, showWarning, showInfo, confirmAsync } = useNotificationBubble();
   const [isExamCardHovered, setIsExamCardHovered] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [middleNameValidation, setMiddleNameValidation] = useState('');
@@ -1502,7 +1519,12 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (!studentObj) {
         setIsLoading(false);
-        return alert("عفواً، هذا الكود غير مسجل بمهرجان هذا العام.");
+        showBubble({
+          type: 'error',
+          title: 'كود غير مسجل',
+          message: 'عفواً، هذا الكود غير مسجل بمهرجان هذا العام.'
+        });
+        return;
       }
 
       studentData = {
@@ -1600,7 +1622,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       } catch (err) {}
     } catch (e: any) {
       setIsLoading(false);
-      alert("حدث خطأ غير متوقع: " + (e.message || "Error occurred"));
+      showBubble({
+        type: 'error',
+        title: 'خطأ في التحقق',
+        message: "حدث خطأ غير متوقع: " + (e.message || "Error occurred")
+      });
     }
   };
 
@@ -1614,7 +1640,12 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (globalSettings.is_exam_locked) {
         setIsLoading(false);
-        return alert("عذراً، الامتحانات الإلكترونية مغلقة بالكامل بقرار من اللجنة المركزية 🔒");
+        showBubble({
+          type: 'warning',
+          title: 'الامتحانات مغلقة',
+          message: 'عذراً، الامتحانات الإلكترونية مغلقة بالكامل بقرار من اللجنة المركزية 🔒'
+        });
+        return;
       }
 
       // Get exams_pool info without devicelogs check
@@ -1622,7 +1653,12 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       if (examConfig) {
         if (!examConfig.isExamLive) {
           setIsLoading(false);
-          return alert("عذراً، الامتحانات مغلقة الآن بقرار من اللجنة المركزية");
+          showBubble({
+            type: 'warning',
+            title: 'الامتحانات مغلقة',
+            message: 'عذراً، الامتحانات مغلقة الآن بقرار من اللجنة المركزية'
+          });
+          return;
         }
 
         if (examConfig.autoCloseTime) {
@@ -1635,28 +1671,42 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
           if (now > closeTime) {
             setIsLoading(false);
-            return alert(
-              `عذراً، انتهى الوقت المحدد للامتحانات اليوم (${examConfig.autoCloseTime})`,
-            );
+            showBubble({
+              type: 'warning',
+              title: 'انتهاء الوقت',
+              message: `عذراً، انتهى الوقت المحدد للامتحانات اليوم (${examConfig.autoCloseTime})`
+            });
+            return;
           }
         }
         if (examConfig.churchOverrides?.[activeStudent.churchName] === false) {
           setIsLoading(false);
-          return alert(
-            `عذراً، الامتحانات مغلقة حالياً لكنيسة ${activeStudent.churchName}`,
-          );
+          showBubble({
+            type: 'warning',
+            title: 'الامتحانات مغلقة للكنيسة',
+            message: `عذراً، الامتحانات مغلقة حالياً لكنيسة ${activeStudent.churchName}`
+          });
+          return;
         }
         if (examConfig.stageOverrides?.[stage] === false) {
           setIsLoading(false);
-          return alert(`عذراً، الامتحانات مغلقة حالياً لمرحلة ${stage}`);
+          showBubble({
+            type: 'warning',
+            title: 'الامتحانات مغلقة للمرحلة',
+            message: `عذراً، الامتحانات مغلقة حالياً لمرحلة ${stage}`
+          });
+          return;
         }
       }
 
       if (!isStudentEnrolledInCompetition(activeStudent, competitionType)) {
         setIsLoading(false);
-        return alert(
-          "عذراً، أنت غير مسجل في هذه المسابقة. يرجى مراجعة اللجنة .",
-        );
+        showBubble({
+          type: 'warning',
+          title: 'غير مسجل بالمسابقة',
+          message: 'عذراً، أنت غير مسجل في هذه المسابقة. يرجى مراجعة اللجنة.'
+        });
+        return;
       }
 
       if (
@@ -1664,14 +1714,24 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         Number(activeStudent.coptic_level) === 2
       ) {
         setIsLoading(false);
-        return alert("غير مسموح لك بدخول مستوى قبطي مخالف لمستواك المسجل.");
+        showBubble({
+          type: 'error',
+          title: 'المستوى القبطي',
+          message: 'غير مسموح لك بدخول مستوى قبطي مخالف لمستواك المسجل.'
+        });
+        return;
       }
       if (
         competitionType === "قبطي مستوى ثاني" &&
         Number(activeStudent.coptic_level) === 1
       ) {
         setIsLoading(false);
-        return alert("غير مسموح لك بدخول مستوى قبطي مخالف لمستواك المسجل.");
+        showBubble({
+          type: 'error',
+          title: 'المستوى القبطي',
+          message: 'غير مسموح لك بدخول مستوى قبطي مخالف لمستواك المسجل.'
+        });
+        return;
       }
 
       const scoreField = SCORE_FIELD_MAP[competitionType];
@@ -1758,9 +1818,12 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       if (availableExams.length === 0) {
         setIsLoading(false);
-        return alert(
-          `لا يوجد امتحان متاح لمرحلة ${stage} في مسابقة ${competitionType}`,
-        );
+        showBubble({
+          type: 'warning',
+          title: 'لا يوجد امتحان متاح',
+          message: `لا يوجد امتحان متاح لمرحلة ${stage} في مسابقة ${competitionType}`
+        });
+        return;
       }
 
       const randomModel =
@@ -1867,7 +1930,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     } catch (e: any) {
       console.error(e);
       setIsLoading(false);
-      alert("حدث خطأ في بدء الامتحان: " + e.message);
+      showBubble({
+        type: 'error',
+        title: 'خطأ في بدء الامتحان',
+        message: "حدث خطأ في بدء الامتحان: " + e.message
+      });
     }
   };
 
@@ -1994,7 +2061,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     // }
 
     try {
-      alert("تم حفظ وإرسال إجابات المسابقة بنجاح! 🎉");
+      showBubble({
+        type: 'success',
+        title: 'تم الحفظ بنجاح',
+        message: `تم حفظ وإرسال إجابات مسابقة (${selectedCompetition}) بنجاح! 🎉`
+      });
     } catch (_) {}
 
     // 2. Clear current exam state and route back to the student exams grid view
@@ -2019,7 +2090,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
         setIsLoading(false);
         setIsExamCompleted(true);
         // Simulate a success alert to prevent bot retry
-        alert("تم تسليم الامتحان بالكامل ليظهر في السجل العام بنجاح!");
+        showBubble({
+          type: 'success',
+          title: 'تم التسليم بنجاح',
+          message: "تم تسليم الامتحان بالكامل ليظهر في السجل العام بنجاح!"
+        });
       }, 800);
       return;
     }
@@ -2055,7 +2130,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
     }
 
     if (!currentStudentObj) {
-      alert("عذراً، لم يتم العثور على بيانات الطالب النشط.");
+      showBubble({
+        type: 'error',
+        title: 'بيانات غير موجودة',
+        message: "عذراً، لم يتم العثور على بيانات الطالب النشط."
+      });
       return;
     }
 
@@ -2063,18 +2142,22 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       (score) => score !== null,
     );
     if (!anySaved) {
-      alert(
-        "عذراً، يجب إتمام وحفظ مادة واحدة على الأقل قبل تسليم الامتحان بالكامل.",
-      );
+      showBubble({
+        type: 'warning',
+        title: 'تنبيه',
+        message: "عذراً، يجب إتمام وحفظ مادة واحدة على الأقل قبل تسليم الامتحان بالكامل."
+      });
       return;
     }
 
-    if (
-      !confirm(
-        "هل أنت متأكد من تسليم وإرسال كافة المواد المكتملة كمسودة للامتحان النهائي؟ لن تتمكن من تعديل الإجابات بعد التسليم.",
-      )
-    )
-      return;
+    const isConfirmed = await confirmAsync({
+      title: "تأكيد تسليم الامتحان بالكامل",
+      message: "هل أنت متأكد من تسليم وإرسال كافة المواد المكتملة كمسودة للامتحان النهائي؟ لن تتمكن من تعديل الإجابات بعد التسليم.",
+      confirmText: "نعم، تأكيد وتسليم",
+      cancelText: "مراجعة الإجابات",
+      type: "warning"
+    });
+    if (!isConfirmed) return;
     setIsLoading(true);
 
     try {
@@ -2310,7 +2393,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
 
       // 5️⃣ خامساً: اللوجيك المشروط اللي بيحدد Insert أو Update (بتاعك زي ما هو)
       if (!navigator.onLine) {
-        alert("❌ لا يوجد اتصال بالإنترنت! تعذر إرسال إجابات الامتحان.");
+        showBubble({
+          type: 'error',
+          title: 'لا يوجد اتصال',
+          message: "❌ لا يوجد اتصال بالإنترنت! تعذر إرسال إجابات الامتحان."
+        });
         setHasSubmissionFailed(true);
         setIsLoading(false);
         return;
@@ -2343,7 +2430,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       // 6️⃣ سادساً: فحص الأخطاء كالمعتاد والتحقق من تأكيد الحفظ الفعلي لمنع النجاح الزائف
       if (dbResult.error) {
         console.error("Supabase Save Error (submission):", dbResult.error.message, dbResult.error);
-        alert(`فشل إرسال الإجابات لقاعدة البيانات: ${dbResult.error.message}`);
+        showBubble({
+          type: 'error',
+          title: 'فشل الإرسال',
+          message: `فشل إرسال الإجابات لقاعدة البيانات: ${dbResult.error.message}`
+        });
         setHasSubmissionFailed(true);
         setIsLoading(false);
         return;
@@ -2352,7 +2443,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       if (!dbResult.data || dbResult.data.length === 0) {
         const errorMsg = "لم يتم تأكيد حفظ السجل في قاعدة البيانات. قد يكون ذلك بسبب قيود الصلاحيات أو عدم العثور على السجل لتحديثه.";
         console.error("Supabase Save Error (No rows returned):", errorMsg);
-        alert(`فشل التسجيل: ${errorMsg}`);
+        showBubble({
+          type: 'error',
+          title: 'فشل التسجيل',
+          message: `فشل التسجيل: ${errorMsg}`
+        });
         setHasSubmissionFailed(true);
         setIsLoading(false);
         return;
@@ -2407,7 +2502,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       setScore(0);
       setHasSubmissionFailed(false);
       setIsExamCompleted(true);
-      alert("تم حفظ وإرسال إجابات المسابقة بنجاح! 🎉");
+      showBubble({
+        type: 'success',
+        title: 'تم التسليم بنجاح',
+        message: "تم حفظ وإرسال إجابات المسابقة بنجاح! 🎉"
+      });
 
       // Clear current exam states and redirect back to the student grid view
       if (typeof setParentActiveExam === 'function') setParentActiveExam(null);
@@ -2421,7 +2520,11 @@ export const LiveExamGateway: React.FC<LiveExamGatewayProps> = ({
       console.error("Critical crash during submission handler:", e);
       setHasSubmissionFailed(true);
       setIsLoading(false);
-      alert("حدث خطأ غير متوقع، برجاء مراجعة اتصال الشبكة والمحاولة مرة أخرى.");
+      showBubble({
+        type: 'error',
+        title: 'خطأ غير متوقع',
+        message: "حدث خطأ غير متوقع، برجاء مراجعة اتصال الشبكة والمحاولة مرة أخرى."
+      });
     }
   };
 

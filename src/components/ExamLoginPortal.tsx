@@ -21,6 +21,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { getDeviceFingerprint } from '../lib/deviceTracking';
 import { getDailyExamToken, validateHourlyExamToken } from '../utils/dailyToken';
 import { setupForceRefreshListener } from '../utils/forceRefreshManager';
+import { useNotificationBubble } from '../context/NotificationContext';
 
 interface ExamLoginPortalProps {
   onClose: () => void; // زر الرجوع / إغلاق المنصة
@@ -43,6 +44,8 @@ interface ExamLoginPortalProps {
 }
 
 export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
+  const { showBubble, showSuccess, showError, showWarning, showInfo } = useNotificationBubble();
+
   // طريقة الدخول الافتراضية والآمنة للكل هي الـ QR كود
   const [loginMethod, setLoginMethod] = useState<'code' | 'name'>('code');
   const [academicCode, setAcademicCode] = useState('');
@@ -147,7 +150,11 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         localStorage.removeItem('gateway_exam_token');
         localStorage.removeItem('active_student_session');
         setGateAccessGranted(false);
-        alert("عفواً، انتهت صلاحية رمز الدخول.");
+        showBubble({
+          type: 'error',
+          title: 'انتهاء الصلاحية',
+          message: 'عفواً، انتهت صلاحية رمز الدخول. يرجى مسح QR الدخول المحدث من مسؤول اللجنة.'
+        });
         if (onClose) onClose();
       }
     } else {
@@ -162,11 +169,15 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
         localStorage.removeItem('gateway_exam_token');
         localStorage.removeItem('active_student_session');
         setGateAccessGranted(false);
-        alert("عفواً، انتهت صلاحية رمز الدخول.");
+        showBubble({
+          type: 'error',
+          title: 'رمز غير صالح',
+          message: 'عفواً، انتهت صلاحية رمز الدخول. يرجى مسح QR الدخول المحدث من مسؤول اللجنة.'
+        });
         if (onClose) onClose();
       }
     }
-  }, [onClose]);
+  }, [onClose, showBubble]);
 
   // مزامنة الداتا مرة واحدة من السيرفر للحفاظ على كفاءة الباندويث ودعم التحديث الجزئي (Delta Sync)
   const syncRegistrations = async (forceRefetch = false) => {
@@ -362,16 +373,33 @@ export function ExamLoginPortal({ onClose, onSuccess }: ExamLoginPortalProps) {
           .maybeSingle();
 
         if (error || !fetchedStudent) {
-          setErrors("لم نتمكن من العثور على الكود المسحوب، يرجى الاستعانة بمسؤول اللجنة للتأكد.");
+          const errMsg = "لم نتمكن من العثور على الكود المسحوب، يرجى الاستعانة بمسؤول اللجنة للتأكد.";
+          setErrors(errMsg);
+          showBubble({
+            type: 'error',
+            title: 'كود غير مسجل',
+            message: errMsg
+          });
           setIsLoading(false);
           return;
         }
         studentObj = fetchedStudent;
       }
 
+      showBubble({
+        type: 'success',
+        title: 'تم التحقق من المشترك',
+        message: `مرحباً ${studentObj.name} (${studentObj.stage}) - كنيسة ${studentObj.churchName || ''}`
+      });
+
       await triggerActiveExamLaunch(studentObj);
     } catch (err: any) {
       setErrors("فشل البحث في قاعدة البيانات.");
+      showBubble({
+        type: 'error',
+        title: 'خطأ اتصال',
+        message: 'فشل البحث في قاعدة البيانات، يرجى المحاولة مرة أخرى.'
+      });
       setIsLoading(false);
     }
   };

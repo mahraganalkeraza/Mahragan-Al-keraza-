@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabaseClient';
 import { useSmartExam, Question } from '../hooks/useSmartExam';
 import { BulkModelExporter } from './BulkModelExporter';
+import { useNotificationBubble } from '../context/NotificationContext';
 import { 
   BookOpen, 
   Settings, 
@@ -24,6 +25,7 @@ const competitionOptions = [
 ];
 
 export const ExamModelsDashboard: React.FC = () => {
+  const { showBubble } = useNotificationBubble();
   const [stages, setStages] = useState<string[]>([]);
   const [subjects, setSubjects] = useState<string[]>(competitionOptions);
   const [isLoadingMeta, setIsLoadingMeta] = useState(false);
@@ -64,11 +66,19 @@ export const ExamModelsDashboard: React.FC = () => {
 
   const handleStartSimulation = async () => {
     if (!selectedStage) {
-      alert('الرجاء اختيار المرحلة أولاً.');
+      showBubble({
+        type: 'warning',
+        title: 'تحديد المرحلة',
+        message: 'الرجاء اختيار المرحلة أولاً.'
+      });
       return;
     }
     if (!selectedSubject) {
-      alert('الرجاء اختيار المسابقة أولاً.');
+      showBubble({
+        type: 'warning',
+        title: 'تحديد المسابقة',
+        message: 'الرجاء اختيار المسابقة أولاً.'
+      });
       return;
     }
     
