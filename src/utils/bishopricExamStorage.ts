@@ -304,29 +304,54 @@ export const fetchAllBishopricRecordsFromDb = async (): Promise<BishopricExamRec
 export const fetchChurchBishopricRecordsFromDb = async (
   currentChurchName: string
 ): Promise<BishopricExamRecord[]> => {
-  if (!currentChurchName || !currentChurchName.trim()) return [];
+  const cleanChurchName = (currentChurchName || '').trim();
+  if (!cleanChurchName) return [];
 
   try {
-    // 1. Direct equality query as requested
-    const { data, error } = await supabase
+    // 1. Direct equality query
+    const { data: eqData, error: eqError } = await supabase
       .from('bishopric_exam_codes')
       .select('*')
-      .eq('church_name', currentChurchName);
+      .eq('church_name', cleanChurchName);
 
-    if (!error && data && data.length > 0) {
-      return data;
+    if (!eqError && eqData && eqData.length > 0) {
+      return eqData;
     }
 
-    // 2. Fallback normalization in case of prefix difference (e.g. 'كنيسة العذراء' vs 'العذراء')
+    // 2. Flexible ILIKE query
+    const { data: ilikeData, error: ilikeError } = await supabase
+      .from('bishopric_exam_codes')
+      .select('*')
+      .ilike('church_name', `%${cleanChurchName}%`);
+
+    if (!ilikeError && ilikeData && ilikeData.length > 0) {
+      return ilikeData;
+    }
+
+    // 3. Try with/without 'كنيسة' prefix
+    const coreName = cleanChurchName.replace(/^كنيسة\s*/, '').trim();
+    if (coreName && coreName !== cleanChurchName) {
+      const { data: coreData, error: coreError } = await supabase
+        .from('bishopric_exam_codes')
+        .select('*')
+        .ilike('church_name', `%${coreName}%`);
+
+      if (!coreError && coreData && coreData.length > 0) {
+        return coreData;
+      }
+    }
+
+    // 4. Fallback normalization in case of advanced Arabic normalization differences
     const { data: allData, error: allErr } = await supabase
       .from('bishopric_exam_codes')
       .select('*');
 
     if (!allErr && allData && allData.length > 0) {
-      return allData.filter(r => isChurchMatch(r.church_name, currentChurchName));
+      const matched = allData.filter(r => isChurchMatch(r.church_name, cleanChurchName));
+      if (matched.length > 0) return matched;
     }
 
-    return data || [];
+    return [];
   } catch (err) {
     console.warn('Fetch church bishopric records error:', err);
     return [];

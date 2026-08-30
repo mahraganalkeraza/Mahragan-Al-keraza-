@@ -31,6 +31,7 @@ import {
 } from '../utils/bishopricExamStorage';
 import PaginationComponent from './Pagination';
 import { AdminBishopricQuestionsManager } from './AdminBishopricQuestionsManager';
+import { BishopricChurchCodesExporter } from './BishopricChurchCodesExporter';
 
 export const AdminBishopricExamCodesManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'codes' | 'questions'>('codes');
@@ -459,6 +460,9 @@ export const AdminBishopricExamCodesManager: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Dedicated Church Codes Exporter (Excel / CSV / PDF) */}
+      <BishopricChurchCodesExporter churchList={uniqueChurches} />
 
       {/* Preview Table Section */}
       <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm space-y-4">
