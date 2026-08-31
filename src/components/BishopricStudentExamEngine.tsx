@@ -22,15 +22,20 @@ import {
   QrCode,
   X,
   Printer,
-  RefreshCw
+  RefreshCw,
+  Star,
+  Trophy
 } from 'lucide-react';
 import { 
   BishopricExamRecord, 
   BishopricExamQuestion, 
   BishopricExamResult,
+  verifyBishopricCodeWithCache,
   verifyBishopricStudentCode,
   fetchBishopricQuestions,
-  submitBishopricExamResult
+  handleSubmitBishopricExam,
+  submitBishopricExamResult,
+  updateLocalCacheCodeStatus
 } from '../utils/bishopricExamStorage';
 import { useNotificationBubble } from '../context/NotificationContext';
 
@@ -51,17 +56,34 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   const [step, setStep] = useState<'login' | 'preview' | 'exam' | 'submitted'>('login');
   
   // Auth state
-  const [examCodeInput, setExamCodeInput] = useState(initialExamCode);
+  const [examCodeInput, setExamCodeInput] = useState(() => {
+    if (initialExamCode && initialExamCode.trim()) return initialExamCode.trim();
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const codeParam = params.get('code') || params.get('exam_code');
+      if (codeParam) return codeParam.trim();
+      if (window.location.hash.includes('code=')) {
+        const hashQuery = window.location.hash.split('?')[1] || '';
+        const hashParams = new URLSearchParams(hashQuery);
+        const hashC = hashParams.get('code') || hashParams.get('exam_code');
+        if (hashC) return hashC.trim();
+      }
+    }
+    return '';
+  });
   const [isVerifying, setIsVerifying] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [student, setStudent] = useState<BishopricExamRecord | null>(null);
   const [previousResult, setPreviousResult] = useState<BishopricExamResult | null>(null);
 
-  // Exam state
-  const [questions, setQuestions] = useState<BishopricExamQuestion[]>([]);
+  // Raw Questions loaded from database
+  const [rawQuestions, setRawQuestions] = useState<BishopricExamQuestion[]>([]);
   const [isLoadingQuestions, setIsLoadingQuestions] = useState(false);
+  
+  // Dynamic Exam state
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<Record<number, string>>({});
+  const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
+  const [unlockedExcellenceCategories, setUnlockedExcellenceCategories] = useState<string[]>([]);
   const [timeLeft, setTimeLeft] = useState<number>(30 * 60); // 30 minutes in seconds
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -69,6 +91,35 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [finalResult, setFinalResult] = useState<BishopricExamResult | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // Separation of Standard vs Excellence questions
+  const { standardQuestions, excellenceQuestions } = useMemo(() => {
+    const std: BishopricExamQuestion[] = [];
+    const exc: BishopricExamQuestion[] = [];
+    rawQuestions.forEach((q) => {
+      if (q.is_excellence) {
+        exc.push(q);
+      } else {
+        std.push(q);
+      }
+    });
+    return { standardQuestions: std, excellenceQuestions: exc };
+  }, [rawQuestions]);
+
+  // Active Questions List (Standard + Unlocked Excellence Questions)
+  const activeQuestions = useMemo(() => {
+    const active: (BishopricExamQuestion & { originalCategory?: string; isExcellenceItem?: boolean })[] = [
+      ...standardQuestions.map(q => ({ ...q, isExcellenceItem: false }))
+    ];
+
+    excellenceQuestions.forEach(eq => {
+      if (unlockedExcellenceCategories.includes(eq.subject_name)) {
+        active.push({ ...eq, isExcellenceItem: true });
+      }
+    });
+
+    return active;
+  }, [standardQuestions, excellenceQuestions, unlockedExcellenceCategories]);
 
   // Read initial code from prop or URL query parameter
   useEffect(() => {
@@ -93,7 +144,70 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     }
   }, [initialExamCode]);
 
-  // Session Auto-Recovery: Save selected answers to localStorage during exam
+  // Dynamic Excellence Unlocking Evaluation on each answer update
+  useEffect(() => {
+    if (step !== 'exam' || standardQuestions.length === 0 || excellenceQuestions.length === 0) {
+      return;
+    }
+
+    // Group standard questions by subject_name / category
+    const categoryStandardMap: Record<string, BishopricExamQuestion[]> = {};
+    standardQuestions.forEach(q => {
+      const cat = q.subject_name || 'عام';
+      if (!categoryStandardMap[cat]) categoryStandardMap[cat] = [];
+      categoryStandardMap[cat].push(q);
+    });
+
+    const newlyUnlocked: string[] = [];
+
+    // Check each category that has an excellence question configured
+    excellenceQuestions.forEach(eq => {
+      const cat = eq.subject_name || 'عام';
+      const catQuestions = categoryStandardMap[cat] || [];
+
+      if (catQuestions.length > 0) {
+        let earnedPoints = 0;
+        let totalPoints = 0;
+        let allAnswered = true;
+
+        catQuestions.forEach(q => {
+          const qScore = Number(q.score) || 1;
+          totalPoints += qScore;
+          const qKey = q.id || `q_${q.question_text}`;
+          const ans = selectedAnswers[qKey];
+          if (!ans) {
+            allAnswered = false;
+          } else if (ans.trim() === q.correct_answer.trim()) {
+            earnedPoints += qScore;
+          }
+        });
+
+        // IF standard_score === max_score for this category -> UNLOCK!
+        if (allAnswered && totalPoints > 0 && earnedPoints === totalPoints) {
+          newlyUnlocked.push(cat);
+        }
+      }
+    });
+
+    // Check if any new category just unlocked
+    newlyUnlocked.forEach(cat => {
+      if (!unlockedExcellenceCategories.includes(cat)) {
+        showBubble({
+          type: 'success',
+          title: '🌟 سؤال التميز مفتوح!',
+          message: `أحسنت يا ${student?.student_name || 'بطل'}! نظرًا لحصولك على الدرجة النهائية، تم فتح سؤال التميز الخاص بمسابقة (${cat}).`
+        });
+      }
+    });
+
+    setUnlockedExcellenceCategories(prev => {
+      // Keep existing unlocked if they satisfied or preserve them
+      const combined = Array.from(new Set([...prev, ...newlyUnlocked]));
+      return combined;
+    });
+  }, [selectedAnswers, step, standardQuestions, excellenceQuestions]);
+
+  // Session Auto-Recovery: Save progress to localStorage during exam
   useEffect(() => {
     if (step === 'exam' && student?.exam_code) {
       const progressKey = `bishopric_exam_progress_${student.exam_code.trim()}`;
@@ -103,6 +217,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           JSON.stringify({
             answers: selectedAnswers,
             currentQuestionIdx,
+            unlockedCategories: unlockedExcellenceCategories,
             timestamp: Date.now()
           })
         );
@@ -110,7 +225,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
         console.warn('Error saving progress to localStorage:', e);
       }
     }
-  }, [step, selectedAnswers, currentQuestionIdx, student?.exam_code]);
+  }, [step, selectedAnswers, currentQuestionIdx, unlockedExcellenceCategories, student?.exam_code]);
 
   // Timer effect
   useEffect(() => {
@@ -130,7 +245,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     return () => clearInterval(interval);
   }, [isTimerRunning, step, timeLeft]);
 
-  // Handle Verify Exam Code
+  // Handle Verify Exam Code with Smart Church Caching & Quota Protection
   const handleVerifyCode = async (codeToVerify?: string) => {
     const code = (codeToVerify || examCodeInput).trim();
     if (!code) {
@@ -146,13 +261,13 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     setIsVerifying(true);
     setAuthError(null);
     try {
-      const res = await verifyBishopricStudentCode(code);
+      const res = await verifyBishopricCodeWithCache(code);
       if (!res.success || !res.student) {
-        const errorMsg = res.error || 'الكود غير صحيح أو غير مسجل بالنظام.';
+        const errorMsg = res.error || 'الكود غير صحيح أو لا ينتمي للمراحل المتاحة.';
         setAuthError(errorMsg);
         showBubble({
           type: 'error',
-          title: 'خطأ في الكود',
+          title: res.isUsed ? 'كود مستخدم' : 'خطأ',
           message: errorMsg
         });
         return;
@@ -162,11 +277,11 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
       // Duplicate Exam Prevention: If a result record exists for exam_code with status == 'completed', block entry
       if (res.alreadySubmitted && (res.alreadySubmitted.status === 'completed' || res.alreadySubmitted.percentage !== undefined)) {
-        const alreadySubmittedMsg = 'عفواً، تم استخدام هذا الكود في الامتحان مسبقاً.';
+        const alreadySubmittedMsg = 'عفواً، تم استخدام هذا الكود في الامتحان من قبل.';
         setAuthError(alreadySubmittedMsg);
         showBubble({
           type: 'error',
-          title: 'كود مستخدم مسبقاً',
+          title: 'كود مستخدم',
           message: alreadySubmittedMsg
         });
         setStep('login');
@@ -199,7 +314,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     setIsLoadingQuestions(true);
     try {
       const qList = await fetchBishopricQuestions(studentData.stage);
-      setQuestions(qList);
+      setRawQuestions(qList);
       setStep('preview');
     } catch (err) {
       console.error('Error fetching questions for student:', err);
@@ -217,7 +332,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
   // Start Exam
   const handleStartExam = () => {
-    if (questions.length === 0) {
+    if (standardQuestions.length === 0 && rawQuestions.length === 0) {
       showBubble({
         type: 'warning',
         title: 'تنبيه',
@@ -226,8 +341,9 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       return;
     }
 
-    let restoredAnswers: Record<number, string> = {};
+    let restoredAnswers: Record<string, string> = {};
     let restoredIdx = 0;
+    let restoredUnlocked: string[] = [];
 
     if (student?.exam_code) {
       const progressKey = `bishopric_exam_progress_${student.exam_code.trim()}`;
@@ -237,6 +353,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           const parsed = JSON.parse(saved);
           if (parsed.answers) restoredAnswers = parsed.answers;
           if (typeof parsed.currentQuestionIdx === 'number') restoredIdx = parsed.currentQuestionIdx;
+          if (Array.isArray(parsed.unlockedCategories)) restoredUnlocked = parsed.unlockedCategories;
         }
       } catch (e) {
         console.warn('Error reading progress:', e);
@@ -245,7 +362,8 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
     setCurrentQuestionIdx(restoredIdx);
     setSelectedAnswers(restoredAnswers);
-    setTimeLeft(Math.max(questions.length * 3 * 60, 15 * 60)); // 3 mins per question
+    setUnlockedExcellenceCategories(restoredUnlocked);
+    setTimeLeft(Math.max((standardQuestions.length || rawQuestions.length) * 3 * 60, 15 * 60)); // 3 mins per question
     setIsTimerRunning(true);
     setStep('exam');
     showBubble({
@@ -255,10 +373,14 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     });
   };
 
+  const currentQ = activeQuestions[currentQuestionIdx] || activeQuestions[0];
+
   const handleSelectOption = (option: string) => {
+    if (!currentQ) return;
+    const qKey = currentQ.id || `q_${currentQ.question_text}`;
     setSelectedAnswers(prev => ({
       ...prev,
-      [currentQuestionIdx]: option
+      [qKey]: option
     }));
   };
 
@@ -271,7 +393,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     executeSubmission();
   };
 
-  // Calculate scores & submit (Strict server confirmed save)
+  // Calculate scores & submit (Strict server confirmed save with custom loader)
   const executeSubmission = async () => {
     if (!student || isSubmitting) return; // منع التكرار والضغط المتوازي
 
@@ -281,19 +403,44 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     setIsTimerRunning(false);
     setShowConfirmModal(false);
 
-    let calculatedTotalScore = 0;
-    let calculatedMaxScore = 0;
-    questions.forEach((q, idx) => {
+    // 1. Calculate Standard Score
+    let standardScore = 0;
+    let standardMaxScore = 0;
+    standardQuestions.forEach((q) => {
       const qScore = Number(q.score) || 1;
-      calculatedMaxScore += qScore;
-      const studentAns = selectedAnswers[idx];
+      standardMaxScore += qScore;
+      const qKey = q.id || `q_${q.question_text}`;
+      const studentAns = selectedAnswers[qKey];
       if (studentAns && studentAns.trim() === q.correct_answer.trim()) {
-        calculatedTotalScore += qScore;
+        standardScore += qScore;
       }
     });
 
-    const percentage = calculatedMaxScore > 0 
-      ? Number(((calculatedTotalScore / calculatedMaxScore) * 100).toFixed(1)) 
+    // 2. Calculate Excellence Bonus Points
+    let earnedExcellencePoints = 0;
+    let maxExcellencePoints = 0;
+    const excellenceAnswersMap: Record<string, any> = {};
+
+    excellenceQuestions.forEach((eq) => {
+      if (unlockedExcellenceCategories.includes(eq.subject_name)) {
+        const eqScore = Number(eq.score) || 1;
+        maxExcellencePoints += eqScore;
+        const qKey = eq.id || `q_${eq.question_text}`;
+        const studentAns = selectedAnswers[qKey];
+        excellenceAnswersMap[eq.subject_name] = {
+          question: eq.question_text,
+          answer: studentAns || '',
+          is_correct: studentAns && studentAns.trim() === eq.correct_answer.trim(),
+          score: eqScore
+        };
+        if (studentAns && studentAns.trim() === eq.correct_answer.trim()) {
+          earnedExcellencePoints += eqScore;
+        }
+      }
+    });
+
+    const percentage = standardMaxScore > 0 
+      ? Number(((standardScore / standardMaxScore) * 100).toFixed(1)) 
       : 0;
 
     const resultPayload: BishopricExamResult = {
@@ -302,10 +449,15 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       student_name: student.student_name,
       church_name: student.church_name,
       stage: student.stage,
-      subject_name: questions[0]?.subject_name || 'امتحان الأسقفية',
-      total_score: calculatedTotalScore,
-      max_score: calculatedMaxScore,
+      subject_name: rawQuestions[0]?.subject_name || 'امتحان الأسقفية',
+      total_score: standardScore,
+      max_score: standardMaxScore,
       percentage: percentage,
+      excellence_points: earnedExcellencePoints,
+      max_excellence_points: maxExcellencePoints,
+      excellence_unlocked: unlockedExcellenceCategories.length > 0,
+      excellence_categories: unlockedExcellenceCategories,
+      excellence_answers: excellenceAnswersMap,
       answers: selectedAnswers,
       status: 'completed',
       submitted_at: new Date().toISOString(),
@@ -313,54 +465,50 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     };
 
     try {
-      // Strict handshake with up to 3 automatic retries
-      const res = await submitBishopricExamResult(resultPayload, 3, (attempt) => {
-        setSubmissionAttemptNumber(attempt);
-        if (attempt > 1) {
-          showBubble({
-            type: 'warning',
-            title: 'إعادة محاولة الحفظ',
-            message: `جاري إعادة محاولة تأكيد الحفظ على السيرفر (المحاولة ${attempt} من 3)...`
-          });
+      // Execute 2-step atomic submission with dynamic score separation and separate excellence_points
+      const res = await handleSubmitBishopricExam(
+        student.exam_code,
+        selectedAnswers,
+        activeQuestions,
+        setIsSubmitting,
+        showBubble,
+        () => {},
+        {
+          student_name: student.student_name,
+          church_name: student.church_name,
+          stage: student.stage,
+          subject_name: rawQuestions[0]?.subject_name || 'امتحان الأسقفية',
+          max_score: standardMaxScore,
+          max_excellence_points: maxExcellencePoints,
+          excellence_unlocked: unlockedExcellenceCategories.length > 0,
+          excellence_categories: unlockedExcellenceCategories,
+          excellence_answers: excellenceAnswersMap
         }
-      });
+      );
 
       if (res.success && res.data) {
         // Clear local progress cache strictly AFTER verified DB insert confirmation
         try {
           localStorage.removeItem(`bishopric_exam_progress_${student.exam_code.trim()}`);
         } catch (e) {}
+        
+        setIsSubmitting(false);
         setFinalResult(res.data);
         setStep('submitted');
-        showBubble({
-          type: 'success',
-          title: 'تأكيد الحفظ',
-          message: 'تم حفظ إجابتك بنجاح وتسجيل النتيجة في السيرفر! 🎉'
-        });
         if (onComplete) {
           onComplete(res.data);
         }
       } else {
-        // Strict constraint: Do NOT clear localStorage or show completion screen on failure
-        const failMsg = res.error || 'لم يتم تأكيد حفظ الإجابة على السيرفر! إجاباتك محفوظة على الجهاز، يرجى إعادة محاولة الإرسال.';
+        // Retain answers locally on failure, do NOT mark code as used, hide loader, show retry option
+        setIsSubmitting(false);
+        const failMsg = res.error || 'تعذر تأكيد الحفظ ، يرجى إعادة المحاولة';
         setSubmitError(failMsg);
-        showBubble({
-          type: 'error',
-          title: 'فشل الحفظ',
-          message: failMsg
-        });
       }
     } catch (err: any) {
       console.error('Submission error:', err);
-      const errTxt = 'لم يتم تأكيد حفظ الإجابة على السيرفر! إجاباتك محفوظة على الجهاز، يرجى إعادة محاولة الإرسال.';
-      setSubmitError(errTxt);
-      showBubble({
-        type: 'error',
-        title: 'فشل في الاتصال',
-        message: errTxt
-      });
-    } finally {
       setIsSubmitting(false);
+      const errTxt = 'تعذر تأكيد الحفظ ، يرجى إعادة المحاولة';
+      setSubmitError(errTxt);
     }
   };
 
@@ -371,9 +519,12 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     return `${mins.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const currentQ = questions[currentQuestionIdx];
-  const answeredCount = Object.keys(selectedAnswers).length;
-  const progressPercent = questions.length > 0 ? (answeredCount / questions.length) * 100 : 0;
+  const answeredCount = activeQuestions.filter(q => {
+    const qKey = q.id || `q_${q.question_text}`;
+    return selectedAnswers[qKey] !== undefined;
+  }).length;
+  
+  const progressPercent = activeQuestions.length > 0 ? (answeredCount / activeQuestions.length) * 100 : 0;
 
   // Grade descriptor helper
   const getGradeInfo = (pct: number) => {
@@ -490,20 +641,23 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           {/* Exam Specs Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-center">
-              <span className="text-[11px] text-slate-400 font-bold block mb-1">عدد الأسئلة</span>
-              <span className="text-xl font-black text-slate-900">{questions.length} سؤال</span>
+              <span className="text-[11px] text-slate-400 font-bold block mb-1">عدد الأسئلة الأساسية</span>
+              <span className="text-xl font-black text-slate-900">{standardQuestions.length} سؤال</span>
             </div>
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-center">
               <span className="text-[11px] text-slate-400 font-bold block mb-1">الوقت المخصص</span>
-              <span className="text-xl font-black text-slate-900">{Math.max(questions.length * 3, 15)} دقيقة</span>
+              <span className="text-xl font-black text-slate-900">{Math.max(standardQuestions.length * 3, 15)} دقيقة</span>
             </div>
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-center">
-              <span className="text-[11px] text-slate-400 font-bold block mb-1">المادة</span>
-              <span className="text-xl font-black text-slate-900">{questions[0]?.subject_name || 'عام'}</span>
+              <span className="text-[11px] text-slate-400 font-bold block mb-1">أسئلة التميز الإضافية</span>
+              <span className="text-xl font-black text-amber-600 flex items-center justify-center gap-1">
+                <Sparkles size={16} />
+                <span>{excellenceQuestions.length} سؤال</span>
+              </span>
             </div>
           </div>
 
-          {/* Instructions */}
+          {/* Instructions with Excellence Feature Highlight */}
           <div className="p-5 bg-indigo-50/70 border border-indigo-100 rounded-2xl space-y-2 text-xs font-bold text-indigo-950 leading-relaxed">
             <h4 className="font-black text-indigo-900 flex items-center gap-1.5 text-sm">
               <ShieldCheck size={16} className="text-indigo-600" />
@@ -512,11 +666,14 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
             <ul className="list-disc list-inside space-y-1.5 text-indigo-900/80 pr-2">
               <li>يحتوي الامتحان على أسئلة اختيار من متعدد خاصة بمرحلة ({student.stage}).</li>
               <li>يمكنك التنقل بين الأسئلة بحرية وتعديل إجاباتك قبل الضغط على زر "تسليم نهائي".</li>
+              <li className="text-amber-900 font-black">
+                🌟 نظام أسئلة التميز (Tie-Breaker): في حال حصولك على الدرجة النهائية في أي مسابقة، سيفتح لك تلقائياً سؤال تميز إضافي لتحديد المراكز الأولى والتفوق!
+              </li>
               <li>بمجرد الضغط على "تسليم نهائي"، سيتم تصحيح إجاباتك وحفظ النتيجة في قاعدة البيانات فورياً.</li>
             </ul>
           </div>
 
-          {questions.length === 0 ? (
+          {standardQuestions.length === 0 && rawQuestions.length === 0 ? (
             <div className="p-6 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-center space-y-2">
               <AlertCircle className="mx-auto text-amber-600" size={32} />
               <p className="text-sm font-black">لم يتم إضافة أسئلة بعد لمرحلة ({student.stage})</p>
@@ -550,12 +707,21 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           {/* Top Bar: Progress & Timer */}
           <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <span className="w-10 h-10 bg-indigo-50 text-indigo-700 rounded-xl flex items-center justify-center font-black text-sm">
-                {currentQuestionIdx + 1}/{questions.length}
+              <span className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm ${
+                currentQ.is_excellence
+                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                  : 'bg-indigo-50 text-indigo-700'
+              }`}>
+                {currentQuestionIdx + 1}/{activeQuestions.length}
               </span>
               <div>
-                <div className="text-xs font-black text-slate-900">
-                  السؤال {currentQuestionIdx + 1} من {questions.length}
+                <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                  <span>السؤال {currentQuestionIdx + 1} من {activeQuestions.length}</span>
+                  {currentQ.is_excellence && (
+                    <span className="px-2 py-0.5 bg-amber-500 text-white text-[10px] rounded-full flex items-center gap-0.5">
+                      <Sparkles size={10} /> سؤال تميز
+                    </span>
+                  )}
                 </div>
                 <div className="text-[11px] font-bold text-slate-400">
                   تمت الإجابة على: {answeredCount} سؤال
@@ -577,45 +743,92 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           {/* Progress Bar */}
           <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
             <div 
-              className="bg-indigo-600 h-full transition-all duration-300"
+              className={`h-full transition-all duration-300 ${
+                currentQ.is_excellence ? 'bg-amber-500' : 'bg-indigo-600'
+              }`}
               style={{ width: `${progressPercent}%` }}
             />
           </div>
 
-          {/* Question Card */}
-          <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-lg space-y-6">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
-              <div className="space-y-1">
-                <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-black">
-                  {currentQ.subject_name}
+          {/* Excellence Unlocked Notification Banner (if any category unlocked) */}
+          {unlockedExcellenceCategories.length > 0 && (
+            <div className="p-4 bg-gradient-to-r from-amber-500/10 via-amber-50 to-yellow-50 border border-amber-300 rounded-2xl flex items-center justify-between gap-3 text-xs font-black text-amber-900 animate-pulse">
+              <div className="flex items-center gap-2">
+                <Trophy size={18} className="text-amber-600 shrink-0" />
+                <span>
+                  🌟 تهانينا! لقد حصلت على الدرجة النهائية وتم فتح سؤال التميز الخاص بمسابقة: ({unlockedExcellenceCategories.join('، ')})
                 </span>
+              </div>
+              <span className="px-2.5 py-1 bg-amber-600 text-white rounded-lg text-[10px] shrink-0">
+                مفتوح الآن في الأسئلة
+              </span>
+            </div>
+          )}
+
+          {/* Question Card */}
+          <div className={`p-6 md:p-8 rounded-3xl border shadow-lg space-y-6 transition-all ${
+            currentQ.is_excellence
+              ? 'bg-gradient-to-br from-amber-50/70 via-white to-amber-50/30 border-amber-300 ring-2 ring-amber-300/50'
+              : 'bg-white border-slate-200'
+          }`}>
+            <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className={`px-3 py-1 rounded-lg text-xs font-black ${
+                    currentQ.is_excellence ? 'bg-amber-600 text-white shadow-sm' : 'bg-indigo-50 text-indigo-700'
+                  }`}>
+                    {currentQ.subject_name}
+                  </span>
+
+                  {currentQ.is_excellence && (
+                    <span className="px-3 py-1 bg-gradient-to-r from-amber-500 to-yellow-600 text-white rounded-lg text-xs font-black flex items-center gap-1 shadow-sm">
+                      <Sparkles size={12} /> سؤال التميز لتحديد المركز الأول
+                    </span>
+                  )}
+                </div>
+
                 <h3 className="text-base md:text-xl font-black text-slate-900 leading-relaxed pt-2">
                   {currentQ.question_text}
                 </h3>
+
+                {currentQ.is_excellence && (
+                  <p className="text-xs font-bold text-amber-800 flex items-center gap-1 mt-1">
+                    <Star size={14} className="text-amber-600 fill-amber-500" />
+                    <span>سؤال إضافي لتفوقك وحصولك على الدرجة النهائية في مسابقة ({currentQ.subject_name}).</span>
+                  </p>
+                )}
               </div>
-              <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-black shrink-0">
-                {currentQ.score} {currentQ.score > 2 && currentQ.score < 11 ? 'درجات' : 'درجة'}
+              
+              <span className={`px-3 py-1 rounded-xl text-xs font-black shrink-0 border ${
+                currentQ.is_excellence
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              }`}>
+                {currentQ.score} {currentQ.score > 2 && currentQ.score < 11 ? (currentQ.is_excellence ? 'نقاط تميز' : 'درجات') : (currentQ.is_excellence ? 'نقطة تميز' : 'درجة')}
               </span>
             </div>
 
             {/* Options List */}
             <div className="space-y-3">
               {currentQ.options.map((opt, optIdx) => {
-                const isSelected = selectedAnswers[currentQuestionIdx] === opt;
+                const qKey = currentQ.id || `q_${currentQ.question_text}`;
+                const isSelected = selectedAnswers[qKey] === opt;
                 return (
                   <button
                     key={optIdx}
                     onClick={() => handleSelectOption(opt)}
                     className={`w-full p-4 rounded-2xl border text-right transition-all flex items-center justify-between gap-3 cursor-pointer ${
                       isSelected
-                        ? 'bg-indigo-50/90 border-indigo-600 text-indigo-950 font-black ring-2 ring-indigo-500/30 shadow-md'
+                        ? currentQ.is_excellence
+                          ? 'bg-amber-100/90 border-amber-600 text-amber-950 font-black ring-2 ring-amber-500/40 shadow-md'
+                          : 'bg-indigo-50/90 border-indigo-600 text-indigo-950 font-black ring-2 ring-indigo-500/30 shadow-md'
                         : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800 font-bold'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <span className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black transition-all ${
                         isSelected 
-                          ? 'bg-indigo-600 text-white' 
+                          ? currentQ.is_excellence ? 'bg-amber-600 text-white' : 'bg-indigo-600 text-white'
                           : 'bg-white border border-slate-300 text-slate-600'
                       }`}>
                         {String.fromCharCode(65 + optIdx)}
@@ -624,7 +837,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                     </div>
 
                     {isSelected && (
-                      <CheckCircle2 size={20} className="text-indigo-600 shrink-0" />
+                      <CheckCircle2 size={20} className={currentQ.is_excellence ? 'text-amber-600 shrink-0' : 'text-indigo-600 shrink-0'} />
                     )}
                   </button>
                 );
@@ -642,10 +855,14 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                 <span>السابق</span>
               </button>
 
-              {currentQuestionIdx < questions.length - 1 ? (
+              {currentQuestionIdx < activeQuestions.length - 1 ? (
                 <button
-                  onClick={() => setCurrentQuestionIdx(prev => Math.min(questions.length - 1, prev + 1))}
-                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs md:text-sm font-black transition-all flex items-center gap-1.5 shadow-md shadow-indigo-600/20 cursor-pointer"
+                  onClick={() => setCurrentQuestionIdx(prev => Math.min(activeQuestions.length - 1, prev + 1))}
+                  className={`px-6 py-3 text-white rounded-2xl text-xs md:text-sm font-black transition-all flex items-center gap-1.5 shadow-md cursor-pointer ${
+                    currentQ.is_excellence
+                      ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                      : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
+                  }`}
                 >
                   <span>التالي</span>
                   <ChevronLeft size={18} />
@@ -665,31 +882,52 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           {/* Quick Jump Palette */}
           <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-black text-slate-700">لوحة التنقل السريع بين الأسئلة:</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black text-slate-700">لوحة التنقل السريع بين الأسئلة:</span>
+                {unlockedExcellenceCategories.length > 0 && (
+                  <span className="text-[11px] font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 flex items-center gap-1">
+                    <Sparkles size={12} /> تتضمن أسئلة تميز مفتوحة
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => setShowConfirmModal(true)}
-                className="text-xs font-black text-indigo-600 hover:text-indigo-800"
+                className="text-xs font-black text-indigo-600 hover:text-indigo-800 cursor-pointer"
               >
                 إنهاء وتسليم الآن
               </button>
             </div>
             <div className="flex flex-wrap gap-2">
-              {questions.map((_, idx) => {
-                const isAnswered = selectedAnswers[idx] !== undefined;
+              {activeQuestions.map((q, idx) => {
+                const qKey = q.id || `q_${q.question_text}`;
+                const isAnswered = selectedAnswers[qKey] !== undefined;
                 const isCurrent = idx === currentQuestionIdx;
+                const isExc = Boolean(q.is_excellence);
+
                 return (
                   <button
                     key={idx}
                     onClick={() => setCurrentQuestionIdx(idx)}
-                    className={`w-9 h-9 rounded-xl font-black text-xs transition-all cursor-pointer ${
+                    className={`w-9 h-9 rounded-xl font-black text-xs transition-all cursor-pointer relative ${
                       isCurrent
-                        ? 'ring-2 ring-indigo-600 bg-indigo-600 text-white shadow-md'
+                        ? isExc 
+                          ? 'ring-2 ring-amber-600 bg-amber-600 text-white shadow-md'
+                          : 'ring-2 ring-indigo-600 bg-indigo-600 text-white shadow-md'
                         : isAnswered
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        ? isExc
+                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : isExc
+                        ? 'bg-amber-50 text-amber-800 border border-dashed border-amber-300'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
                     {idx + 1}
+                    {isExc && (
+                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full flex items-center justify-center text-[8px] text-white">
+                        ★
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -711,10 +949,15 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                 تأكيد تسليم الامتحان الإلكتروني
               </h3>
               <p className="text-xs text-slate-500 font-bold leading-relaxed">
-                لقد أجبت على <strong className="text-indigo-600">{answeredCount}</strong> من أصل <strong className="text-slate-800">{questions.length}</strong> سؤال.
-                {answeredCount < questions.length && (
+                لقد أجبت على <strong className="text-indigo-600">{answeredCount}</strong> من أصل <strong className="text-slate-800">{activeQuestions.length}</strong> سؤال.
+                {answeredCount < activeQuestions.length && (
                   <span className="block mt-1 text-rose-600 font-black">
-                    ⚠️ تنبيه: توجد {questions.length - answeredCount} أسئلة لم يتم الإجابة عليها بعد!
+                    ⚠️ تنبيه: توجد {activeQuestions.length - answeredCount} أسئلة لم يتم الإجابة عليها بعد!
+                  </span>
+                )}
+                {unlockedExcellenceCategories.length > 0 && (
+                  <span className="block mt-2 p-2 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs font-black">
+                    🌟 لقد تم فتح سؤال التميز لمسابقة ({unlockedExcellenceCategories.join('، ')}) وتأكيد إجابته سيمنحك نقاط تفوق إضافية!
                   </span>
                 )}
               </p>
@@ -754,12 +997,12 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
             <div className="space-y-2">
               <h3 className="text-base md:text-lg font-black text-slate-900 leading-snug">
-                جاري حفظ نتائج الامتحان والتأكد من السيرفر... برجاء عدم إغلاق الصفحة
+                جاري تأكيد حفظ الإجابات...
               </h3>
               <p className="text-xs font-bold text-slate-500">
                 {submissionAttemptNumber > 1 
                   ? `إعادة محاولة التأكيد من السيرفر (محاولة ${submissionAttemptNumber} من 3)...`
-                  : 'جاري إرسال الإجابات والتحقق المباشر من استجابة السيرفر...'}
+                  : 'يتم الآن التحقق من وصول وحفظ إجاباتك ونقاط التميز بشكل آمن ومؤكد في السيرفر المركزي...'}
               </p>
             </div>
 
@@ -824,6 +1067,19 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
             </p>
           </div>
 
+          {/* Excellence Bonus Medal Banner if earned */}
+          {Number(finalResult.excellence_points) > 0 && (
+            <div className="p-4 bg-gradient-to-r from-amber-500/20 via-amber-100 to-yellow-100 border-2 border-amber-400 rounded-3xl text-center space-y-1 max-w-sm mx-auto shadow-sm">
+              <div className="flex items-center justify-center gap-1.5 text-amber-900 font-black text-sm">
+                <Trophy size={18} className="text-amber-600 animate-pulse" />
+                <span>وسام التميز والتفوق لحسم المراكز الأولى</span>
+              </div>
+              <p className="text-xs font-bold text-amber-800">
+                أحسنت صنعاً! حصلت على <strong className="text-amber-950 font-black text-sm">+{finalResult.excellence_points}</strong> نقاط إضافية في سؤال التميز 🌟
+              </p>
+            </div>
+          )}
+
           {/* Grade Badge */}
           {(() => {
             const grade = getGradeInfo(Number(finalResult.percentage) || 0);
@@ -833,7 +1089,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                 <span className="text-2xl font-black block">{grade.title}</span>
                 <div className="flex items-center justify-center gap-6 pt-3 border-t border-current/20">
                   <div>
-                    <span className="text-[10px] font-bold block opacity-70">الدرجة الكلية</span>
+                    <span className="text-[10px] font-bold block opacity-70">الدرجة الأساسية</span>
                     <span className="text-xl font-black">{finalResult.total_score} / {finalResult.max_score}</span>
                   </div>
                   <div>
@@ -850,6 +1106,12 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
             <div className="flex justify-between">
               <span>كود الامتحان:</span>
               <code className="font-mono text-indigo-700 font-black">{finalResult.exam_code}</code>
+            </div>
+            <div className="flex justify-between">
+              <span>نقاط التميز الإضافية:</span>
+              <span className="text-amber-700 font-black">
+                {finalResult.excellence_points ? `+${finalResult.excellence_points} نقطة` : 'لا توجد'}
+              </span>
             </div>
             <div className="flex justify-between">
               <span>وقت وتاريخ التسليم:</span>

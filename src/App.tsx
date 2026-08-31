@@ -89,6 +89,7 @@ import AdminInquiriesViewer from './components/AdminInquiriesViewer';
 import { ChurchQualificationFeesCard } from './components/ChurchQualificationFeesCard';
 import { ChurchOnlineExamsView } from './components/ChurchOnlineExamsView';
 import { BishopricStudentExamEngine } from './components/BishopricStudentExamEngine';
+import { PublicBishopricExamPortal } from './components/PublicBishopricExamPortal';
 import { AdminQualificationFeesViewer } from './components/AdminQualificationFeesViewer';
 import { AdminBishopricQuestionsManager } from './components/AdminBishopricQuestionsManager';
 import { QualificationGapAnalysisChart } from './components/QualificationGapAnalysisChart';
@@ -633,30 +634,152 @@ function AppComponent() {
 
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
-  const [churchName, setChurchName] = useState(initialProfile?.churchName || '');
+  const [churchName, setChurchName] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlChurch = params.get('church');
+      if (urlChurch) return decodeURIComponent(urlChurch);
+      if (window.location.hash.includes('church=')) {
+        const hashQuery = window.location.hash.split('?')[1] || '';
+        const hashParams = new URLSearchParams(hashQuery);
+        const hashChurch = hashParams.get('church');
+        if (hashChurch) return decodeURIComponent(hashChurch);
+      }
+    }
+    return initialProfile?.churchName || '';
+  });
   const [location, setLocation] = useState(initialProfile?.country || '');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isPortalOpen, setIsPortalOpen] = useState(false);
   const [activeSection, setActiveSection] = useState(() => {
     if (typeof window !== 'undefined') {
+      const search = window.location.search || '';
+      const hash = window.location.hash || '';
+      const path = window.location.pathname || '';
+      const params = new URLSearchParams(search);
+      const viewParam = params.get('view');
+      const tabParam = params.get('tab');
+
+      // 1. Direct Student Bishopric Exam View (e.g., ?view=bishopric-exam or ?tab=bishopric-online)
       if (
-        window.location.pathname === '/exam-login' || 
-        window.location.search.includes('gateway_token=') ||
-        window.location.hash.includes('gateway_token=') ||
-        window.location.hash.includes('/exam-login')
+        viewParam === 'bishopric-exam' ||
+        viewParam === 'bishopric_exam' ||
+        tabParam === 'bishopric-online' ||
+        tabParam === 'bishopric_online' ||
+        path === '/bishopric-portal' ||
+        path === '/exam-entry' ||
+        path === '/bishopric-exams-portal' ||
+        path === '/bishopric-exam' ||
+        hash.includes('view=bishopric-exam') ||
+        hash.includes('tab=bishopric-online') ||
+        hash.includes('bishopric-portal') ||
+        hash.includes('exam-entry') ||
+        hash.includes('bishopric-exam') ||
+        hash.includes('bishopric-exams-portal') ||
+        search.includes('view=bishopric-exam') ||
+        search.includes('tab=bishopric-online') ||
+        search.includes('bishopric-portal') ||
+        search.includes('section=bishopric-portal') ||
+        search.includes('section=bishopric-exam') ||
+        search.includes('bishopric-exam') ||
+        search.includes('bishopric_exam') ||
+        search.includes('exam-entry')
+      ) {
+        return 'bishopric-portal';
+      }
+
+      if (
+        path === '/exam-login' || 
+        search.includes('gateway_token=') ||
+        hash.includes('gateway_token=') ||
+        hash.includes('/exam-login')
       ) {
         return 'exam-login';
       }
       if (
-        window.location.pathname === '/admin/display-gate' ||
-        window.location.hash.includes('/admin/display-gate')
+        path === '/admin/display-gate' ||
+        hash.includes('/admin/display-gate')
       ) {
         return 'admin-display-gate';
+      }
+      if (
+        path === '/church-page' ||
+        path === '/church/bishopric-online-exams' ||
+        search.includes('tab=bishopric_codes') ||
+        search.includes('section=online-subscriptions') ||
+        search.includes('section=church-page') ||
+        hash.includes('church-page') ||
+        hash.includes('tab=bishopric')
+      ) {
+        return 'online-subscriptions';
       }
     }
     return 'home';
   });
   const [loginError, setLoginError] = useState('');
+
+  // Handle Hash & Deep Route changes (e.g. #/bishopric-exam)
+  useEffect(() => {
+    const handleHashAndRoute = () => {
+      const hash = window.location.hash || '';
+      const path = window.location.pathname || '';
+      const search = window.location.search || '';
+      const params = new URLSearchParams(search);
+      const viewParam = params.get('view');
+      const tabParam = params.get('tab');
+
+      if (
+        viewParam === 'bishopric-exam' ||
+        viewParam === 'bishopric_exam' ||
+        tabParam === 'bishopric-online' ||
+        tabParam === 'bishopric_online' ||
+        path === '/bishopric-portal' ||
+        path === '/exam-entry' ||
+        path === '/bishopric-exams-portal' ||
+        path === '/bishopric-exam' ||
+        hash.includes('view=bishopric-exam') ||
+        hash.includes('tab=bishopric-online') ||
+        hash.includes('bishopric-portal') ||
+        hash.includes('exam-entry') ||
+        hash.includes('bishopric-exam') ||
+        hash.includes('bishopric-exams-portal') ||
+        search.includes('view=bishopric-exam') ||
+        search.includes('tab=bishopric-online') ||
+        search.includes('bishopric-portal') ||
+        search.includes('section=bishopric-portal') ||
+        search.includes('section=bishopric-exam') ||
+        search.includes('bishopric-exam') ||
+        search.includes('bishopric_exam') ||
+        search.includes('exam-entry')
+      ) {
+        setActiveSection('bishopric-portal');
+      } else if (
+        path === '/church-page' ||
+        path === '/church/bishopric-online-exams' ||
+        search.includes('tab=bishopric_codes') ||
+        search.includes('section=online-subscriptions') ||
+        search.includes('section=church-page') ||
+        hash.includes('church-page') ||
+        hash.includes('tab=bishopric')
+      ) {
+        setActiveSection('online-subscriptions');
+      } else if (
+        path === '/exam-login' ||
+        hash.includes('/exam-login') ||
+        hash.includes('gateway_token=') ||
+        search.includes('gateway_token=')
+      ) {
+        setActiveSection('exam-login');
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashAndRoute);
+    window.addEventListener('popstate', handleHashAndRoute);
+    return () => {
+      window.removeEventListener('hashchange', handleHashAndRoute);
+      window.removeEventListener('popstate', handleHashAndRoute);
+    };
+  }, []);
   const [isLoggedIn, setIsLoggedIn] = useState(!!initialProfile);
   const [userRole, setUserRole] = useState<'admin' | 'church' | 'guest' | 'super_admin'>(initialProfile?.role || 'guest');
   const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
@@ -6351,6 +6474,26 @@ function AppComponent() {
     );
   }
 
+  if (
+    activeSection === 'bishopric-portal' ||
+    activeSection === 'bishopric-exam' ||
+    activeSection === 'bishopric_exam' ||
+    activeSection === 'exam-entry' ||
+    activeSection === 'bishopric-exams-portal'
+  ) {
+    return (
+      <PublicBishopricExamPortal 
+        onClose={() => {
+          if (isLoggedIn && (userRole === 'admin' || userRole === 'super_admin')) {
+            setActiveSection('admin_dashboard');
+          } else {
+            setActiveSection('home');
+          }
+        }}
+      />
+    );
+  }
+
   if (activeSection === 'admin-display-gate') {
     return (
       <AdminDisplayGate 
@@ -6906,7 +7049,7 @@ function AppComponent() {
         {(activeSection === 'exams_portal' || activeSection === 'online_exams' || activeSection === 'online-subscriptions' || activeSection === 'online_subscriptions') && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
             <BackButton />
-            {userRole === 'church' ? (
+            {userRole === 'church' || (typeof window !== 'undefined' && (window.location.pathname.includes('church-page') || window.location.search.includes('tab=bishopric') || window.location.search.includes('tab=') || window.location.search.includes('church=') || window.location.hash.includes('church-page'))) ? (
               <ChurchOnlineExamsView 
                 churchName={churchName || userProfile?.churchName || userProfile?.church_name || ''}
                 onOpenPortal={() => setIsPortalOpen(true)}
@@ -10708,1127 +10851,41 @@ function AppComponent() {
                     )}
                   </h4>
                   <p className="text-slate-500 text-sm font-bold">ÙŠØ±Ø¬Ù‰ Ù…Ù„Ø¡ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„ØªØ§Ù„ÙŠØ© Ø¨Ø¯Ù‚Ø©</p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-8">
-                  {/* Basic Information Card */}
-                  <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
-                    <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                      <User size={20} className="text-primary" />
-                      <h5 className="font-black text-lg text-slate-800">Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ©</h5>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                            <div className="space-y-2">
-                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                                Ø§Ø³Ù… Ø§Ù„Ù…Ø®Ø¯ÙˆÙ… Ø«Ù„Ø§Ø«ÙŠÙ‹Ø§
-                              </label>
-                              <input 
-                                type="text" 
-                                placeholder="Ø£Ø¯Ø®Ù„ Ø§Ù„Ø§Ø³Ù… Ø§Ù„Ø«Ù„Ø§Ø«ÙŠ"
-                                value={newParticipant.name}
-                                onChange={e => {
-                                  const val = e.target.value;
-                                  setNewParticipant({...newParticipant, name: val});
-                                  const words = val.trim().split(/\s+/).filter(w => w.length > 0);
-                                  if (participantNameError && words.length >= 3) {
-                                    setParticipantNameError(null);
-                                  }
-                                }}
-                                onBlur={handleNameBlur}
-                                className={`w-full px-5 py-4 bg-slate-50 border ${participantNameError ? 'border-red-500 bg-red-50/20 focus:border-red-500 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:border-primary focus:ring-0'} rounded-lg text-sm outline-none focus:bg-white transition-all shadow-none`}
-                                required
-                              />
-                              {participantNameError && (
-                                <div className="p-3 bg-red-50 border border-red-200 rounded-lg mt-1.5 flex items-start gap-2 text-red-800 text-[11px] font-bold leading-relaxed shadow-sm transition-all animate-fade-in">
-                                  <span className="shrink-0 text-red-500 font-bold">âš ï¸</span>
-                                  <span>{participantNameError}</span>
-                                </div>
-                              )}
-                              {isCheckingParticipantDuplicate && (
-                                <p className="text-[10px] text-slate-400 animate-pulse font-medium mt-1">Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª...</p>
-                              )}
-                              {participantDuplicateWarning && (
-                                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mt-1.5 flex items-start gap-2 text-amber-800 text-[11px] font-bold leading-relaxed shadow-sm transition-all animate-fade-in">
-                                  <span className="shrink-0 text-amber-500 font-bold">âš ï¸</span>
-                                  <span>{participantDuplicateWarning}</span>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="space-y-2">
-                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                                Ø§Ù„Ù…Ø±Ø­Ù„Ø© Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ©
-                              </label>
-                              <select 
-                                value={newParticipant.stage}
-                                onChange={e => setNewParticipant({...newParticipant, stage: e.target.value})}
-                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
-                                required
-                              >
-                                <option value="">Ø§Ø®ØªØ± Ø§Ù„Ù…Ø±Ø­Ù„Ø©</option>
-                                {dynamicLevels.map((p: any) => <option key={p.id || (typeof p === 'string' ? p : p.name)} value={typeof p === 'string' ? p : p.name}>{typeof p === 'string' ? p : p.name}</option>)}
-                              </select>
-                            </div>
-
-                            <div className="space-y-2">
-                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                                Ø§Ù„Ù†ÙˆØ¹
-                              </label>
-                              <div className="flex bg-slate-100 rounded-lg p-1.5 gap-1.5 w-full h-[54px]">
-                                <button
-                                  type="button"
-                                  onClick={() => setNewParticipant({...newParticipant, gender: 'Ø°ÙƒØ±'})}
-                                  className={`flex-1 flex items-center justify-center text-sm font-black rounded transition-all ${newParticipant.gender === 'Ø°ÙƒØ±' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:bg-slate-200'}`}
-                                >
-                                  Ø°ÙƒØ±
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setNewParticipant({...newParticipant, gender: 'Ø£Ù†Ø«Ù‰'})}
-                                  className={`flex-1 flex items-center justify-center text-sm font-black rounded transition-all ${newParticipant.gender === 'Ø£Ù†Ø«Ù‰' ? 'bg-white shadow-sm text-primary' : 'text-slate-500 hover:bg-slate-200'}`}
-                                >
-                                  Ø£Ù†Ø«Ù‰
-                                </button>
-                              </div>
-                              <input type="text" name="gender" value={newParticipant.gender} required className="hidden" readOnly />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Competition Selection Card */}
-                        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
-                          <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                            <Trophy size={20} className="text-primary" />
-                            <h5 className="font-black text-lg text-slate-800">Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ù…Ø³Ø§Ø¨Ù‚Ø§Øª</h5>
-                          </div>
-
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            {[0, 1, 2].map((idx) => {
-                              const selectedComps = newParticipant.competitions;
-                              const currentLevel = dynamicLevels.find(l => l.name === newParticipant.stage);
-                              const availableCompsForLevel = currentLevel ? currentLevel.comps : [];
-                              
-                              const isOptionDisabled = (val: string) => {
-                                if (!val) return false;
-                                if (selectedComps.some((c, i) => i !== idx && c === val)) return true;
-                                if (val.includes('Ù‚Ø¨Ø·ÙŠ Ù…Ø³ØªÙˆÙ‰') && selectedComps.some((c, i) => i !== idx && c.includes('Ù‚Ø¨Ø·ÙŠ Ù…Ø³ØªÙˆÙ‰'))) return true;
-                                return false;
-                              };
-
-                              return (
-                                <div key={idx} className="space-y-2">
-                                  <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                                    Ø§Ù„Ù…Ø³Ø§Ø¨Ù‚Ø© Ø±Ù‚Ù… {idx + 1}
-                                  </label>
-                                  <select 
-                                    value={newParticipant.competitions[idx]}
-                                    onChange={e => {
-                                      const newComps = [...newParticipant.competitions];
-                                      newComps[idx] = e.target.value;
-                                      setNewParticipant({...newParticipant, competitions: newComps});
-                                    }}
-                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
-                                  >
-                                    <option value="">-- Ø§Ø®ØªØ± Ø§Ù„Ù…Ø³Ø§Ø¨Ù‚Ø© --</option>
-                                    {availableCompsForLevel.map((comp: string) => (
-                                      <option 
-                                        key={comp} 
-                                        value={comp} 
-                                        disabled={isOptionDisabled(comp)}
-                                      >
-                                        {comp}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          
-                          {newParticipant.competitions.some(c => c.startsWith('Ù‚Ø¨Ø·ÙŠ')) && (
-                            <div className="p-4 bg-primary/5 rounded-lg border border-primary/10 flex items-start gap-3">
-                              <Info size={16} className="text-primary mt-0.5" />
-                              <p className="text-xs text-primary font-bold">
-                                Ù…Ù„Ø§Ø­Ø¸Ø©: Ù…Ø³Ù…ÙˆØ­ Ø¨Ø§Ø®ØªÙŠØ§Ø± Ù…Ø³ØªÙˆÙ‰ Ù‚Ø¨Ø·ÙŠ ÙˆØ§Ø­Ø¯ ÙÙ‚Ø· Ù„Ù„Ù…Ø´ØªØ±Ùƒ Ø§Ù„ÙˆØ§Ø­Ø¯.
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Honeypot Anti-Bot Field */}
-                        <input
-                          type="text"
-                          name="_sub_backend_version_gate"
-                          style={{
-                            position: 'absolute',
-                            left: '-9999px',
-                            top: 'auto',
-                            width: '1px',
-                            height: '1px',
-                            overflow: 'hidden',
-                            opacity: 0
-                          }}
-                          tabIndex={-1}
-                          autoComplete="new-password"
-                          aria-hidden="true"
-                          value={registerHoneypot}
-                          onChange={(e) => setRegisterHoneypot(e.target.value)}
-                        />
-
-                        {/* Submit Button Section */}
-                        <div className="flex flex-col md:flex-row gap-4 pt-4">
-                          <button 
-                            onClick={handleAddParticipant}
-                            disabled={isSubmittingParticipant}
-                            className={`flex-1 py-4 text-white rounded-lg font-black text-base shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-3 ${isSubmittingParticipant ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary'}`}
-                          >
-                            {isSubmittingParticipant ? <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <UserPlus size={20} />}
-                            {isSubmittingParticipant ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ³Ø¬ÙŠÙ„...' : 'ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø´ØªØ±Ùƒ'}
-                          </button>
-                          <button 
-                            onClick={() => {
-                              setNewParticipant({ name: '', stage: '', gender: '', country: '', competitions: ['', '', ''] });
-                              setRegistrationStep(1);
-                            }}
-                            className="px-8 py-4 bg-slate-100 text-slate-600 rounded-lg font-black text-base hover:bg-slate-200 transition-all"
-                          >
-                            Ø¥Ø¹Ø§Ø¯Ø© ØªØ¹ÙŠÙŠÙ†
-                          </button>
-                        </div>
-                      </div>
-
-                    {/* Preview Toggle Button */}
-                    <div className="pt-8 border-t border-slate-100">
-                      <button 
-                         onClick={() => setViewMode('preview')}
-                         className="w-full py-8 bg-white border-2 border-purple-200 rounded-[2rem] flex flex-col items-center justify-center gap-4 text-purple-600 hover:border-purple-600 hover:bg-purple-50 transition-all shadow-sm group border-dashed"
-                      >
-                        <div className="w-16 h-16 bg-purple-100 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                          <Eye size={32} />
-                        </div>
-                        <div className="text-center">
-                          <h4 className="font-black text-xl mb-1">Ù…Ø¹Ø§ÙŠÙ†Ø© Ø§Ù„Ù…Ø´ØªØ±ÙƒÙŠÙ† Ø§Ù„Ù…Ø³Ø¬Ù„ÙŠÙ†</h4>
-                          <p className="text-sm font-bold text-slate-400">Ø¹Ø±Ø¶ ÙˆØ¥Ø¯Ø§Ø±Ø© {totalParticipantsCount} Ù…Ø´ØªØ±Ùƒ ØªÙ… ØªØ³Ø¬ÙŠÙ„Ù‡Ù… Ø­Ø§Ù„ÙŠÙ‹Ø§</p>
-                        </div>
-                      </button>
-                    </div>
-
-                    {/* Activity Teams Registration */}
-                    <div className="pt-12 border-t border-slate-100 space-y-8">
-                      <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                          <Users size={32} />
-                        </div>
-                        <div>
-                          <h3 className="text-2xl font-black text-slate-800">ØªØ³Ø¬ÙŠÙ„ ÙØ±Ù‚ Ø§Ù„Ø£Ù†Ø´Ø·Ø©</h3>
-                          <p className="text-slate-500 font-bold">Ø³Ø¬Ù„ ÙØ±ÙŠÙ‚Ùƒ ÙÙŠ Ù…Ø³Ø§Ø¨Ù‚Ø§Øª Ø§Ù„ÙƒÙˆØ±Ø§Ù„ØŒ Ø§Ù„Ø£Ù„Ø­Ø§Ù†ØŒ Ø£Ùˆ Ø§Ù„Ø¹Ø²Ù</p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                        <div className="space-y-6">
-                          <div className="flex items-center gap-3">
-                            <Plus size={24} className="text-primary" />
-                            <h4 className="font-black text-xl text-slate-800">Ù†Ù…ÙˆØ°Ø¬ ØªØ³Ø¬ÙŠÙ„ ÙØ±ÙŠÙ‚</h4>
-                          </div>
-                          
-                          <div className="relative">
-                            <form id="team-registration-form" onSubmit={handleAddTeam} className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
-                              {editingTeam && (
-                              <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-between">
-                                <p className="text-sm font-bold text-blue-700">Ø£Ù†Øª Ø§Ù„Ø¢Ù† ØªÙ‚ÙˆÙ… Ø¨ØªØ¹Ø¯ÙŠÙ„ Ø¨ÙŠØ§Ù†Ø§Øª ÙØ±ÙŠÙ‚ Ù…Ø³Ø¬Ù„</p>
-                                <button 
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingTeam(null);
-                                    setNewTeam({
-                                      activityType: '',
-                                      members: [{ name: '', gender: 'Ø°ÙƒØ±', stage: '' }],
-                                      choirLevel: '',
-                                      instrumentType: '',
-                                      performanceType: '',
-                                      maleCount: 0,
-                                      femaleCount: 0
-                                    });
-                                    setActivity_type('');
-                                  }}
-                                  className="text-xs font-black text-blue-500 hover:underline"
-                                >
-                                  Ø¥Ù„ØºØ§Ø¡ Ø§Ù„ØªØ¹Ø¯ÙŠÙ„
-                                </button>
-                              </div>
-                            )}
-                            <div className="space-y-2">
-                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">Ø§Ù„Ù…Ø¬Ø§Ù„ (Ù†ÙˆØ¹ Ø§Ù„Ù†Ø´Ø§Ø· Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠ)</label>
-                              <select 
-                                value={newTeam.activityType || ''}
-                                onChange={e => handleActivityTypeChange(e.target.value)}
-                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                                required
-                              >
-                                <option value="">-- Ø§Ø®ØªØ± Ø§Ù„Ù†Ø´Ø§Ø· Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠ --</option>
-                                {activities.map((activity: string) => (
-                                  <option key={activity} value={activity}>{activity}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="space-y-2">
-                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">Ù†ÙˆØ¹ Ø§Ù„Ù†Ø´Ø§Ø· *</label>
-                              <select 
-                                value={activity_type}
-                                onChange={e => setActivity_type(e.target.value)}
-                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                                required
-                              >
-                                <option value="">-- Ø§Ø®ØªØ± Ù†ÙˆØ¹ Ø§Ù„Ù†Ø´Ø§Ø· --</option>
-                                {(() => {
-                                  const parent = newTeam.activityType;
-                                  if (!parent) return null;
-                                  if (parent === 'Ø£Ù„Ø­Ø§Ù†') {
-                                    return (
-                                      <>
-                                        <option value="Ø£Ù„Ø­Ø§Ù† ÙØ±Ø¯ÙŠ">Ø£Ù„Ø­Ø§Ù† ÙØ±Ø¯ÙŠ</option>
-                                        <option value="Ø£Ù„Ø­Ø§Ù† Ø¬Ù…Ø§Ø¹ÙŠ">Ø£Ù„Ø­Ø§Ù† Ø¬Ù…Ø§Ø¹ÙŠ</option>
-                                      </>
-                                    );
-                                  }
-                                  if (parent === 'Ø¹Ø²Ù') {
-                                    return (
-                                      <>
-                                        <option value="Ø¹Ø²Ù ÙØ±Ø¯ÙŠ">Ø¹Ø²Ù ÙØ±Ø¯ÙŠ</option>
-                                        <option value="Ø¹Ø²Ù Ø¬Ù…Ø§Ø¹ÙŠ">Ø¹Ø²Ù Ø¬Ù…Ø§Ø¹ÙŠ</option>
-                                      </>
-                                    );
-                                  }
-                                  return (
-                                    <>
-                                      <option value={parent}>{parent}</option>
-                                      <option value={`${parent} ÙØ±Ø¯ÙŠ`}>{parent} ÙØ±Ø¯ÙŠ</option>
-                                      <option value={`${parent} Ø¬Ù…Ø§Ø¹ÙŠ`}>{parent} Ø¬Ù…Ø§Ø¹ÙŠ</option>
-                                    </>
-                                  );
-                                })()}
-                              </select>
-                            </div>
-
-                            {newTeam.activityType && (
-                              <div className="space-y-2">
-                                <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">Ø§Ù„Ù…Ø±Ø­Ù„Ø©</label>
-                                <select 
-                                  value={newTeam.choirLevel || ''}
-                                  onChange={e => setNewTeam({...newTeam, choirLevel: e.target.value})}
-                                  className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                                  required
-                                >
-                                  <option value="">-- Ø§Ø®ØªØ± Ø§Ù„Ù…Ø±Ø­Ù„Ø© --</option>
-                                  {newTeam.activityType === 'Ø£Ù„Ø­Ø§Ù†' ? (
-                                    hymnStages.map((stage: any) => (
-                                      <option key={stage.id} value={stage.id}>{stage.name}</option>
-                                    ))
-                                  ) : (
-                                    activityStages.map((stage: any) => (
-                                      <option key={stage.id} value={stage.id}>{stage.stage_name || stage.name}</option>
-                                    ))
-                                  )}
-                                </select>
-                              </div>
-                            )}
-
-                            {(() => {
-                              const selectedStageId = newTeam.choirLevel || '';
-                              if (!selectedStageId) return null;
-
-                              const selectedStage = newTeam.activityType === 'Ø£Ù„Ø­Ø§Ù†'
-                                ? hymnStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.name) === String(selectedStageId))
-                                : activityStages.find((stage: any) => String(stage.id) === String(selectedStageId) || String(stage.stage_name) === String(selectedStageId));
-                              
-                              const selectedStageName = selectedStage?.stage_name || selectedStage?.name || selectedStageId;
-                              
-                              let formType = selectedStage?.form_type || '';
-                              if (newTeam.activityType === 'Ø¹Ø²Ù') {
-                                formType = 'Ø¹Ø²Ù';
-                              } else if (['ØªØ±Ù†ÙŠÙ… ÙØ±Ø¯ÙŠ', 'Ø«Ù‚Ø§ÙÙŠØ©', 'Ø£Ø¯Ø¨ÙŠØ©', 'ÙÙ†ÙˆÙ† ØªØ´ÙƒÙŠÙ„ÙŠØ©', 'ÙƒÙ…Ø¨ÙŠÙˆØªØ±', 'Ø§Ù„Ø£Ø¯Ø¨ÙŠØ©', 'Ø§Ù„Ø«Ù‚Ø§ÙÙŠØ©', 'Ø§Ù„ÙÙ†ÙˆÙ† Ø§Ù„ØªØ´ÙƒÙŠÙ„ÙŠØ©'].includes(newTeam.activityType || '')) {
-                                formType = 'ÙØ±Ø¯ÙŠ';
-                              } else if (newTeam.activityType === 'ÙƒÙˆØ±Ø§Ù„') {
-                                formType = 'Ø¬Ù…Ø§Ø¹ÙŠ';
-                              } else if (newTeam.activityType === 'Ø£Ù„Ø­Ø§Ù†') {
-                                formType = selectedStageName.includes('ÙØ±Ø¯ÙŠ') ? 'ÙØ±Ø¯ÙŠ' : 'Ø¬Ù…Ø§Ø¹ÙŠ';
-                              } else if (!formType) {
-                                formType = 'ÙØ±Ø¯ÙŠ';
-                              }
-
-                              if (formType === 'Ø¬Ù…Ø§Ø¹ÙŠ') {
-                                return (
-                                  <div className="space-y-4">
-                                    <div className="space-y-2">
-                                      <label className="text-[11px] font-black text-slate-900 block mb-1">Ø§Ø³Ù… Ø§Ù„ÙØ±ÙŠÙ‚</label>
-                                      <input 
-                                        type="text"
-                                        placeholder="Ø£Ø¯Ø®Ù„ Ø§Ø³Ù… Ø§Ù„ÙØ±ÙŠÙ‚..."
-                                        value={newTeam.team_name || ''}
-                                        onChange={e => setNewTeam({...newTeam, team_name: e.target.value})}
-                                        className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary transition-all font-bold"
-                                      />
-                                    </div>
-                                    <div className="p-6 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-                                      <div className="space-y-2">
-                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Ø¹Ø¯Ø¯ Ø§Ù„Ø°ÙƒÙˆØ±</p>
-                                        <input 
-                                          type="number"
-                                          min="0"
-                                          value={newTeam.maleCount || 0}
-                                          onChange={e => setNewTeam({...newTeam, maleCount: parseInt(e.target.value) || 0})}
-                                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
-                                        />
-                                      </div>
-                                      <div className="space-y-2">
-                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Ø¹Ø¯Ø¯ Ø§Ù„Ø¥Ù†Ø§Ø«</p>
-                                        <input 
-                                          type="number"
-                                          min="0"
-                                          value={newTeam.femaleCount || 0}
-                                          onChange={e => setNewTeam({...newTeam, femaleCount: parseInt(e.target.value) || 0})}
-                                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-center font-black text-primary outline-none focus:border-primary"
-                                        />
-                                      </div>
-                                      <div className="space-y-2 flex flex-col justify-center">
-                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø¹Ø¯Ø¯</p>
-                                        <p className="text-2xl font-black text-primary">{(Number(newTeam.maleCount) || 0) + (Number(newTeam.femaleCount) || 0)}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              } else if (formType === 'ÙØ±Ø¯ÙŠ') {
-                                return (
-                                  <div className="space-y-3 bg-slate-50 p-6 rounded-xl border border-slate-100">
-                                    <label className="text-[11px] font-black text-slate-900 block mb-1">Ø§Ø³Ù… Ø§Ù„Ù…Ø´ØªØ±Ùƒ (ÙØ±Ø¯ÙŠ)</label>
-                                    <div className="relative">
-                                      <input 
-                                        type="text"
-                                        placeholder="Ø£Ø¯Ø®Ù„ Ø§Ø³Ù… Ø§Ù„Ù…Ø´ØªØ±Ùƒ Ù„Ù„Ø¨Ø­Ø« ÙˆØ§Ù„Ø±Ø¨Ø·..."
-                                        value={individualParticipantName || ''}
-                                        onChange={e => handleIndividualNameChange(e.target.value)}
-                                        className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                        required
-                                      />
-                                      {matchingParticipants.length > 0 && (
-                                        <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto w-full">
-                                          <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
-                                            Ù‡Ø°Ø§ Ø§Ù„Ù…Ø´ØªØ±Ùƒ Ù…Ø³Ø¬Ù„ Ø¨Ø§Ù„ÙØ¹Ù„ØŒ Ø§Ø®ØªØ± Ø§Ù„Ø§Ø³Ù… Ù„Ù„Ø±Ø¨Ø·:
-                                          </div>
-                                          {matchingParticipants.map((p) => (
-                                            <button
-                                              key={p.id}
-                                              type="button"
-                                              onClick={() => selectMatchingParticipant(p)}
-                                              className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
-                                            >
-                                              <span>{p.name}</span>
-                                              <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                                                {p.stage}
-                                              </span>
-                                            </button>
-                                          ))}
-                                        </div>
-                                      )}
-                                      {linkedParticipantMessage && (
-                                        <p className="text-xs text-green-600 font-bold mt-2 text-right">
-                                          {linkedParticipantMessage}
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              } else if (formType === 'Ø¹Ø²Ù') {
-                                return (
-                                  <div className="space-y-4 bg-slate-50 p-6 rounded-xl border border-slate-100">
-                                    <div className="space-y-1">
-                                      <label className="text-[11px] font-black text-slate-900 block mb-1">Ø§Ø³Ù… Ø§Ù„Ù…Ø´ØªØ±Ùƒ</label>
-                                      <div className="relative">
-                                        <input 
-                                          type="text"
-                                          placeholder="Ø£Ø¯Ø®Ù„ Ø§Ø³Ù… Ø§Ù„Ù…Ø´ØªØ±Ùƒ Ù„Ù„Ø¨Ø­Ø« ÙˆØ§Ù„Ø±Ø¨Ø·..."
-                                          value={individualParticipantName || ''}
-                                          onChange={e => handleIndividualNameChange(e.target.value)}
-                                          className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                          required
-                                        />
-                                        {matchingParticipants.length > 0 && (
-                                          <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg mt-1 shadow-lg max-h-48 overflow-y-auto">
-                                            <div className="p-2 bg-slate-100 text-[10px] font-black text-slate-500 border-b border-slate-100 text-right">
-                                              Ù‡Ø°Ø§ Ø§Ù„Ù…Ø´ØªØ±Ùƒ Ù…Ø³Ø¬Ù„ Ø¨Ø§Ù„ÙØ¹Ù„ØŒ Ø§Ø®ØªØ± Ø§Ù„Ø§Ø³Ù… Ù„Ù„Ø±Ø¨Ø·:
-                                            </div>
-                                            {matchingParticipants.map((p) => (
-                                              <button
-                                                key={p.id}
-                                                type="button"
-                                                onClick={() => selectMatchingParticipant(p)}
-                                                className="w-full text-right p-3 hover:bg-slate-50 text-xs font-bold text-slate-700 border-b border-slate-50 flex justify-between items-center transition-colors"
-                                              >
-                                                <span>{p.name}</span>
-                                                <span className="text-[9px] font-black bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                                                  {p.stage}
-                                                </span>
-                                              </button>
-                                            ))}
-                                          </div>
-                                        )}
-                                        {linkedParticipantMessage && (
-                                          <p className="text-xs text-green-600 font-bold mt-2 text-right">
-                                            {linkedParticipantMessage}
-                                          </p>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                      <label className="text-[11px] font-black text-slate-900 block mb-1">Ù†ÙˆØ¹ Ø§Ù„Ø¢Ù„Ø© Ø§Ù„Ù…ÙˆØ³ÙŠÙ‚ÙŠØ© (Instrument Type)</label>
-                                      <input 
-                                        type="text"
-                                        placeholder="Ø£Ø¯Ø®Ù„ Ù†ÙˆØ¹ Ø§Ù„Ø¢Ù„Ø© (Ø£ÙˆØ±Ø¬ØŒ ÙƒÙ…Ø§Ù†ØŒ Ø¬ÙŠØªØ§Ø±...)"
-                                        value={newTeam.instrumentType || ''}
-                                        onChange={e => setNewTeam({...newTeam, instrumentType: e.target.value})}
-                                        className="w-full px-5 py-4 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-primary transition-all font-bold text-slate-800"
-                                        required
-                                      />
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })()}
-
-                            <button 
-                              type="submit" 
-                              disabled={isSubmittingTeam}
-                              className={`w-full py-4 text-white rounded-lg font-black text-base shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-3 ${isSubmittingTeam ? 'bg-slate-400 cursor-not-allowed' : 'bg-primary'}`}
-                            >
-                              {isSubmittingTeam ? <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Users size={20} />}
-                              {isSubmittingTeam ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ³Ø¬ÙŠÙ„...' : 'ØªØ³Ø¬ÙŠÙ„ Ø§Ù„ÙØ±ÙŠÙ‚'}
-                            </button>
-                          </form>
-                          </div>
-                        </div>
-
-                        <div className="space-y-6">
-                          <div className="flex items-center gap-3">
-                            <Users size={24} className="text-primary" />
-                            <h4 className="font-black text-xl text-slate-800">Ø§Ù„ÙØ±Ù‚ Ø§Ù„Ù…Ø³Ø¬Ù„Ø©</h4>
-                          </div>
-                          <div className="max-h-[800px] overflow-y-auto space-y-6 pr-2 custom-scrollbar">
-                            {filteredTeamsList
-                              .map(t => (
-                              <div key={t.id} className="p-6 bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-md transition-all relative group overflow-hidden">
-                                <div className="absolute top-0 right-0 w-1 h-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity" />
-                                {(userRole === 'admin' || userRole === 'church') && (
-                                  <button 
-                                    onClick={() => handleDeleteTeam(t.id)}
-                                    className="absolute left-4 top-4 p-2.5 text-rose-500 bg-rose-50/70 hover:bg-rose-100 sm:text-slate-300 sm:bg-transparent sm:hover:bg-rose-50 sm:hover:text-rose-600 rounded-lg transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-10"
-                                    title="Ø­Ø°Ù Ø§Ù„ÙØ±ÙŠÙ‚"
-                                  >
-                                    <Trash2 size={18} />
-                                  </button>
-                                )}
-                                
-                                <div className="mb-4">
-                                  <h5 className="text-lg font-black text-slate-800">{(t as any).stage_name || t.choirLevel || t.activityType}</h5>
-                                  {(t as any).team_name && (t as any).team_name !== ((t as any).stage_name || t.choirLevel) && (
-                                    <p className="text-xs font-bold text-primary mt-1">{(t as any).team_name}</p>
-                                  )}
-                                  {t.performanceType && <p className="text-xs font-bold text-emerald-600 mt-1">{t.performanceType}</p>}
-                                  {t.instrumentType && <p className="text-xs font-bold text-primary mt-1">{t.instrumentType}</p>}
-                                </div>
-
-                                 <div className="space-y-3">
-                                  {(t as any).stage_name?.includes('Ø¬Ù…Ø§Ø¹ÙŠ') || t.activityType === 'ÙƒÙˆØ±Ø§Ù„' || t.activityType === 'Ø£Ù„Ø­Ø§Ù†' ? null : (
-                                    <>
-                                      <p className="text-[10px] font-black text-slate-400 uppercase">Ø§Ù„Ù…Ø´ØªØ±Ùƒ</p>
-                                      <div className="flex flex-wrap gap-2">
-                                        {(t.members || []).map((m, i) => (
-                                          <div key={i} className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold text-slate-600">
-                                            {m.name} <span className="text-slate-300 mx-1">|</span> {m.stage}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-
-                                <div className="mt-6 pt-4 border-t border-slate-50 flex justify-between items-center">
-                                  {(t as any).stage_name?.includes('Ø¬Ù…Ø§Ø¹ÙŠ') || t.activityType === 'ÙƒÙˆØ±Ø§Ù„' || t.activityType === 'Ø£Ù„Ø­Ø§Ù†' ? (
-                                    <div className="flex gap-4">
-                                      <span className="text-[10px] font-black text-primary">Ø°ÙƒÙˆØ±: {t.maleCount || 0}</span>
-                                      <span className="text-[10px] font-black text-primary">Ø¥Ù†Ø§Ø«: {t.femaleCount || 0}</span>
-                                      <span className="text-[10px] font-black text-slate-500">Ø¥Ø¬Ù…Ø§Ù„ÙŠ: {t.members_number || (t.maleCount || 0) + (t.femaleCount || 0)}</span>
-                                    </div>
-                                  ) : (
-                                    <div className="flex gap-4">
-                                      <span className="text-[10px] font-black text-primary">Ø§Ù„Ù†ÙˆØ¹: {t.members[0]?.gender || '-'}</span>
-                                    </div>
-                                  )}
-                                  <span className="text-[10px] font-bold text-slate-400">{new Date(t.timestamp).toLocaleDateString('ar-EG')}</span>
-                                </div>
-                              </div>
-                            ))}
-                            
-                            {filteredTeamsList.length === 0 && (
-                              <div className="text-center py-20 bg-white rounded-xl border border-dashed border-slate-200">
-                                <Users size={48} className="text-slate-200 mx-auto mb-4" />
-                                <p className="text-slate-400 font-bold">Ù„Ø§ ÙŠÙˆØ¬Ø¯ ÙØ±Ù‚ Ù…Ø³Ø¬Ù„Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
-                      <button 
-                         onClick={() => setViewMode('edit')}
-                         className="flex items-center gap-3 px-8 py-4 bg-purple-600 text-white rounded-2xl font-black text-base shadow-lg shadow-purple-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all w-fit"
-                      >
-                        <ChevronRight size={24} />
-                        Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„ØµÙØ­Ø© Ø§Ù„ØªØ³Ø¬ÙŠÙ„
-                      </button>
-                      <div className="text-right">
-                        <div className="flex items-center justify-end gap-3 mb-1">
-                          <Users size={24} className="text-primary" />
-                          <h3 className="text-2xl font-black text-slate-800">Ø³Ø¬Ù„ Ø§Ù„Ù…Ø´ØªØ±ÙƒÙŠÙ† Ø§Ù„Ù…Ø³Ø¬Ù„ÙŠÙ†</h3>
-                        </div>
-                        <p className="text-sm font-bold text-slate-400">ØªØ­ÙƒÙ… ÙˆØ¥Ø¯Ø§Ø±Ø© Ø¬Ù…ÙŠØ¹ Ø¨ÙŠØ§Ù†Ø§Øª Ù…Ø®Ø¯ÙˆÙ…ÙŠÙ† ÙƒÙ†ÙŠØ³Ø© {churchName} â€¢ {totalParticipantsCount} Ù…Ø®Ø¯ÙˆÙ…</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {participants
-                          .filter(p => p.churchName === churchName)
-                          .map(p => (
-                          <div key={p.id} className="p-5 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between group hover:bg-white hover:shadow-md transition-all">
-                            <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-primary font-black shadow-sm">
-                                {p.name.charAt(0)}
-                              </div>
-                              <div>
-                                <h5 className="font-black text-slate-800 text-sm">{p.name}</h5>
-                                <p className="text-[10px] font-bold text-slate-400">{p.stage}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="flex -space-x-1">
-                                {(p.competitions || []).filter(Boolean).map((c, i) => (
-                                  <div key={i} className="w-6 h-6 rounded-full bg-primary/10 border-2 border-white flex items-center justify-center text-[8px] font-black text-primary" title={c}>
-                                    {c.charAt(0)}
-                                  </div>
-                                ))}
-                              </div>
-                              <div className="flex gap-1 items-center">
-                                <button 
-                                  onClick={() => downloadStudentQRCode(p)}
-                                  className="p-2 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors"
-                                  title="ØªØ­Ù…ÙŠÙ„ ÙƒÙˆØ¯ Ø§Ù„Ù€ QR"
-                                >
-                                  <QrCode size={18} />
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    setViewMode('edit');
-                                    handleEditParticipant(p);
-                                  }}
-                                  className="p-2 text-slate-400 hover:text-primary transition-colors"
-                                  title="ØªØ¹Ø¯ÙŠÙ„ (ØªØ­Ø±ÙŠØ±)"
-                                >
-                                  <Pencil size={18} />
-                                </button>
-                                <button 
-                                  onClick={() => {
-                                    confirmAndDeleteParticipant(p.id);
-                                  }}
-                                  className="p-2 text-slate-300 hover:text-red-500 transition-colors"
-                                  title="Ø­Ø°Ù"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                        {totalParticipantsCount === 0 && (
-                          <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                            <p className="text-slate-400 font-bold">Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ø´ØªØ±ÙƒÙŠÙ† Ù…Ø³Ø¬Ù„ÙŠÙ† Ø¨Ø¹Ø¯</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-              </EarlyGateGuard>
-            </div>
-          </motion.div>
-        )}
-
-        {activeSection === 'schedule' && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="space-y-8"
-          >
-            <BackButton />
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {schedules.map((schedule) => (
-                <div key={schedule.id} className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all group">
-                  <div className="flex items-center gap-4 mb-8">
-                    <div className="w-14 h-14 bg-primary/5 text-primary rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <Calendar size={28} />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-black text-slate-900">{schedule.examName}</h3>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-4">
-                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-primary shadow-sm">
-                        <Calendar size={18} />
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase">Ø§Ù„ØªØ§Ø±ÙŠØ® ÙˆØ§Ù„ÙˆÙ‚Øª</p>
-                        <p className="text-sm font-black text-slate-800">{schedule.date} - {schedule.time}</p>
-                      </div>
-                    </div>
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-4">
-                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-primary shadow-sm">
-                        <MapPin size={18} />
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase">Ø§Ù„Ù…ÙƒØ§Ù† / Ø§Ù„Ù„Ø¬Ù†Ø©</p>
-                        <p className="text-sm font-black text-slate-800">{schedule.location}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {schedules.length === 0 && (
-                <div className="col-span-full py-20 text-center bg-white rounded-3xl shadow-xl border border-slate-100">
-                  <Calendar className="mx-auto text-slate-200 mb-4" size={64} />
-                  <p className="text-slate-400 font-bold text-lg">Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…ÙˆØ§Ø¹ÙŠØ¯ Ù…Ø¹Ù„Ù†Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</p>
-                </div>
-              )}
-            </div>
-
-            {/* Exam Links Section */}
-            <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
-                  <ExternalLink size={24} />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900">Ø±ÙˆØ§Ø¨Ø· Ø§Ù„Ø§Ù…ØªØ­Ø§Ù†Ø§Øª Ø£ÙˆÙ†Ù„Ø§ÙŠÙ†</h3>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Ø±ÙˆØ§Ø¨Ø· Google Forms</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {Object.entries(examLinks).map(([stage, url], idx) => (
-                  <a 
-                    key={idx}
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-5 bg-slate-50 rounded-xl border border-slate-100 hover:border-emerald-500 hover:bg-emerald-50 transition-all group"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-slate-700 text-sm">{stage}</span>
-                      <ExternalLink size={14} className="text-slate-300 group-hover:text-emerald-500" />
-                    </div>
-                  </a>
-                ))}
-                {Object.keys(examLinks).length === 0 && (
-                  <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                    <p className="text-slate-400 font-bold">Ù„Ø§ ØªÙˆØ¬Ø¯ Ø±ÙˆØ§Ø¨Ø· Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {activeSection === 'info' && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-8"
-          >
-            <BackButton />
-            <div className="bg-white p-10 rounded-3xl shadow-xl border border-slate-100">
-              <div className="flex items-center gap-4 mb-8">
-                <div className="w-16 h-16 bg-primary/5 rounded-2xl flex items-center justify-center">
-                  <Info className="text-primary" size={32} />
-                </div>
-                <h3 className="text-3xl font-black text-slate-900">Ø¹Ù† Ù…Ù‡Ø±Ø¬Ø§Ù† Ø§Ù„ÙƒØ±Ø§Ø²Ø©</h3>
-              </div>
-              <div className="prose prose-slate max-w-none">
-                <p className="text-lg text-slate-600 leading-relaxed mb-10 font-bold whitespace-pre-wrap">
-                  {aboutContent.aboutText || 'Ù…Ù‡Ø±Ø¬Ø§Ù† Ø§Ù„ÙƒØ±Ø§Ø²Ø© Ø§Ù„Ù…Ø±Ù‚Ø³ÙŠØ© Ù‡Ùˆ Ù†Ø´Ø§Ø· ÙƒÙ†Ø³ÙŠ Ø³Ù†ÙˆÙŠ ÙŠØ¬Ù…Ø¹ Ø£Ø¨Ù†Ø§Ø¡ Ø§Ù„ÙƒÙ†ÙŠØ³Ø© Ø§Ù„Ù‚Ø¨Ø·ÙŠØ© Ø§Ù„Ø£Ø±Ø«ÙˆØ°ÙƒØ³ÙŠØ© Ù…Ù† Ø¬Ù…ÙŠØ¹ Ø£Ù†Ø­Ø§Ø¡ Ø§Ù„Ø¹Ø§Ù„Ù… ØªØ­Øª Ø´Ø¹Ø§Ø± ÙˆØ§Ø­Ø¯ ÙˆÙ‡Ø¯Ù ÙˆØ§Ø­Ø¯.'}
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-10">
-                  <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm">
-                    <h4 className="text-xl font-black text-primary mb-4 flex items-center gap-2">
-                      <div className="w-2 h-8 bg-accent rounded-full" /> Ø±Ø¤ÙŠØªÙ†Ø§
-                    </h4>
-                    <p className="text-slate-500 font-bold leading-relaxed whitespace-pre-wrap">
-                      {aboutContent.vision || 'Ø¨Ù†Ø§Ø¡ Ø¬ÙŠÙ„ ÙˆØ§Ø¹ÙŠ ÙˆÙ…ØªÙ…Ø³Ùƒ Ø¨Ø¥ÙŠÙ…Ø§Ù†Ù‡ Ø§Ù„Ø£Ø±Ø«ÙˆØ°ÙƒØ³ÙŠØŒ Ù‚Ø§Ø¯Ø± Ø¹Ù„Ù‰ Ù…ÙˆØ§Ø¬Ù‡Ø© ØªØ­Ø¯ÙŠØ§Øª Ø§Ù„Ø¹ØµØ± Ø¨Ø±ÙˆØ­ Ø§Ù„ØºÙ„Ø¨Ø© ÙˆØ§Ù„Ø§Ù†ØªØµØ§Ø± Ø¨Ø§Ù„Ù…Ø³ÙŠØ­.'}
-                    </p>
-                  </div>
-                  <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm">
-                    <h4 className="text-xl font-black text-primary mb-4 flex items-center gap-2">
-                      <div className="w-2 h-8 bg-accent rounded-full" /> Ø±Ø³Ø§Ù„ØªÙ†Ø§
-                    </h4>
-                    <p className="text-slate-500 font-bold leading-relaxed whitespace-pre-wrap">
-                      {aboutContent.mission || 'ØªØ¹Ù…ÙŠÙ‚ Ø§Ù„Ù…Ø¹Ø±ÙØ© Ø§Ù„ÙƒØªØ§Ø¨ÙŠØ© ÙˆØ§Ù„Ø·Ù‚Ø³ÙŠØ© ÙˆØ§ÙƒØªØ´Ø§Ù ÙˆØªÙ†Ù…ÙŠØ© Ø§Ù„Ù…ÙˆØ§Ù‡Ø¨ Ø§Ù„ÙÙ†ÙŠØ© ÙˆØ§Ù„Ø±ÙŠØ§Ø¶ÙŠØ© Ø¨Ø±ÙˆØ­ Ø§Ù„ØªÙ†Ø§ÙØ³ Ø§Ù„Ø´Ø±ÙŠÙ ÙˆØ§Ù„Ù…Ø­Ø¨Ø© Ø§Ù„Ø£Ø®ÙˆÙŠØ©.'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-        </AnimatePresence>
-          </div>
-        </div>
-      )}
-
-      {/* Footer */}
-      <footer className="bg-gradient-to-b from-slate-900 to-black text-white py-24 mt-20 relative overflow-hidden border-t border-white/5">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 blur-[120px] rounded-full -mr-48 -mt-48 animate-pulse" />
-        <div className="absolute bottom-0 left-0 w-96 h-96 bg-accent/5 blur-[120px] rounded-full -ml-48 -mb-48" />
-        
-        <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-16 relative z-10">
-          <div className="space-y-10">
-            <div className="flex items-center gap-5">
-              <div className="w-16 h-16 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white shadow-2xl border border-white/20 p-2 overflow-hidden">
-                <img src={getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-full h-full object-contain bg-white" />
-              </div>
-              <div>
-                <h4 className="text-3xl font-black tracking-tighter">Ù…Ù‡Ø±Ø¬Ø§Ù† Ù¢Ù Ù¢Ù¦</h4>
-                <div className="h-1 w-12 bg-primary rounded-full mt-1" />
-              </div>
-            </div>
-            <p className="text-slate-400 text-lg leading-relaxed font-medium max-w-sm">
-              Ø§Ù„Ù„Ø¬Ù†Ø© Ø§Ù„Ù…Ø±ÙƒØ²ÙŠØ© Ø§Ù„Ù…Ù†Ø·Ù‚Ø© Ù¡Ù¨ - Ø¥ÙŠØ¨Ø§Ø±Ø´ÙŠØ© Ù…ØºØ§ØºØ© ÙˆØ§Ù„Ø¹Ø¯ÙˆØ©. Ù†Ù‡Ø¯Ù Ù„ØªÙ†Ù…ÙŠØ© Ø§Ù„Ù…ÙˆØ§Ù‡Ø¨ Ø§Ù„Ø±ÙˆØ­ÙŠØ© ÙˆØ§Ù„ÙÙ†ÙŠØ© Ù„Ø£Ø¨Ù†Ø§Ø¡ Ø§Ù„ÙƒÙ†ÙŠØ³Ø© ÙÙŠ Ø¬Ùˆ Ù…Ù† Ø§Ù„Ù…Ø­Ø¨Ø© ÙˆØ§Ù„Ù‚Ø¯Ø§Ø³Ø©.
-            </p>
-            <div className="flex gap-5">
-              {siteSettings.facebook && (
-                <a href={siteSettings.facebook} target="_blank" rel="noopener noreferrer" className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center hover:bg-primary hover:text-white transition-all shadow-lg border border-white/10 group">
-                  <svg className="w-6 h-6 fill-current group-hover:scale-110 transition-transform" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                </a>
-              )}
-              {siteSettings.telegram && (
-                <a href={siteSettings.telegram} target="_blank" rel="noopener noreferrer" className="w-12 h-12 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center hover:bg-sky-500 hover:text-white transition-all shadow-lg border border-white/10 group">
-                  <svg className="w-6 h-6 fill-current group-hover:scale-110 transition-transform" viewBox="0 0 24 24"><path d="M11.944 0C5.346 0 0 5.346 0 11.944c0 6.598 5.346 11.944 11.944 11.944 6.598 0 11.944-5.346 11.944-11.944C23.888 5.346 18.542 0 11.944 0zm5.206 16.561c-.192.191-.447.286-.7.286-.253 0-.506-.095-.698-.286l-3.808-3.808-3.808 3.808c-.192.191-.447.286-.7.286-.253 0-.506-.095-.698-.286-.385-.385-.385-1.01 0-1.396l3.808-3.808-3.808-3.808c-.385-.385-.385-1.01 0-1.396.385-.385 1.01-.385 1.396 0l3.808 3.808 3.808-3.808c.385-.385 1.01-.385 1.396 0 .385.385.385 1.01 0 1.396l-3.808 3.808 3.808 3.808c.385.385.385 1.01 0 1.396z"/></svg>
-                </a>
-              )}
-            </div>
-          </div>
-          
-          <div className="space-y-8">
-            <h5 className="text-xl font-black border-r-4 border-primary pr-4">Ø±ÙˆØ§Ø¨Ø· Ø³Ø±ÙŠØ¹Ø©</h5>
-            <ul className="space-y-4 text-slate-400 font-bold text-base">
-              <li><button onClick={() => setActiveSection('home')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©</button></li>
-              <li><button onClick={() => setActiveSection('news')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Ø¢Ø®Ø± Ø§Ù„Ø£Ø®Ø¨Ø§Ø±</button></li>
-              <li><button onClick={() => setActiveSection(userRole === 'church' ? 'online-subscriptions' : 'exams')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Ø§Ù…ØªØ­Ø§Ù†Ø§Øª Ø§Ù„Ø£ÙˆÙ†Ù„Ø§ÙŠÙ†</button></li>
-              <li><button onClick={() => setActiveSection('calculator')} className="hover:text-primary transition-colors flex items-center gap-2 group"><ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Ø­Ø§Ø³Ø¨Ø© Ø§Ù„ÙƒØªØ¨</button></li>
-            </ul>
-          </div>
-
-          <div className="space-y-8">
-            <h5 className="text-xl font-black border-r-4 border-primary pr-4">ØªÙˆØ§ØµÙ„ Ù…Ø¹Ù†Ø§</h5>
-            <div className="text-slate-400 text-base space-y-6">
-              <p className="font-bold leading-relaxed">Ù„Ø£ÙŠ Ø§Ø³ØªÙØ³Ø§Ø±Ø§Øª Ø¨Ø®ØµÙˆØµ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø£Ùˆ Ø§Ù„Ù…Ø³Ø§Ø¨Ù‚Ø§ØªØŒ ÙŠØ±Ø¬Ù‰ Ø§Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø£Ù…Ù†Ø§Ø¡ Ø§Ù„Ø®Ø¯Ù…Ø© Ø¨ÙƒÙ†ÙŠØ³ØªÙƒÙ… Ø£Ùˆ Ø¹Ø¨Ø± Ø§Ù„Ø£Ø±Ù‚Ø§Ù… Ø§Ù„ØªØ§Ù„ÙŠØ©:</p>
-              <div className="space-y-4">
-                {siteSettings.phone && (
-                  <a href={`tel:${siteSettings.phone}`} className="flex items-center gap-4 text-white hover:text-primary transition-all group">
-                    <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center group-hover:bg-primary/20 transition-colors shadow-lg border border-white/5">
-                      <Phone size={20} />
-                    </div>
-                    <span className="font-mono text-xl tracking-wider" dir="ltr">{siteSettings.phone}</span>
-                  </a>
-                )}
-              </div>
-            </div>
-            <div className="pt-8 border-t border-white/5 text-xs font-black text-slate-500 uppercase tracking-[0.2em]">
-              {siteSettings.copyright || 'Â© Ù¢Ù Ù¢Ù¦ Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø­Ù‚ÙˆÙ‚ Ù…Ø­ÙÙˆØ¸Ø© - Ø§Ù„Ù„Ø¬Ù†Ø© Ø§Ù„Ù…Ø±ÙƒØ²ÙŠØ©'}
-            </div>
-          </div>
-        </div>
-      </footer>
-
-      {/* Floating Inquiry Button */}
-      {isLoggedIn && userRole === 'church' && (
-        <button 
-          onClick={() => setActiveSection('inquiries')}
-          className="fixed bottom-6 left-6 z-50 w-14 h-14 bg-coptic-gold text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all group"
-          title="Ø¥Ø±Ø³Ø§Ù„ Ø§Ø³ØªÙØ³Ø§Ø± Ø£Ùˆ Ø´ÙƒÙˆÙ‰"
-        >
-          <MessageSquare size={24} />
-          <span className="absolute right-full mr-3 bg-slate-800 text-white text-[10px] font-black px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-            Ø¥Ø±Ø³Ø§Ù„ Ø§Ø³ØªÙØ³Ø§Ø± Ø£Ùˆ Ø´ÙƒÙˆÙ‰
-          </span>
-        </button>
-      )}
-      <DeleteConfirmationModal />
-      
-      <AdminBulkRegister
-        isOpen={isAdminBulkRegisterOpen}
-        onClose={() => setIsAdminBulkRegisterOpen(false)}
-        publicChurches={publicChurches}
-        dynamicLevels={dynamicLevels}
-        onSuccess={handleBulkRegisterSuccess}
-        activeYear={activeYear}
-      />
-      <DeleteScheduleModal />
-      <DeleteCalculatorModal />
-      <OrderDetailsModal />
-      
-      <ExportColumnSelector
-        isOpen={isPdfModalOpen}
-        onClose={() => setIsPdfModalOpen(false)}
-        columns={pdfColumns}
-        title={pdfTitle}
-        onConfirm={(selectedCols) => {
-           printDataTable(pdfData, selectedCols, pdfTitle, `ØªÙ‚Ø±ÙŠØ± Ø±Ø³Ù…ÙŠ ØªÙ… ØªÙˆÙ„ÙŠØ¯Ù‡ Ù…Ù† Ø§Ù„Ù†Ø¸Ø§Ù… Ø¨ØªØ§Ø±ÙŠØ® ${new Date().toLocaleDateString('ar-EG')}`);
-        }}
-      />
-
-      <AnimatePresence>
-        {confirmModal.isOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl"
-            >
-              <h3 className="text-xl font-black text-slate-800 mb-2">{confirmModal.title}</h3>
-              <p className="text-slate-600 mb-6 text-sm">
-                {confirmModal.message}
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    confirmModal.onConfirm();
-                    setConfirmModal(prev => ({ ...prev, isOpen: false }));
-                  }}
-                  className="flex-1 bg-red-600 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Trash2 size={16} /> ØªØ£ÙƒÙŠØ¯
-                </button>
-                <button
-                  onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-                  className="flex-1 bg-slate-100 text-slate-700 py-2.5 rounded-xl font-bold text-sm hover:bg-slate-200 transition-colors"
-                >
-                  Ø¥Ù„ØºØ§Ø¡
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isCustomizeTabsModalOpen && (
-          <div data-admin-dashboard="true" className="admin-dashboard-container fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                  <Sliders className="text-primary" /> ØªØ®ØµÙŠØµ Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…
-                </h3>
-                <button onClick={() => setIsCustomizeTabsModalOpen(false)} className="text-slate-400 hover:text-red-500">
-                  <X size={24} />
-                </button>
-              </div>
-              <div className="p-6 max-h-[60vh] overflow-y-auto space-y-2">
-                {tempTabsConfig.order.map((tabId, index) => {
-                  const tabInfo = ALL_ADMIN_TABS.find(t => t.id === tabId);
-                  if (!tabInfo) return null;
-                  const isHidden = tempTabsConfig.hidden.includes(tabId);
-                  
-                  return (
-                    <div key={tabId} className={`flex items-center justify-between p-3 rounded-xl border ${isHidden ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-slate-200 shadow-sm'}`}>
-                      <div className="flex items-center gap-3">
-                         <button 
-                           onClick={() => {
-                             const newHidden = isHidden ? tempTabsConfig.hidden.filter(id => id !== tabId) : [...tempTabsConfig.hidden, tabId];
-                             setTempTabsConfig({...tempTabsConfig, hidden: newHidden});
-                           }}
-                           className={`p-2 rounded-lg ${isHidden ? 'text-slate-400 bg-slate-100' : 'text-primary bg-primary/10'}`}
-                         >
-                           {isHidden ? <EyeOff size={18} /> : <Eye size={18} />}
-                         </button>
-                         <span className="font-bold text-sm text-slate-700">{tabInfo.label}</span>
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        <button 
-                          disabled={index === 0}
-                          onClick={() => {
-                            const newOrder = [...tempTabsConfig.order];
-                            [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
-                            setTempTabsConfig({...tempTabsConfig, order: newOrder});
-                          }}
-                          className="text-slate-400 hover:text-primary disabled:opacity-30 disabled:hover:text-slate-400"
-                        >
-                          <ChevronUp size={16} />
-                        </button>
-                        <button 
-                          disabled={index === tempTabsConfig.order.length - 1}
-                          onClick={() => {
-                            const newOrder = [...tempTabsConfig.order];
-                            [newOrder[index + 1], newOrder[index]] = [newOrder[index], newOrder[index + 1]];
-                            setTempTabsConfig({...tempTabsConfig, order: newOrder});
-                          }}
-                          className="text-slate-400 hover:text-primary disabled:opacity-30 disabled:hover:text-slate-400"
-                        >
-                          <ChevronDown size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="p-6 border-t border-slate-100">
-                <button onClick={handleSaveTabsConfig} className="w-full py-3 bg-primary text-white font-black rounded-xl hover:bg-primary/90 transition-colors shadow-lg active:scale-95">
-                  Ø­ÙØ¸ Ø§Ù„ØªØ®ØµÙŠØµ
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isCheckingDevice && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[150] flex flex-col items-center justify-center p-4">
-            <Loader2 className="animate-spin text-white w-16 h-16 mb-4" />
-            <h2 className="text-xl font-black text-white text-center">Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ù‡ÙˆÙŠØ© Ø§Ù„Ø¬Ù‡Ø§Ø²...</h2>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showDevicePermissionModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4">
-            <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden text-center">
-              <div className="absolute top-0 inset-x-0 h-2 bg-indigo-600" />
-              <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 transform -rotate-6">
-                <ShieldCheck size={32} />
-              </div>
-              <h3 className="text-2xl font-black text-slate-800 mb-2">ÙŠØ±Ø¬Ù‰ Ø§Ù„Ø³Ù…Ø§Ø­ Ø¨ØªØ£ÙƒÙŠØ¯ Ù‡ÙˆÙŠØ© Ø§Ù„Ø¬Ù‡Ø§Ø²</h3>
-              <p className="text-slate-500 mb-8 font-bold leading-relaxed text-sm">
-                Ù„Ø­Ù…Ø§ÙŠØ© ÙˆØ³Ù„Ø§Ù…Ø© Ø§Ù„Ø§Ù…ØªØ­Ø§Ù†Ø§ØªØŒ Ø§Ù„Ù†Ø¸Ø§Ù… ÙŠØ·Ù„Ø¨ Ù‚Ø±Ø§Ø¡Ø© Ø¨ÙŠØ§Ù†Ø§Øª Ù…ØªØµÙØ­Ùƒ ÙˆØ§Ù„Ø¬Ù‡Ø§Ø² Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… (IPØŒ Ø§Ù„Ù†ÙˆØ¹ØŒ Ø§Ù„Ù†Ø¸Ø§Ù…). Ø³ÙŠØªÙ… ØªØ³Ø¬ÙŠÙ„ Ù‡Ø°Ø§ Ù…Ø¤Ù‚ØªØ§Ù‹ Ø·ÙˆØ§Ù„ ÙØªØ±Ø© Ø¬Ù„Ø³ØªÙƒ.
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleApproveDevice}
-                  className="flex-1 bg-indigo-600 text-white py-3.5 rounded-xl font-black hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
-                >
-                  Ù…ÙˆØ§ÙÙ‚ ÙˆØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø¯Ø®ÙˆÙ„
-                </button>
-                <button
-                  onClick={() => setShowDevicePermissionModal(false)}
-                  className="flex-1 bg-slate-100 text-slate-600 py-3.5 rounded-xl font-black hover:bg-slate-200 transition-all active:scale-95"
-                >
-                  Ø¥Ù„ØºØ§Ø¡
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {false && showExamGateway && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/95 z-[100] flex flex-col p-0 md:p-4">
-            <div className="bg-indigo-700 text-white p-4 flex justify-between items-center shadow-lg md:rounded-t-3xl">
-              <div className="flex items-center gap-3">
-                <BookOpen size={24} className="text-accent" />
-                <h3 className="text-xl font-black">Ø¨ÙˆØ§Ø¨Ø© Ø§Ù„Ø§Ù…ØªØ­Ø§Ù†Ø§Øª Ø§Ù„Ø¥Ù„ÙƒØªØ±ÙˆÙ†ÙŠØ©</h3>
-              </div>
-              <button onClick={() => setShowExamGateway(false)} className="w-10 h-10 flex items-center justify-center bg-white/10 rounded-full hover:bg-white/20 transition-colors">
-                <X size={24} />
-              </button>
-            </div>
-            <div className="flex-1 bg-slate-50 overflow-hidden relative">
-              <div className="absolute inset-0 overflow-y-auto p-4 md:p-8 flex flex-col items-center justify-start">
-                 <div className="w-full max-w-4xl mt-auto mb-auto">
-                   <LiveExamGateway 
-                     setCurrentScreen={(screen) => {
-                       if (screen === 'student-exam') {
-                         setShowExamGateway(false);
-                         setIsPortalOpen(true);
-                         setActiveSection('exam-login');
-                       }
-                     }}
-                     setCurrentStudent={() => {}}
-                     setActiveExam={() => {}}
-                   />
-                 </div>
-              </div>
-            </div>
-            <div className="bg-white p-4 text-center border-t border-slate-200 md:rounded-b-3xl text-[10px] font-black text-slate-400 uppercase tracking-widest">
-              Ù†Ø¸Ø§Ù… Ø§Ù„Ø§Ù…ØªØ­Ø§Ù†Ø§Øª Ø§Ù„Ø±Ù‚Ù…ÙŠ - Ù…Ù‡Ø±Ø¬Ø§Ù† Ø§Ù„ÙƒØ±Ø§Ø²Ø© Ø§Ù„Ù…Ù†Ø·Ù‚Ø© Ù¡Ù¨
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isExportingPDF && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[200] flex flex-col items-center justify-center p-4">
-            <Loader2 className="animate-spin text-white w-16 h-16 mb-4" />
-            <h2 className="text-2xl font-black text-white mb-2 text-center drop-shadow-md">Ø¬Ø§Ø±ÙŠ Ø¥Ø¹Ø¯Ø§Ø¯ ÙˆØªØ¬Ù‡ÙŠØ² Ø§Ù„ØªÙ‚Ø±ÙŠØ± Ø§Ù„ØªØ­Ù„ÙŠÙ„ÙŠ Ø§Ù„Ø´Ø§Ù…Ù„ØŒ Ø¨Ø±Ø¬Ø§Ø¡ Ø§Ù„Ø§Ù†ØªØ¸Ø§Ø±...</h2>
-            {pdfExportProgress && (
-              <p className="text-base font-bold text-coptic-gold mt-2 bg-slate-950/40 px-6 py-2 rounded-full border border-coptic-gold/20 backdrop-blur-md">
-                {pdfExportProgress}
-              </p>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <Lightbox
-        open={lightboxOpen}
-        close={() => setLightboxOpen(false)}
-        index={lightboxIndex}
-        slides={lightboxImages}
-        plugins={[Zoom]}
-        zoom={{
-          maxZoomPixelRatio: 3,
-          zoomInMultiplier: 2,
-          doubleTapDelay: 300,
-          doubleClickDelay: 300,
-          doubleClickMaxStops: 2,
-          keyboardMoveDistance: 50,
-          wheelZoomDistanceFactor: 100,
-          pinchZoomDistanceFactor: 100,
-          scrollToZoom: true,
-        }}
-      />
-    </div>
-  );
-}
-
-export default function App() {
-  return (
-    <ErrorBoundary>
-      <AppComponent />
-    </ErrorBoundary>
-  );
-}
+     xœì}[sÛFšèûüŠ*µ¢ƒ")Q–4’S¾eÆUvâ‰<³ç—‘ˆ5`P—pTµñ-ïT÷ó´IÖc[‰ãx’lâyÜ_A¾î8á|_7.İ@hP”#g‡•X$Ğènt÷[Öæ»æî¹_ıŠ¤>kp™t,İ÷?ĞûÆúÌgv	ş£uË×šdGwµå™s™	Î¿C.è¾Ù!WìmÇëëéØä¢îuÉ;ó‡’Òcmíh{=30Œ@<g`w®¶o¿§w=Íï“-Çë^øGó-=0´f£A|WïÚAÎÄ²#m[Æ>‘ú¾Ö1ì ºÄ×Z î–¶õ¾•&§sèş÷>tá›ŸëÃVã)0öÍõÌ¾îÌùÜzma~h[–Ş¹MhÖûË¦²ŒS=ß=?‚¿FOFG„^ørôüø.?[›ïµsVƒí½ì–Òêe`¢ß]M~.€H~ŸÑ¶Jƒ'-}Ë°2k¼Ùlºû7IzåØŠ­ Œ\×ğ:ºo-ËÛı-­Y:!t9ïÓÕß}3z1~ˆ?¿‚Å~ÿ>ÿëèIÙŒçé”K_Ì´İA ßş¸áKÏ”7va)Œc ¯Ï x¼}3¾Ç`%y±ämfJ;ÜÕ­€¹mì]×½Àì˜®nu6B†ââÇ±/öt{7Èú92,}€cûJÖ‰QtoÇêt¿VxÚ7‚„‰Ö†õz]œû‚“_Å1çT:eSÚâàÃ¤à±z ø]›«û®eµùÿí¿;?Wß6- +µ=|Ñ½ºeØ;Aœ#¥!ÌmRs“)"˜_ö<Ç#ÿğlà¸Ãu²0§´t1®Kú¬ÙËRšUùªÀÀkà­º–³ÀßåÏ%ø>üxOÛ†9w_k÷ IöNˆèíFÄ#ŞJğ=2’u˜Kè<Ë¾Î·@>:5Õ‚]ôL{h÷#¼?KVãNÙ,ZTO!ànÌÆ<.&ï}âË´Ívl#ê#b‹§Û¾‰\UÓ­˜-bËË×Ï3şy`ÂŒKær¨è#_V€ËZéÒ49n¼ú)Şq¹%êZ³Ş&ïö”İ´ØâSÀI–# $–¡wÙ¾Yú¾ÑåäŠÔÊê6lìã¶Ş54ÓVàğrÀÁl£õ`Ÿokdf–ÂÙÌœû¯ÿûoÿï§ÿ³6*pNºş‡ª½°şä3WMCÓ¿Ø3:·a19Šri ô¯ë¦®„‡7pÇ8Æ½Kí†;°|ƒ-`ßèšƒ>…„¾Şõrüˆ±²£Ñóññ2¾?~@ÆwàÖ+`zÏHZ^>°6ï)\Éü£îÙ°6ÇÂ
+½¿hÁv¹:f°çN'nD¯:eìHoÇkE’<ıJhóæÈÀTø}	¨u/B¥ğ3Ô4¦$şú†etä_¹
+¿S]Uiß«)ùó°”6ğBËŒŠÌ’"*
+¥2GAt€nwXßåš€¢D¡€oKMlcgP·Eëhô2xkó¬ayÃîõfçª±kX~½¯»µš»
+´ë`w=ğ¶q°>të Íşñ¤†z•³M\²¾¾Nfı —lFä;—j8s‡ğ•·=<§Ò(~¥R`âEñ£D­şÅ‘ã‡£WS¢02+PŒ†Mß\ÊR‘ƒâß{{Úf{ŞUaòk[ƒ plÎÅôyÖ¼ë(	¾v{}X›S'a;¼˜ŠÊèÛñİÑËYê%*]¸Z¨ÿdLgÿ4ğsû ú*ÂeMSŸ·Ó4œM’¡K8Oª°EôJ8³Õ¿8ˆCA¢çìÂÛÆ{´töPAIR4ØÄ„¶£o0¤|	’òWã?½°ÍôBK8µ©Á‹’pšyK¡ÍL·tÕfrd(v÷0æì<±ì™İ®aÏÀ=½û¡m”Y
+JçYÒ Œ“¡·á¢Ów€	Ù Ü±ÄãvıÚüòñ¦ì}¹á9nïàX^ˆ°§	|(¯¡nÈlè‡xJõï£|OD8`©ĞRÍÑRò@7gHóiİdò¡ÙİŸS±J3ó/ÆŒ.‚ šS˜ÔI Ó/3­²;Ï` +ô'
+°Û¦İ­Y8;‹Ê”ìÉ R;.LßÕM™,ƒNÿ}Ç‹†fñğ“¾“ÔsófÙ Js0ı©è{Éôq&]½di•0AYi/˜¥ü-xlS0ğl²­[¾‚o Ÿö°î;}£Vëœ!&Ú$oÁP §C‡‰Ç	<ƒÓîXƒ®á×f%~?"GÆmÍáfSÖ]ÕYVYºÃ_kqoŠ–/ªƒÁ‹N¦’Ğ~^¯Z‚Ÿ‘{FF/ÇwÆ÷	¾	y—4U&E­…6UµàGÎÛyŠ´	³¼©2Å‰\vøa(SˆèãfFÒfTJR¢OÔ%}…‰|‚øQ“„ù	®Æ#«9	•|aøùE›ˆÔdd‰HÓHÚ”àš¦©[‚ğ3”³;Æöq“SN·Ä9+6'ŒÒáp‡êÏ„¸\ñ©nÈR°¦˜,}]%u?jË‹6CÕ•«´{sJÓU3±–*Öıb/ÖˆKG(¸UD¶™PĞA íÔ©‡ÇÿG3è%B pşrŸSÖßD	MHæÛ<E‰NÔ¤Ù»šÊˆª(Í¥\Zz»TS‘:÷}Aßç}J¥°1¾Oa~=[¥"\y8zN`}y'¶H"€=¤O¾ ãOáÚˆ’­ï‘†ï2*6©—êø%ÉR+€OÅú·@İ\' çíÀÔ.À—÷MÃ*Ñª©Í¡`Nœ5¢ ³SÜò[·¶@f3ìî­]Ãóşoí Ï+zÔ, ¬bÅus[%³ú–ïXƒÀ˜=Sø„elĞZ[»_Ò8p\ìy8%÷ÌnĞƒ¦ÍÒ.{†¹Ó”š¢kÛrö 1³×”µ9ÛVI£ Y¡ è[W€Zì¯µB¡W¹¯e°½@ä4Ğc™ŠvT÷L]coºLQãWzÆé†ÁpÑ¬é¶fD&ÒRÏ×D³ ³æK°jc°Õ7rÚùÈFh®ªb©¢d—W;…Fúİsö(ı]$n -›¢˜‘±X”ˆÍÆ,Fë|·Ëq¤bfÌKìu1H¤øq‰™
+Â” 3–ãNiÍnU¹P^íw«nÄ·V2Âm©šæŞÎ{›ĞŞœÄªtïx Ø¿³gtYtX<‰Ãr‰É*iHÙÓ–HşYw+úÂ1üht=\<ñÊR%$
+óğ]Œñ`<Ş„F:_·>ggœ?W¼©E‹—İùnôõøÑø(ctİ’+‘²ÓÙbù«Ü”^jJÖ(‰VÆ–ÎÎÆAø5v±Ì¢’9°ï úÁkœ›x‰ı“”«1íòhäıF`¸µf™ «Š3 •.§´ÒfMÄ~.‰Ú¨;³–Jøbä=½`¢±^G£W 4Æ%…RV‘…ÄşºgìšÆ¹áììXFDôóˆ}F(`µ#,­ˆP
+ÕY—à`–×œ®Q›uÙ”g‹”‰¹â §º#R–˜Ş¸x¾`©ØlyFÿ&yYy@ØİRâ´†YâyáµvIÃï“˜“Mµ«û=#W) “ém"í…’IğÁ­}Æƒ3ÓØ»ø»h
+/B¿bšM1¿¿|`„¤z¡uX¤O•¹ãR/IwƒÍµx½Å"g,³ºiìE”ÌZ#Ğ×ğ.¬Í÷ÇÍ*†±ŸãÅÓ™s0úËÑ ÷Hğ$˜Æ0pİâè¹‰õ!áÕº#Ì¡ˆÙÔø3üùœÎ–¦†ªr%¦ˆ>•‘Ÿó \î‚hOnzß'<c¨B„š­|*¤àıTó|‰¬ÅÈ•$*!—à-„"wü©!P1¢,d –¾ŒÔ}ÁÜ®‰t4şaàĞ÷£iØBU‰c"8³	Ã:6Æ£ñ€úñ§‘Ç)vò2½ô’ÎâÏÑdîQtx€¾?dW_ş:şô8¨QdÂ(u[;gq³ÈÓ”0·4¯™[Ÿ¶ãÔ/£Ãiè? ¶¯oG_“4 ”ÒßcØ@Ó+‡1é@ÍŒ²¥BnHÌ.®ŒŞ×<äi”Q‚ğÃN³Eòxø:ƒAğ34º&*C8¸J’@ÉvËH\Cô*/oRÄ-#Ø3•0~%J?K‰’¡0+õdàG@9hêäSÏG/˜VÇg°F°E"F¯ ¡¨É±Ï1ãç”Óì.'Û«]éô)U?«²ùğfT…T|®o`Îê˜¼Ššå”VrxSµïNÏ1™‡­ÊŒLuĞè¬ú.®áÑts»cT^}‚ Ó­’†ê3Ûÿ”š+X "¹íÂjmvV-1³Z|fì'É¨èŒ D:’=Éå¸¢
+ùHÁß Ó?¬=!PpÙM-6²,mç”ÄÆ‡êÎ×ø—ÔX|²İ“Ñl	_şôó»ñ£¹“K²AzTçé&KÌàØ':²\®#v[İ¾}NCÈDÚKË¥³?¹´™LĞ„V*ÅOÃ70&‚„Ê1BÒMÔKœP_8—|UŸeyŒÀ//}FFŞ9!2 ó\i’$;‘­ıãeŸcb¼*azM]Êeá}¡ßˆF"g¸„j™‹·X/qÄ*ÊËJdĞ	„9 ¡¥aVµ †r *û¬©‡C¥6*™ÕqPê¡
+RúbµÀ¨â@ºÉï©¡’ËU[+ÆaŸ)•‘ì0µÂİ¥óâwV¼pü]eı	;š¾têw³Òv(o†¸RC.‡ç¢/•WEìîã·£âÍü8é|âÎ%ÙO~œIwYmvøp®ö,¹Ò1™¬JÁ‰¨oqŞºb …0ÿ”~–Ø\Tµ³œRÌúÄ‚áñûÁœS½Â›.»)Koj6•@÷¨ÌFµ0w9Ö¤E#ò"îôí4ş…j_hŒ*(T’§Jí£nvc¥/¾p.ü*ÖDPcPs*4¬*N9Z½×ÿîôß[4»Pø„×£qUêÕlnÅ_Qó3/é]érêGš–16ª~¤ºKé!Õg”£e0±tŞãq&€¦qƒ`j$ÍÑ1¢‹é×‚ÚÓz&EO”ÃÑj[¦?Ë)Šç:•ŒT¡×hš­xí½4’Š7¥—¯t97Ëú7¥ÇÄ;Ô¨¢òà©®aq3Š+Í%pÃ)lÎÒğ™ãGãû±£¯0š ÃFÏèo¬Xú4ú×ŒRgâè{t/¾u8'4?Äé£¬.÷xXêT ynÜ-sKğ]ßLrmómásUW,~å
+k–¿mIÔEõ­‹U‹éL¥¢&®ùø$çh¹æ0f8şE#„'z·¢OnãÊXN#éy]Ü•iUP¨ó£â\òçÕÒ³iªW¢R•Tb£P”S¨é,+,GµŒ%ñ“Wp93wĞ±Ô{M©{às!5m}u¾¸ÿÉT>öyÓ?ü(ZÉ”rJÃ¦™X%a5¸¨¼…Q©¿¾DT#t‹&WÑ¥qBa]W9š/
+V”Õ±fëÆ¿eìM)(CEDPİ`XŒ:ZÒ7íõ™F•'R¨“ *7Ô±K—¹hW÷|ãŠIicCW@íä^@än¥“Ê1;ŒIKÃG„Ä2¬Ğ\}ùñ¹FŸN´yLƒê¾ú¥¢…uRˆ#zıu^3ê¤òƒÄş×W™l:aÀˆV·²ó…÷ÇY	ÃÚ«jFÁ`n¼KÒM8ˆV˜c!Fµ©bÃRû§»‰J§¾•iAÖPÎ*ØÊ+÷ÅCNYGJ’”jÑ*©†	Ê×@1ŸëàTè[É:`IÑÓÑóÑW´ZŠ{:úqMÌ´aqÌî@Èûàø‹’¼÷]N'}J±j'GSS»ÒI&Ê¯ ì„ce^5ìëA§'æ¥ûÜi=jG8DŸ4ÂDFÈ'@¢ÒUVvˆ2Oğ§¾¯õ´Åå¸Î$,¬v]+ÊôĞ–$³»UÒÓsòÊ•†Ç`é’Jó"düÙèÛÑ“î†9!´µ¢¼
+³Ì8ïiˆöÏ)j¯VY‘*r~äÀÃŠÍWò†ã+×æ?qû*"(~ª&ÃğŸL9Ún¯eW£¦^k,úd‰UH‹q¤J´CH‹ÓRdæl.¶Ã2V©T(1OŠ£d †:_m©ªA>‰O1‰<¿ª§ŸdúÈŠ+)Dóg­ØCÙC£Şª‚TDdüÀ«(Ì‘z‰	^]½äzòQ«.õ_@(÷;^zÛàKì\3|=ÉÕxO~%´ÀšÖFH08KkR;ã*K©¬–(.äéQI*xQ§áÃ9A…$gHÕ"¹'¨ÒTuüW“™Ü6VM›yıúÌô5š×¢Óü"´šÊzMÍfÚºÍÏ§İT”:N¯bóó©6(7SWo&Up¡âOÉ9Q5ç—¦èTWu¦£ìœ2ugr…g2•g2¥§šÚS™xTè{JÊÏkU¦¢ UR*,éI8qNK —á:ú">‰”V)ú¦z—jWâB"„Fø½11bÙ×«aÅ,àö_ƒ0@\Ã:Z_Ã›a‘:ôç&"+®œP$Yº¬Ë‰…“½	òşÉx1^¿å£ä¾r&7Ë+,l¢Xİ‰a¡O«{Í”5–©¦•ÀJäëS'åOOY}jZUlÚ…©Ëå;Ù^gUê*%©å³­Z:ä-!šJÕ¨çÑ„xŒzzeyµ?k	Caw^kÃx›îdiiÌã•/L/3^lÂ¨(Ï¤ı³ñr¡xMàô5¿ã9–µ¥—…3·MÛ Å
+ı«¦_tÊ~¨’¨¨èÉlMNÌ&çóÕTÁ¤@bXµ8&t)¢_ÃêËñZ…'Œ*¤Iç¢ÇÕ`N(Ñkh‘j±‰¬RqD;òBk%–£«M± yxYá Ìb œäX¡@ïöM{Å*ñz§7ğ:½Y…“zÂ·U¯o˜±X0Ëë%Oİ ²î²¢Ì%[`<
+ÙC›ĞZ 03%ÊñC«ÙNô}ş,WŠ›^£52û«.°+Ğ€§øpE|°İH®%Ã¥ÊÍ§€ŒßPx8Ùuø‘·ñhÇTæ3°°0ÇóÑ·X…ƒcS<í†§û½VtZÒrañaî1e{€TFEPÔÔ’ŠR‡ÌF'ËT;EÓ}šVšJÃR™¿˜vXvülôáHlKe×ñ<ÎšÒ””1=ÏŠ‘R<¸C²šâ²Ä³SûT"ÀR%6ñ…”¦jôO·ºWÃéf:£sUœGJeUFjÅÒı(Î@¥v	k˜;ª„r8K‡3ğÉ	Ík"–…@mM¹J‚z}ãD_ÇuTb§¯z,sîÁI{îR±µJrìI=,™‹«¹ysùAúÑù¼•ıhìØ[Qà
+³ šÀUËòãš›†°°)3Å’²Ó?~å>3ËçØ×ŞßG¤úch½Æç*Û¿«Ú—OÆ:%‚©J&2¬3@õ H€ª{qN3Q¤,2Ä-;$"Õ…Ü!$';q¾E”g¸Š|&•[TÍ33áøaÂ?“İt‚3ˆ]Şb[Fón±/œJ-½84%;ã¹JSVÆSõB>? ÑœhÊç—p³qó½:«¯N-íÚì	-Òa¹å/&;#=äü„ıÌ¾Ä£ï‚Ôé\uğ„"¼Ög™Õ=íòofÕ@éıTJ•¼E;K-ƒäL)^¦à˜$šà×HL*¹azìªŒCÅ0Â[Ú—³–¶Ä!\›Z¦¨Â¦¢Yæ³(ƒ‘*„Öaùš…Ko‰á->	şıWî¸%İÕì¦•oæŞ’‰yD+GŠV?ô¾ê€-^Îİi“ÇV5TôxGÍá(ªçÌåX‰p"!w œÄ#Ë´ä½1 B‡ß’~æ[‘‹¿+Õhİd%¯ŒèZ£¾²|3m{ÚÓ¶Í\op,^ì»cD#€syr²\TÀ5<õ¾ş øö<ô‹'ŞŠ\ğ.¶IiYY¸D¹Ë Rà…áF2ï~OÇƒ0É[a`Òt‡m•‘¡ª§Õc@€x^
+o@X_¥NÕ¹?úfôŞ¡ó†Çà9 x¾3E@Õ¼ÿú—/
+¼û( ÙåäR‰Ü•»¦Jøê¡´J¥>,´¿qüÔ™|Ps‘œ¹õdõ¨|ü,ªœGín™É 1¸Y·L5ë€ÊéO¡'&¶º3âYìÆ)súûä?y?{kÜÃ2‚š«œüÇã}ì¼R²Â€EØİ;Ô
+¥‘U„[%?e6Ï¥\Q”Ë^©b/³×IÕ‚(âq:âœJ%àR8CÖÆĞ¾RšË°t€;´9²†”â‚ãX†n‡ÖÂNka•0
+¡â"ÄàVyt…nl.)·¡ãkØ9TS[‡u,¡/­¡4=”“ššUj|´)©¨m9zw#ta´ß}tåcµxòT’İ)ÌâÙq¸ƒù«ËüñÈáµvU=
+<ò†¢PrŸ‰¦4Vˆhü/äwMç ±µßy¸:Õ<¢êşĞÉ7Qù`À´¤v,óâã¡‚bÎÁIR¢Üsp$‰ŒœL¢Ók2è7½TcU‘ë†İ1­7D:½mzıóv—Ålû¡¯aËÄ-÷€0´Å¨˜ê[Nã$¦´ÃbXÄÒTwxâIIƒ"Ş•£©™ÓÜv	E;Sm¶„’aJE''³ENh+l^¹ÆÌ¸W¥·ÊV>oá§fçK }zmş²îY¿õøÍ@÷ºâıÌ#kó}±®.\çÃ¦ÙélÆ†Ñ¡ÇP×›ßmXÆljÖ’Ş„qMp[·Ö‡Ã(t
+D%ÔÌßê+í4]	cq…'šñÍts‰†¿ÌS„Ô2\ Ùó#¶©•®ªı§}³â¨Ùš‡Ñ‚EG>„?sÄõD8¦Õté1ÒI˜d~r¾¨w£}*e^¤Êº•njÎAa‰¾½ˆúö"¯c´E=Z°²–F¬sÁwÌˆÚl
+Ü…~¥çuçÚ.ÂcvW÷"‹`>›/Bí"Ë¿ÄR˜k(\¡JpÆ¾Şÿ Ô¸s,‚T%ïFÅ
+Ş9'†g~« «šl*˜jT E 1ûL,
+¥¿bÇOUcmÕ˜&–½rï7aá†ñÃñÑQ!+²Ë&cìÂµC¢%Tºo‹ì5“°Äÿ¦PwMw¯›öé‡9PÍïÒ# ç™^~„«˜	q20g9éù´¡,ç†ôrVÖæø|¹k¿T¢n5ÒµpJü^ÎÉcZÆGˆ…>û´+Ÿºğü-åùÕDrÆa‡¢ùè(Í‘La@“Ó_Ñ3fœùòmwEæÎ¿C.#%WMû¶O"ÙöùÔ£©’J]BnŠê&S”’P¥R%ZŠ$ŠŠ*:ğQÒh•p.ïÃ-[·páŠÈy˜”‡x•e"àp5O£ÈŸ ä±€@ê™Äìæñz£ÀZÙ/ƒà¤v3’Û¦ av?æóÇÙ±ò>ˆ™¾:àÊİ˜Õ’…\~6üpëŸ Îë°¹iø5$)ø‡îƒMêe9Cuó1»û¹¾„5]n¡bî„î¾\îyÆöúz—ßfyÛë3·`³íÛrcgXë3¶ã¸†àj;Ğ£áyy¥á¼šå5Ì"C6»œ gáæñL¦BI&U!"§È¡š/­¤#ïäèsVğàEŞµ¢P:Ş7%‘‰WÄ2„¡ •õ©µy]b‘˜\"(X@\%Òî˜¸*™¶bşÉQJŸ°(òP¸œõV±4MÉ’dÚÛÎq­Hğ/ˆJjö#|âµÙ8y¡Ù8¦Ø6}‰½Í%ÑğRÅÖ"®À†æP1Ê±Ğª$1H$ƒ…Ñàµğ?£ÕMDñTw1£`ôWšŸä,9­rbn(¡ÿ²ñhY¹=ZåC¶êYtK„D‰3Ä2ô.Ê˜¸¼¤ãÕx‘ƒ‚L×3h†‘té‡ú–3.Âs°=uúãŒDãÁÖ">x|ëÜ`¤ßgã‡„¨ï¡Á4¢oøÏ1|D Æñ¿	kô”
+[Ÿ‡}Æ±_ôç¤H´Çğ°Ä—£¯€P}c‡İÇÙÄae_B_ÏãŞF¯ØÄê@œû¯Œ^R“\Má!¼Ô‹ñ§ñ•º¤V‚\üš Äk™æ÷åèSËÄ²”;,eÖ€Ty‚<9NFµ-ÇÚ‘¹’¥¨VĞwÑ;t½dãÀ{Fÿõ‚rxz^-„\f×Dî4~¨â~DœØ5}d<ˆ	à²Š‘Š@,½Cã»èzŒ‡ˆ"ÚŒ?“ƒñŸ	ù9z…QqıS¤Î~ĞùŒAïäÂÃ®À¶O)×~Î®ıVZ}ÕYEæš=aÃXPèä¹ÄÙ*Wağÿİ!ö;f%}`¶oú	Ğ„aL\oä Ñ§½½KE¿§Œ´2@ú1!êx[|çÓâOx}Jy¹:gO dŸ’øĞZ®£—‚ÿƒ5@—®"Lâ;öó{Z¨àÓÈğ| ÿiÂ¾A2z6(.R¢/åŠªIƒóL|¼î¾awñiá1ág"î¢‰é}ÇANÌJkÛìŠ(#îx ,°×Zàh[dÛÃÚ-q…:¼–àJ(Nh­EZd°‘”;I:É¤yÒGçÛØ):YAQqe)h<m³Ù¢vb!^Pë{XhWƒÂŸ¨ª’;°|CPır'°åXÁ¦Á*‚¤¦Àğ„Õ¢	Xl@R–…!sÇfrÜY O‘Ôİz¤bm!:Ş…OÒ"Bn•ó´$¡&à·KA²g›› Ôõ`_é¢Á[Vòªr°Ç9E¾À†jaşOK¡êÎšÙß!¾×YîÁtËì^uvœß{VKœ!ºëâ…¹CâØ—=ÏñÖ‡5æ/£ŞxXÌå+öİubAó_ƒnGt+XŸÁ‡g$UıÂ’=5À.ÚnÚñRI,¹zLSÉ2¼´¦YÄ.T¢Ñ|üÅøßàÿ¿ÈPz«a—É^hõM{Ëé[ÒŠJ¯$»Td‹ˆt™4££¯Ú7ºæ ªFñ€w%êÇİÑ_ynô€2/`@ŸŸ  †¢,Õ÷¡ò0úüü[Â£0îï!0,u*÷Š¹ãcŸKØŞ½|åwG¹ña¨Àğ|.ìæÍšÆõÔ*»
+H/Çó¡ğ¹aĞŠr~}¨È–ãÜÎq-é¡¹UúÌaÚØšoXÍu2ä–~·aI)äC½I™V“Œ:õi6ŠÂWüİY¨û¶iYZHPªÄ]ÓØ»àì¯Ï4Hƒ Cn-Îœ[sõ Gºë3×àB³Uoœ]è4´¥úRë¬Ö®/œ]€õcÿù¸’Ñ%hÚiÀ¯•²X_X^&MŒ‰ZÄ?ÍV›4›õåöâ®¶÷Ú¿=½.ïjõÅ³½…zcñìVê‹8ühœ%ÍúÙ•–¶X_ZÂÎÚá÷f}‚™Ö—–—ê­…vòm·£-ü¶Ù®//t´f}q¥Iğw¥½T_iµÙ7è`ùì"4mµaØ…Ö²¥Aï-Bç¡µ`Ô¥]:Á‹Í•úÕ‚ù´ÎâÊ4—ë¥‰—ä“™ùskó°2¡.cé•¸Yy°Ë ª_¢gN#*ø·8GÃ/ |WIã"€ûâÁ6Ñ7v`©Ş^Y/‡íÅ?¬Aô„Æ·ÔØŸ‹ pËËq'Ëõöb+~€4>é·ë­Ü€–š­Ş\iÁÿM­¾¸x¶ŞZ^ÒêáŸV{À¿ŞnÀ÷ÆJ[«/­,kxË[n,óÿúïD½iˆ,Ü?Ízƒ¡İÂÊ’•H‹Ê(¾Jğjôn†ÅM–ğı<CğGô?a±{––é$İI9ÊK4¸Ô‰;m—Õˆ…µ¡¼¤hN\ÓßC+ïşªÈ¯¨m9•	·6°dóYÌ÷2ÇäYiß2ÏEiÙøó¼ƒ¥6ÛsúÆìœà¥SÉ¶È3ÂD%Ê$¿
+Ê™ÜÈ“F&èKîƒ¼*§h–aı…,Áâ úµyxçã,ƒmìùoÎ2|1ú&:“åKøJEŞ©­…´V(Ö&vlZ­ÜlùÏti¶!­JŒ>Ô7hõ2A tÅ@iÁğÄÎ æäxoÎú<§jÉSŞdø´`EÖæ–„îş<ÔöˆRÛĞZ1b°ÁZ+«*‘R[YiÜ: ¢Ş›kÓ¥Nø/i5oXÑ#´€Rí”BİSÀÜ`º?¤jeĞ ¤¤¸ZkÑyp„^„Ghÿ)²ªòïŠİç”QZ.á>5ÅÆzé­ØÀú…&ÚØ]C„§»¡…˜Æ<[•ØZ«„‹ò´ÛÃcòâ*"üc»Wß–<yøña¹éK¨ƒ_ŒbÅyEñsBq$Û·«åpfÒ–$³­DpÏjşñ¬¯ÓUæëĞW‹¢Éê;¶“9çãÚ@íéšŞúŒx)”İ¸ü°!yÈÎ$‘%oU€.¹;uŒ•ìğ5Ißf£Ş2ú7K¬.Ç=`'h¡;æ?ŸÅö:Î‹Xö||CîwŸ?Tş	pU+¶{ÍVy…ŸXàçïƒåè8mrÅÆsAH´’¸#†¦ÕÙÙ1ºWlÄ]¹p  µ$Cµ”MštxÓğÅŠL<šû4DŠı—˜Ñ‰|‚~H!A–?0;ÚN,"‹ñĞÔäÉÙ§UîD·Š/­´KÃú¢üÓÇ‘K1ÅBjü=æ«ÿ”<)lkx¶ÓÆ?tÏÈ©Íàmì*a^fíõ´…Ä‰—éò ~¾*,—¨?I{ŞÉi;´®ë˜¸Ğš±îË¢d×NÀ‘â¤“oc [cIÎYÒ3Í¸ætu+YÙ¨áy¬¥a`İşÈØ1}˜pÜ¹éè6ä’iƒ7xF,p|ƒÃ‚+òGjÛºåóG‘ºƒ-ÀŸ‹Û}(şNÚul½ovhÍoh&üäç±1èt ¤Ö‡,¯Ÿ?¼•´f ÿ?İ[&ß£ûñ:…+¹&7¤V1ZçXNßÿÉó%#ĞMËÏÙËû®ã¤ûö=Ñ‘mÂõî6í |íù–™%ïĞqp­»ÛlLnMÂ$pë~†a ±³.<ígğûÛÁ%=ĞoàA@5è
+œ!üSgH4Âò1€ıV¨€F' +ÁèÎû4Ä“Êk/ÆŸqŞ†ÀP¨H÷”Kõz;) Y\5óc.ÏÿÛìò|ßÃ°€ ]Ù:Û–cÅn*m¦ûfPÜM†µ˜6 …Ö`,¥”-ye+Æ|;mÛõûñ¡9 ,—ø|¦àE„‰RŸÏ¬M²:Ê#ÈâUy)˜Öx=yÑ1¼qøªäÑ'ªät,³\£È™˜Q|”f»æ:(—XWKI{V}ÆèËÏWTP‘b‡¬ú~ş‰´Jå;„)ÆÔ§–S¥ ü"÷@ÍõŒ]šÁ1$õz	)é*¡‘ÎI»’øH½²Ö¤g±İtILMáD‰ıì¹v}îÜhqVVüCíd²V6ÅBªˆHJz`XŞ—X	bôBbÎ«æ¡¼Ÿí…ò²§ÎŠNr:*-~’á§P{E¶®£Ç¸ˆ6	å%”j{²X¬Ò-I„V9û2ı‹ôh, àÌ~, dx"yX¶FOY¢9[îuÊxCp¦ZD% ¢"ë)c(ê¼©$nHš&ÒmFÇûİL°X¢5•Æ¹É{’ÓËËO‚æ¢Le$³*Ë¨0º¶a¡MÃ/*ğŠ”mwF?àièù‚·´(ªØe™…ùVä+9P‰©æËlá$ù{ş²ÔLeô”ïxİRc·—l†°Q.¾5%;u
+>,ÿ0Ğ·®tñD×®±ŸË»ü€`SL3Y'ç¯^½uşÒµ+ÜºqşÂF}f'ÓáIdÔA»•ò9s›ÔŞ
+»š+;U”lú¿eøıŠ/Âğ(9ä"XÉ¥plyù%î=ì“áÇåµW±r69ô_…?Ê3.øÊat¤ô/5¢#=…ã46‡ƒãYŸªñÚœù¨R%­Zy4¶¹ =Å»Ë­|£Ã
+œdçüûVj°H›Àä¥amn–ÔY"qCxœz,öx†°.W“y×o+.ÜÆCº¡8c,)’ÄË#@›¼1\|lÁSÖÏ`íòñáö¶POi…ËÂµ‚±
+¶å¤Òò¢”(}áÉ_Œ˜Ôé‰àeµeÕ:òkôÓ˜ã¢š!åÂQŒô–åÅÁG%„Šñ‰Z~ $A©G	"lF]l²Yj¤yó/Ş¼‰ı§®¥Ñ'KSC::íÕ¸ûb”+Ä8%.áQ´_±	v¡‘\ãÚ'u“sG.Â³Èéü{W­ b9M‹R1!Ìá†½<õúîÄúîß!5ú¨@ê%gÏ¬NR-([ŠÿP±Jc¾RdD°|ËRìÌØ¿¡ï	¤
+{GUøtÎtÃéXœÀXrŒ|Æ¥ò¡IÙ:EG?EZU¨mÏˆPì,=¶Ù gP7ñ%c×ìdâ8‹o®™;×´-7gç›°;Â²Ô°Ùl7nQf¨hS¸êè ‚-ÁĞ¦qù®ió`“äI{ZëµTzÎIUÀ”tm$Ú÷êRÇ4™ÏX!»…‰¶OFªxë¤H~ÏÙcppİğÂìLæÕ:M`PĞˆ àJ4>²&íe\ï¹Y‰Â—ÅT>"{Õ}ëïÑÀû¤½,Ç©(-.)NŸ®j_)dŸ;ål‰ÄvDóœ€º!d„{£gV—”¢jr®Qõ„¡Ğ¡"†–}GOß|Îœ‡¡\Q•œ.m6ÜrAt¾;†ÆÌ`š}˜Šõ]XÏë™´´×èÏ¢úè1ğ>g‘qÂ!EGìôªñİ([,|Ç$ïˆEÕ‘Ú•ëñ xÎbj´¹:¡ÊÌ=öAoßb¹éû£ÇZ›Xt‡À¬èXxNİQt†Ò=«WÏlø‰ûš˜ŒpŞu=ÀJFÂ”}ŠˆŞ™Ã‚bú(ˆ”§GLaI‹Jˆ0›ïSd9`¦ûû‚&›gO'›{g#d‚JVêÌYbÎ…µ•zqpi'ZĞi¹t^ƒ/‡¹Í€å"?ÆZXñ|O?8=\x¥-ráXCfÖï®*q^w8¼‹*ezZì‚Ñ"8¢ÉV—’Òs›:ÑòÏÏcûÒªo¥şŸ†Y6rfÀ.>ƒÙ_ÒPÿGUJ<å:j6DÈ’ùg’rÀ¥ÂŸ)(D,Šç¢IC†eë^èã‘c«Bdmš0ˆ”á"ÙN]~‹Ğ#í)¢õÊ–U´?Ğ=éÙYQsv.îÓ4øHNÃ¿rÓéÚUx'ÈíèÚg	’ÏÀ°´šO¿[›ĞÙÄÚ…'(°™4L¯™+²Råb=‡…À9^zÑk]Ò>´‹óÒ,gÇ´Ê1å“¸¥coÛè
+`óÂ·/i-3ıL\!¦@Š"¼–šmhåä„ênQ¥©baíl‰ÙÔ›$q€¹tñ%(ÍM¨•Ã“•\xıİôY(¼ğõKïŸ>cdieû©2²ÈCÖ*…ÓW‹Oâä-/±¨V7c6èLÀ[ÿ¥(Å1«‘OÓ¹Yl°ĞÔ}øûgZ0Šöùy©XŞì'Db´Á#0»Û®{Î@Š/K-’h¢4³+å¨ã“°d·¹íÆübCà—hèTêĞC!7‡ë9t:Õ_êy‰ÒğBAk˜Å®bJÀ–³?äĞği+¼,OwR¡ÓW¹V]†º(’®àÏä®Ñ5>w»¯ïğì®5 ~6ÿ—ãôo&7>Ÿ€ÜËïÆ6×+­0t•,œáîãWìk+0]ËD?G‹¿İu[–qCw/¬Ø¾ĞhdoSq¯´Á5}#p\?5Âmã€Æ{]CUÚÑv`•´…^öz†aákDŞ×1®H’8àz§§ĞäÇ²n8Øt• OOîòqÜ<B°î}ø«_I×ØÖaÍÈöÀf5xÏ»nIBÊ­¸tÑA÷â@~h}Ñé»å!â2méÿ  ÿÿ ò·Óç

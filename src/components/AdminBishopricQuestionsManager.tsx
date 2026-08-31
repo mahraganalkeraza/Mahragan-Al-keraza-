@@ -14,7 +14,10 @@ import {
   Check, 
   X, 
   Layers,
-  HelpCircle
+  HelpCircle,
+  Sparkles,
+  Award,
+  Star
 } from 'lucide-react';
 import { 
   BishopricExamQuestion, 
@@ -43,6 +46,7 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
   // Filter States
   const [stageFilter, setStageFilter] = useState('الكل');
   const [subjectFilter, setSubjectFilter] = useState('الكل');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'standard' | 'excellence'>('all');
   const [searchTerm, setSearchTerm] = useState('');
 
   // Form State for inline editing or adding
@@ -97,7 +101,8 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
       question_text: '',
       options: ['', '', '', ''],
       correct_answer: '',
-      score: 1
+      score: 1,
+      is_excellence: false
     });
     setIsModalOpen(true);
   };
@@ -110,7 +115,8 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
       question_text: q.question_text || '',
       options: Array.isArray(q.options) && q.options.length > 0 ? [...q.options] : ['', '', '', ''],
       correct_answer: q.correct_answer || '',
-      score: Number(q.score) || 1
+      score: Number(q.score) || 1,
+      is_excellence: Boolean(q.is_excellence)
     });
     setIsModalOpen(true);
   };
@@ -118,7 +124,7 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
   const handleSave = async () => {
     if (!editingQuestion) return;
 
-    const { stage, subject_name, question_text, options, correct_answer, score } = editingQuestion;
+    const { stage, subject_name, question_text, options, correct_answer, score, is_excellence } = editingQuestion;
 
     if (!stage || !subject_name) {
       setStatusMessage({ text: 'يرجى تحديد المرحلة والمسابقة', type: 'error' });
@@ -151,7 +157,8 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
       question_text: question_text.trim(),
       options: cleanOptions,
       correct_answer: correct_answer.trim(),
-      score: Number(score) || 1
+      score: Number(score) || 1,
+      is_excellence: Boolean(is_excellence)
     };
 
     const res = await saveBishopricQuestion(payload);
@@ -159,13 +166,15 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
 
     if (res.success) {
       setStatusMessage({ 
-        text: editingQuestion.id ? 'تم تحديث السؤال بنجاح' : 'تم حفظ السؤال الجديد بنجاح في جدول bishopric_exam_questions', 
+        text: editingQuestion.id 
+          ? (is_excellence ? 'تم تحديث سؤال التميز بنجاح 🌟' : 'تم تحديث السؤال بنجاح') 
+          : (is_excellence ? 'تم حفظ سؤال التميز بنجاح 🌟 في بنك الأسئلة' : 'تم حفظ السؤال الجديد بنجاح في جدول bishopric_exam_questions'), 
         type: 'success' 
       });
       setIsModalOpen(false);
       setEditingQuestion(null);
       loadQuestions();
-      setTimeout(() => setStatusMessage({ text: '', type: null }), 3000);
+      setTimeout(() => setStatusMessage({ text: '', type: null }), 3500);
     } else {
       setStatusMessage({ text: res.error || 'فشل في حفظ السؤال', type: 'error' });
     }
@@ -196,9 +205,20 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
       const matchesSearch = !searchTerm || normText.includes(normSearch);
       const matchesStage = stageFilter === 'الكل' || q.stage === stageFilter;
       const matchesSubject = subjectFilter === 'الكل' || q.subject_name === subjectFilter;
-      return matchesSearch && matchesStage && matchesSubject;
+      
+      const matchesType = typeFilter === 'all' 
+        ? true 
+        : typeFilter === 'excellence' 
+        ? Boolean(q.is_excellence) 
+        : !q.is_excellence;
+
+      return matchesSearch && matchesStage && matchesSubject && matchesType;
     });
-  }, [questions, searchTerm, stageFilter, subjectFilter]);
+  }, [questions, searchTerm, stageFilter, subjectFilter, typeFilter]);
+
+  const totalExcellenceCount = useMemo(() => {
+    return questions.filter(q => q.is_excellence).length;
+  }, [questions]);
 
   return (
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 font-arabic text-right space-y-6" dir="rtl">
@@ -227,6 +247,35 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
             ))}
           </select>
 
+          {/* Type Filter: Standard vs Excellence */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button
+              onClick={() => setTypeFilter('all')}
+              className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                typeFilter === 'all' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              الكل ({questions.length})
+            </button>
+            <button
+              onClick={() => setTypeFilter('standard')}
+              className={`px-3 py-1 text-xs font-black rounded-lg transition-all ${
+                typeFilter === 'standard' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              أساسية ({questions.length - totalExcellenceCount})
+            </button>
+            <button
+              onClick={() => setTypeFilter('excellence')}
+              className={`px-3 py-1 text-xs font-black rounded-lg transition-all flex items-center gap-1 ${
+                typeFilter === 'excellence' ? 'bg-amber-500 text-white shadow-sm' : 'text-amber-700 hover:text-amber-900'
+              }`}
+            >
+              <Sparkles size={12} />
+              <span>تميز ({totalExcellenceCount})</span>
+            </button>
+          </div>
+
           <div className="relative">
             <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -234,7 +283,7 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
               placeholder="بحث في نص السؤال..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pr-9 pl-4 py-2 border border-slate-300 rounded-xl text-sm font-bold bg-white focus:ring-2 focus:ring-indigo-500 w-48 sm:w-64"
+              className="pr-9 pl-4 py-2 border border-slate-300 rounded-xl text-sm font-bold bg-white focus:ring-2 focus:ring-indigo-500 w-48 sm:w-56"
             />
           </div>
         </div>
@@ -285,7 +334,7 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
       ) : filteredQuestions.length === 0 ? (
         <div className="py-12 text-center text-slate-500 font-bold bg-slate-50 rounded-2xl border border-dashed border-slate-300">
           <HelpCircle size={32} className="mx-auto mb-2 text-slate-400" />
-          <p>لا توجد أسئلة مضافة حتى الآن لهذه المرحلة أو المسابقة.</p>
+          <p>لا توجد أسئلة مضافة حتى الآن تطابق معايير التصفية المحددة.</p>
           <button
             onClick={handleOpenAdd}
             className="mt-3 px-4 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-black inline-flex items-center gap-1.5 transition-all"
@@ -295,81 +344,113 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-6">
-          {filteredQuestions.map((q, qIndex) => (
-            <div
-              key={q.id || qIndex}
-              className="p-6 border border-slate-200 rounded-2xl bg-slate-50 relative group hover:border-indigo-300 transition-all shadow-sm"
-            >
-              {/* Top Left Actions matching Tab 1 */}
-              <div className="absolute top-4 left-4 flex items-center gap-2">
-                <button
-                  onClick={() => handleOpenEdit(q)}
-                  className="p-1.5 text-indigo-600 hover:text-indigo-800 bg-white border border-slate-200 rounded-lg hover:bg-indigo-50 transition-all cursor-pointer shadow-sm"
-                  title="تعديل السؤال"
-                >
-                  <Edit3 size={16} />
-                </button>
-                <button
-                  onClick={() => handleDelete(q.id)}
-                  className="p-1.5 text-rose-500 hover:text-rose-700 bg-white border border-slate-200 rounded-lg hover:bg-rose-50 transition-all cursor-pointer shadow-sm"
-                  title="حذف السؤال"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-
-              {/* Question Card Header */}
-              <div className="mb-4 pr-2">
-                <div className="flex flex-wrap items-center gap-2 mb-2">
-                  <span className="bg-indigo-600 text-white text-[11px] font-black px-2.5 py-0.5 rounded-full">
-                    سؤال #{qIndex + 1}
-                  </span>
-                  <span className="bg-slate-200 text-slate-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                    المرحلة: {q.stage}
-                  </span>
-                  <span className="bg-purple-100 text-purple-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
-                    المسابقة: {q.subject_name}
-                  </span>
-                  <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">
-                    الدرجة المحددة: {q.score}
-                  </span>
+          {filteredQuestions.map((q, qIndex) => {
+            const isExcellence = Boolean(q.is_excellence);
+            return (
+              <div
+                key={q.id || qIndex}
+                className={`p-6 border rounded-2xl relative group transition-all shadow-sm ${
+                  isExcellence 
+                    ? 'border-amber-300 bg-gradient-to-br from-amber-50/60 via-amber-50/20 to-white hover:border-amber-400 ring-1 ring-amber-200' 
+                    : 'border-slate-200 bg-slate-50 hover:border-indigo-300'
+                }`}
+              >
+                {/* Top Left Actions matching Tab 1 */}
+                <div className="absolute top-4 left-4 flex items-center gap-2">
+                  <button
+                    onClick={() => handleOpenEdit(q)}
+                    className={`p-1.5 rounded-lg border transition-all cursor-pointer shadow-sm ${
+                      isExcellence 
+                        ? 'text-amber-700 hover:text-amber-900 bg-white border-amber-200 hover:bg-amber-50' 
+                        : 'text-indigo-600 hover:text-indigo-800 bg-white border-slate-200 hover:bg-indigo-50'
+                    }`}
+                    title="تعديل السؤال"
+                  >
+                    <Edit3 size={16} />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(q.id)}
+                    className="p-1.5 text-rose-500 hover:text-rose-700 bg-white border border-slate-200 rounded-lg hover:bg-rose-50 transition-all cursor-pointer shadow-sm"
+                    title="حذف السؤال"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
 
-                <h4 className="text-base font-black text-slate-900 mt-2 leading-relaxed">
-                  {q.question_text}
-                </h4>
-              </div>
+                {/* Question Card Header */}
+                <div className="mb-4 pr-2">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full ${
+                      isExcellence ? 'bg-amber-600 text-white' : 'bg-indigo-600 text-white'
+                    }`}>
+                      سؤال #{qIndex + 1}
+                    </span>
 
-              {/* Options Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-200">
-                {Array.isArray(q.options) && q.options.map((opt, optIdx) => {
-                  const isCorrect = q.correct_answer === opt;
-                  return (
-                    <div
-                      key={optIdx}
-                      className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between gap-2 ${
-                        isCorrect
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-black'
-                          : 'bg-white border-slate-200 text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-black border border-slate-300 shrink-0">
-                          {String.fromCharCode(65 + optIdx)}
-                        </span>
-                        <span>{opt}</span>
+                    {/* Excellence Badge */}
+                    {isExcellence ? (
+                      <span className="bg-gradient-to-r from-amber-500 to-yellow-600 text-white text-[11px] font-black px-3 py-0.5 rounded-full shadow-sm flex items-center gap-1 animate-pulse">
+                        <Sparkles size={12} /> سؤال تميز (Tie-Breaker)
+                      </span>
+                    ) : (
+                      <span className="bg-slate-200 text-slate-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                        سؤال أساسي
+                      </span>
+                    )}
+
+                    <span className="bg-slate-200 text-slate-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                      المرحلة: {q.stage}
+                    </span>
+                    <span className="bg-purple-100 text-purple-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full">
+                      المسابقة: {q.subject_name}
+                    </span>
+                    <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">
+                      الدرجة: {q.score}
+                    </span>
+                  </div>
+
+                  <h4 className="text-base font-black text-slate-900 mt-2 leading-relaxed">
+                    {q.question_text}
+                  </h4>
+                  
+                  {isExcellence && (
+                    <p className="text-[11px] font-bold text-amber-800 mt-1 flex items-center gap-1">
+                      <Star size={12} className="text-amber-600 fill-amber-500 shrink-0" />
+                      <span>يظهر هذا السؤال حصرياً للطالب الحاصل على الدرجة النهائية في مسابقة ({q.subject_name}) لتحديد الترتيب الأول.</span>
+                    </p>
+                  )}
+                </div>
+
+                {/* Options Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-200">
+                  {Array.isArray(q.options) && q.options.map((opt, optIdx) => {
+                    const isCorrect = q.correct_answer === opt;
+                    return (
+                      <div
+                        key={optIdx}
+                        className={`p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between gap-2 ${
+                          isCorrect
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-black'
+                            : 'bg-white border-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-[10px] font-black border border-slate-300 shrink-0">
+                            {String.fromCharCode(65 + optIdx)}
+                          </span>
+                          <span>{opt}</span>
+                        </div>
+                        {isCorrect && (
+                          <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
+                            <Check size={12} /> الإجابة النموذجية
+                          </span>
+                        )}
                       </div>
-                      {isCorrect && (
-                        <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0">
-                          <Check size={12} /> الإجابة النموذجية
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -390,6 +471,31 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
               >
                 <X size={20} />
               </button>
+            </div>
+
+            {/* Excellence Toggle Banner */}
+            <div className={`p-4 rounded-2xl border transition-all ${
+              editingQuestion.is_excellence 
+                ? 'bg-amber-50 border-amber-300 text-amber-950 ring-2 ring-amber-400/30' 
+                : 'bg-slate-50 border-slate-200 text-slate-700'
+            }`}>
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={Boolean(editingQuestion.is_excellence)}
+                  onChange={(e) => setEditingQuestion({ ...editingQuestion, is_excellence: e.target.checked })}
+                  className="w-5 h-5 mt-0.5 text-amber-600 rounded-lg focus:ring-amber-500 border-slate-300 shrink-0 cursor-pointer"
+                />
+                <div className="space-y-1">
+                  <span className="font-black text-sm text-slate-900 flex items-center gap-1.5">
+                    <Sparkles size={16} className={editingQuestion.is_excellence ? 'text-amber-600' : 'text-slate-400'} />
+                    <span>سؤال تميز (Tie-Breaker / Excellence Question)</span>
+                  </span>
+                  <p className="text-xs font-bold text-slate-500 leading-relaxed">
+                    عند التفعيل، سيكون هذا السؤال مخفياً ولن يفتح للطالب إلا إذا أحرز الدرجة النهائية في جميع الأسئلة الأساسية الخاصة بهذه المسابقة ({editingQuestion.subject_name || 'المسابقة المحددة'}).
+                  </p>
+                </div>
+              </label>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -420,7 +526,9 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs font-black text-slate-700 block mb-1">الدرجة المخصصة</label>
+                <label className="text-xs font-black text-slate-700 block mb-1">
+                  {editingQuestion.is_excellence ? 'نقاط التميز' : 'الدرجة المخصصة'}
+                </label>
                 <input
                   type="number"
                   min={1}
@@ -433,10 +541,12 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
             </div>
 
             <div>
-              <label className="text-xs font-black text-slate-700 block mb-1">نص السؤال</label>
+              <label className="text-xs font-black text-slate-700 block mb-1">
+                {editingQuestion.is_excellence ? 'نص سؤال التميز' : 'نص السؤال'}
+              </label>
               <textarea
                 rows={3}
-                placeholder="اكتب نص السؤال بوضوح هنا..."
+                placeholder={editingQuestion.is_excellence ? "اكتب نص سؤال التميز لتحديد المراكز الأولى..." : "اكتب نص السؤال بوضوح هنا..."}
                 value={editingQuestion.question_text || ''}
                 onChange={(e) => setEditingQuestion({ ...editingQuestion, question_text: e.target.value })}
                 className="w-full p-3 border border-slate-300 rounded-xl text-sm font-bold bg-white focus:ring-2 focus:ring-indigo-500 leading-relaxed"

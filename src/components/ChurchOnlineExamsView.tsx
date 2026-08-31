@@ -4,10 +4,11 @@ import { ChurchBishopricExamCodesView } from './ChurchBishopricExamCodesView';
 import { 
   BookOpen, 
   QrCode, 
-  RefreshCw,
   Receipt,
-  Globe
+  Globe,
+  Building2
 } from 'lucide-react';
+import { fetchAllBishopricRecordsFromDb } from '../utils/bishopricExamStorage';
 
 interface ChurchOnlineExamsViewProps {
   churchName: string;
@@ -16,11 +17,104 @@ interface ChurchOnlineExamsViewProps {
 }
 
 export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
-  churchName,
+  churchName: propChurchName,
   onOpenPortal
 }) => {
-  const [activeTab, setActiveTab] = useState<'church_subscriptions' | 'bishopric_codes'>('church_subscriptions');
+  // Determine active sub-tab from URL parameter (e.g. ?tab=bishopric-online)
+  const [activeTab, setActiveTab] = useState<'church_subscriptions' | 'bishopric_codes'>(() => {
+    if (typeof window !== 'undefined') {
+      const search = window.location.search || '';
+      const hash = window.location.hash || '';
+      const path = window.location.pathname || '';
+      if (
+        search.includes('tab=bishopric-online') ||
+        search.includes('tab=bishopric_online') ||
+        search.includes('tab=bishopric_codes') ||
+        search.includes('tab=bishopric') ||
+        hash.includes('tab=bishopric') ||
+        path.includes('/church/bishopric-online-exams') ||
+        path.includes('/church-page/bishopric-online')
+      ) {
+        return 'bishopric_codes';
+      }
+    }
+    return 'church_subscriptions';
+  });
+
+  const [activeChurchName, setActiveChurchName] = useState<string>(() => {
+    if (propChurchName && propChurchName.trim()) return propChurchName.trim();
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlChurch = params.get('church');
+      if (urlChurch) return decodeURIComponent(urlChurch);
+      if (window.location.hash.includes('church=')) {
+        const hashQuery = window.location.hash.split('?')[1] || '';
+        const hashParams = new URLSearchParams(hashQuery);
+        const hashChurch = hashParams.get('church');
+        if (hashChurch) return decodeURIComponent(hashChurch);
+      }
+    }
+    return '';
+  });
+
+  const [allChurches, setAllChurches] = useState<string[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Synchronize when prop changes
+  useEffect(() => {
+    if (propChurchName && propChurchName.trim()) {
+      setActiveChurchName(propChurchName.trim());
+    }
+  }, [propChurchName]);
+
+  // Listen to popstate/hashchange for dynamic deep linking
+  useEffect(() => {
+    const handleUrlState = () => {
+      const search = window.location.search || '';
+      const hash = window.location.hash || '';
+      const path = window.location.pathname || '';
+
+      if (
+        search.includes('tab=bishopric-online') ||
+        search.includes('tab=bishopric_online') ||
+        search.includes('tab=bishopric_codes') ||
+        search.includes('tab=bishopric') ||
+        hash.includes('tab=bishopric') ||
+        path.includes('/church/bishopric-online-exams') ||
+        path.includes('/church-page/bishopric-online')
+      ) {
+        setActiveTab('bishopric_codes');
+      }
+
+      const params = new URLSearchParams(search);
+      const churchFromQuery = params.get('church');
+      if (churchFromQuery) {
+        setActiveChurchName(decodeURIComponent(churchFromQuery));
+      }
+    };
+
+    window.addEventListener('popstate', handleUrlState);
+    window.addEventListener('hashchange', handleUrlState);
+    return () => {
+      window.removeEventListener('popstate', handleUrlState);
+      window.removeEventListener('hashchange', handleUrlState);
+    };
+  }, []);
+
+  // Fetch available churches if church name is not set
+  useEffect(() => {
+    if (!activeChurchName) {
+      fetchAllBishopricRecordsFromDb()
+        .then(records => {
+          const list = Array.from(new Set(records.map(r => r.church_name).filter(Boolean))).sort();
+          setAllChurches(list);
+          if (list.length > 0 && !activeChurchName) {
+            setActiveChurchName(list[0]);
+          }
+        })
+        .catch(err => console.warn('Could not load churches for ChurchOnlineExamsView:', err));
+    }
+  }, [activeChurchName]);
 
   return (
     <div className="space-y-8 font-arabic text-right" dir="rtl">
@@ -38,7 +132,7 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
               </div>
               <h3 className="text-2xl font-black">امتحانات الأسقفية واشتراكات الكنيسة</h3>
               <p className="text-indigo-200/80 text-sm font-bold mt-1">
-                كنيسة: {churchName || 'غير محددة'} • اشتراكات الكنائس  وأكواد امتحانات الأسقفية
+                كنيسة: {activeChurchName || 'غير محددة'} • اشتراكات الكنائس وأكواد امتحانات الأسقفية
               </p>
             </div>
           </div>
@@ -53,7 +147,31 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
           )}
         </div>
       </div>
-            {/* Tabs Navigation */}
+
+      {/* Church Selector Bar if multiple churches are available or user is exploring */}
+      {allChurches.length > 1 && (
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs font-black text-slate-700">
+            <Building2 size={16} className="text-indigo-600" />
+            <span>عرض بيانات وأكواد كنيسة:</span>
+          </div>
+          <div className="flex-1 max-w-md">
+            <select
+              value={activeChurchName}
+              onChange={(e) => setActiveChurchName(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {allChurches.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs Navigation */}
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-3">
         {/* Sub-Tab 1: اشتراكات الكنائس */}
         <button
@@ -86,7 +204,7 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
       {activeTab === 'church_subscriptions' && (
         <div className="transition-all animate-fade-in">
           <ChurchQualificationFeesCard 
-            churchName={churchName} 
+            churchName={activeChurchName} 
             refreshTrigger={refreshTrigger} 
           />
         </div>
@@ -94,7 +212,7 @@ export const ChurchOnlineExamsView: React.FC<ChurchOnlineExamsViewProps> = ({
 
       {activeTab === 'bishopric_codes' && (
         <div className="transition-all animate-fade-in">
-          <ChurchBishopricExamCodesView churchName={churchName} />
+          <ChurchBishopricExamCodesView churchName={activeChurchName} />
         </div>
       )}
     </div>

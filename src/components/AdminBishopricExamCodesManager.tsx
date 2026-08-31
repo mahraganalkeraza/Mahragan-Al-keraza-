@@ -27,11 +27,13 @@ import {
   fetchBishopricExamConfig, 
   saveBishopricExamConfig,
   syncBishopricRecordsToSupabase,
-  normalizeArabic
+  normalizeArabic,
+  PUBLIC_BASE_URL
 } from '../utils/bishopricExamStorage';
 import PaginationComponent from './Pagination';
 import { AdminBishopricQuestionsManager } from './AdminBishopricQuestionsManager';
 import { BishopricChurchCodesExporter } from './BishopricChurchCodesExporter';
+import { BishopricPortalLinkShare } from './BishopricPortalLinkShare';
 
 export const AdminBishopricExamCodesManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'codes' | 'questions'>('codes');
@@ -60,7 +62,8 @@ export const AdminBishopricExamCodesManager: React.FC = () => {
     try {
       const data = await fetchBishopricExamConfig();
       setConfig(data);
-      setPortalUrlInput(data.portalUrl || 'https://');
+      const defaultPublicUrl = `${PUBLIC_BASE_URL}?view=bishopric-exam`;
+      setPortalUrlInput(data.portalUrl || defaultPublicUrl);
     } catch (err) {
       console.error('Failed to load Bishopric Exam Config:', err);
     } finally {
@@ -302,6 +305,9 @@ export const AdminBishopricExamCodesManager: React.FC = () => {
         </div>
       ) : (
         <>
+          {/* Dynamic Link Display & One-Click Copy Section */}
+          <BishopricPortalLinkShare />
+
           {/* Grid: Action Cards */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Card 1: Official Portal Link Setup */}
@@ -329,7 +335,7 @@ export const AdminBishopricExamCodesManager: React.FC = () => {
                     type="url"
                     value={portalUrlInput}
                     onChange={(e) => setPortalUrlInput(e.target.value)}
-                    placeholder="https://exams.bishopric.org/portal"
+                    placeholder="https://your-domain.com/bishopric-portal"
                     dir="ltr"
                     className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
                   />

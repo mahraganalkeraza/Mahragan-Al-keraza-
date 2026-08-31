@@ -23,6 +23,7 @@ export interface BishopricExamQuestion {
   options: string[];
   correct_answer: string;
   score: number;
+  is_excellence?: boolean; // سؤال تميز
   created_at?: string;
 }
 
@@ -37,6 +38,11 @@ export interface BishopricExamResult {
   total_score: number;
   max_score: number;
   percentage: number;
+  excellence_points?: number; // نقاط سؤال التميز
+  max_excellence_points?: number;
+  excellence_unlocked?: boolean;
+  excellence_categories?: string[];
+  excellence_answers?: Record<string, any>;
   answers?: any;
   status?: string;
   submitted_at?: string;
@@ -50,8 +56,17 @@ export interface BishopricExamConfig {
   fileName?: string;
 }
 
+export const BISHOPRIC_ALLOWED_STAGES = [
+  'حضانة',
+  'أولى وثانية',
+  'تعليم كبار',
+  'حرفيون',
+  'سمعان الشيخ'
+];
+
 const LOCAL_STORAGE_CONFIG_KEY = 'bishopric_exam_config_data';
-const DEFAULT_PORTAL_URL = 'https://mahragan-al-karma.org/exams';
+export const PUBLIC_BASE_URL = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/';
+const DEFAULT_PORTAL_URL = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/?view=bishopric-exam';
 
 // Arabic normalization helper
 export const normalizeArabic = (str: any): string => {
@@ -67,6 +82,15 @@ export const normalizeArabic = (str: any): string => {
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+};
+
+export const isAllowedBishopricStage = (stageName: string): boolean => {
+  if (!stageName) return true; // Graceful fallback
+  const norm = normalizeArabic(stageName);
+  return BISHOPRIC_ALLOWED_STAGES.some(allowed => {
+    const normAllowed = normalizeArabic(allowed);
+    return norm === normAllowed || norm.includes(normAllowed) || normAllowed.includes(norm);
+  });
 };
 
 export const stripChurchPrefix = (name: string): string => {
@@ -529,7 +553,8 @@ export const saveBishopricQuestion = async (
       question_text: question.question_text,
       options: question.options || [],
       correct_answer: question.correct_answer,
-      score: Number(question.score) || 1
+      score: Number(question.score) || 1,
+      is_excellence: Boolean(question.is_excellence)
     };
 
     if (question.id) {
@@ -651,6 +676,193 @@ export const fetchBishopricStudentResult = async (
 };
 
 /**
+ * Updates local cache items (is_used status) for quota protection and offline reliability
+ */
+export const updateLocalCacheCodeStatus = (code: string, isUsed: boolean) => {
+  const cleanCode = (code || '').trim().toLowerCase();
+  if (!cleanCode) return;
+
+  const targetKeys: string[] = ['bishopric_active_church_codes'];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('bishopric_cached_codes_') && !targetKeys.includes(key)) {
+        targetKeys.push(key);
+      }
+    }
+
+    for (const k of targetKeys) {
+      const dataStr = localStorage.getItem(k);
+      if (dataStr) {
+        const list: any[] = JSON.parse(dataStr);
+        let modified = false;
+        const updated = list.map(item => {
+          const itemCode = (item.code || item.exam_code || '').trim().toLowerCase();
+          if (itemCode === cleanCode) {
+            modified = true;
+            return {
+              ...item,
+              is_used: isUsed,
+              status: isUsed ? 'used' : item.status
+            };
+          }
+          return item;
+        });
+        if (modified) {
+          localStorage.setItem(k, JSON.stringify(updated));
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Error updating local cache status:', e);
+  }
+};
+
+/**
+ * Updated Exam Submission Function for Bishopric Portal
+ * Dynamically separates standard and excellence scores, enforces 2-step atomic verification,
+ * and maintains local cache synchronization.
+ */
+export const handleSubmitBishopricExam = async (
+  studentCode: string,
+  userAnswers: Record<string, any>,
+  allQuestions: any[],
+  setIsLoadingSpinnerVisible: (loading: boolean) => void,
+  showBubble: (config: any) => void,
+  setIsExamActive: (active: boolean) => void,
+  metadata?: {
+    student_name?: string;
+    church_name?: string;
+    stage?: string;
+    subject_name?: string;
+    max_score?: number;
+    max_excellence_points?: number;
+    excellence_unlocked?: boolean;
+    excellence_categories?: string[];
+    excellence_answers?: Record<string, any>;
+  }
+) => {
+  setIsLoadingSpinnerVisible(true);
+
+  try {
+    const cleanCode = (studentCode || '').trim();
+    if (!cleanCode) {
+      throw new Error('كود الطالب غير صحيح.');
+    }
+
+    // 1. Separate standard and excellence scores
+    let standardScore = 0;
+    let excellencePoints = 0;
+
+    allQuestions.forEach((q) => {
+      const qKey = q.id || `q_${q.question_text}`;
+      const studentAns = userAnswers[qKey] !== undefined ? userAnswers[qKey] : userAnswers[q.id];
+      const isCorrect = studentAns !== undefined && String(studentAns).trim() === String(q.correct_answer || '').trim();
+      const points = Number(q.points) || Number(q.score) || 1;
+
+      if (isCorrect) {
+        if (q.is_excellence) {
+          excellencePoints += points;
+        } else {
+          standardScore += points;
+        }
+      }
+    });
+
+    const nowIso = new Date().toISOString();
+    const payload: any = {
+      student_code: cleanCode,
+      exam_code: cleanCode,
+      answers: userAnswers,
+      score: standardScore,
+      total_score: standardScore,
+      excellence_points: excellencePoints, // Saved as a separate column
+      submitted_at: nowIso,
+      completed_at: nowIso,
+      status: 'completed'
+    };
+
+    if (metadata) {
+      if (metadata.student_name) payload.student_name = metadata.student_name.trim();
+      if (metadata.church_name) payload.church_name = metadata.church_name.trim();
+      if (metadata.stage) payload.stage = metadata.stage;
+      if (metadata.subject_name) payload.subject_name = metadata.subject_name;
+      if (metadata.max_score !== undefined) {
+        payload.max_score = metadata.max_score;
+        payload.percentage = metadata.max_score > 0 
+          ? Number(((standardScore / metadata.max_score) * 100).toFixed(1)) 
+          : 0;
+      }
+      if (metadata.max_excellence_points !== undefined) {
+        payload.max_excellence_points = metadata.max_excellence_points;
+      }
+    }
+
+    // 2. Insert exam results and verify server receipt using .select()
+    const { data: resultData, error: resultError } = await supabase
+      .from('bishopric_exam_results')
+      .upsert([payload], { onConflict: 'exam_code' })
+      .select();
+
+    if (resultError || !resultData || resultData.length === 0) {
+      throw new Error(resultError?.message || 'Server failed to acknowledge result insertion.');
+    }
+
+    // 3. Update code status ONLY AFTER confirmed insertion
+    const { error: codeUpdateError } = await supabase
+      .from('bishopric_exam_codes')
+      .update({ 
+        is_used: true, 
+        used_at: nowIso,
+        status: 'used'
+      })
+      .or(`code.eq.${cleanCode},exam_code.eq.${cleanCode}`);
+
+    if (codeUpdateError) {
+      console.warn('Result saved but code status update encountered an issue:', codeUpdateError);
+    }
+
+    // 4. Synchronize local storage cache
+    const cachedData = localStorage.getItem('bishopric_active_church_codes');
+    if (cachedData) {
+      try {
+        const codesList = JSON.parse(cachedData);
+        const updatedList = codesList.map((item: any) =>
+          ((item.code && item.code.trim() === cleanCode) || (item.exam_code && item.exam_code.trim() === cleanCode))
+            ? { ...item, is_used: true, status: 'used' }
+            : item
+        );
+        localStorage.setItem('bishopric_active_church_codes', JSON.stringify(updatedList));
+      } catch (e) {
+        console.error('Local cache sync error:', e);
+      }
+    }
+    updateLocalCacheCodeStatus(cleanCode, true);
+
+    // 5. Finalize UI State
+    setIsLoadingSpinnerVisible(false);
+    showBubble({
+      type: 'success',
+      title: 'تم حفظ الامتحان بنجاح',
+      message: 'تم تسليم إجاباتك وتأكيد درجاتك بنجاح !'
+    });
+    setIsExamActive(false);
+
+    return { success: true, data: resultData[0] };
+
+  } catch (err: any) {
+    console.error('Bishopric Exam Submission Error:', err);
+    setIsLoadingSpinnerVisible(false);
+    showBubble({
+      type: 'error',
+      title: 'فشل الحفظ',
+      message: 'تعذر تأكيد الحفظ ، يرجى إعادة المحاولة'
+    });
+    return { success: false, error: err?.message || 'تعذر تأكيد الحفظ ، يرجى إعادة المحاولة' };
+  }
+};
+
+/**
  * Submit / Upsert student exam result into bishopric_exam_results
  * Strict Network Handshake with auto-retry loop and Supabase confirmation
  * Crucial Rule: update bishopric_exam_codes (is_used = true) ONLY AFTER verified results insert.
@@ -663,17 +875,29 @@ export const submitBishopricExamResult = async (
   const code = (result.exam_code || result.student_code || '').trim();
   const nowIso = new Date().toISOString();
 
-  const payload = {
+  const payload: any = {
     exam_code: code,
     student_code: code,
     student_name: (result.student_name || '').trim(),
     church_name: (result.church_name || '').trim(),
     stage: result.stage,
     subject_name: result.subject_name || 'امتحان الأسقفية',
+    score: Number(result.total_score) || 0,
     total_score: Number(result.total_score) || 0,
     max_score: Number(result.max_score) || 0,
     percentage: Number(result.percentage) || 0,
-    answers: result.answers || null,
+    excellence_points: Number(result.excellence_points) || 0,
+    max_excellence_points: Number(result.max_excellence_points) || 0,
+    answers: {
+      ...(typeof result.answers === 'object' ? result.answers : {}),
+      _meta_excellence: {
+        points: Number(result.excellence_points) || 0,
+        max_points: Number(result.max_excellence_points) || 0,
+        unlocked: Boolean(result.excellence_unlocked),
+        categories: result.excellence_categories || [],
+        excellence_answers: result.excellence_answers || {}
+      }
+    },
     status: result.status || 'completed',
     submitted_at: result.submitted_at || nowIso,
     completed_at: result.completed_at || nowIso
@@ -694,7 +918,7 @@ export const submitBishopricExamResult = async (
         throw new Error(resultError?.message || 'لم يتلق السيرفر إشارة تأكيد الحفظ.');
       }
 
-      // 2. ب) تحديث حالة الكود كـ مستخدم فقط بعد تأكيد حفظ النتيجة
+      // 2. ب) تحديث حالة الكود كـ مستخدم في السيرفر فقط بعد تأكيد حفظ النتيجة
       try {
         await supabase
           .from('bishopric_exam_codes')
@@ -708,105 +932,191 @@ export const submitBishopricExamResult = async (
         console.warn('Note updating bishopric_exam_codes is_used status:', updateErr);
       }
 
-      // 3. ج) إرجاع النجاح فقط بعد استلام التأكيد المباشر من السيرفر
+      // 3. ج) تحديث الكاش المحلي
+      updateLocalCacheCodeStatus(code, true);
+
+      // 4. د) إرجاع النجاح فقط بعد استلام التأكيد المباشر من السيرفر
       return { success: true, data: resultData[0] as BishopricExamResult };
     } catch (err: any) {
       console.warn(`[BishopricHandshake] Attempt ${attempt}/${maxRetries} failed:`, err);
       lastError = err.message || 'لم يتم تأكيد حفظ الإجابة على السيرفر!';
       if (attempt < maxRetries) {
-        await new Promise(res => setTimeout(res, 1500));
+        await new Promise(res => setTimeout(res, 1200));
       }
     }
   }
 
   return { 
     success: false, 
-    error: lastError || 'لم يتم تأكيد حفظ الإجابة على السيرفر! إجاباتك محفوظة على الجهاز، يرجى إعادة محاولة الإرسال.' 
+    error: lastError || 'تعذر تأكيد الحفظ ، يرجى إعادة المحاولة' 
   };
 };
 
 /**
- * Verify student by exam code strictly against bishopric_exam_codes
- * Strict rules:
- * 1. Check if the entered code exists in bishopric_exam_codes
- * 2. Verify is_used is false (or status = 'active')
- * 3. Block access completely if invalid or already used
+ * Smart Church Caching & Verification (الكاش الذكي لحماية الكوتا ومنع تكرار الدخول)
+ * 1. Check local cache first
+ * 2. If not found, fetch from Supabase ONCE and cache full church dataset
+ * 3. Enforce single use and stage constraints
  */
-export const verifyBishopricStudentCode = async (
-  examCode: string
+export const verifyBishopricCodeWithCache = async (
+  enteredCode: string
 ): Promise<{
   success: boolean;
   student?: BishopricExamRecord;
   alreadySubmitted?: BishopricExamResult | null;
   error?: string;
+  isUsed?: boolean;
 }> => {
-  if (!examCode || !examCode.trim()) {
+  const cleanCode = (enteredCode || '').trim();
+  if (!cleanCode) {
     return { success: false, error: 'يرجى إدخال كود امتحان الأسقفية الخاص بك' };
   }
 
-  const cleanCode = examCode.trim();
-
+  // أ) البحث في الكاش المحلي أولاً (LocalStorage) لحماية الكوتا
+  const localCacheKeys = ['bishopric_active_church_codes'];
   try {
-    // 1. Strict Server Check in bishopric_exam_codes
-    let studentRecord: BishopricExamRecord | null = null;
-
-    const { data: codeData, error: codeError } = await supabase
-      .from('bishopric_exam_codes')
-      .select('*')
-      .or(`exam_code.eq.${cleanCode},code.eq.${cleanCode}`)
-      .maybeSingle();
-
-    if (!codeError && codeData) {
-      studentRecord = {
-        ...codeData,
-        exam_code: codeData.exam_code || codeData.code || cleanCode
-      };
-    } else {
-      const { data: directData } = await supabase
-        .from('bishopric_exam_codes')
-        .select('*')
-        .eq('exam_code', cleanCode)
-        .maybeSingle();
-
-      if (directData) {
-        studentRecord = directData;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('bishopric_cached_codes_') && !localCacheKeys.includes(key)) {
+        localCacheKeys.push(key);
       }
     }
+  } catch (e) {}
 
-    // Fallback: check all records if offline/local cache exists
-    if (!studentRecord) {
-      const allDb = await fetchAllBishopricRecordsFromDb();
-      studentRecord = allDb.find(
-        r => (r.exam_code && r.exam_code.trim().toLowerCase() === cleanCode.toLowerCase()) ||
-             (r.code && r.code.trim().toLowerCase() === cleanCode.toLowerCase())
-      ) || null;
+  let foundLocal: BishopricExamRecord | null = null;
+  for (const cacheKey of localCacheKeys) {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const list: any[] = JSON.parse(cached);
+        const match = list.find((c: any) => 
+          (c.code && c.code.trim().toLowerCase() === cleanCode.toLowerCase()) ||
+          (c.exam_code && c.exam_code.trim().toLowerCase() === cleanCode.toLowerCase())
+        );
+        if (match) {
+          foundLocal = {
+            ...match,
+            exam_code: match.exam_code || match.code || cleanCode,
+            code: match.code || match.exam_code || cleanCode
+          };
+          break;
+        }
+      }
+    } catch (e) {
+      console.warn('Cache read error:', e);
     }
+  }
 
-    if (!studentRecord) {
+  if (foundLocal) {
+    // التحقق من حالة الاستخدام في الكاش المحلي
+    if (foundLocal.is_used || foundLocal.status === 'used' || foundLocal.status === 'completed') {
       return {
         success: false,
-        error: 'الكود غير صحيح أو غير موجود بالنظام.'
+        student: foundLocal,
+        error: 'عفواً، تم استخدام هذا الكود في الامتحان من قبل.',
+        isUsed: true
       };
     }
 
-    // 2. Check if is_used is true or status is 'used' / 'completed'
-    if (studentRecord.is_used || studentRecord.status === 'used' || studentRecord.status === 'completed') {
+    // تحقق سريع حي ومباشر من السيرفر للتأكد من عدم استخدام الكود في جهاز آخر
+    try {
+      const { data: statusCheck, error: statusErr } = await supabase
+        .from('bishopric_exam_codes')
+        .select('id, is_used, status')
+        .or(`code.eq.${cleanCode},exam_code.eq.${cleanCode}`)
+        .maybeSingle();
+
+      if (!statusErr && statusCheck && (statusCheck.is_used || statusCheck.status === 'used' || statusCheck.status === 'completed')) {
+        updateLocalCacheCodeStatus(cleanCode, true);
+        return {
+          success: false,
+          student: foundLocal,
+          error: 'عفواً، تم استخدام هذا الكود في الامتحان من قبل.',
+          isUsed: true
+        };
+      }
+    } catch (e) {
+      // Offline/transient: continue with local validation
+    }
+
+    return {
+      success: true,
+      student: foundLocal,
+      alreadySubmitted: null
+    };
+  }
+
+  // ب) الجلب من السيرفر عند أول مرة فقط
+  try {
+    const { data, error } = await supabase
+      .from('bishopric_exam_codes')
+      .select('*')
+      .or(`code.eq.${cleanCode},exam_code.eq.${cleanCode}`)
+      .maybeSingle();
+
+    if (error || !data) {
       return {
         success: false,
-        student: studentRecord,
-        error: 'عفواً، تم استخدام هذا الكود في الامتحان مسبقاً.'
+        error: 'الكود غير صحيح أو لا ينتمي للمراحل المتاحة.'
       };
     }
 
-    // 3. Double-check against bishopric_exam_results table
-    const previousResult = await fetchBishopricStudentResult(cleanCode);
-    if (previousResult && (previousResult.status === 'completed' || previousResult.percentage !== undefined)) {
+    // التحقق من المرحلة الدراسية المعتمدة
+    if (data.stage && !isAllowedBishopricStage(data.stage)) {
       return {
         success: false,
-        student: studentRecord,
-        alreadySubmitted: previousResult,
-        error: 'عفواً، تم استخدام هذا الكود في الامتحان مسبقاً.'
+        error: `مرحلة (${data.stage}) غير مشمولة في امتحانات الأسقفية المركزية الحالية.`
       };
+    }
+
+    // التحقق من حالة الكود
+    if (data.is_used || data.status === 'used' || data.status === 'completed') {
+      updateLocalCacheCodeStatus(cleanCode, true);
+      return {
+        success: false,
+        student: data,
+        error: 'عفواً، هذا الكود تم استخدامه مسبقاً.',
+        isUsed: true
+      };
+    }
+
+    // فحص نتائج سابقة
+    const prevResult = await fetchBishopricStudentResult(cleanCode);
+    if (prevResult && (prevResult.status === 'completed' || prevResult.percentage !== undefined)) {
+      updateLocalCacheCodeStatus(cleanCode, true);
+      return {
+        success: false,
+        student: data,
+        alreadySubmitted: prevResult,
+        error: 'عفواً، هذا الكود تم استخدامه مسبقاً.',
+        isUsed: true
+      };
+    }
+
+    const studentRecord: BishopricExamRecord = {
+      ...data,
+      exam_code: data.exam_code || data.code || cleanCode,
+      code: data.code || data.exam_code || cleanCode
+    };
+
+    // ج) جلب أكواد الكنيسة بالكامل وتخزينها كاش لحماية الكوتا في المرات القادمة
+    if (data.church_name) {
+      try {
+        const { data: churchCodes, error: churchErr } = await supabase
+          .from('bishopric_exam_codes')
+          .select('code, exam_code, is_used, student_name, stage, church_name, status')
+          .eq('church_name', data.church_name);
+
+        if (!churchErr && churchCodes && churchCodes.length > 0) {
+          const filteredCodes = churchCodes.filter((c: any) => isAllowedBishopricStage(c.stage) || true);
+          localStorage.setItem('bishopric_active_church_codes', JSON.stringify(filteredCodes));
+          
+          const sanitizedChurch = data.church_name.trim().replace(/\s+/g, '_');
+          localStorage.setItem(`bishopric_cached_codes_${sanitizedChurch}`, JSON.stringify(filteredCodes));
+        }
+      } catch (cacheErr) {
+        console.warn('Error caching church codes:', cacheErr);
+      }
     }
 
     return {
@@ -815,7 +1125,15 @@ export const verifyBishopricStudentCode = async (
       alreadySubmitted: null
     };
   } catch (err: any) {
-    console.error('Code verification error:', err);
-    return { success: false, error: 'حدث خطأ في الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.' };
+    console.error('Server verification error:', err);
+    return {
+      success: false,
+      error: 'حدث خطأ في الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.'
+    };
   }
 };
+
+/**
+ * Verify student by exam code (Aliased to verifyBishopricCodeWithCache)
+ */
+export const verifyBishopricStudentCode = verifyBishopricCodeWithCache;

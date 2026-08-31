@@ -109,8 +109,9 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
       'المرحلة': r.stage,
       'الكنيسة': r.church_name,
       'المسابقة': r.subject_name || 'امتحان الأسقفية',
-      'الدرجة': `${r.total_score} / ${r.max_score}`,
+      'الدرجة الأساسية': `${r.total_score} / ${r.max_score}`,
       'النسبة المئوية': `${r.percentage}%`,
+      'نقاط التميز': r.excellence_points ? `+${r.excellence_points}` : '0',
       'تاريخ التسليم': r.completed_at ? new Date(r.completed_at).toLocaleString('ar-EG') : '-'
     }));
 
@@ -269,7 +270,8 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
                   <th className="p-3 border-l border-slate-200">المرحلة</th>
                   <th className="p-3 border-l border-slate-200">الكنيسة</th>
                   <th className="p-3 border-l border-slate-200">المسابقة</th>
-                  <th className="p-3 text-center border-l border-slate-200">الدرجة</th>
+                  <th className="p-3 text-center border-l border-slate-200">الدرجة الأساسية</th>
+                  <th className="p-3 text-center border-l border-slate-200">نقاط التميز</th>
                   <th className="p-3 text-center">النسبة المئوية</th>
                 </tr>
               </thead>
@@ -296,6 +298,15 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
                     </td>
                     <td className="p-3 text-center text-slate-900 font-black border-l border-slate-100">
                       {row.total_score} / {row.max_score}
+                    </td>
+                    <td className="p-3 text-center border-l border-slate-100">
+                      {Number(row.excellence_points) > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300">
+                          +{row.excellence_points} 🌟
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-normal">-</span>
+                      )}
                     </td>
                     <td className="p-3 text-center font-black">
                       <span className={`inline-block px-2.5 py-1 rounded-full text-xs ${
@@ -347,6 +358,7 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
                 <th className="p-2 border border-slate-300">الكنيسة</th>
                 <th className="p-2 border border-slate-300">المسابقة</th>
                 <th className="p-2 border border-slate-300 text-center">الدرجة</th>
+                <th className="p-2 border border-slate-300 text-center">نقاط التميز</th>
                 <th className="p-2 border border-slate-300 text-center">النسبة %</th>
               </tr>
             </thead>
@@ -360,6 +372,7 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
                   <td className="p-2 border border-slate-300">{r.church_name}</td>
                   <td className="p-2 border border-slate-300">{r.subject_name || 'امتحان الأسقفية'}</td>
                   <td className="p-2 border border-slate-300 text-center">{r.total_score} / {r.max_score}</td>
+                  <td className="p-2 border border-slate-300 text-center text-amber-800">{r.excellence_points ? `+${r.excellence_points}` : '-'}</td>
                   <td className="p-2 border border-slate-300 text-center font-black">{r.percentage}%</td>
                 </tr>
               ))}
