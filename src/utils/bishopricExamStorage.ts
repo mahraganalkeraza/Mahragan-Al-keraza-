@@ -940,7 +940,7 @@ export const deleteBishopricExamResult = async (
       await supabase
         .from('bishopric_exam_codes')
         .update({ is_used: false, status: 'unused' })
-        .or(`code.eq.${cleanCode},exam_code.eq.${cleanCode}`);
+        .eq('exam_code', cleanCode);
       
       updateLocalCacheCodeStatus(cleanCode, false);
     }
@@ -1213,7 +1213,7 @@ export const submitBishopricExamResult = async (
             used_at: nowIso, 
             status: 'used' 
           })
-          .or(`exam_code.eq.${code},code.eq.${code}`);
+          .eq('exam_code', code);
       } catch (updateErr) {
         console.warn('Note updating bishopric_exam_codes is_used status:', updateErr);
       }
@@ -1239,13 +1239,60 @@ export const submitBishopricExamResult = async (
 };
 
 /**
+ * Sanitize user input code (trim, uppercase, and convert Eastern Arabic digits ٠-٩ to Standard English digits 0-9)
+ */
+export const sanitizeExamCode = (inputCode: string): string => {
+  if (!inputCode) return '';
+  return inputCode
+    .trim()
+    .toUpperCase()
+    .replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
+};
+
+/**
+ * Normalizes and resolves student record fields (handles swapped student_name/stage in dataset)
+ */
+export const resolveBishopricRecordFields = (data: any): BishopricExamRecord => {
+  if (!data) return data;
+  let stage = (data.stage || '').trim();
+  let student_name = (data.student_name || '').trim();
+
+  const stageKeywords = [
+    'حضانة', 'حضانه', 'أولى', 'اولى', 'ثانية', 'ثانيه', 'ثالثة', 'ثالثه',
+    'رابعة', 'رابعه', 'خامسة', 'خامسه', 'سادسة', 'سادسه', 'إعدادي', 'اعدادي',
+    'ثانوي', 'جامعة', 'جامعه', 'خريجين', 'كبار', 'حرفيون', 'سمعان', 'قدرات'
+  ];
+
+  const studentNameMatchesStage = stageKeywords.some(kw => student_name.includes(kw));
+  const stageMatchesKnownKeyword = stageKeywords.some(kw => stage.includes(kw));
+
+  if (studentNameMatchesStage && !stageMatchesKnownKeyword) {
+    console.log(`[Stage Field Normalization] Swapped fields detected for code ${data.exam_code || data.code}. Normalizing: student_name="${data.stage}", stage="${data.student_name}"`);
+    const temp = student_name;
+    student_name = stage;
+    stage = temp;
+  }
+
+  const cleanCode = sanitizeExamCode(data.exam_code || data.code || '');
+
+  return {
+    ...data,
+    student_name,
+    stage,
+    exam_code: cleanCode || data.exam_code || data.code,
+    code: cleanCode || data.code || data.exam_code
+  };
+};
+
+/**
  * Smart Church Caching & Verification (الكاش الذكي لحماية الكوتا ومنع تكرار الدخول)
  * 1. Check local cache first
  * 2. If not found, fetch from Supabase ONCE and cache full church dataset
  * 3. Enforce single use and stage constraints
  */
 export const verifyBishopricCodeWithCache = async (
-  enteredCode: string
+  enteredCode: string,
+  availableStages: string[] = []
 ): Promise<{
   success: boolean;
   student?: BishopricExamRecord;
@@ -1253,10 +1300,13 @@ export const verifyBishopricCodeWithCache = async (
   error?: string;
   isUsed?: boolean;
 }> => {
-  const cleanCode = (enteredCode || '').trim();
-  if (!cleanCode) {
+  const formattedCode = sanitizeExamCode(enteredCode);
+  if (!formattedCode) {
+    console.warn('Code verification failed: Empty input code');
     return { success: false, error: 'يرجى إدخال كود امتحان الأسقفية الخاص بك' };
   }
+
+  console.log(`[ExamCodeVerify] Verifying formatted code: "${formattedCode}" (raw input: "${enteredCode}")`);
 
   // أ) البحث في الكاش المحلي أولاً (LocalStorage) لحماية الكوتا
   const localCacheKeys = ['bishopric_active_church_codes'];
@@ -1269,22 +1319,18 @@ export const verifyBishopricCodeWithCache = async (
     }
   } catch (e) {}
 
-  let foundLocal: BishopricExamRecord | null = null;
+  let foundLocalRaw: any = null;
   for (const cacheKey of localCacheKeys) {
     try {
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         const list: any[] = JSON.parse(cached);
-        const match = list.find((c: any) => 
-          (c.code && c.code.trim().toLowerCase() === cleanCode.toLowerCase()) ||
-          (c.exam_code && c.exam_code.trim().toLowerCase() === cleanCode.toLowerCase())
-        );
+        const match = list.find((c: any) => {
+          const itemCode = sanitizeExamCode(c.exam_code || c.code || '');
+          return itemCode === formattedCode;
+        });
         if (match) {
-          foundLocal = {
-            ...match,
-            exam_code: match.exam_code || match.code || cleanCode,
-            code: match.code || match.exam_code || cleanCode
-          };
+          foundLocalRaw = match;
           break;
         }
       }
@@ -1293,9 +1339,12 @@ export const verifyBishopricCodeWithCache = async (
     }
   }
 
-  if (foundLocal) {
-    // التحقق من حالة الاستخدام في الكاش المحلي
-    if (foundLocal.is_used || foundLocal.status === 'used' || foundLocal.status === 'completed') {
+  if (foundLocalRaw) {
+    const foundLocal = resolveBishopricRecordFields(foundLocalRaw);
+    console.log(`[ExamCodeVerify] Found in local cache:`, foundLocal);
+
+    if (foundLocal.is_used || (foundLocal as any).status === 'used' || (foundLocal as any).status === 'completed') {
+      console.warn(`Code ${formattedCode} has already been used.`);
       return {
         success: false,
         student: foundLocal,
@@ -1304,25 +1353,59 @@ export const verifyBishopricCodeWithCache = async (
       };
     }
 
-    // تحقق سريع حي ومباشر من السيرفر للتأكد من عدم استخدام الكود في جهاز آخر
+    if ((foundLocal as any).is_active === false) {
+      console.warn(`Code ${formattedCode} is disabled.`);
+      return {
+        success: false,
+        student: foundLocal,
+        error: 'هذا الكود غير مفعّل حالياً.'
+      };
+    }
+
+    // تحقق سريع حي ومباشر من السيرفر
     try {
       const { data: statusCheck, error: statusErr } = await supabase
         .from('bishopric_exam_codes')
-        .select('id, is_used, status')
-        .or(`code.eq.${cleanCode},exam_code.eq.${cleanCode}`)
+        .select('id, is_used, status, is_active')
+        .eq('exam_code', formattedCode)
         .maybeSingle();
 
-      if (!statusErr && statusCheck && (statusCheck.is_used || statusCheck.status === 'used' || statusCheck.status === 'completed')) {
-        updateLocalCacheCodeStatus(cleanCode, true);
+      if (!statusErr && statusCheck) {
+        if (statusCheck.is_used || statusCheck.status === 'used' || statusCheck.status === 'completed') {
+          console.warn(`Code ${formattedCode} has already been used on server.`);
+          updateLocalCacheCodeStatus(formattedCode, true);
+          return {
+            success: false,
+            student: foundLocal,
+            error: 'عفواً، تم استخدام هذا الكود في الامتحان من قبل.',
+            isUsed: true
+          };
+        }
+        if (statusCheck.is_active === false) {
+          console.warn(`Code ${formattedCode} is disabled on server.`);
+          return {
+            success: false,
+            student: foundLocal,
+            error: 'هذا الكود غير مفعّل حالياً.'
+          };
+        }
+      }
+    } catch (e) {}
+
+    // Stage Matching (Insensitive comparison)
+    if (availableStages && availableStages.length > 0) {
+      const isStageAvailable = availableStages.some(
+        (st) => st.trim().toLowerCase() === foundLocal.stage?.trim().toLowerCase() ||
+                normalizeArabic(st) === normalizeArabic(foundLocal.stage)
+      );
+      if (!isStageAvailable) {
+        console.warn(`Stage Mismatch: Code Stage [${foundLocal.stage}] not in Available Stages [${availableStages.join(', ')}]`);
         return {
           success: false,
           student: foundLocal,
-          error: 'عفواً، تم استخدام هذا الكود في الامتحان من قبل.',
-          isUsed: true
+          error: 'الكود لا ينتمي للمراحل المتاحة للامتحان حالياً.'
         };
       }
-    } catch (e) {
-      // Offline/transient: continue with local validation
     }
 
     return {
@@ -1334,87 +1417,114 @@ export const verifyBishopricCodeWithCache = async (
 
   // ب) الجلب من السيرفر عند أول مرة فقط
   try {
-    const { data, error } = await supabase
+    // 1. Fetch Code Entry from Database
+    const { data: codeData, error } = await supabase
       .from('bishopric_exam_codes')
       .select('*')
-      .or(`code.eq.${cleanCode},exam_code.eq.${cleanCode}`)
+      .eq('exam_code', formattedCode)
       .maybeSingle();
 
-    if (error || !data) {
+    if (error) {
+      console.error("Database Query Error:", error);
       return {
         success: false,
-        error: 'الكود غير صحيح أو لا ينتمي للمراحل المتاحة.'
+        error: "حدث خطأ أثناء الاتصال بقاعدة البيانات."
       };
     }
 
-    // التحقق من المرحلة الدراسية المعتمدة
-    if (data.stage && !isAllowedBishopricStage(data.stage)) {
+    // 2. Failure Diagnostics
+    if (!codeData) {
+      console.warn(`Code ${formattedCode} not found in database.`);
       return {
         success: false,
-        error: `مرحلة (${data.stage}) غير مشمولة في امتحانات الأسقفية المركزية الحالية.`
+        error: "الكود غير صحيح أو غير مسجل بالنظام."
       };
     }
 
-    // التحقق من حالة الكود
-    if (data.is_used || data.status === 'used' || data.status === 'completed') {
-      updateLocalCacheCodeStatus(cleanCode, true);
+    if (codeData.is_used || codeData.status === 'used' || codeData.status === 'completed') {
+      console.warn(`Code ${formattedCode} has already been used.`);
+      updateLocalCacheCodeStatus(formattedCode, true);
       return {
         success: false,
-        student: data,
-        error: 'عفواً، هذا الكود تم استخدامه مسبقاً.',
+        student: resolveBishopricRecordFields(codeData),
+        error: "عذراً، هذا الكود تم استخدامه لأداء الامتحان من قبل.",
         isUsed: true
       };
     }
 
-    // فحص نتائج سابقة
-    const prevResult = await fetchBishopricStudentResult(cleanCode);
+    if (codeData.is_active === false) {
+      console.warn(`Code ${formattedCode} is disabled.`);
+      return {
+        success: false,
+        student: resolveBishopricRecordFields(codeData),
+        error: "هذا الكود غير مفعّل حالياً."
+      };
+    }
+
+    const resolvedRecord = resolveBishopricRecordFields(codeData);
+
+    // 3. Stage Matching (Insensitive comparison)
+    if (availableStages && availableStages.length > 0) {
+      const isStageAvailable = availableStages.some(
+        (stage) => stage.trim().toLowerCase() === resolvedRecord.stage?.trim().toLowerCase() ||
+                   normalizeArabic(stage) === normalizeArabic(resolvedRecord.stage)
+      );
+
+      if (!isStageAvailable) {
+        console.warn(`Stage Mismatch: Code Stage [${resolvedRecord.stage}] not in Available Stages [${availableStages.join(', ')}]`);
+        return {
+          success: false,
+          student: resolvedRecord,
+          error: "الكود لا ينتمي للمراحل المتاحة للامتحان حالياً."
+        };
+      }
+    }
+
+    // Check previous submitted result
+    const prevResult = await fetchBishopricStudentResult(formattedCode);
     if (prevResult && (prevResult.status === 'completed' || prevResult.percentage !== undefined)) {
-      updateLocalCacheCodeStatus(cleanCode, true);
+      console.warn(`Code ${formattedCode} has a completed result record.`);
+      updateLocalCacheCodeStatus(formattedCode, true);
       return {
         success: false,
-        student: data,
+        student: resolvedRecord,
         alreadySubmitted: prevResult,
-        error: 'عفواً، هذا الكود تم استخدامه مسبقاً.',
+        error: "عذراً، هذا الكود تم استخدامه لأداء الامتحان من قبل.",
         isUsed: true
       };
     }
 
-    const studentRecord: BishopricExamRecord = {
-      ...data,
-      exam_code: data.exam_code || data.code || cleanCode,
-      code: data.code || data.exam_code || cleanCode
-    };
-
-    // ج) جلب أكواد الكنيسة بالكامل وتخزينها كاش لحماية الكوتا في المرات القادمة
-    if (data.church_name) {
+    // ج) جلب أكواد الكنيسة بالكامل وتخزينها كاش لحماية الكوتا
+    if (codeData.church_name) {
       try {
         const { data: churchCodes, error: churchErr } = await supabase
           .from('bishopric_exam_codes')
-          .select('code, exam_code, is_used, student_name, stage, church_name, status')
-          .eq('church_name', data.church_name);
+          .select('id, exam_code, is_used, student_name, stage, church_name, status, is_active')
+          .eq('church_name', codeData.church_name);
 
         if (!churchErr && churchCodes && churchCodes.length > 0) {
-          const filteredCodes = churchCodes.filter((c: any) => isAllowedBishopricStage(c.stage) || true);
-          localStorage.setItem('bishopric_active_church_codes', JSON.stringify(filteredCodes));
-          
-          const sanitizedChurch = data.church_name.trim().replace(/\s+/g, '_');
-          localStorage.setItem(`bishopric_cached_codes_${sanitizedChurch}`, JSON.stringify(filteredCodes));
+          localStorage.setItem('bishopric_active_church_codes', JSON.stringify(churchCodes));
+          const sanitizedChurch = codeData.church_name.trim().replace(/\s+/g, '_');
+          localStorage.setItem(`bishopric_cached_codes_${sanitizedChurch}`, JSON.stringify(churchCodes));
         }
       } catch (cacheErr) {
         console.warn('Error caching church codes:', cacheErr);
       }
     }
 
+    console.log(`[ExamCodeVerify] Code ${formattedCode} verified successfully: student="${resolvedRecord.student_name}", stage="${resolvedRecord.stage}"`);
+
     return {
       success: true,
-      student: studentRecord,
+      student: resolvedRecord,
       alreadySubmitted: null
     };
+
   } catch (err: any) {
-    console.error('Server verification error:', err);
+    console.error("Database Query Error:", err);
     return {
       success: false,
-      error: 'حدث خطأ في الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.'
+      error: "حدث خطأ أثناء الاتصال بقاعدة البيانات."
     };
   }
 };

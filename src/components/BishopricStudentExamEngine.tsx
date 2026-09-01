@@ -30,6 +30,7 @@ import {
   BishopricExamRecord, 
   BishopricExamQuestion, 
   BishopricExamResult,
+  sanitizeExamCode,
   verifyBishopricCodeWithCache,
   verifyBishopricStudentCode,
   fetchBishopricQuestions,
@@ -41,12 +42,14 @@ import { useNotificationBubble } from '../context/NotificationContext';
 
 interface BishopricStudentExamEngineProps {
   initialExamCode?: string;
+  availableStages?: string[];
   onClose?: () => void;
   onComplete?: (result: BishopricExamResult) => void;
 }
 
 export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProps> = ({
   initialExamCode = '',
+  availableStages = [],
   onClose,
   onComplete
 }) => {
@@ -247,8 +250,10 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
   // Handle Verify Exam Code with Smart Church Caching & Quota Protection
   const handleVerifyCode = async (codeToVerify?: string) => {
-    const code = (codeToVerify || examCodeInput).trim();
-    if (!code) {
+    const rawInput = (codeToVerify || examCodeInput || '').trim();
+    const formattedCode = sanitizeExamCode(rawInput);
+    
+    if (!formattedCode) {
       showBubble({
         type: 'warning',
         title: 'تنبيه',
@@ -261,7 +266,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     setIsVerifying(true);
     setAuthError(null);
     try {
-      const res = await verifyBishopricCodeWithCache(code);
+      const res = await verifyBishopricCodeWithCache(formattedCode, availableStages);
       if (!res.success || !res.student) {
         const errorMsg = res.error || 'الكود غير صحيح أو لا ينتمي للمراحل المتاحة.';
         setAuthError(errorMsg);
