@@ -36,6 +36,7 @@ export interface BishopricExamResult {
   stage: string;
   subject_name?: string;
   total_score: number;
+  score?: number;
   max_score: number;
   percentage: number;
   excellence_points?: number; // نقاط سؤال التميز
@@ -44,9 +45,40 @@ export interface BishopricExamResult {
   excellence_categories?: string[];
   excellence_answers?: Record<string, any>;
   answers?: any;
+  category_scores?: Record<string, any>;
   status?: string;
   submitted_at?: string;
   completed_at?: string;
+}
+
+export interface GranularCategoryScore {
+  score: number;        // Standard score earned
+  maxScore: number;     // Standard max score
+  excellence: number;   // Excellence points earned
+  maxExcellence: number;// Excellence max points
+  total: number;        // score + excellence
+}
+
+export interface GranularExamResult {
+  id?: string;
+  exam_code: string;
+  student_name: string;
+  church_name: string;
+  stage: string;
+  subject_name?: string;
+  completed_at?: string;
+  submitted_at?: string;
+  raw: BishopricExamResult;
+  curriculum: GranularCategoryScore; // دراسي + تميز دراسي
+  hymns: GranularCategoryScore;      // محفوظات + تميز محفوظات
+  coptic1: GranularCategoryScore;    // قبطي مستوى أول + تميز قبطي1
+  coptic2: GranularCategoryScore;    // قبطي مستوى ثان + تميز قبطي2
+  totalStandardScore: number;
+  totalExcellencePoints: number;
+  grandTotal: number;
+  maxScore: number;
+  maxExcellencePoints: number;
+  percentage: number;
 }
 
 export interface BishopricExamConfig {
@@ -677,6 +709,250 @@ export const fetchBishopricStudentResult = async (
 };
 
 /**
+ * Normalizes competition/subject names into 4 official categories:
+ * - 'curriculum': دراسي
+ * - 'hymns': محفوظات
+ * - 'coptic1': قبطي مستوى أول
+ * - 'coptic2': قبطي مستوى ثانٍ
+ */
+export const normalizeCategoryType = (categoryName: string): 'curriculum' | 'hymns' | 'coptic1' | 'coptic2' | 'other' => {
+  if (!categoryName) return 'other';
+  const norm = normalizeArabic(categoryName);
+  
+  if (norm.includes('دراسي') || norm.includes('دراسيه') || norm.includes('منهج') || norm.includes('عقيده') || norm.includes('طقس كتاب')) {
+    return 'curriculum';
+  }
+  if (norm.includes('محفوظ') || norm.includes('الحان') || norm.includes('لحن') || norm.includes('ترنيم')) {
+    return 'hymns';
+  }
+  if (norm.includes('قبطي')) {
+    if (norm.includes('ثان') || norm.includes('2') || norm.includes('م2') || norm.includes('م 2')) {
+      return 'coptic2';
+    }
+    return 'coptic1';
+  }
+  return 'other';
+};
+
+/**
+ * Granular Score Parser:
+ * Evaluates student answers, questions, excellence achievements and extracts independent
+ * scores and excellence points for each of the 4 core categories:
+ * [دراسي | محفوظات | قبطي مستوى أول | قبطي مستوى ثان]
+ */
+export const parseGranularScores = (
+  result: BishopricExamResult,
+  questions: BishopricExamQuestion[] = []
+): GranularExamResult => {
+  const curriculum: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0 };
+  const hymns: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0 };
+  const coptic1: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0 };
+  const coptic2: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0 };
+
+  const getTarget = (catType: 'curriculum' | 'hymns' | 'coptic1' | 'coptic2' | 'other') => {
+    switch (catType) {
+      case 'curriculum': return curriculum;
+      case 'hymns': return hymns;
+      case 'coptic1': return coptic1;
+      case 'coptic2': return coptic2;
+      default: return null;
+    }
+  };
+
+  const studentAnswers = result.answers || {};
+  const normResultStage = normalizeArabic(result.stage || '');
+
+  // Filter stage questions if available, otherwise match against whole questions pool
+  const stageQuestions = questions.length > 0
+    ? questions.filter(q => !normResultStage || normalizeArabic(q.stage || '') === normResultStage)
+    : [];
+  const activeQuestions = stageQuestions.length > 0 ? stageQuestions : questions;
+
+  // 1. Process standard & excellence question answers by matching questions bank
+  if (activeQuestions.length > 0 && typeof studentAnswers === 'object' && Object.keys(studentAnswers).length > 0) {
+    activeQuestions.forEach(q => {
+      const catType = normalizeCategoryType(q.subject_name);
+      const target = getTarget(catType);
+      if (!target) return;
+
+      const qKey = q.id || `q_${q.question_text}`;
+      const studentAns = studentAnswers[q.id] !== undefined
+        ? studentAnswers[q.id]
+        : (studentAnswers[qKey] !== undefined
+            ? studentAnswers[qKey]
+            : (studentAnswers[`q_${q.question_text}`] !== undefined ? studentAnswers[`q_${q.question_text}`] : undefined));
+
+      const qScore = Number(q.score) || 1;
+      const isCorrect = studentAns !== undefined && studentAns !== null && String(studentAns).trim() === String(q.correct_answer || '').trim();
+
+      if (q.is_excellence) {
+        target.maxExcellence += qScore;
+        if (isCorrect) {
+          target.excellence += qScore;
+        }
+      } else {
+        target.maxScore += qScore;
+        if (isCorrect) {
+          target.score += qScore;
+        }
+      }
+    });
+  }
+
+  // 2. Process excellence_answers if stored explicitly in result
+  if (result.excellence_answers && typeof result.excellence_answers === 'object') {
+    Object.entries(result.excellence_answers).forEach(([catName, val]: [string, any]) => {
+      const catType = normalizeCategoryType(catName);
+      const target = getTarget(catType);
+      if (target && val) {
+        const pts = Number(val.score) || 1;
+        if (val.is_correct) {
+          if (target.excellence === 0) {
+            target.excellence = pts;
+          }
+        }
+        if (target.maxExcellence === 0) {
+          target.maxExcellence = pts;
+        }
+      }
+    });
+  }
+
+  // 3. Process category_scores if pre-stored as an object in the result record
+  if (result.category_scores && typeof result.category_scores === 'object') {
+    Object.entries(result.category_scores).forEach(([catName, val]: [string, any]) => {
+      const catType = normalizeCategoryType(catName);
+      const target = getTarget(catType);
+      if (target) {
+        if (typeof val === 'number') {
+          target.score = val;
+        } else if (val && typeof val === 'object') {
+          if (typeof val.score === 'number') target.score = val.score;
+          if (typeof val.excellence === 'number') target.excellence = val.excellence;
+        }
+      }
+    });
+  }
+
+  // 4. Handle fallback if no questions were matched or legacy single score
+  const totalStandardCalculated = curriculum.score + hymns.score + coptic1.score + coptic2.score;
+  const totalExcellenceCalculated = curriculum.excellence + hymns.excellence + coptic1.excellence + coptic2.excellence;
+
+  let totalStandardScore = totalStandardCalculated;
+  let totalExcellencePoints = totalExcellenceCalculated;
+
+  // Fallback for standard score if not broken down by questions
+  const rawStandardScore = Number(result.total_score !== undefined ? result.total_score : (result.score || 0));
+  if (totalStandardScore === 0 && rawStandardScore > 0) {
+    const catType = normalizeCategoryType(result.subject_name || '');
+    const target = getTarget(catType);
+    if (target) {
+      target.score = rawStandardScore;
+      target.maxScore = Number(result.max_score || rawStandardScore);
+    } else {
+      curriculum.score = rawStandardScore;
+      curriculum.maxScore = Number(result.max_score || rawStandardScore);
+    }
+    totalStandardScore = rawStandardScore;
+  }
+
+  // Fallback for excellence points if not broken down
+  const rawExcellence = Number(result.excellence_points || 0);
+  if (totalExcellencePoints === 0 && rawExcellence > 0) {
+    if (Array.isArray(result.excellence_categories) && result.excellence_categories.length > 0) {
+      const catType = normalizeCategoryType(result.excellence_categories[0]);
+      const target = getTarget(catType);
+      if (target) {
+        target.excellence = rawExcellence;
+      } else {
+        curriculum.excellence = rawExcellence;
+      }
+    } else {
+      curriculum.excellence = rawExcellence;
+    }
+    totalExcellencePoints = rawExcellence;
+  }
+
+  curriculum.total = curriculum.score + curriculum.excellence;
+  hymns.total = hymns.score + hymns.excellence;
+  coptic1.total = coptic1.score + coptic1.excellence;
+  coptic2.total = coptic2.score + coptic2.excellence;
+
+  const grandTotal = totalStandardScore + totalExcellencePoints;
+  const maxScore = Number(result.max_score || (curriculum.maxScore + hymns.maxScore + coptic1.maxScore + coptic2.maxScore) || totalStandardScore);
+  const maxExcellencePoints = Number(result.max_excellence_points || (curriculum.maxExcellence + hymns.maxExcellence + coptic1.maxExcellence + coptic2.maxExcellence) || totalExcellencePoints);
+
+  const percentage = Number(
+    result.percentage !== undefined
+      ? result.percentage
+      : (maxScore > 0 ? ((totalStandardScore / maxScore) * 100).toFixed(1) : 0)
+  );
+
+  return {
+    id: result.id,
+    exam_code: result.exam_code || result.student_code || '',
+    student_name: result.student_name || '',
+    church_name: result.church_name || '',
+    stage: result.stage || '',
+    subject_name: result.subject_name || 'امتحان الأسقفية',
+    completed_at: result.completed_at || result.submitted_at || (result as any).created_at,
+    submitted_at: result.submitted_at || result.completed_at,
+    raw: result,
+    curriculum,
+    hymns,
+    coptic1,
+    coptic2,
+    totalStandardScore,
+    totalExcellencePoints,
+    grandTotal,
+    maxScore,
+    maxExcellencePoints,
+    percentage
+  };
+};
+
+/**
+ * Deletes a student exam result and optionally resets their code for re-entry
+ */
+export const deleteBishopricExamResult = async (
+  id?: string,
+  exam_code?: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    let query = supabase.from('bishopric_exam_results').delete();
+    if (id) {
+      query = query.eq('id', id);
+    } else if (exam_code) {
+      query = query.eq('exam_code', exam_code.trim());
+    } else {
+      return { success: false, error: 'معرف النتيجة أو كود المشترك غير محدد' };
+    }
+
+    const { error } = await query;
+    if (error) {
+      console.error('Error deleting bishopric exam result:', error);
+      return { success: false, error: error.message };
+    }
+
+    // Reset code status if exam_code provided so student can retake if needed
+    if (exam_code) {
+      const cleanCode = exam_code.trim();
+      await supabase
+        .from('bishopric_exam_codes')
+        .update({ is_used: false, status: 'unused' })
+        .or(`code.eq.${cleanCode},exam_code.eq.${cleanCode}`);
+      
+      updateLocalCacheCodeStatus(cleanCode, false);
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Delete bishopric exam result error:', err);
+    return { success: false, error: err.message || 'فشل في حذف النتيجة' };
+  }
+};
+
+/**
  * Updates local cache items (is_used status) for quota protection and offline reliability
  */
 export const updateLocalCacheCodeStatus = (code: string, isUsed: boolean) => {
@@ -796,6 +1072,15 @@ export const handleSubmitBishopricExam = async (
       }
       if (metadata.max_excellence_points !== undefined) {
         payload.max_excellence_points = metadata.max_excellence_points;
+      }
+      if (metadata.excellence_unlocked !== undefined) {
+        payload.excellence_unlocked = metadata.excellence_unlocked;
+      }
+      if (metadata.excellence_categories) {
+        payload.excellence_categories = metadata.excellence_categories;
+      }
+      if (metadata.excellence_answers) {
+        payload.excellence_answers = metadata.excellence_answers;
       }
     }
 
