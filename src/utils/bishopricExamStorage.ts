@@ -35,6 +35,7 @@ export interface BishopricExamResult {
   church_name: string;
   stage: string;
   subject_name?: string;
+  category?: string;
   total_score: number;
   score?: number;
   max_score: number;
@@ -657,6 +658,8 @@ export const fetchBishopricExamResults = async (
         church_name,
         stage,
         score,
+        total_score,
+        percentage,
         max_score,
         excellence_points,
         max_excellence_points,
@@ -689,6 +692,8 @@ export const fetchBishopricExamResults = async (
             church_name,
             stage,
             score,
+            total_score,
+            percentage,
             max_score,
             excellence_points,
             max_excellence_points,
@@ -702,13 +707,13 @@ export const fetchBishopricExamResults = async (
           .order('submitted_at', { ascending: false });
         
         if (!allErr && allData) {
-          return allData.filter(r => isChurchMatch(String(r.church_name || '').trim(), churchName.trim()));
+          return (allData as any[]).filter(r => isChurchMatch(String(r.church_name || '').trim(), churchName.trim()));
         }
       }
       return [];
     }
 
-    return data || [];
+    return (data || []) as any[];
   } catch (err) {
     console.error('Fetch bishopric exam results error:', err);
     return [];
@@ -1044,6 +1049,7 @@ export const handleSubmitBishopricExam = async (
     church_name?: string;
     stage?: string;
     subject_name?: string;
+    category?: string;
     max_score?: number;
     max_excellence_points?: number;
     excellence_unlocked?: boolean;
@@ -1096,6 +1102,7 @@ export const handleSubmitBishopricExam = async (
       if (metadata.church_name) payload.church_name = metadata.church_name.trim();
       if (metadata.stage) payload.stage = metadata.stage;
       if (metadata.subject_name) payload.subject_name = metadata.subject_name;
+      if (metadata.category) payload.category = metadata.category;
       if (metadata.max_score !== undefined) {
         payload.max_score = metadata.max_score;
         payload.percentage = metadata.max_score > 0 

@@ -191,8 +191,8 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
         normCode.includes(searchTerm.toLowerCase()) ||
         normChurch.includes(normSearch);
 
-      const matchesChurch = churchFilter === 'الكل' || churchFilter === 'ALL' || r.church_name === churchFilter || (r.raw && (r.raw.church_name === churchFilter || r.raw.church === churchFilter));
-      const matchesStage = stageFilter === 'الكل' || stageFilter === 'ALL' || r.stage === stageFilter || (r.raw && (r.raw.stage === stageFilter || r.raw.grade === stageFilter));
+      const matchesChurch = churchFilter === 'الكل' || churchFilter === 'ALL' || r.church_name === churchFilter || (r.raw && (r.raw.church_name === churchFilter || (r.raw as any).church === churchFilter));
+      const matchesStage = stageFilter === 'الكل' || stageFilter === 'ALL' || r.stage === stageFilter || (r.raw && (r.raw.stage === stageFilter || (r.raw as any).grade === stageFilter));
 
       let matchesExcellence = true;
       if (excellenceFilter === 'has_excellence') {

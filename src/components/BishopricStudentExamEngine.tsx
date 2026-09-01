@@ -24,9 +24,7 @@ import {
   Printer,
   RefreshCw,
   Star,
-  Trophy,
-  Volume2,
-  VolumeX
+  Trophy
 } from 'lucide-react';
 import { 
   BishopricExamRecord, 
@@ -38,9 +36,10 @@ import {
   fetchBishopricQuestions,
   handleSubmitBishopricExam,
   submitBishopricExamResult,
-  updateLocalCacheCodeStatus
+  updateLocalCacheCodeStatus,
+  normalizeCategoryType
 } from '../utils/bishopricExamStorage';
-import { getPreloadedCopticQuestions } from '../data/localScreeningQuestions';
+import { supabase } from '../utils/supabaseClient';
 import { useNotificationBubble } from '../context/NotificationContext';
 
 interface BishopricStudentExamEngineProps {
@@ -58,8 +57,10 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 }) => {
   const { showBubble, showSuccess, showError, showWarning, showInfo, showConfirmDialog } = useNotificationBubble();
 
-  // Step 1: 'login' | 'preview' | 'exam' | 'submitted'
-  const [step, setStep] = useState<'login' | 'preview' | 'exam' | 'submitted'>('login');
+  // Step 1: 'login' | 'dashboard' | 'preview' | 'exam' | 'submitted'
+  const [step, setStep] = useState<'login' | 'dashboard' | 'preview' | 'exam' | 'submitted'>('login');
+  const [completedCategories, setCompletedCategories] = useState<string[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   
   // Auth state
   const [examCodeInput, setExamCodeInput] = useState(() => {
@@ -103,6 +104,13 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     const std: BishopricExamQuestion[] = [];
     const exc: BishopricExamQuestion[] = [];
     rawQuestions.forEach((q) => {
+      // If we are in dashboard, preview, or exam, filter questions by category
+      if (activeCategory) {
+        const catType = normalizeCategoryType(q.subject_name);
+        if (catType !== activeCategory) {
+          return;
+        }
+      }
       if (q.is_excellence) {
         exc.push(q);
       } else {
@@ -110,7 +118,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       }
     });
     return { standardQuestions: std, excellenceQuestions: exc };
-  }, [rawQuestions]);
+  }, [rawQuestions, activeCategory]);
 
   // Active Questions List (Standard + Unlocked Excellence Questions)
   const activeQuestions = useMemo(() => {
@@ -251,6 +259,38 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     return () => clearInterval(interval);
   }, [isTimerRunning, step, timeLeft]);
 
+  // Fetch completed categories for a student code
+  const fetchCompletedCategories = async (code: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('bishopric_exam_results')
+        .select('category, answers')
+        .eq('student_code', code);
+      
+      if (!error && data) {
+        const categories: string[] = [];
+        data.forEach(item => {
+          if (item.category) {
+            if (item.category.includes(',')) {
+              categories.push(...item.category.split(',').map(s => s.trim()));
+            } else {
+              categories.push(item.category.trim());
+            }
+          }
+          if (item.answers && item.answers._completed_categories) {
+            categories.push(...item.answers._completed_categories);
+          }
+        });
+        const uniqueCats = Array.from(new Set(categories)).filter(Boolean);
+        setCompletedCategories(uniqueCats);
+        return uniqueCats;
+      }
+    } catch (e) {
+      console.error('Error fetching completed categories:', e);
+    }
+    return [];
+  };
+
   // Handle Verify Exam Code with Smart Church Caching & Quota Protection
   const handleVerifyCode = async (codeToVerify?: string) => {
     const rawInput = (codeToVerify || examCodeInput || '').trim();
@@ -283,18 +323,8 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
       setStudent(res.student);
 
-      // Duplicate Exam Prevention: If a result record exists for exam_code with status == 'completed', block entry
-      if (res.alreadySubmitted && (res.alreadySubmitted.status === 'completed' || res.alreadySubmitted.percentage !== undefined)) {
-        const alreadySubmittedMsg = 'عفواً، تم استخدام هذا الكود في الامتحان من قبل.';
-        setAuthError(alreadySubmittedMsg);
-        showBubble({
-          type: 'error',
-          title: 'كود مستخدم',
-          message: alreadySubmittedMsg
-        });
-        setStep('login');
-        return;
-      }
+      // Fetch completed categories
+      await fetchCompletedCategories(formattedCode);
 
       showBubble({
         type: 'success',
@@ -321,37 +351,84 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   const loadQuestionsForStudent = async (studentData: BishopricExamRecord) => {
     setIsLoadingQuestions(true);
     try {
-      let qList = await fetchBishopricQuestions(studentData.stage);
+      const qList = await fetchBishopricQuestions(studentData.stage);
+      setRawQuestions(qList);
+      setStep('dashboard'); // Land on Category Selection Dashboard
+    } catch (err) {
+      console.error('Error fetching questions for student:', err);
+      const qErr = 'تعذر تحميل أسئلة الامتحان. يرجى إعادة المحاولة.';
+      setAuthError(qErr);
+      showBubble({
+        type: 'error',
+        title: 'خطأ تحميل الأسئلة',
+        message: qErr
+      });
+    } finally {
+      setIsLoadingQuestions(false);
+    }
+  };
 
-      // Integrate preloaded Coptic questions for Nursery & Grades 1-2
-      const preloadedCoptic = getPreloadedCopticQuestions(studentData.stage, studentData.exam_code);
-      if (preloadedCoptic.length > 0) {
-        const existingTexts = new Set(qList.map(q => q.question_text.trim()));
-        const uniquePreloaded = preloadedCoptic.filter(q => !existingTexts.has(q.question_text.trim()));
-        if (uniquePreloaded.length > 0) {
-          qList = [...qList, ...uniquePreloaded];
+  // Dynamic categories detection based on loaded stage questions
+  const availableCategoriesForStage = useMemo(() => {
+    const cats = [];
+    
+    // Check if we have curriculum questions or force default
+    cats.push({ id: 'curriculum', title: 'دراسي', subtitle: 'مسابقة المنهج الدراسي الرئيسي' });
+    cats.push({ id: 'hymns', title: 'محفوظات', subtitle: 'مسابقة الألحان والتسبحة والمحفوظات' });
+
+    // Check if stage has questions with level 2 coptic or fallback to level 1 coptic
+    const hasCoptic2 = rawQuestions.some(q => normalizeCategoryType(q.subject_name) === 'coptic2');
+    if (hasCoptic2) {
+      cats.push({ id: 'coptic2', title: 'قبطي مستوى ثانٍ', subtitle: 'مسابقة اللغة القبطية (المستوى الثاني)' });
+    } else {
+      cats.push({ id: 'coptic1', title: 'قبطي مستوى أول', subtitle: 'مسابقة اللغة القبطية (المستوى الأول)' });
+    }
+
+    return cats;
+  }, [rawQuestions]);
+
+  // Handle Select Category with Server Verification to protect against double devices submission
+  const handleSelectCategory = async (category: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('bishopric_exam_results')
+        .select('category, answers')
+        .eq('student_code', student?.exam_code || examCodeInput);
+
+      if (!error && data && data.length > 0) {
+        const record = data[0];
+        const completed: string[] = [];
+        if (record.category) {
+          completed.push(...record.category.split(',').map((s: string) => s.trim()));
+        }
+        if (record.answers && record.answers._completed_categories) {
+          completed.push(...record.answers._completed_categories);
+        }
+
+        if (completed.includes(category)) {
+          showBubble({
+            type: 'warning',
+            title: 'تم التسليم بالفعل',
+            message: 'عذراً، تم تسليم هذه المسابقة بالفعل مسبقاً!'
+          });
+          setCompletedCategories(prev => Array.from(new Set([...prev, category])));
+          return;
         }
       }
 
-      setRawQuestions(qList);
+      // Open Exam Engine for this category
+      setActiveCategory(category);
+      setCurrentQuestionIdx(0);
+      setSelectedAnswers({});
+      setUnlockedExcellenceCategories([]);
+      setTimeLeft(30 * 60); // Reset timer to 30 minutes
+      setIsTimerRunning(false);
       setStep('preview');
     } catch (err) {
-      console.error('Error fetching questions for student:', err);
-      const preloadedCoptic = getPreloadedCopticQuestions(studentData.stage, studentData.exam_code);
-      if (preloadedCoptic.length > 0) {
-        setRawQuestions(preloadedCoptic);
-        setStep('preview');
-      } else {
-        const qErr = 'تعذر تحميل أسئلة الامتحان. يرجى إعادة المحاولة.';
-        setAuthError(qErr);
-        showBubble({
-          type: 'error',
-          title: 'خطأ تحميل الأسئلة',
-          message: qErr
-        });
-      }
-    } finally {
-      setIsLoadingQuestions(false);
+      console.error('Error selecting category:', err);
+      // Fallback open
+      setActiveCategory(category);
+      setStep('preview');
     }
   };
 
@@ -417,35 +494,6 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     );
   }, [selectedStage, currentQ?.subject_name, student?.exam_code, initialExamCode]);
 
-  // Speech Handler Helper Function for letter / text pronunciation
-  const playAudioPronunciation = (textToSpeak: string) => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      try {
-        // Stop any ongoing speech
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(textToSpeak);
-        const hasEnglishLetters = /[a-zA-Z]/.test(textToSpeak);
-        utterance.lang = hasEnglishLetters ? 'en-US' : 'ar-EG';
-        utterance.rate = 0.8; // Clear, slightly slower speed for children
-        window.speechSynthesis.speak(utterance);
-      } catch (err) {
-        console.warn("Speech Synthesis error:", err);
-      }
-    } else {
-      console.warn("Speech Synthesis is not supported in this browser.");
-    }
-  };
-
-  // Auto-play letter pronunciation if current question requires it
-  useEffect(() => {
-    if (step === 'exam' && currentQ) {
-      const qAny = currentQ as any;
-      if (qAny.shouldAutoPlay || qAny.autoPlay) {
-        playAudioPronunciation(qAny.letterToPronounce || currentQ.question_text);
-      }
-    }
-  }, [currentQuestionIdx, step, currentQ]);
-
   const handleSelectOption = (option: string) => {
     if (!currentQ) return;
     const qKey = currentQ.id || `q_${currentQ.question_text}`;
@@ -466,7 +514,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
   // Calculate scores & submit (Strict server confirmed save with custom loader)
   const executeSubmission = async () => {
-    if (!student || isSubmitting) return; // منع التكرار والضغط المتوازي
+    if (!student || isSubmitting || !activeCategory) return; // منع التكرار والضغط المتوازي
 
     setIsSubmitting(true);
     setSubmitError(null);
@@ -474,7 +522,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     setIsTimerRunning(false);
     setShowConfirmModal(false);
 
-    // 1. Calculate Standard Score
+    // 1. Calculate Standard Score for the CURRENT category
     let standardScore = 0;
     let standardMaxScore = 0;
     standardQuestions.forEach((q) => {
@@ -487,7 +535,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       }
     });
 
-    // 2. Calculate Excellence Bonus Points
+    // 2. Calculate Excellence Bonus Points for the CURRENT category
     let earnedExcellencePoints = 0;
     let maxExcellencePoints = 0;
     const excellenceAnswersMap: Record<string, any> = {};
@@ -510,37 +558,106 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       }
     });
 
-    const percentage = standardMaxScore > 0 
-      ? Number(((standardScore / standardMaxScore) * 100).toFixed(1)) 
-      : 0;
-
-    const resultPayload: BishopricExamResult = {
-      exam_code: student.exam_code,
-      student_code: student.exam_code,
-      student_name: student.student_name,
-      church_name: student.church_name,
-      stage: student.stage,
-      subject_name: rawQuestions[0]?.subject_name || 'امتحان الأسقفية',
-      total_score: standardScore,
-      max_score: standardMaxScore,
-      percentage: percentage,
-      excellence_points: earnedExcellencePoints,
-      max_excellence_points: maxExcellencePoints,
-      excellence_unlocked: unlockedExcellenceCategories.length > 0,
-      excellence_categories: unlockedExcellenceCategories,
-      excellence_answers: excellenceAnswersMap,
-      answers: selectedAnswers,
-      status: 'completed',
-      submitted_at: new Date().toISOString(),
-      completed_at: new Date().toISOString()
-    };
-
     try {
-      // Execute 2-step atomic submission with dynamic score separation and separate excellence_points
+      // 3. Fetch existing database record to perform cumulative merge
+      const { data: existingData, error: fetchErr } = await supabase
+        .from('bishopric_exam_results')
+        .select('*')
+        .eq('student_code', student.exam_code);
+
+      const existingRecord = existingData && existingData.length > 0 ? existingData[0] : null;
+
+      // Merge answers
+      const prevAnswers = existingRecord?.answers || {};
+      const mergedAnswers = { ...prevAnswers, ...selectedAnswers };
+
+      // Merge completed categories
+      const prevCompleted = completedCategories || [];
+      const updatedCompleted = Array.from(new Set([...prevCompleted, activeCategory]));
+      const categoryString = updatedCompleted.join(',');
+
+      // Merge excellence answers
+      const prevExcAnswers = existingRecord?.excellence_answers || {};
+      const mergedExcAnswers = { ...prevExcAnswers, ...excellenceAnswersMap };
+
+      // Merge excellence categories
+      const prevExcCats = existingRecord?.excellence_categories || [];
+      const mergedExcCats = Array.from(new Set([...prevExcCats, ...unlockedExcellenceCategories]));
+
+      // 4. Compute cumulative scores over all completed categories
+      let totalScore = 0;
+      let totalMaxScore = 0;
+      let totalExcellencePoints = 0;
+      let totalMaxExcellencePoints = 0;
+
+      rawQuestions.forEach((q) => {
+        const qCat = normalizeCategoryType(q.subject_name);
+        if (updatedCompleted.includes(qCat)) {
+          const qScore = Number(q.score) || 1;
+          const qKey = q.id || `q_${q.question_text}`;
+          const studentAns = mergedAnswers[qKey];
+          const isCorrect = studentAns !== undefined && studentAns !== null && String(studentAns).trim() === String(q.correct_answer || '').trim();
+
+          if (q.is_excellence) {
+            totalMaxExcellencePoints += qScore;
+            if (isCorrect) {
+              totalExcellencePoints += qScore;
+            }
+          } else {
+            totalMaxScore += qScore;
+            if (isCorrect) {
+              totalScore += qScore;
+            }
+          }
+        }
+      });
+
+      const overallPercentage = totalMaxScore > 0 
+        ? Number(((totalScore / totalMaxScore) * 100).toFixed(1)) 
+        : 0;
+
+      const nowIso = new Date().toISOString();
+      const resultPayload: BishopricExamResult = {
+        exam_code: student.exam_code,
+        student_code: student.exam_code,
+        student_name: student.student_name,
+        church_name: student.church_name,
+        stage: student.stage,
+        subject_name: 'امتحان الأسقفية',
+        category: categoryString,
+        total_score: totalScore,
+        score: totalScore,
+        max_score: totalMaxScore,
+        percentage: overallPercentage,
+        excellence_points: totalExcellencePoints,
+        max_excellence_points: totalMaxExcellencePoints,
+        excellence_unlocked: mergedExcCats.length > 0,
+        excellence_categories: mergedExcCats,
+        excellence_answers: mergedExcAnswers,
+        answers: {
+          ...mergedAnswers,
+          _completed_categories: updatedCompleted
+        },
+        status: 'completed',
+        submitted_at: nowIso,
+        completed_at: nowIso
+      };
+
+      // Save backup locally
+      try {
+        localStorage.setItem(`exam_${student.exam_code}_${activeCategory}`, JSON.stringify(resultPayload));
+      } catch (e) {
+        console.warn('Error saving local backup:', e);
+      }
+
+      // 5. Submit cumulative payload to database via handleSubmitBishopricExam
       const res = await handleSubmitBishopricExam(
         student.exam_code,
-        selectedAnswers,
-        activeQuestions,
+        {
+          ...mergedAnswers,
+          _completed_categories: updatedCompleted
+        },
+        rawQuestions, // pass ALL questions to evaluate overall score properly
         setIsSubmitting,
         showBubble,
         () => {},
@@ -548,29 +665,41 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           student_name: student.student_name,
           church_name: student.church_name,
           stage: student.stage,
-          subject_name: rawQuestions[0]?.subject_name || 'امتحان الأسقفية',
-          max_score: standardMaxScore,
-          max_excellence_points: maxExcellencePoints,
-          excellence_unlocked: unlockedExcellenceCategories.length > 0,
-          excellence_categories: unlockedExcellenceCategories,
-          excellence_answers: excellenceAnswersMap
+          subject_name: 'امتحان الأسقفية',
+          category: categoryString,
+          max_score: totalMaxScore,
+          max_excellence_points: totalMaxExcellencePoints,
+          excellence_unlocked: mergedExcCats.length > 0,
+          excellence_categories: mergedExcCats,
+          excellence_answers: mergedExcAnswers
         }
       );
 
       if (res.success && res.data) {
-        // Clear local progress cache strictly AFTER verified DB insert confirmation
+        // Clear local progress cache for this category strictly AFTER verified DB insert confirmation
         try {
           localStorage.removeItem(`bishopric_exam_progress_${student.exam_code.trim()}`);
+          localStorage.removeItem(`bishopric_exam_progress_${student.exam_code.trim()}_${activeCategory}`);
         } catch (e) {}
         
         setIsSubmitting(false);
+        setCompletedCategories(updatedCompleted);
+        setActiveCategory(null);
         setFinalResult(res.data);
-        setStep('submitted');
+        
+        showBubble({
+          type: 'success',
+          title: 'تم الحفظ بنجاح',
+          message: 'تم تسليم المسابقة وحفظ النتيجة وتأكيد درجاتك بنجاح!'
+        });
+
+        // Navigate back to Category Cards Screen
+        setStep('dashboard');
+
         if (onComplete) {
           onComplete(res.data);
         }
       } else {
-        // Retain answers locally on failure, do NOT mark code as used, hide loader, show retry option
         setIsSubmitting(false);
         const failMsg = res.error || 'تعذر تأكيد الحفظ ، يرجى إعادة المحاولة';
         setSubmitError(failMsg);
@@ -691,6 +820,150 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
         </div>
       )}
 
+      {/* STEP 1.5: CATEGORY SELECTION DASHBOARD */}
+      {step === 'dashboard' && student && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Student Profile Ribbon */}
+          <div className="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-6">
+            <div className="flex items-center gap-4 text-right">
+              <div className="w-16 h-16 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-3xl flex items-center justify-center shrink-0">
+                <User size={32} />
+              </div>
+              <div>
+                <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                  كود الطالب: {student.exam_code}
+                </span>
+                <h3 className="text-xl md:text-2xl font-black text-slate-900 mt-1">{student.student_name}</h3>
+                <p className="text-xs md:text-sm text-slate-500 font-bold">
+                  كنيسة: {student.church_name} • المرحلة الدراسية: {student.stage}
+                </p>
+              </div>
+            </div>
+
+            {/* Overall Progress Widget */}
+            <div className="bg-slate-50 px-5 py-4 rounded-2xl border border-slate-200 text-center sm:text-left min-w-[150px]">
+              <span className="text-[10px] text-slate-400 font-black block mb-1">نسبة الإنجاز</span>
+              <span className="text-2xl font-black text-indigo-600">
+                {completedCategories.length} / {availableCategoriesForStage.length}
+              </span>
+              <span className="text-[10px] text-slate-500 font-bold block mt-1">مسابقات مكتملة</span>
+            </div>
+          </div>
+
+          {/* Subtitle / Call to Action */}
+          <div className="text-center sm:text-right">
+            <h4 className="text-lg font-black text-slate-800">اختر أحد مسابقات المرحلة الدراسية التالية:</h4>
+            <p className="text-xs text-slate-500 font-bold mt-1">
+              تنبيه: يمكنك أداء كل مسابقة مرة واحدة فقط. سيتم قفل المسابقة بمجرد إرسال الإجابات.
+            </p>
+          </div>
+
+          {/* Categories Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {availableCategoriesForStage.map((cat) => {
+              const isCompleted = completedCategories.includes(cat.id);
+              return (
+                <div
+                  key={cat.id}
+                  onClick={() => !isCompleted && handleSelectCategory(cat.id)}
+                  className={`bg-white rounded-3xl p-6 border transition-all relative overflow-hidden flex flex-col justify-between min-h-[180px] ${
+                    isCompleted
+                      ? 'border-emerald-200 bg-emerald-50/10 cursor-not-allowed opacity-85 shadow-sm'
+                      : 'border-slate-200 hover:border-indigo-500 hover:shadow-xl cursor-pointer hover:-translate-y-1'
+                  }`}
+                >
+                  {/* Decorative corner icon for completed */}
+                  {isCompleted && (
+                    <div className="absolute top-0 left-0 w-16 h-16 bg-emerald-500 text-white flex items-center justify-center rounded-br-3xl">
+                      <CheckCircle2 size={24} />
+                    </div>
+                  )}
+
+                  <div className="space-y-2 text-right">
+                    <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full inline-block ${
+                      isCompleted 
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                        : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
+                    }`}>
+                      {isCompleted ? 'تم الإرسال بنجاح' : 'جاهز للبدء'}
+                    </span>
+                    <h3 className="text-xl font-black text-slate-900 pt-1">{cat.title}</h3>
+                    <p className="text-xs text-slate-500 font-bold leading-relaxed">{cat.subtitle}</p>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-[11px] font-black text-slate-400">امتحان ٢٠٢٦</span>
+                    <span className={`text-xs font-black flex items-center gap-1 ${
+                      isCompleted ? 'text-emerald-700' : 'text-indigo-600'
+                    }`}>
+                      {isCompleted ? (
+                        <>
+                          <span>عرض الشهادة</span>
+                          <Award size={14} />
+                        </>
+                      ) : (
+                        <>
+                          <span>ابدأ الآن</span>
+                          <ArrowRight size={14} className="rotate-180" />
+                        </>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Overall certificate section if all categories are completed */}
+          {completedCategories.length === availableCategoriesForStage.length && (
+            <div className="bg-gradient-to-r from-emerald-50 via-teal-50/20 to-indigo-50/20 p-6 md:p-8 rounded-3xl border-2 border-emerald-400 text-center space-y-4 max-w-xl mx-auto shadow-md">
+              <Award className="mx-auto text-emerald-600 animate-bounce" size={48} />
+              <div className="space-y-1">
+                <h3 className="text-xl font-black text-slate-900">لقد أتممت كافة مسابقات المهرجان الإلكترونية!</h3>
+                <p className="text-xs text-slate-600 font-bold">
+                  نهنئك يا <span className="text-indigo-700 font-black">{student.student_name}</span> على أدائك المتميز في كافة الفروع المطلوبة. تم تسجيل ومزامنة نتائجك بأمان.
+                </p>
+              </div>
+              <div className="flex justify-center gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setFinalResult({
+                      student_name: student.student_name,
+                      church_name: student.church_name,
+                      stage: student.stage,
+                      subject_name: 'امتحان الأسقفية الكلي',
+                      percentage: '100', // temporary mock percentage for full completion certificate
+                      total_score: completedCategories.length,
+                      max_score: availableCategoriesForStage.length,
+                      exam_code: student.exam_code,
+                      completed_at: new Date().toISOString()
+                    } as any);
+                    setStep('submitted');
+                  }}
+                  className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Award size={16} />
+                  <span>عرض إشعار النتيجة والتقدير</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Logout / Switch User Option */}
+          <div className="flex items-center justify-center pt-6">
+            <button
+              onClick={() => {
+                setStudent(null);
+                setStep('login');
+              }}
+              className="text-xs font-black text-slate-500 hover:text-rose-600 transition-colors flex items-center gap-1.5 cursor-pointer bg-slate-100 hover:bg-rose-50 px-5 py-2.5 rounded-xl border border-slate-200"
+            >
+              <span>تسجيل الخروج والرجوع لصفحة الكود</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* STEP 2: VERIFIED PREVIEW & INSTRUCTIONS */}
       {step === 'preview' && student && (
         <div className="bg-white rounded-3xl p-8 md:p-10 border border-slate-200 shadow-xl space-y-6">
@@ -755,7 +1028,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           ) : (
             <div className="flex items-center gap-3 pt-2">
               <button
-                onClick={() => setStep('login')}
+                onClick={() => setStep('dashboard')}
                 className="px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl font-black text-sm transition-all cursor-pointer"
               >
                 رجوع
@@ -858,20 +1131,9 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                   )}
                 </div>
 
-                <div className="flex items-center gap-3 pt-2">
-                  <h3 className={`text-base md:text-xl font-black text-slate-900 leading-relaxed ${isCopticStage ? 'coptic-font coptic-text' : ''}`}>
-                    {currentQ.question_text}
-                  </h3>
-
-                  <button
-                    type="button"
-                    onClick={() => playAudioPronunciation((currentQ as any).letterToPronounce || currentQ.question_text)}
-                    className="p-2.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full transition-all duration-200 shadow-sm shrink-0 flex items-center justify-center cursor-pointer hover:scale-105"
-                    title="استمع لنطق الحرف أو السؤال"
-                  >
-                    <Volume2 size={20} />
-                  </button>
-                </div>
+                <h3 className={`text-base md:text-xl font-black text-slate-900 leading-relaxed pt-2 ${isCopticStage ? 'coptic-font coptic-text' : ''}`}>
+                  {currentQ.question_text}
+                </h3>
 
                 {currentQ.is_excellence && (
                   <p className="text-xs font-bold text-amber-800 flex items-center gap-1 mt-1">
@@ -918,23 +1180,9 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                       <span className={`text-sm md:text-base leading-relaxed ${isCopticStage ? 'coptic-font coptic-text' : ''}`}>{opt}</span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          playAudioPronunciation(opt);
-                        }}
-                        className="p-1.5 bg-white hover:bg-blue-100 text-slate-500 hover:text-blue-700 rounded-lg transition-all border border-slate-200 shrink-0"
-                        title="استمع لنطق الخيار"
-                      >
-                        <Volume2 size={16} />
-                      </button>
-
-                      {isSelected && (
-                        <CheckCircle2 size={20} className={currentQ.is_excellence ? 'text-amber-600 shrink-0' : 'text-indigo-600 shrink-0'} />
-                      )}
-                    </div>
+                    {isSelected && (
+                      <CheckCircle2 size={20} className={currentQ.is_excellence ? 'text-amber-600 shrink-0' : 'text-indigo-600 shrink-0'} />
+                    )}
                   </button>
                 );
               })}
@@ -1228,10 +1476,16 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
               <Printer size={16} />
               <span>طباعة إشعار النتيجة</span>
             </button>
+            <button
+              onClick={() => setStep('dashboard')}
+              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs md:text-sm font-black transition-all shadow-md shadow-indigo-600/20 cursor-pointer"
+            >
+              الرجوع للوحة المسابقات
+            </button>
             {onClose && (
               <button
                 onClick={onClose}
-                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs md:text-sm font-black transition-all shadow-md shadow-indigo-600/20 cursor-pointer"
+                className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs md:text-sm font-black transition-all border border-slate-200 cursor-pointer"
               >
                 العودة للمنصة
               </button>
