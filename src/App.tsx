@@ -9,7 +9,6 @@ import {
   Check,
   User,
   Trophy,
-  Calculator, 
   FileText, 
   Calendar, 
   UserPlus, 
@@ -428,7 +427,6 @@ const ALL_ADMIN_TABS = [
   { id: 'qualification_fees', label: 'Ø§Ø´ØªØ±Ø§ÙƒØ§Øª Ø§Ù„ÙƒÙ†Ø§Ø¦Ø³', icon: Receipt },
   { id: 'inquiries', label: 'Ø§Ù„Ø§Ø³ØªÙØ³Ø§Ø±Ø§Øª', icon: MessageSquare },
   { id: 'schedules', label: 'Ø¬Ø¯ÙˆÙ„ Ø§Ù„Ù…ÙˆØ§Ø¹ÙŠØ¯', icon: Calendar },
-  { id: 'calculator', label: 'ØªØ³Ø¹ÙŠØ± Ø§Ù„ÙƒØªØ¨', icon: Calculator },
   { id: 'exams_management', label: 'Ø§Ù„Ø¥Ù…ØªØ­Ø§Ù†Ø§Øª', icon: BookOpen },
   { id: 'rotating_gate', label: ' Daily QR  ', icon: QrCode },
   { id: 'users_management', label: 'Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ† ÙˆØ§Ù„ÙƒÙ†Ø§Ø¦Ø³', icon: Users },
@@ -631,8 +629,6 @@ function AppComponent() {
   // Customization State
   const [isCustomizeTabsModalOpen, setIsCustomizeTabsModalOpen] = useState(false);
   const [tempTabsConfig, setTempTabsConfig] = useState<{order: string[], hidden: string[]}>({order: [], hidden: []});
-
-  const [quantities, setQuantities] = useState<Record<string, number>>({});
 
   const [isBishopricExamMode, setIsBishopricExamMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -1202,8 +1198,7 @@ function AppComponent() {
       if (ctrlData) {
         setSystemControls({
           isRegistrationOpen: !isCurrentlyLocked,
-          isBookCalculatorOpen: ctrlData.isBookCalculatorOpen !== false
-        });
+          });
       } else {
         setSystemControls(prev => ({
           ...prev,
@@ -1418,63 +1413,6 @@ function AppComponent() {
   
   const [teamSearch, setTeamSearch] = useState('');
   const [resultSearch, setResultSearch] = useState('');
-  const [calculatorSettings, setCalculatorSettings] = useState<any[]>([]);
-  const [isCalculatorLoading, setIsCalculatorLoading] = useState(true);
-  const [isSubmittingCalculator, setIsSubmittingCalculator] = useState(false);
-  const [newCalculatorSetting, setNewCalculatorSetting] = useState({ stage: '', material: '', price: 0 });
-  
-  const calculatorFilteredStages = useMemo(() => {
-    const material = newCalculatorSetting.material;
-    
-    // Explicitly requested stages for the Book Calculator
-    const additionalStages = [
-      "Ø£Ù†Ø´Ø·Ø© Ø§Ù„Ø·ÙÙˆÙ„Ø©",
-      "Ø£Ù†Ø´Ø·Ø© Ø¥Ø¹Ø¯Ø§Ø¯ÙŠ ÙˆØ«Ø§Ù†ÙˆÙŠ",
-      "Ø£Ù†Ø´Ø·Ø© Ù…Ù† Ø¬Ø§Ù…Ø¹Ø©:Ø®Ø¯Ø§Ù…"
-    ];
-    
-    let baseList: string[] = [];
-    if (!material) {
-      baseList = dynamicLevels.map(l => l.name);
-    } else {
-      const matched = dynamicLevels.filter(level => {
-        const list = level.comps || [];
-        return list.some((c: string) => {
-          const norm = c.toLowerCase();
-          const actNorm = material.toLowerCase();
-          if (norm.includes(actNorm)) return true;
-          if (actNorm === 'Ù‚Ø¨Ø·ÙŠ' && norm.includes('Ù‚Ø¨Ø·ÙŠ')) return true;
-          if (actNorm === 'Ø¯Ø±Ø§Ø³ÙŠ' && norm.includes('Ø¯Ø±Ø§Ø³ÙŠ')) return true;
-          if (actNorm === 'Ù…Ø­ÙÙˆØ¸Ø§Øª' && norm.includes('Ù…Ø­ÙÙˆØ¸Ø§Øª')) return true;
-          if (actNorm === 'ØªØ·Ø¨ÙŠÙ‚Ø§Øª' && norm.includes('ØªØ·Ø¨ÙŠÙ‚Ø§Øª')) return true;
-          if (actNorm === 'Ø£Ù†Ø´Ø·Ø©' && (norm.includes('Ø£Ù†Ø´Ø·Ø©') || norm.includes('Ù†Ø´Ø§Ø·') || norm.includes('ÙƒØ´Ø§ÙØ©') || norm.includes('Ø±ÙŠØ§Ø¶ÙŠØ©') || norm.includes('Ù…Ø³Ø±Ø­' ) || norm.includes('ÙÙ†ÙˆÙ†') || norm.includes('Ø¥Ø¨ØªÙƒØ§Ø±Ø§Øª'))) return true;
-          return false;
-        });
-      }).map(level => level.name);
-      
-      baseList = matched.length > 0 ? matched : dynamicLevels.map(l => l.name);
-    }
-    
-    // Combine base dynamic list with the new hardcoded options, then remove duplicates and sort
-    return Array.from(new Set([...baseList, ...additionalStages])).sort(sortStages);
-  }, [newCalculatorSetting.material, dynamicLevels]);
-
-  const handleCalculatorMaterialChange = async (material: string) => {
-    setNewCalculatorSetting(prev => ({ ...prev, material, stage: '' }));
-    if (!material) return;
-    try {
-      const { data, error } = await supabase
-        .from('stage_competitions')
-        .select('stage_name, allowed_competitions');
-      if (!error && data) {
-        console.log("Dynamically fetched/verified stages for material:", material, data.length);
-      }
-    } catch (e) {
-      console.error("Error fetching calculator stages on material change:", e);
-    }
-  };
-  const [showDeleteCalculatorModal, setShowDeleteCalculatorModal] = useState(false);
-  const [calculatorSettingToDelete, setCalculatorSettingToDelete] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [participantToDelete, setParticipantToDelete] = useState<string | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -1821,11 +1759,9 @@ function AppComponent() {
 
   const [systemControls, setSystemControls] = useState<{
     isRegistrationOpen: boolean;
-    isBookCalculatorOpen: boolean;
-  }>({
+    }>({
     isRegistrationOpen: true,
-    isBookCalculatorOpen: true
-  });
+    });
 
   const FORCE_OPEN_REGISTRATION = false; // Emergency Override disabled to allow dynamic toggle
 
@@ -1866,7 +1802,6 @@ function AppComponent() {
     mission: '',
     aboutText: ''
   });
-  const [editingCalculatorSetting, setEditingCalculatorSetting] = useState<any>(null);
   const [editingTeam, setEditingTeam] = useState<any>(null);
   const [editingResult, setEditingResult] = useState<Result | null>(null);
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
@@ -2994,30 +2929,6 @@ function AppComponent() {
     fetchData();
   }, [activeYear]);
 
-  const fetchBooksFromSupabase = async () => {
-    setIsCalculatorLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('books')
-        .select('*');
-      if (error) throw error;
-      
-      const mapped = (data || []).map((b: any) => ({
-        id: String(b.id),
-        stage: b.stage,
-        competition: b.competition,
-        material: b.competition || b.material,
-        price: Number(b.price) || 0
-      }));
-      setCalculatorSettings(mapped);
-    } catch (err: any) {
-      console.error("Error fetching books from Supabase:", err);
-      setNotification("Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø¬Ù„Ø¨ Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„ÙƒØªØ¨.");
-    } finally {
-      setIsCalculatorLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (!isAuthReady || !isLoggedIn) return;
     
@@ -3045,11 +2956,7 @@ function AppComponent() {
               .eq('year', activeYear);
             if (carouselData) {
               setCarouselItems((carouselData as CarouselItem[]).sort((a, b) => (a.order || 0) - (b.order || 0)));
-            }
-
-            await fetchBooksFromSupabase();
-
-            // Settings
+            }// Settings
             const { data: footerData } = await supabase.from('system_settings').select('*').eq('id', 'footer').maybeSingle();
             if (footerData && footerData.details) setSiteSettings(footerData.details as SiteSettings);
 
@@ -3388,7 +3295,7 @@ function AppComponent() {
         .from('system_settings')
         .upsert({
           id: 'system_controls',
-          isBookCalculatorOpen: newControls.isBookCalculatorOpen,
+          
           updatedAt: new Date().toISOString()
         })
         .select();
@@ -3558,90 +3465,6 @@ function AppComponent() {
       alert('Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø­ÙØ¸ Ø§Ù„Ù…Ø­ØªÙˆÙ‰: ' + (error.message || ''));
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleSaveCalculatorSetting = async () => {
-    if (!newCalculatorSetting.stage?.trim() || !newCalculatorSetting.material?.trim()) {
-      alert('ÙŠØ±Ø¬Ù‰ Ø¥Ø¯Ø®Ø§Ù„ Ø§Ù„Ù…Ø±Ø­Ù„Ø© ÙˆØ§Ù„Ù…Ø§Ø¯Ø©');
-      return;
-    }
-    if (!navigator.onLine) {
-      alert("âŒ Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø¥Ù†ØªØ±Ù†Øª!");
-      return;
-    }
-    
-    setIsSubmittingCalculator(true);
-    try {
-      const stage = newCalculatorSetting.stage.trim();
-      const competition = newCalculatorSetting.material.trim();
-      const price = Number(newCalculatorSetting.price) || 0;
-      
-      let resData, resErr;
-      if (editingCalculatorSetting) {
-        // Update existing book
-        const { data, error } = await supabase
-          .from('books')
-          .update({ stage, competition, price })
-          .eq('id', editingCalculatorSetting.id)
-          .select();
-        resData = data;
-        resErr = error;
-      } else {
-        // Insert new book
-        const { data, error } = await supabase
-          .from('books')
-          .insert([{ stage, competition, price }])
-          .select();
-        resData = data;
-        resErr = error;
-      }
-
-      if (resErr || !resData || resData.length === 0) {
-        throw resErr || new Error("Ù„Ù… ÙŠØªÙ… ØªØ£ÙƒÙŠØ¯ Ø­ÙØ¸ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯ ÙÙŠ Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
-      }
-      
-      setNewCalculatorSetting({ stage: '', material: '', price: 0 });
-      setEditingCalculatorSetting(null);
-      alert('ØªÙ… Ø­ÙØ¸ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯ Ø¨Ù†Ø¬Ø§Ø­');
-      await fetchBooksFromSupabase();
-    } catch (error: any) {
-      console.error('Error saving book setting:', error);
-      alert('Ø®Ø·Ø£ ÙÙŠ Ø­ÙØ¸ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯: ' + (error.message || ''));
-    } finally {
-      setIsSubmittingCalculator(false);
-    }
-  };
-
-  const handleDeleteCalculatorSetting = async (id: string) => {
-    setCalculatorSettingToDelete(id);
-    setShowDeleteCalculatorModal(true);
-  };
-
-  const confirmDeleteCalculatorSetting = async () => {
-    if (!calculatorSettingToDelete) return;
-    if (!navigator.onLine) {
-      alert("âŒ Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø¥Ù†ØªØ±Ù†Øª!");
-      return;
-    }
-    try {
-      const { data, error } = await supabase
-        .from('books')
-        .delete()
-        .eq('id', calculatorSettingToDelete)
-        .select();
-
-      if (error || !data || data.length === 0) {
-        throw error || new Error("Ù„Ù… ÙŠØªÙ… ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø­Ø°Ù Ù…Ù† Ø§Ù„Ø³ÙŠØ±ÙØ±.");
-      }
-
-      alert('ØªÙ… Ø­Ø°Ù Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯ Ø¨Ù†Ø¬Ø§Ø­');
-      setShowDeleteCalculatorModal(false);
-      setCalculatorSettingToDelete(null);
-      await fetchBooksFromSupabase();
-    } catch (error: any) {
-      console.error('Error deleting book setting:', error);
-      alert('Ø®Ø·Ø£ ÙÙŠ Ø­Ø°Ù Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯: ' + (error.message || ''));
     }
   };
 
@@ -4193,23 +4016,20 @@ function AppComponent() {
   const exportOrdersToExcelDetailed = (ordersList: Order[]) => {
     const flattenedData: any[] = [];
     
-    // SSOT: Use calculatorSettings sorted
-    const orderedSettings = [...calculatorSettings].sort((a, b) => sortStages(a.stage, b.stage) || a.material.localeCompare(b.material));
-
     ordersList.forEach(order => {
-      orderedSettings.forEach(setting => {
-        const detail = order.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
-        
-        if (detail && detail.quantity > 0) {
+      (order.details || []).forEach((detail: any) => {
+        const qty = Number(detail.quantity) || 0;
+        const price = Number(detail.price) || 0;
+        if (qty > 0) {
           flattenedData.push({
             "Ø§Ù„ÙƒÙ†ÙŠØ³Ø©": order.churchName,
             "Ø§Ù„Ù…ÙƒØ§Ù†": order.country,
             "Ø§Ù„ØªØ§Ø±ÙŠØ®": order.timestamp,
-            "Ø§Ù„Ù…Ø±Ø­Ù„Ø©": setting.stage,
-            "Ø§Ù„Ù…Ø§Ø¯Ø©": setting.material,
-            "Ø§Ù„ÙƒÙ…ÙŠØ©": detail.quantity,
-            "Ø³Ø¹Ø± Ø§Ù„ÙˆØ­Ø¯Ø©": setting.price,
-            "Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ù„Ù„Ù…Ø±Ø­Ù„Ø©": detail.quantity * setting.price,
+            "Ø§Ù„Ù…Ø±Ø­Ù„Ø©": detail.stage || detail.level || '',
+            "Ø§Ù„Ù…Ø§Ø¯Ø©": detail.material || detail.subject || '',
+            "Ø§Ù„ÙƒÙ…ÙŠØ©": qty,
+            "Ø³Ø¹Ø± Ø§Ù„ÙˆØ­Ø¯Ø©": price,
+            "Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ù„Ù„Ù…Ø±Ø­Ù„Ø©": qty * price,
             "Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„ÙƒÙ„ÙŠ Ù„Ù„Ø·Ù„Ø¨": order.grandTotal
           });
         }
@@ -6051,36 +5871,11 @@ function AppComponent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
-  const handleQuantityChange = (settingId: string, value: string) => {
-    const numValue = Math.max(0, parseInt(value) || 0);
-    setQuantities(prev => ({
-      ...prev,
-      [settingId]: numValue
-    }));
-  };
-
-  const handleClearQuantities = () => {
-    confirmAction('ØªØ£ÙƒÙŠØ¯ Ù…Ø³Ø­ Ø§Ù„ÙƒÙ…ÙŠØ§Øª', 'Ù‡Ù„ Ø£Ù†Øª Ù…ØªØ£ÙƒØ¯ Ù…Ù† Ù…Ø³Ø­ Ø¬Ù…ÙŠØ¹ Ø§Ù„ÙƒÙ…ÙŠØ§ØªØŸ', () => {
-      setQuantities({});
-    });
-  };
-
   const handleImageClick = (imageUrl: string) => {
     setLightboxImages([{ src: imageUrl }]);
     setLightboxIndex(0);
     setLightboxOpen(true);
   };
-
-  const calculations = useMemo(() => {
-    let grandTotal = 0;
-    const rows = calculatorSettings.map(setting => {
-      const q = quantities[setting.id] || 0;
-      const subtotal = q * setting.price;
-      grandTotal += subtotal;
-      return { ...setting, quantity: q, subtotal };
-    });
-    return { rows, grandTotal };
-  }, [quantities, calculatorSettings]);
 
   const filteredNews = useMemo(() => {
     return news.filter(n => {
@@ -6113,18 +5908,6 @@ function AppComponent() {
     }).filter(Boolean))).sort();
   }, [allChurchParticipants]);
 
-  const groupedSettings = useMemo(() => {
-    console.log('Calculator settings:', calculatorSettings);
-    const groups: Record<string, Record<string, any[]>> = {};
-    calculatorSettings.forEach(setting => {
-      if (!groups[setting.stage]) groups[setting.stage] = {};
-      if (!groups[setting.stage][setting.material]) groups[setting.stage][setting.material] = [];
-      groups[setting.stage][setting.material].push(setting);
-    });
-    console.log('Grouped settings:', groups);
-    return groups;
-  }, [calculatorSettings]);
-
   const orderSummaryByChurch = useMemo(() => {
     const summary: Record<string, { totalBooks: number, totalCost: number }> = {};
     const filteredOrders = (orders || []).filter(o => adminFilterChurch === 'Ø§Ù„ÙƒÙ„' || o.churchName === adminFilterChurch);
@@ -6150,63 +5933,6 @@ function AppComponent() {
       }))
       .sort((a, b) => b.totalCost - a.totalCost);
   }, [orders, adminFilterChurch]);
-
-  const handleSubmitOrder = async () => {
-    if (!churchName) {
-      alert('Ø§Ø³Ù… Ø§Ù„ÙƒÙ†ÙŠØ³Ø© Ù…ÙÙ‚ÙˆØ¯');
-      return;
-    }
-
-    const activeRows = calculations.rows.filter(r => r.subtotal > 0);
-    if (activeRows.length === 0) {
-      alert('ÙŠØ±Ø¬Ù‰ Ø¥Ø¶Ø§ÙØ© ÙƒÙ…ÙŠØ§Øª Ù„Ù„ÙƒØªØ¨ Ø£ÙˆÙ„Ø§Ù‹');
-      return;
-    }
-
-    if (!navigator.onLine) {
-      alert("âŒ Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø¥Ù†ØªØ±Ù†Øª! ØªØ¹Ø°Ø± Ø¥Ø±Ø³Ø§Ù„ Ø·Ù„Ø¨ Ø§Ù„ÙƒØªØ¨.");
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      // 1. Clear previous orders for this church to prevent duplication
-      await supabase
-        .from('book_orders')
-        .delete()
-        .eq('church_name', churchName);
-
-      // 2. Prepare items for insertion
-      const ordersToInsert = activeRows.map(r => ({
-        book_id: Number(r.id),
-        church_name: churchName,
-        ordered_by: user?.email || 'Ù…Ø³ØªØ®Ø¯Ù… Ø§Ù„ÙƒÙ†ÙŠØ³Ø©',
-        quantity: Number(r.quantity)
-      }));
-
-      const { data: insData, error: insertError } = await supabase
-        .from('book_orders')
-        .insert(ordersToInsert)
-        .select();
-
-      if (insertError || !insData || insData.length === 0) {
-        throw insertError || new Error("Ù„Ù… ÙŠØªÙ… ØªØ£ÙƒÙŠØ¯ Ø­ÙØ¸ Ø§Ù„Ø·Ù„Ø¨ ÙÙŠ Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª.");
-      }
-
-      // 3. Trigger immediate page sync
-      await fetchOrdersPage(true, true);
-      
-      setSubmitStatus('success');
-      alert('ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø·Ù„Ø¨ Ø§Ù„ÙƒØªØ¨ Ù„Ù„Ø¬Ù†Ø© Ø¨Ù†Ø¬Ø§Ø­!');
-      setTimeout(() => setSubmitStatus('idle'), 5000);
-    } catch (error: any) {
-      console.error('Error submitting order on Supabase:', error);
-      setSubmitStatus('error');
-      alert('Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ Ø¥Ø±Ø³Ø§Ù„ Ø§Ù„Ø·Ù„Ø¨: ' + (error.message || 'ÙŠØ±Ø¬Ù‰ Ù…Ø±Ø§Ø¬Ø¹Ø© Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø¥Ù†ØªØ±Ù†Øª'));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const exportToPDF = async () => {
     if (!invoiceRef.current) return;
@@ -6303,48 +6029,6 @@ function AppComponent() {
     </AnimatePresence>
   );
 
-  const DeleteCalculatorModal = () => (
-    <AnimatePresence>
-      {showDeleteCalculatorModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setShowDeleteCalculatorModal(false)}
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-          />
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative bg-white w-full max-w-sm rounded-3xl shadow-2xl p-8 text-center"
-          >
-            <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
-              <X className="text-red-500" size={40} />
-            </div>
-            <h3 className="text-xl font-black text-primary mb-2">ØªØ£ÙƒÙŠØ¯ Ø§Ù„Ø­Ø°Ù</h3>
-            <p className="text-slate-500 text-sm mb-8">Ù‡Ù„ Ø£Ù†Øª Ù…ØªØ£ÙƒØ¯ Ù…Ù† Ø­Ø°Ù Ù‡Ø°Ø§ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯ØŸ Ù„Ø§ ÙŠÙ…ÙƒÙ† Ø§Ù„ØªØ±Ø§Ø¬Ø¹ Ø¹Ù† Ù‡Ø°Ø§ Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡.</p>
-            <div className="flex gap-4">
-              <button 
-                onClick={confirmDeleteCalculatorSetting}
-                className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold hover:bg-opacity-90 transition-all"
-              >
-                Ø­Ø°Ù
-              </button>
-              <button 
-                onClick={() => setShowDeleteCalculatorModal(false)}
-                className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-all"
-              >
-                Ø¥Ù„ØºØ§Ø¡
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
-
   const OrderDetailsModal = () => (
     <AnimatePresence>
       {viewingOrder && (
@@ -6376,13 +6060,12 @@ function AppComponent() {
             </div>
             
             <div className="flex-1 overflow-y-auto p-6">
-              {calculatorSettings.length === 0 ? (
+              {(!viewingOrder.details || viewingOrder.details.length === 0) ? (
                 <div className="py-12 text-center text-slate-400 font-bold">
-                  Ù„Ø§ ØªÙˆØ¬Ø¯ ÙƒØªØ¨ Ù…Ø¶Ø§ÙØ© Ø­Ø§Ù„ÙŠØ§Ù‹ Ø¨Ø­Ø§Ø³Ø¨Ø© Ø§Ù„ÙƒØªØ¨
+                  Ù„Ø§ ØªÙˆØ¬Ø¯ ØªÙØ§ØµÙŠÙ„ Ù„Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨
                 </div>
               ) : (
                 <>
-                  {/* Desktop View Table */}
                   <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-right border-collapse">
                       <thead>
@@ -6395,21 +6078,17 @@ function AppComponent() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {[...calculatorSettings].sort((a, b) => sortStages(a.stage, b.stage) || a.material.localeCompare(b.material)).map(setting => {
-                          const detail = viewingOrder.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
-                          const quantity = detail ? Number(detail.quantity) : 0;
-                          const subtotal = quantity * setting.price;
+                        {viewingOrder.details.map((detail: any, idx: number) => {
+                          const quantity = Number(detail.quantity) || 0;
+                          const price = Number(detail.price) || 0;
+                          const subtotal = quantity * price;
                           return (
-                            <tr key={setting.id} className="hover:bg-slate-50 transition-colors">
-                              <td className="p-4 font-bold text-slate-800 text-sm whitespace-nowrap">{setting.stage}</td>
-                              <td className="p-4 font-bold text-slate-600 text-sm whitespace-nowrap">{setting.material}</td>
-                              <td className="p-4 font-black text-slate-400 text-sm whitespace-nowrap">{setting.price} Ø¬.Ù…</td>
+                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-4 font-bold text-slate-800 text-sm whitespace-nowrap">{detail.stage || detail.level || '-'}</td>
+                              <td className="p-4 font-bold text-slate-600 text-sm whitespace-nowrap">{detail.material || detail.subject || '-'}</td>
+                              <td className="p-4 font-black text-slate-400 text-sm whitespace-nowrap">{price} Ø¬.Ù…</td>
                               <td className="p-4 text-center whitespace-nowrap">
-                                {quantity > 0 ? (
-                                  <span className="inline-block px-3 py-1 bg-coptic-blue/10 text-coptic-blue rounded-lg font-black">{quantity}</span>
-                                ) : (
-                                  <span className="text-slate-300 font-bold">-</span>
-                                )}
+                                <span className="inline-block px-3 py-1 bg-coptic-blue/10 text-coptic-blue rounded-lg font-black">{quantity}</span>
                               </td>
                               <td className="p-4 font-black text-coptic-red whitespace-nowrap">{subtotal} Ø¬.Ù…</td>
                             </tr>
@@ -6419,50 +6098,33 @@ function AppComponent() {
                     </table>
                   </div>
 
-                  {/* Mobile Cards View */}
                   <div className="block md:hidden space-y-3 text-right">
-                    {[...calculatorSettings]
-                      .sort((a, b) => sortStages(a.stage, b.stage) || a.material.localeCompare(b.material))
-                      .filter(setting => {
-                        const detail = viewingOrder.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
-                        return detail && Number(detail.quantity) > 0; // only show requested items in mobile list to save space
-                      })
-                      .map(setting => {
-                        const detail = viewingOrder.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
-                        const quantity = detail ? Number(detail.quantity) : 0;
-                        const subtotal = quantity * setting.price;
-                        return (
-                          <div key={setting.id} className="bg-slate-50 border border-slate-100 rounded-2xl p-3 shadow-sm flex flex-col gap-2">
-                            <div className="flex justify-between items-start">
-                              <div>
-                                <span className="inline-block px-2 py-0.5 bg-blue-50 text-coptic-blue rounded-lg text-[10px] font-bold mb-1">
-                                  {setting.stage}
-                                </span>
-                                <h6 className="font-bold text-slate-800 text-xs">{setting.material}</h6>
-                              </div>
-                              <span className="font-black text-coptic-red text-sm">{subtotal} Ø¬.Ù…</span>
+                    {viewingOrder.details.map((detail: any, idx: number) => {
+                      const quantity = Number(detail.quantity) || 0;
+                      const price = Number(detail.price) || 0;
+                      const subtotal = quantity * price;
+                      return (
+                        <div key={idx} className="bg-slate-50 border border-slate-100 rounded-2xl p-3 shadow-sm flex flex-col gap-2">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <span className="inline-block px-2 py-0.5 bg-blue-50 text-coptic-blue rounded-lg text-[10px] font-bold mb-1">
+                                {detail.stage || detail.level || '-'}
+                              </span>
+                              <h6 className="font-bold text-slate-800 text-xs">{detail.material || detail.subject || '-'}</h6>
                             </div>
-                            <div className="flex justify-between items-center text-[11px] text-slate-500 font-bold border-t border-slate-100 pt-2">
-                              <span>Ø³Ø¹Ø± Ø§Ù„ÙˆØ­Ø¯Ø©: <span className="font-black text-slate-700">{setting.price} Ø¬.Ù…</span></span>
-                              <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg font-black">Ø§Ù„ÙƒÙ…ÙŠØ©: {quantity}</span>
-                            </div>
+                            <span className="font-black text-coptic-red text-sm">{subtotal} Ø¬.Ù…</span>
                           </div>
-                        );
-                      })}
-                    {[...calculatorSettings]
-                      .filter(setting => {
-                        const detail = viewingOrder.details.find((d: any) => d.settingId === setting.id || (d.stage === setting.stage && d.material === setting.material));
-                        return !detail || Number(detail.quantity) === 0;
-                      }).length === calculatorSettings.length && (
-                        <div className="py-6 text-center text-slate-400 font-bold text-xs">
-                          Ù„Ù… ÙŠØªÙ… Ø·Ù„Ø¨ Ø£ÙŠ ÙƒØªØ¨ ÙÙŠ Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨
+                          <div className="flex justify-between items-center text-[11px] text-slate-500 font-bold border-t border-slate-100 pt-2">
+                            <span>Ø³Ø¹Ø± Ø§Ù„ÙˆØ­Ø¯Ø©: <span className="font-black text-slate-700">{price} Ø¬.Ù…</span></span>
+                            <span className="px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg font-black">Ø§Ù„ÙƒÙ…ÙŠØ©: {quantity}</span>
+                          </div>
                         </div>
-                      )}
+                      );
+                    })}
                   </div>
                 </>
               )}
             </div>
-            
             <div className="p-6 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
               <span className="font-bold text-slate-500">Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ø·Ù„Ø¨</span>
               <span className="text-2xl font-black text-coptic-red">{viewingOrder.grandTotal} Ø¬.Ù…</span>
@@ -6759,8 +6421,7 @@ function AppComponent() {
                 <NavItem id="home" icon={Home} label="Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©" />
                 {userRole === 'admin' && <NavItem id="admin_dashboard" icon={ShieldCheck} label="Ù…Ø±ÙƒØ² Ø§Ù„ØªØ­ÙƒÙ… " />}
                 {userRole === 'church' && <NavItem id="church_dashboard" icon={LayoutDashboard} label="ØµÙØ­Ø© Ø§Ù„ÙƒÙ†ÙŠØ³Ø©" />}
-                <NavItem id="calculator" icon={Calculator} label="Ø­Ø§Ø³Ø¨Ø© Ø§Ù„ÙƒØªØ¨" />
-                <NavItem id="inquiries" icon={MessageSquare} label="Ø§Ù„Ø§Ø³ØªÙØ³Ø§Ø±Ø§Øª ÙˆØ§Ù„Ø´ÙƒØ§ÙˆÙŠ" />
+<NavItem id="inquiries" icon={MessageSquare} label="Ø§Ù„Ø§Ø³ØªÙØ³Ø§Ø±Ø§Øª ÙˆØ§Ù„Ø´ÙƒØ§ÙˆÙŠ" />
                 <NavItem id="exam-login" icon={QrCode} label="Ø¨ÙˆØ§Ø¨Ø© Ø¯Ø®ÙˆÙ„ Ø§Ù„Ø§Ù…ØªØ­Ø§Ù†Ø§Øª" />
                 <NavItem id="info" icon={Info} label="Ø¹Ù† Ø§Ù„Ù…Ù‡Ø±Ø¬Ø§Ù†" />
                 {isLoggedIn && (
@@ -7062,7 +6723,7 @@ function AppComponent() {
                 <p className="text-slate-500 text-sm leading-relaxed">ØªØ§Ø¨Ø¹ Ø£Ø­Ø¯Ø« Ø£Ø®Ø¨Ø§Ø± ÙˆØªÙ†Ø¨ÙŠÙ‡Ø§Øª Ø§Ù„Ù…Ù‡Ø±Ø¬Ø§Ù† Ø£ÙˆÙ„Ø§Ù‹ Ø¨Ø£ÙˆÙ„.</p>
               </div>
 
-              {/* Removed calculator section */}
+              
               
               <div 
                 onClick={() => setActiveSection('exams')}
@@ -8862,131 +8523,6 @@ function AppComponent() {
               </section>
             )}
 
-            {adminActiveTab === 'calculator' && (
-              <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200 font-arabic">
-                <h4 className="text-xl font-black text-slate-800 flex items-center gap-2 mb-8">
-                  <Calculator className="text-primary" /> Ø¥Ø¯Ø§Ø±Ø© Ø­Ø§Ø³Ø¨Ø© Ø§Ù„ÙƒØªØ¨
-                </h4>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Ø§Ù„Ù…Ø§Ø¯Ø© (Ø§Ù„Ù†Ø´Ø§Ø·)</label>
-                    <select 
-                      value={newCalculatorSetting.material}
-                      onChange={(e) => handleCalculatorMaterialChange(e.target.value)}
-                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
-                    >
-                      <option value="">-- Ø§Ø®ØªØ± Ø§Ù„Ù…Ø§Ø¯Ø© --</option>
-                      {['Ø¯Ø±Ø§Ø³ÙŠ', 'Ù…Ø­ÙÙˆØ¸Ø§Øª', 'Ù‚Ø¨Ø·ÙŠ', 'ØªØ·Ø¨ÙŠÙ‚Ø§Øª', 'Ø£Ù†Ø´Ø·Ø©'].map((act) => (
-                        <option key={act} value={act}>{act}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Ø§Ù„Ù…Ø±Ø­Ù„Ø©</label>
-                    <select 
-                      value={newCalculatorSetting.stage}
-                      onChange={(e) => setNewCalculatorSetting({...newCalculatorSetting, stage: e.target.value})}
-                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold font-arabic"
-                      required
-                    >
-                      <option value="">-- Ø§Ø®ØªØ± Ø§Ù„Ù…Ø±Ø­Ù„Ø© --</option>
-                      {calculatorFilteredStages.map((lvl) => (
-                        <option key={lvl} value={lvl}>{lvl}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Ø§Ù„Ø³Ø¹Ø±</label>
-                    <input 
-                      type="number"
-                      value={newCalculatorSetting.price}
-                      onChange={(e) => setNewCalculatorSetting({...newCalculatorSetting, price: Number(e.target.value)})}
-                      placeholder="0"
-                      className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-primary font-bold tabular-nums font-arabic"
-                    />
-                  </div>
-                </div>
-                <button 
-                  onClick={handleSaveCalculatorSetting}
-                  disabled={isSubmittingCalculator}
-                  className="w-full py-4 bg-primary text-white rounded-2xl font-black hover:bg-opacity-90 transition-all mb-8 font-arabic"
-                >
-                  {isSubmittingCalculator ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø­ÙØ¸...' : 'Ø­ÙØ¸ Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯'}
-                </button>
-
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden font-arabic">
-                  <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                    <h3 className="font-bold text-lg text-slate-800">Ø§Ù„ÙƒØªØ¨ Ø§Ù„Ù…Ø¶Ø§ÙØ©</h3>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-right border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 text-slate-900 text-[11px] uppercase font-black border-b border-slate-100">
-                          <th className="px-6 py-4 border-l border-slate-100">Ø§Ù„Ù…Ø±Ø­Ù„Ø©</th>
-                          <th className="px-6 py-4 border-l border-slate-100">Ø§Ù„Ù…Ø§Ø¯Ø©</th>
-                          <th className="px-6 py-4 border-l border-slate-100">Ø§Ù„Ø³Ø¹Ø±</th>
-                          <th className="px-6 py-4 text-center">Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {isCalculatorLoading ? (
-                          <tr>
-                            <td colSpan={4} className="px-6 py-8 text-center">
-                              <Loader2 className="w-6 h-6 text-primary animate-spin mx-auto" />
-                            </td>
-                          </tr>
-                        ) : calculatorSettings.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="px-6 py-8 text-center text-slate-400 font-bold">
-                              Ù„Ø§ ØªÙˆØ¬Ø¯ ÙƒØªØ¨ Ù…Ø¶Ø§ÙØ© Ø­Ø§Ù„ÙŠØ§Ù‹
-                            </td>
-                          </tr>
-                        ) : (
-                          calculatorSettings
-                            .sort((a, b) => sortStages(a.stage, b.stage))
-                            .map((setting) => (
-                            <tr key={setting.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-6 py-4 font-bold text-slate-800 border-l border-slate-100">{setting.stage}</td>
-                              <td className="px-6 py-4 font-bold text-slate-600 border-l border-slate-100">{setting.material}</td>
-                              <td className="px-6 py-4 font-black text-primary border-l border-slate-100 tabular-nums">{setting.price} Ø¬.Ù…</td>
-                              <td className="px-6 py-4 text-center">
-                                <div className="flex justify-center gap-2">
-                                  <button 
-                                    onClick={() => {
-                                      setEditingCalculatorSetting(setting);
-                                      setNewCalculatorSetting({
-                                        stage: setting.stage,
-                                        material: setting.material,
-                                        price: setting.price
-                                      });
-                                    }}
-                                    className="p-2 text-primary hover:bg-blue-50 rounded-lg transition-colors"
-                                    title="ØªØ¹Ø¯ÙŠÙ„"
-                                  >
-                                    <FileText size={18} />
-                                  </button>
-                                  <button 
-                                    onClick={() => handleDeleteCalculatorSetting(setting.id)}
-                                    className="p-2 text-coptic-red hover:bg-red-50 rounded-lg transition-colors"
-                                    title="Ø­Ø°Ù"
-                                  >
-                                    <Trash2 size={18} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </section>
-            )}
-
-
-
             {adminActiveTab === 'users_management' && (
               <section className="p-8 bg-slate-50 rounded-3xl border border-slate-200">
                 <UserManagement />
@@ -9107,8 +8643,8 @@ function AppComponent() {
                     {/* Book Orders Locked */}
                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between">
                       <div className="mb-4">
-                        <h5 className="text-lg font-black text-slate-800 flex items-center gap-2"> Ù‚ÙÙ„ Ø·Ù„Ø¨Ø§Øª ÙˆØ­Ø§Ø³Ø¨Ø© Ø§Ù„ÙƒØªØ¨</h5>
-                        <p className="text-sm text-slate-500 font-bold mt-1">ÙŠÙ…Ù†Ø¹ Ø¥Ø¶Ø§ÙØ© Ø£Ùˆ Ø¥Ø±Ø³Ø§Ù„ Ø£Ùˆ ØªØ³Ù„ÙŠÙ… Ø£ÙŠ Ø·Ù„Ø¨Ø§Øª ÙƒØªØ¨ Ø£Ùˆ Ù…Ø¨ÙŠØ¹Ø§Øª Ù…Ø®ØµØµØ© ÙÙŠ Ø­Ø§Ø³Ø¨Ø© Ø§Ù„Ø¥ÙŠØ¨Ø§Ø±Ø´ÙŠØ©</p>
+                        <h5 className="text-lg font-black text-slate-800 flex items-center gap-2"> Ù‚ÙÙ„ Ø·Ù„Ø¨Ø§Øª Ø§Ù„ÙƒØªØ¨</h5>
+                        <p className="text-sm text-slate-500 font-bold mt-1">ÙŠÙ…Ù†Ø¹ Ø¥Ø¶Ø§ÙØ© Ø£Ùˆ Ø¥Ø±Ø³Ø§Ù„ Ø£ÙŠ Ø·Ù„Ø¨Ø§Øª ÙƒØªØ¨ Ù…Ø®ØµØµØ© ÙÙŠ Ø§Ù„Ø¥ÙŠØ¨Ø§Ø±Ø´ÙŠØ©</p>
                       </div>
                       <button 
                         onClick={() => handleGlobalToggle('is_book_orders_locked', !globalSettings.is_book_orders_locked)}
@@ -9421,7 +8957,7 @@ function AppComponent() {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 sm:p-6 rounded-xl border border-gray-100 gap-4 w-full min-w-0 shadow-sm">
                   <div>
                     <h2 className="text-xl font-black text-slate-800">Ø§Ù„Ù…Ø±ÙƒØ² Ø§Ù„ØªØ­Ù„ÙŠÙ„ÙŠ Ø§Ù„Ø´Ø§Ù…Ù„</h2>
-                    <p className="text-sm text-slate-500 font-bold mt-1">Ù…Ø¤Ø´Ø±Ø§Øª Ø¥Ø­ØµØ§Ø¦ÙŠØ© ÙˆØ±Ø³ÙˆÙ… Ø¨ÙŠØ§Ù†ÙŠØ© Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„ØªØ³Ø¬ÙŠÙ„ ÙˆØ§Ù„Ø­Ø§Ø³Ø¨Ø©</p>
+                    <p className="text-sm text-slate-500 font-bold mt-1">Ù…Ø¤Ø´Ø±Ø§Øª Ø¥Ø­ØµØ§Ø¦ÙŠØ© ÙˆØ±Ø³ÙˆÙ… Ø¨ÙŠØ§Ù†ÙŠØ© Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„ØªØ³Ø¬ÙŠÙ„</p>
                   </div>
                   <button onClick={exportComprehensivePDF} disabled={isExportingPDF} className={`px-6 py-3 bg-slate-900 text-white rounded-2xl font-black shadow-lg transition-all text-sm flex items-center gap-2 shrink-0 ${isExportingPDF ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800'}`}>
                     {isExportingPDF ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
@@ -10625,305 +10161,637 @@ function AppComponent() {
           </motion.div>
         )}
 
-        {activeSection === 'calculator' && (
+        {activeSection === "registration" && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="space-y-8 font-arabic"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-4xl mx-auto space-y-8"
           >
-            <BackButton />
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
-              <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
-                <Calculator size={28} className="text-primary" /> Ø­Ø§Ø³Ø¨Ø© Ø·Ù„Ø¨ Ø§Ù„ÙƒØªØ¨
-              </h4>
-              <p className="text-slate-500 text-sm font-bold">Ø§Ø­Ø³Ø¨ ØªÙƒÙ„ÙØ© Ø§Ù„ÙƒØªØ¨ Ø§Ù„Ø±Ø³Ù…ÙŠØ© Ù„Ù„Ù…Ù‡Ø±Ø¬Ø§Ù†</p>
-            </div>
-
-            <EarlyGateGuard targetType="church" targetName={churchName} actionType="orders" userRole={userRole} fallbackMessage="Ø¹ÙÙˆØ§Ù‹ØŒ Ø§Ø³ØªÙ‚Ø¨Ø§Ù„ Ø·Ù„Ø¨ÙŠØ§Øª Ø§Ù„ÙƒØªØ¨ Ù…ØªÙˆÙ‚Ù Ø­Ø§Ù„ÙŠØ§Ù‹.">
-            {/* Order Details Card */}
-            <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-6">
-              <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                <Church size={20} className="text-primary" />
-                <h5 className="font-black text-lg text-slate-800">Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„ÙƒÙ†ÙŠØ³Ø©</h5>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
-                    Ø§Ø³Ù… Ø§Ù„ÙƒÙ†ÙŠØ³Ø©
-                  </label>
-                  <input 
-                    type="text" 
-                    value={churchName}
-                    readOnly={true}
-                    className="w-full px-5 py-4 bg-slate-100/50 border border-slate-200 rounded-lg text-sm outline-none text-slate-500 cursor-not-allowed transition-all shadow-none font-arabic"
+            <QuickActionsHub
+              userRole={userRole === "super_admin" ? "admin" : userRole}
+              onAction={(action) => setActiveSection(action)}
+            />
+            <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100 relative overflow-hidden">
+              <div className="flex items-center gap-4 mb-10 relative z-10">
+                <div className="w-16 h-16 bg-primary/5 rounded-2xl flex items-center justify-center overflow-hidden shadow-inner border border-primary/10">
+                  <img
+                    src={getValidLogoUrl(null, appLogo)}
+                    onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+                      e.currentTarget.src = logo;
+                    }}
+                    alt="Logo"
+                    className="w-full h-full object-contain bg-white"
                   />
                 </div>
-              </div>
-            </div>
-
-            {/* Calculator Table */}
-            <div className="bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between bg-slate-50/50 gap-4">
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-3">
-                    <BookOpen className="text-coptic-blue" />
-                    <h3 className="font-bold text-lg">Ø­Ø§Ø³Ø¨Ø© Ø·Ù„Ø¨ Ø§Ù„ÙƒØªØ¨</h3>
-                  </div>
-                  {!systemControls.isBookCalculatorOpen && (
-                    <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-lg text-[10px] font-black w-fit mt-1 animate-pulse">
-                      [Ù…ØºÙ„Ù‚Ø© Ø­Ø§Ù„ÙŠÙ‹Ø§ Ù…Ù† Ù‚Ø¨Ù„ Ø§Ù„Ù„Ø¬Ù†Ø© Ø§Ù„Ù…Ø±ÙƒØ²ÙŠØ©]
-                    </span>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button 
-                    onClick={handleClearQuantities}
-                    disabled={!systemControls.isBookCalculatorOpen}
-                    className="flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-all text-sm font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <Trash2 size={16} /> Ù…Ø³Ø­ Ø§Ù„ÙƒÙ…ÙŠØ§Øª
-                  </button>
-                  <button 
-                    onClick={handleSubmitOrder}
-                    disabled={isSubmitting || !systemControls.isBookCalculatorOpen}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all text-sm font-bold shadow-md ${
-                      isSubmitting || !systemControls.isBookCalculatorOpen ? 'bg-slate-400 cursor-not-allowed' : 'bg-coptic-red text-white hover:bg-opacity-90'
-                    }`}
-                  >
-                    {isSubmitting ? 'Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø¥Ø±Ø³Ø§Ù„...' : 'ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ø·Ù„Ø¨ Ù„Ù„Ø¬Ù†Ø©'}
-                  </button>
-                  <button 
-                    onClick={exportToPDF}
-                    className="flex items-center gap-2 px-4 py-2 bg-coptic-blue text-white rounded-lg hover:bg-opacity-90 transition-all text-sm font-bold shadow-md"
-                  >
-                    <Download size={16} /> ØªØµØ¯ÙŠØ± PDF
-                  </button>
+                <div>
+                  <h3 className="text-2xl font-black text-primary">
+                    ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø´ØªØ±ÙƒÙŠÙ† - ÙƒÙ†ÙŠØ³Ø© {churchName}
+                  </h3>
+                  <p className="text-slate-400 font-bold">
+                    Ù‚Ù… Ø¨Ø¥Ø¶Ø§ÙØ© Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø®Ø¯ÙˆÙ…ÙŠÙ† Ù„Ù„Ù…Ø´Ø§Ø±ÙƒØ© ÙÙŠ Ø§Ù„Ù…Ù‡Ø±Ø¬Ø§Ù†
+                  </p>
                 </div>
               </div>
 
-              <div className="p-6 bg-slate-50/30">
-                {isCalculatorLoading ? (
-                  <div className="flex flex-col items-center justify-center gap-4 py-12">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                    <span className="text-slate-400 font-bold">Ø¬Ø§Ø±ÙŠ ØªØ­Ù…ÙŠÙ„ Ø§Ù„ÙƒØªØ¨...</span>
-                  </div>
-                ) : calculatorSettings.length === 0 ? (
-                  <div className="py-12 text-center text-slate-400 font-bold">
-                    Ù„Ø§ ØªÙˆØ¬Ø¯ ÙƒØªØ¨ Ù…Ø¶Ø§ÙØ© Ø­Ø§Ù„ÙŠÙ‹Ø§
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {Object.keys(groupedSettings)
-                      .sort(sortStages)
-                      .map((stage) => {
-                        const stageTotal = Object.values(groupedSettings[stage])
-                          .flat()
-                          .reduce((sum, s) => sum + ((quantities[s.id] || 0) * s.price), 0);
-                      
-                      return (
-                        <div key={stage} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                          <div className="bg-slate-100 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
-                            <h4 className="font-black text-slate-800">{stage}</h4>
-                            <span className="font-black text-primary bg-white px-3 py-1 rounded-full text-sm shadow-sm">{stageTotal} Ø¬.Ù…</span>
+              <EarlyGateGuard
+                targetType="church"
+                targetName={churchName}
+                actionType="registration"
+                userRole={userRole}
+                fallbackMessage="Ø¹ÙÙˆØ§Ù‹ØŒ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ù…ØºÙ„Ù‚ ."
+              >
+                <div className="space-y-8">
+                  {viewMode === "edit" ? (
+                    <>
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+                        <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
+                          <UserPlus size={28} className="text-primary" /> ØªØ³Ø¬ÙŠÙ„ Ù…Ø´ØªØ±Ùƒ Ø¬Ø¯ÙŠØ¯
+                          {userRole === "admin" && (
+                            <button
+                              type="button"
+                              onClick={bulkInsertParticipants}
+                              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-xs font-black hover:bg-purple-700 cursor-pointer"
+                            >
+                              Ø­Ù‚Ù† Ø¨ÙŠØ§Ù†Ø§Øª 20 Ù…Ø´ØªØ±Ùƒ (Ø®Ø§Øµ)
+                            </button>
+                          )}
+                        </h4>
+                        <p className="text-slate-500 text-sm font-bold">
+                          ÙŠØ±Ø¬Ù‰ Ù…Ù„Ø¡ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„ØªØ§Ù„ÙŠØ© Ø¨Ø¯Ù‚Ø©
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-8">
+                        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
+                          <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                            <User size={20} className="text-primary" />
+                            <h5 className="font-black text-lg text-slate-800">Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ©</h5>
                           </div>
-                          <div className="p-4 flex-1 flex flex-col gap-4">
-                            {['Ø¯Ø±Ø§Ø³ÙŠ', 'Ù…Ø­ÙÙˆØ¸Ø§Øª', 'Ù‚Ø¨Ø·ÙŠ', 'Ø£Ù†Ø´Ø·Ø©', 'ØªØ·Ø¨ÙŠÙ‚Ø§Øª'].map(material => {
-                              const items = groupedSettings[stage][material];
-                              if (!items || items.length === 0) return null;
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                                Ø§Ø³Ù… Ø§Ù„Ù…Ø®Ø¯ÙˆÙ… Ø«Ù„Ø§Ø«ÙŠÙ‹Ø§
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Ø£Ø¯Ø®Ù„ Ø§Ù„Ø§Ø³Ù… Ø§Ù„Ø«Ù„Ø§Ø«ÙŠ"
+                                value={newParticipant.name}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                  const val = e.target.value;
+                                  setNewParticipant({
+                                    ...newParticipant,
+                                    name: val
+                                  });
+                                  const words = val.trim().split(/\s+/).filter(w => w.length > 0);
+                                  if (participantNameError && words.length >= 3) {
+                                    setParticipantNameError(null);
+                                  }
+                                }}
+                                onBlur={handleNameBlur}
+                                className={`w-full px-5 py-4 bg-slate-50 border ${
+                                  participantNameError
+                                    ? "border-red-500 bg-red-50/20 focus:border-red-500 focus:ring-1 focus:ring-red-500"
+                                    : "border-slate-200 focus:border-primary focus:ring-0"
+                                } rounded-lg text-sm outline-none focus:bg-white transition-all shadow-none`}
+                                required
+                              />
+                              {participantNameError && (
+                                <div className="p-3 bg-red-50 border border-red-200 rounded-lg mt-1.5 flex items-start gap-2 text-red-800 text-[11px] font-bold leading-relaxed shadow-sm transition-all animate-fade-in">
+                                  <span className="shrink-0 text-red-500 font-bold">âš ï¸</span>
+                                  <span>{participantNameError}</span>
+                                </div>
+                              )}
+                              {isCheckingParticipantDuplicate && (
+                                <p className="text-[10px] text-slate-400 animate-pulse font-medium mt-1">
+                                  Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª...
+                                </p>
+                              )}
+                              {participantDuplicateWarning && (
+                                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mt-1.5 flex items-start gap-2 text-amber-800 text-[11px] font-bold leading-relaxed shadow-sm transition-all animate-fade-in">
+                                  <span className="shrink-0 text-amber-500 font-bold">âš ï¸</span>
+                                  <span>{participantDuplicateWarning}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                                Ø§Ù„Ù…Ø±Ø­Ù„Ø© Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ©
+                              </label>
+                              <select
+                                value={newParticipant.stage}
+                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                                  setNewParticipant({
+                                    ...newParticipant,
+                                    stage: e.target.value
+                                  })
+                                }
+                                className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
+                                required
+                              >
+                                <option value="">Ø§Ø®ØªØ± Ø§Ù„Ù…Ø±Ø­Ù„Ø©</option>
+                                {dynamicLevels.map((lvl) => {
+                                  const lvlName = typeof lvl === "string" ? lvl : lvl.name;
+                                  return (
+                                    <option key={lvlName} value={lvlName}>
+                                      {lvlName}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                                Ø§Ù„Ù†ÙˆØ¹
+                              </label>
+                              <div className="flex bg-slate-100 rounded-lg p-1.5 gap-1.5 w-full h-[54px]">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setNewParticipant({
+                                      ...newParticipant,
+                                      gender: "Ø°ÙƒØ±"
+                                    })
+                                  }
+                                  className={`flex-1 flex items-center justify-center text-sm font-black rounded transition-all ${
+                                    newParticipant.gender === "Ø°ÙƒØ±"
+                                      ? "bg-white shadow-sm text-primary"
+                                      : "text-slate-500 hover:bg-slate-200"
+                                  }`}
+                                >
+                                  Ø°ÙƒØ±
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setNewParticipant({
+                                      ...newParticipant,
+                                      gender: "Ø£Ù†Ø«Ù‰"
+                                    })
+                                  }
+                                  className={`flex-1 flex items-center justify-center text-sm font-black rounded transition-all ${
+                                    newParticipant.gender === "Ø£Ù†Ø«Ù‰"
+                                      ? "bg-white shadow-sm text-primary"
+                                      : "text-slate-500 hover:bg-slate-200"
+                                  }`}
+                                >
+                                  Ø£Ù†Ø«Ù‰
+                                </button>
+                              </div>
+                              <input
+                                type="text"
+                                name="gender"
+                                value={newParticipant.gender}
+                                required
+                                className="hidden"
+                                readOnly
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100 space-y-8">
+                          <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+                            <Award size={20} className="text-primary" />
+                            <h5 className="font-black text-lg text-slate-800">Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ù…Ø³Ø§Ø¨Ù‚Ø§Øª</h5>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {[0, 1, 2].map((idx) => {
+                              const selectedComps = newParticipant.competitions;
+                              const levelObj = dynamicLevels.find(
+                                (lvl) => (typeof lvl === "string" ? lvl : lvl.name) === newParticipant.stage
+                              );
+                              const availableComps = typeof levelObj === "object" && levelObj?.comps ? levelObj.comps : [];
+                              const isDisabled = (compName: string) => {
+                                if (!compName) return false;
+                                const takenInOther = selectedComps.some(
+                                  (c, i) => i !== idx && c === compName
+                                );
+                                const copticTaken =
+                                  compName.includes("Ù‚Ø¨Ø·ÙŠ Ù…Ø³ØªÙˆÙ‰") &&
+                                  selectedComps.some(
+                                    (c, i) => i !== idx && c.includes("Ù‚Ø¨Ø·ÙŠ Ù…Ø³ØªÙˆÙ‰")
+                                  );
+                                return takenInOther || copticTaken;
+                              };
                               return (
-                                <div key={material} className="flex items-center justify-between border-b border-slate-50 pb-3 last:border-0 last:pb-0 gap-4">
-                                  <span className="text-sm font-bold text-slate-600 w-24 shrink-0">{material}</span>
-                                  <div className="flex flex-col gap-2 flex-1 items-end">
-                                    {items.map((setting: any) => (
-                                      <div key={setting.id} className="flex items-center justify-end gap-3 w-full">
-                                        <span className="text-xs text-slate-400 font-bold whitespace-nowrap">{setting.price} Ø¬.Ù…</span>
-                                        <input 
-                                          type="number" 
-                                          min="0"
-                                          value={quantities[setting.id] || ''}
-                                          onChange={(e) => handleQuantityChange(setting.id, e.target.value)}
-                                          disabled={!systemControls.isBookCalculatorOpen}
-                                          className="w-16 px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-center font-black text-sm outline-none focus:bg-white focus:border-primary transition-all shrink-0 font-arabic tabular-nums disabled:opacity-50 disabled:cursor-not-allowed"
-                                          placeholder="0"
-                                        />
-                                      </div>
+                                <div key={idx} className="space-y-2">
+                                  <label className="text-[11px] font-black text-slate-900 uppercase block mb-1">
+                                    Ø§Ù„Ù…Ø³Ø§Ø¨Ù‚Ø© Ø±Ù‚Ù… {idx + 1}
+                                  </label>
+                                  <select
+                                    value={newParticipant.competitions[idx] || ""}
+                                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                                      const updated = [...newParticipant.competitions];
+                                      updated[idx] = e.target.value;
+                                      setNewParticipant({
+                                        ...newParticipant,
+                                        competitions: updated
+                                      });
+                                    }}
+                                    className="w-full px-5 py-4 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:bg-white focus:border-primary focus:ring-0 transition-all shadow-none appearance-none"
+                                  >
+                                    <option value="">-- Ø§Ø®ØªØ± Ø§Ù„Ù…Ø³Ø§Ø¨Ù‚Ø© --</option>
+                                    {availableComps.map((comp) => (
+                                      <option key={comp} value={comp} disabled={isDisabled(comp)}>
+                                        {comp}
+                                      </option>
                                     ))}
-                                  </div>
+                                  </select>
                                 </div>
                               );
                             })}
                           </div>
+                          {newParticipant.competitions.some((c) => c && c.startsWith("Ù‚Ø¨Ø·ÙŠ")) && (
+                            <div className="p-4 bg-primary/5 rounded-lg border border-primary/10 flex items-start gap-3">
+                              <Info size={16} className="text-primary mt-0.5" />
+                              <p className="text-xs text-primary font-bold">
+                                Ù…Ù„Ø§Ø­Ø¸Ø©: Ù…Ø³Ù…ÙˆØ­ Ø¨Ø§Ø®ØªÙŠØ§Ø± Ù…Ø³ØªÙˆÙ‰ Ù‚Ø¨Ø·ÙŠ ÙˆØ§Ø­Ø¯ ÙÙ‚Ø· Ù„Ù„Ù…Ø´ØªØ±Ùƒ Ø§Ù„ÙˆØ§Ø­Ø¯.
+                              </p>
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 bg-slate-50 p-6 rounded-[1.5rem] border border-slate-100">
+                        <button
+                          onClick={() => setViewMode("edit")}
+                          className="flex items-center gap-3 px-8 py-4 bg-purple-600 text-white rounded-2xl font-black text-base shadow-lg shadow-purple-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all w-fit"
+                        >
+                          <CheckCircle2 size={24} />
+                          Ø§Ù„Ø¹ÙˆØ¯Ø© Ù„ØµÙØ­Ø© Ø§Ù„ØªØ³Ø¬ÙŠÙ„
+                        </button>
+                        <div className="text-right">
+                          <div className="flex items-center justify-end gap-3 mb-1">
+                            <FileText size={24} className="text-primary" />
+                            <h3 className="text-2xl font-black text-slate-800">
+                              Ø³Ø¬Ù„ Ø§Ù„Ù…Ø´ØªØ±ÙƒÙŠÙ† Ø§Ù„Ù…Ø³Ø¬Ù„ÙŠÙ†
+                            </h3>
+                          </div>
+                          <p className="text-sm font-bold text-slate-400">
+                            ØªØ­ÙƒÙ… ÙˆØ¥Ø¯Ø§Ø±Ø© Ø¬Ù…ÙŠØ¹ Ø¨ÙŠØ§Ù†Ø§Øª Ù…Ø®Ø¯ÙˆÙ…ÙŠÙ† ÙƒÙ†ÙŠØ³Ø© {churchName} â€¢ {totalParticipantsCount} Ù…Ø®Ø¯ÙˆÙ…
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {participants
+                            .filter((p) => p.churchName === churchName)
+                            .map((participant) => (
+                              <div
+                                key={participant.id}
+                                className="p-5 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between group hover:bg-white hover:shadow-md transition-all"
+                              >
+                                <div className="flex items-center gap-4">
+                                  <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center text-primary font-black shadow-sm">
+                                    {participant.name.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <h5 className="font-black text-slate-800 text-sm">
+                                      {participant.name}
+                                    </h5>
+                                    <p className="text-[10px] font-bold text-slate-400">
+                                      {participant.stage}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex -space-x-1">
+                                    {(participant.competitions || [])
+                                      .filter(Boolean)
+                                      .map((comp, idx) => (
+                                        <div
+                                          key={idx}
+                                          className="w-6 h-6 rounded-full bg-primary/10 border-2 border-white flex items-center justify-center text-[8px] font-black text-primary"
+                                          title={comp}
+                                        >
+                                          {comp.charAt(0)}
+                                        </div>
+                                      ))}
+                                  </div>
+                                  <div className="flex gap-1 items-center">
+                                    <button
+                                      onClick={() => downloadStudentQRCode(participant)}
+                                      className="p-2 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors"
+                                      title="ØªØ­Ù…ÙŠÙ„ ÙƒÙˆØ¯ Ø§Ù„Ù€ QR"
+                                    >
+                                      <BarChart3 size={18} />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setViewMode("edit");
+                                        setEditingParticipant(participant);
+                                      }}
+                                      className="p-2 text-slate-400 hover:text-primary transition-colors"
+                                      title="ØªØ¹Ø¯ÙŠÙ„ (ØªØ­Ø±ÙŠØ±)"
+                                    >
+                                      <Pencil size={18} />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        handleDeleteParticipant(participant.id);
+                                      }}
+                                      className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                                      title="Ø­Ø°Ù"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          {totalParticipantsCount === 0 && (
+                            <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                              <p className="text-slate-400 font-bold">
+                                Ù„Ø§ ÙŠÙˆØ¬Ø¯ Ù…Ø´ØªØ±ÙƒÙŠÙ† Ù…Ø³Ø¬Ù„ÙŠÙ† Ø¨Ø¹Ø¯
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </EarlyGateGuard>
+            </div>
+          </motion.div>
+        )}
+
+        {activeSection === "schedule" && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="space-y-8"
+          >
+            <QuickActionsHub
+              userRole={userRole === "super_admin" ? "admin" : userRole}
+              onAction={(action) => setActiveSection(action)}
+            />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {schedules.map((item) => (
+                <div
+                  key={item.id || item.examName}
+                  className="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 hover:shadow-2xl transition-all group"
+                >
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="w-14 h-14 bg-primary/5 text-primary rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <FileSpreadsheet size={28} />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900">{item.examName}</h3>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-4">
+                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-primary shadow-sm">
+                        <FileSpreadsheet size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase">
+                          Ø§Ù„ØªØ§Ø±ÙŠØ® ÙˆØ§Ù„ÙˆÙ‚Øª
+                        </p>
+                        <p className="text-sm font-black text-slate-800">
+                          {item.date} - {item.time}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-4">
+                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-primary shadow-sm">
+                        <FileScan size={18} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase">
+                          Ø§Ù„Ù…ÙƒØ§Ù† / Ø§Ù„Ù„Ø¬Ù†Ø©
+                        </p>
+                        <p className="text-sm font-black text-slate-800">{item.location}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {schedules.length === 0 && (
+                <div className="col-span-full py-20 text-center bg-white rounded-3xl shadow-xl border border-slate-100">
+                  <FileSpreadsheet className="mx-auto text-slate-200 mb-4" size={64} />
+                  <p className="text-slate-400 font-bold text-lg">
+                    Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…ÙˆØ§Ø¹ÙŠØ¯ Ù…Ø¹Ù„Ù†Ø© Ø­Ø§Ù„ÙŠØ§Ù‹
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-100">
+              <div className="flex items-center gap-4 mb-8">
+                <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                  <BookOpen size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-slate-900">
+                    Ø±ÙˆØ§Ø¨Ø· Ø§Ù„Ø§Ù…ØªØ­Ø§Ù†Ø§Øª Ø£ÙˆÙ†Ù„Ø§ÙŠÙ†
+                  </h3>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
+                    Ø±ÙˆØ§Ø¨Ø· Google Forms
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {Object.entries(examLinks).map(([key, val]) => (
+                  <a
+                    key={key}
+                    href={val}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-5 bg-slate-50 rounded-xl border border-slate-100 hover:border-emerald-500 hover:bg-emerald-50 transition-all group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-black text-slate-700 text-sm">{key}</span>
+                      <BookOpen size={14} className="text-slate-300 group-hover:text-emerald-500" />
+                    </div>
+                  </a>
+                ))}
+                {Object.keys(examLinks).length === 0 && (
+                  <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    <p className="text-slate-400 font-bold">Ù„Ø§ ØªÙˆØ¬Ø¯ Ø±ÙˆØ§Ø¨Ø· Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</p>
                   </div>
                 )}
               </div>
-              <div className="bg-slate-900 text-white p-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-                <span className="font-black text-xl">Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹ Ø§Ù„ÙƒÙ„ÙŠ Ù„Ù„Ø·Ù„Ø¨</span>
-                <span className="font-black text-3xl text-accent">{calculations.grandTotal} Ø¬.Ù…</span>
+            </div>
+          </motion.div>
+        )}
+
+        {activeSection === "info" && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-8"
+          >
+            <QuickActionsHub
+              userRole={userRole === "super_admin" ? "admin" : userRole}
+              onAction={(action) => setActiveSection(action)}
+            />
+            <div className="bg-white p-10 rounded-3xl shadow-xl border border-slate-100">
+              <div className="flex items-center gap-4 mb-8">
+                <div className="w-16 h-16 bg-primary/5 rounded-2xl flex items-center justify-center">
+                  <Info className="text-primary" size={32} />
+                </div>
+                <h3 className="text-3xl font-black text-slate-900">Ø¹Ù† Ù…Ù‡Ø±Ø¬Ø§Ù† Ø§Ù„ÙƒØ±Ø§Ø²Ø©</h3>
+              </div>
+              <div className="prose prose-slate max-w-none">
+                <p className="text-lg text-slate-600 leading-relaxed mb-10 font-bold whitespace-pre-wrap">
+                  {aboutContent.aboutText ||
+                    "Ù…Ù‡Ø±Ø¬Ø§Ù† Ø§Ù„ÙƒØ±Ø§Ø²Ø© Ø§Ù„Ù…Ø±Ù‚Ø³ÙŠØ© Ù‡Ùˆ Ù†Ø´Ø§Ø· ÙƒÙ†Ø³ÙŠ Ø³Ù†ÙˆÙŠ ÙŠØ¬Ù…Ø¹ Ø£Ø¨Ù†Ø§Ø¡ Ø§Ù„ÙƒÙ†ÙŠØ³Ø© Ø§Ù„Ù‚Ø¨Ø·ÙŠØ© Ø§Ù„Ø£Ø±Ø«ÙˆØ°ÙƒØ³ÙŠØ© Ù…Ù† Ø¬Ù…ÙŠØ¹ Ø£Ù†Ø­Ø§Ø¡ Ø§Ù„Ø¹Ø§Ù„Ù… ØªØ­Øª Ø´Ø¹Ø§Ø± ÙˆØ§Ø­Ø¯ ÙˆÙ‡Ø¯Ù ÙˆØ§Ø­Ø¯."}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-10">
+                  <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm">
+                    <h4 className="text-xl font-black text-primary mb-4 flex items-center gap-2">
+                      <div className="w-2 h-8 bg-accent rounded-full" /> Ø±Ø¤ÙŠØªÙ†Ø§
+                    </h4>
+                    <p className="text-slate-500 font-bold leading-relaxed whitespace-pre-wrap">
+                      {aboutContent.vision ||
+                        "Ø¨Ù†Ø§Ø¡ Ø¬ÙŠÙ„ ÙˆØ§Ø¹ÙŠ ÙˆÙ…ØªÙ…Ø³Ùƒ Ø¨Ø¥ÙŠÙ…Ø§Ù†Ù‡ Ø§Ù„Ø£Ø±Ø«ÙˆØ°ÙƒØ³ÙŠØŒ Ù‚Ø§Ø¯Ø± Ø¹Ù„Ù‰ Ù…ÙˆØ§Ø¬Ù‡Ø© ØªØ­Ø¯ÙŠØ§Øª Ø§Ù„Ø¹ØµØ± Ø¨Ø±ÙˆØ­ Ø§Ù„ØºÙ„Ø¨Ø© ÙˆØ§Ù„Ø§Ù†ØªØµØ§Ø± Ø¨Ø§Ù„Ù…Ø³ÙŠØ­."}
+                    </p>
+                  </div>
+                  <div className="p-8 bg-slate-50 rounded-3xl border border-slate-100 shadow-sm">
+                    <h4 className="text-xl font-black text-primary mb-4 flex items-center gap-2">
+                      <div className="w-2 h-8 bg-accent rounded-full" /> Ø±Ø³Ø§Ù„ØªÙ†Ø§
+                    </h4>
+                    <p className="text-slate-500 font-bold leading-relaxed whitespace-pre-wrap">
+                      {aboutContent.mission ||
+                        "ØªØ¹Ù…ÙŠÙ‚ Ø§Ù„Ù…Ø¹Ø±ÙØ© Ø§Ù„ÙƒØªØ§Ø¨ÙŠØ© ÙˆØ§Ù„Ø·Ù‚Ø³ÙŠØ© ÙˆØ§ÙƒØªØ´Ø§Ù ÙˆØªÙ†Ù…ÙŠØ© Ø§Ù„Ù…ÙˆØ§Ù‡Ø¨ Ø§Ù„ÙÙ†ÙŠØ© ÙˆØ§Ù„Ø±ÙŠØ§Ø¶ÙŠØ© Ø¨Ø±ÙˆØ­ Ø§Ù„ØªÙ†Ø§ÙØ³ Ø§Ù„Ø´Ø±ÙŠÙ ÙˆØ§Ù„Ù…Ø­Ø¨Ø© Ø§Ù„Ø£Ø®ÙˆÙŠØ©."}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
-
-            {/* Print-only Invoice Template - Rendered off-screen with ultra-precision for high-DPI font calculations and sizing */}
-            <div style={{ position: 'absolute', left: '-9999px', top: '0', zIndex: -100, pointerEvents: 'none', width: '210mm' }}>
-              <div ref={invoiceRef} className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '210mm' }}>
-                <style>{`
-                  @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
-                  .font-arabic { 
-                    font-family: 'Tajawal', sans-serif !important; 
-                    -webkit-font-smoothing: antialiased;
-                    -moz-osx-font-smoothing: grayscale;
-                  }
-                  .font-arabic * {
-                    font-family: 'Tajawal', sans-serif !important;
-                  }
-                  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-                  th { background-color: #f8fafc; font-weight: 900; color: #020617; border-bottom: 2px solid #cbd5e1; }
-                  td, th { padding: 16px 12px !important; line-height: 2.2 !important; border-bottom: 1px solid #cbd5e1; text-align: right; font-weight: 800; }
-                  .text-primary { color: #0F172A; }
-                  .tabular-nums { font-variant-numeric: tabular-nums; }
-                `}</style>
-                <div className="flex justify-between items-start border-b-4 border-coptic-blue pb-6 mb-10">
-                  <div className="flex items-center gap-4">
-                    {userRole === 'church' && <img src={logoBase64 || getValidLogoUrl(userProfile?.logoUrl, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-16 h-16 rounded-full object-contain shadow-sm border border-slate-100 bg-white" crossOrigin="anonymous" />}
-                    <div>
-                      <h1 className="text-4xl font-black text-coptic-blue mb-2">Ù…Ù‡Ø±Ø¬Ø§Ù† Ø§Ù„ÙƒØ±Ø§Ø²Ø© {activeYear}</h1>
-                      <p className="text-coptic-gold font-bold uppercase tracking-widest text-sm">ÙØ§ØªÙˆØ±Ø© Ø·Ù„Ø¨ ÙƒØªØ¨ Ø±Ø³Ù…ÙŠØ© - Ù†Ø³Ø®Ø© Ø·Ø¨Ù‚ Ø§Ù„Ø£ØµÙ„</p>
-                    </div>
-                  </div>
-                  <div className="text-left">
-                    <p className="font-bold text-lg">{churchName || '________________'}</p>
-                    <p className="text-xs text-slate-400 mt-2 tabular-nums">Ø§Ù„ØªØ§Ø±ÙŠØ®: {new Date().toLocaleDateString('ar-EG')}</p>
-                  </div>
-                </div>
-
-                <table className="w-full mb-10 text-right">
-                  <thead>
-                    <tr className="bg-slate-100">
-                      <th className="p-3">Ø§Ù„Ù…Ø±Ø­Ù„Ø©</th>
-                      <th className="p-3">Ø§Ù„Ù…Ø§Ø¯Ø©</th>
-                      <th className="p-3 text-center">Ø§Ù„ÙƒÙ…ÙŠØ©</th>
-                      <th className="p-3 text-center">Ø§Ù„Ø³Ø¹Ø±</th>
-                      <th className="p-3 text-left">Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {calculations.rows.filter(r => r.subtotal > 0).map((item, idx) => (
-                      <tr key={idx} className="border-b border-slate-100">
-                        <td className="p-3 font-bold">{item.stage}</td>
-                        <td className="p-3 font-bold">{item.material}</td>
-                        <td className="p-3 text-center font-black tabular-nums">{item.quantity}</td>
-                        <td className="p-3 text-center font-bold tabular-nums">{item.price} Ø¬.Ù…</td>
-                        <td className="p-3 text-left font-black tabular-nums">{item.subtotal} Ø¬.Ù…</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-slate-900 text-white">
-                      <td colSpan={4} className="p-4 text-left font-black">Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹ Ø§Ù„ÙƒÙ„ÙŠ</td>
-                      <td className="p-4 text-left text-xl font-black tabular-nums text-coptic-gold">{calculations.grandTotal} Ø¬.Ù…</td>
-                    </tr>
-                  </tfoot>
-                </table>
-
-                <div className="grid grid-cols-2 gap-10 mt-20">
-                  <div className="border-t border-slate-300 pt-4">
-                    <p className="text-xs text-slate-400 uppercase font-bold mb-8">ØªÙˆÙ‚ÙŠØ¹ Ø§Ù„Ø®Ø§Ø¯Ù…</p>
-                    <div className="h-px bg-slate-200 w-full"></div>
-                  </div>
-                  <div className="border-t border-slate-300 pt-4">
-                    <p className="text-xs text-slate-400 uppercase font-bold mb-8">ØªÙˆÙ‚ÙŠØ¹  Ø§Ù„ÙƒØ§Ù‡Ù†</p>
-                    <div className="h-px bg-slate-200 w-full"></div>
-                  </div>
-                </div>
-
-                <div className="mt-20 text-center text-slate-400 text-[10px] uppercase tracking-widest">
-                  "ÙŠØ¹Ø¸Ù… Ø§Ù†ØªØµØ§Ø±Ù†Ø§ Ø¨Ø§Ù„Ø°ÙŠ Ø£Ø­Ø¨Ù†Ø§" - Ø±Ùˆ Ù¨ : Ù£Ù§
-                </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      </div>
+      <footer className="bg-gradient-to-b from-slate-900 to-black text-white py-24 mt-20 relative overflow-hidden border-t border-white/5">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 blur-[120px] rounded-full -mr-48 -mt-48 animate-pulse" />
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-accent/5 blur-[120px] rounded-full -ml-48 -mb-48" />
+        <div className="max-w-7xl mx-auto px-4 grid grid-cols-1 md:grid-cols-3 gap-16 relative z-10">
+          <div className="space-y-10">
+            <div className="flex items-center gap-5">
+              <div className="w-16 h-16 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center text-white shadow-2xl border border-white/20 p-2 overflow-hidden">
+                <img
+                  src={getValidLogoUrl(null, appLogo)}
+                  onError={(e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+                    e.currentTarget.src = logo;
+                  }}
+                  alt="Logo"
+                  className="w-full h-full object-contain bg-white"
+                />
               </div>
-
-              {/* Detailed Orders Report for Admin PDF */}
-              <div id="detailed-orders-report-admin" className="p-10 bg-white text-slate-900 font-arabic leading-relaxed" dir="rtl" style={{ width: '210mm' }}>
-                <style>{`
-                  @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
-                  #detailed-orders-report-admin, .font-arabic { font-family: 'Tajawal', sans-serif !important; }
-                  #detailed-orders-report-admin * { font-family: 'Tajawal', sans-serif !important; }
-                  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-                  th { background-color: #f8fafc; font-weight: 900; color: #020617; border-bottom: 2px solid #cbd5e1; }
-                  td, th { padding: 16px 12px !important; line-height: 2.2 !important; border-bottom: 1px solid #cbd5e1; text-align: right; font-weight: 800; }
-                `}</style>
-                <div className="text-center border-b-4 border-coptic-blue pb-8 mb-10 relative">
-                  <div className="absolute top-0 right-0 flex items-center justify-center">
-                    <img src={logoBase64 || getValidLogoUrl(null, appLogo)} onError={(e) => { e.currentTarget.src = logo; }} alt="Logo" className="w-16 h-16 object-contain" crossOrigin="anonymous" />
-                  </div>
-                  <h1 className="text-4xl font-black text-coptic-blue mb-2">ØªÙ‚Ø±ÙŠØ± Ø·Ù„Ø¨Ø§Øª Ø§Ù„ÙƒØªØ¨ Ø§Ù„ØªÙØµÙŠÙ„ÙŠ Ø§Ù„Ù…Ø¬Ù…Ø¹</h1>
-                  <p className="text-coptic-gold font-bold uppercase tracking-widest text-sm">Ù…Ù‡Ø±Ø¬Ø§Ù† Ø§Ù„ÙƒØ±Ø§Ø²Ø© {activeYear}</p>
-                  <p className="text-xs text-slate-400 mt-4">ØªØ§Ø±ÙŠØ® Ø§Ø³ØªØ®Ø±Ø§Ø¬ Ø§Ù„ØªÙ‚Ø±ÙŠØ±: {new Date().toLocaleString('ar-EG')}</p>
-                </div>
-
-                {(orders || [])
-                  .filter(o => globalChurchFilter === 'Ø§Ù„ÙƒÙ„' || o.churchName === globalChurchFilter)
-                  .map((order, idx) => (
-                  <div key={order.id} className={`mb-12 ${idx !== 0 ? 'pt-12 border-t border-slate-200' : ''}`}>
-                    <div className="flex justify-between items-end mb-4">
-                      <div>
-                        <h2 className="text-xl font-black text-coptic-blue">ÙƒÙ†ÙŠØ³Ø©: {order.churchName}</h2>
-                        <p className="text-sm text-slate-500">Ø§Ù„Ù…ÙƒØ§Ù†: {order.country}</p>
-                      </div>
-                      <div className="text-left">
-                        <p className="text-xs text-slate-400">Ø§Ù„ØªØ§Ø±ÙŠØ®: {order.timestamp}</p>
-                        <p className="text-lg font-black text-coptic-red">Ø§Ù„Ø¥Ø¬Ù…Ø§Ù„ÙŠ: {order.grandTotal} Ø¬.Ù…</p>
-                      </div>
+            </div>
+          </div>
+          <div className="space-y-8">
+            <h5 className="text-xl font-black border-r-4 border-primary pr-4">Ø±ÙˆØ§Ø¨Ø· Ø³Ø±ÙŠØ¹Ø©</h5>
+            <ul className="space-y-4 text-slate-400 font-bold text-base">
+              <li>
+                <button
+                  onClick={() => setActiveSection("home")}
+                  className="hover:text-primary transition-colors flex items-center gap-2 group"
+                >
+                  <ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ©
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => setActiveSection("news")}
+                  className="hover:text-primary transition-colors flex items-center gap-2 group"
+                >
+                  <ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Ø¢Ø®Ø± Ø§Ù„Ø£Ø®Ø¨Ø§Ø±
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => setActiveSection(userRole === "church" ? "online-subscriptions" : "exams")}
+                  className="hover:text-primary transition-colors flex items-center gap-2 group"
+                >
+                  <ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" /> Ø§Ù…ØªØ­Ø§Ù†Ø§Øª Ø§Ù„Ø£ÙˆÙ†Ù„Ø§ÙŠÙ†
+                </button>
+              </li>
+              
+              <li>
+                <a
+                  href="#/portal"
+                  className="text-amber-400 hover:text-amber-300 font-black transition-colors flex items-center gap-2 group"
+                >
+                  <ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform text-amber-400" /> Ù…Ù†ØµØ© Ø§Ù…ØªØ­Ø§Ù†Ø§Øª Ø§Ù„Ø£Ø³Ù‚ÙÙŠØ© (Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ù…Ø¨Ø§Ø´Ø±)
+                </a>
+              </li>
+            </ul>
+          </div>
+          <div className="space-y-8">
+            <h5 className="text-xl font-black border-r-4 border-primary pr-4">ØªÙˆØ§ØµÙ„ Ù…Ø¹Ù†Ø§</h5>
+            <div className="text-slate-400 text-base space-y-6">
+              <p className="font-bold leading-relaxed">
+                Ù„Ø£ÙŠ Ø§Ø³ØªÙØ³Ø§Ø±Ø§Øª Ø¨Ø®ØµÙˆØµ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø£Ùˆ Ø§Ù„Ù…Ø³Ø§Ø¨Ù‚Ø§ØªØŒ ÙŠØ±Ø¬Ù‰ Ø§Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ Ø£Ù…Ù†Ø§Ø¡ Ø§Ù„Ø®Ø¯Ù…Ø© Ø¨ÙƒÙ†ÙŠØ³ØªÙƒÙ… Ø£Ùˆ Ø¹Ø¨Ø± Ø§Ù„Ø£Ø±Ù‚Ø§Ù… Ø§Ù„ØªØ§Ù„ÙŠØ©:
+              </p>
+              <div className="space-y-4">
+                {siteSettings.phone && (
+                  <a
+                    href={`tel:${siteSettings.phone}`}
+                    className="flex items-center gap-4 text-white hover:text-primary transition-all group"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center group-hover:bg-primary/20 transition-colors shadow-lg border border-white/5">
+                      <Phone size={20} />
                     </div>
+                    <span className="font-mono text-xl tracking-wider" dir="ltr">
+                      {siteSettings.phone}
+                    </span>
+                  </a>
+                )}
+              </div>
+            </div>
+            <div className="pt-8 border-t border-white/5 text-xs font-black text-slate-500 uppercase tracking-[0.2em]">
+              {siteSettings.copyright || "Â© Ù¢Ù Ù¢Ù¦ Ø¬Ù…ÙŠØ¹ Ø§Ù„Ø­Ù‚ÙˆÙ‚ Ù…Ø­ÙÙˆØ¸Ø© - Ø§Ù„Ù„Ø¬Ù†Ø© Ø§Ù„Ù…Ø±ÙƒØ²ÙŠØ©"}
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+  )}
 
-                    <table className="w-full text-right border-collapse">
-                      <thead>
-                        <tr className="bg-slate-100 text-[10px] font-black">
-                          <th className="p-2 border border-slate-200">Ø§Ù„Ù…Ø±Ø­Ù„Ø©</th>
-                          <th className="p-2 border border-slate-200">Ø§Ù„Ù…Ø§Ø¯Ø©</th>
-                          <th className="p-2 border border-slate-200 text-center">Ø§Ù„ÙƒÙ…ÙŠØ©</th>
-                          <th className="p-2 border border-slate-200 text-center">Ø§Ù„Ø³Ø¹Ø±</th>
-                          <th className="p-2 border border-slate-200 text-left">Ø§Ù„Ù…Ø¬Ù…ÙˆØ¹</th>
-                        </tr>
-                      </thead>
-                        <tbody>
-                          {[...calculatorSettings]
-       xœì=ÛrÜÆ•ïşŠÎl*5\k†ÃáÅ3”K–äDU’­XrR»\•ƒ49ˆ0ÀÀğbšU‘dÉŠâª}ß§8#‰‘¬È²b3û3¯ùı…=§—n è!)[’ƒ*Q Ñ—Ó§OŸ{¢¸š¡Dõºu‚tgÈê)‚·—#kƒ†u«âxÃÌÌ¼¦ª!­i`ëu'¢ƒÄñlºÍêÛ-ı†ï…‰üÈrÉ*©¿3tiÀjişvdy‘íÌ>"­òïòëaàôhüî§­4©W#¤äİYİeM86VÏ³Gz®†ïXºZëû›4Xén4B×Šhc±Eº~`Ó ÑM~ğíV‹Dt;jl‡µS•mcë¶ØÌ°Ñë+V»î{Q£ë»6o€¿x£Õªâ]g3¶×™ìcnXhnIhnÔıíEÏ­Áõ"xÉFÒƒ#OÚNğäy7®9CÃ=2~ØœÜz^pézÏ¸kõ®ñ‡.…¸'lıLÕ	(T•ªXV{3{Ú÷P}×·wt-Àk«ëRõëÎ¬ílª^Í(TV<ìÌ³wçg ×Ÿ¬@‚PgvàGï5¥¯ ±ô÷®Õ‹œMzPÊ‘ÕÕURè†F…Ojä'?‘¨K'«Qê†ã9‘c¹«»»ÄZ=ÀÚÒ:Aào»EöäáY3€îJeçXÙBQ™Övc«±°í’ÁvÃE>	ácÚØi,×„orĞùÅÈé];ÍFş|ÔÍÁsÒà=ß…®$¿8ÂÑXöÀ¼Ijñ¯•ôƒü|ùocu·n±|Ï¡Ñi¾É;ùëÙ\—´â¸oõaE’ac™şˆ¶İXk7:¸JÂ¾eû[€Šj¡ÍÁB(ü„>¤íë.î;¶M½áÎ7¼îÒm‚¤ LÅ†5l,AêÍªıî›@¾¶­ÆÜéãĞ–ìÌ.¦jÃŠşfFÎúNr›A2xÇóÒ'ãOZPözç6”k4z«»4ú¥å:öÃ?pëŞÈuOk8Äâà{ç‚À è
-yÂL7/ïxQŸFNïÜ&ô¿óó+/œÀîuÎ¥xp‚°ç§JÙ	Úì‚ Š]±èVúì„ıPÓ°=uï,7Z­aïkÊ×Ò<­Ãha¦Ø>ÛıÀÌD–ã‘UµÌ*p@Mğ:2ØéÏ‹=a›Ã‹ÜÏ­†óïŸNîN>&ã{“'·Æ_Ã£'“›ğè6iøq{rÊ< »½ş(èõ±9Ø:³ıye?‡…nòå¶ ò/šîMnLn‘ñıñã¿C÷®C/Æ÷¡;÷&·Ç÷ÆûI—¿?Ü™Üb]†|÷pğÁäúän\pòÉøÉø!~­ìÿĞpNâ‡ù§òÎR¨*b(yegPà,â/Ã U
-mNy]ÒT(Y¤ÙÅÚÖ-×í¾\¤anµ6>  İ8ıaü)€% Û ,of¾±jª–mAªÙŞİtèÖEßwj;n'jn½£å)TtÿÀ²„ÍĞ^a¿+Ég—F[èeJ¿Û%\{§¿ µ–[|¸ ”_F”Wnó¥’Aç}˜¼Kî($¡ó!Ìe{y¯°¨’u¤…Èó¯hàaÜ?.i(·³Ç;y«Qô¯;Š"ß«`$#†¯¼¨š²f—ïqYİíÜkç=èUtÉ
-`wp†Àæ‡z–“_"[½³8ÜAæ¶ÒQ0tãÎ§…ó
-É¶ên$ršHES1/şÄ+ÛˆÈ¡ïà–¦Š¿?*w[&lÀ
-W
-woü¬\ğîÌrÈ–5WÊª÷JĞ\GÄSYpPIÌù£"<ù=Ëgœ¾ä‰:)ö]FğkoŒ”ô\A¸“W*J¾Í‘Š $}üƒ¤"lÌ±…©¦Uê
-”Ì'P€˜óéØÎrÊ¨kOCJÈ°(¯ÖEÌµÔ,ĞÒš„Î´JéLy=ıÅ2Ê˜¬µ”0ÖN©1ás e÷ÆO GKá£u ,Ì8ì	Ùí|%¨êL¦²l×ˆ¿t­.u ^››n_-ğqP'YFC·zVHI×õá5ŠŠ%Å[9‰Œÿ
-0¾ïÂn¯ªÇ³¬Ë•s¼á(ªìßppU»!C ím¡ğ'Ÿ¿ŒYVaXÙXª+Ü´Ü`¸G·„}¥éi˜[ù‚Í©oyÀ)	â"È.‚Xv)ZÄ‹ëA7™”69;Ød]­Òmâô;Òxê&mÒl6e8œ0úµ‚5(½W©œÅ‹V €š›P›úL3ºNTŸı¯ğõÙ™æºã­«o!P·š.õ6¢>9e ÿÅËY'õa6R\wLE&‡5œV¸JægŒ&ş’¢N&
-õªç4¢ªxùŞ[îdjÀDÛ¥Ø¼¯ş.#@»¿Z`š‘iZ Eõ6ù±	PT06‚å›¤ïXìÈ_@øÏÙ6JŒ½Q¸’+Á·4\¸‰ßWS¼VÒ†EıºĞZ¼ó‰T½W`/ğG‘ëx´áùMI˜å¼ĞAq®‚YÂ<`É_WÏe@;r`Ø+öntkÄÀx’Û‘#I§0ÇáC„³ ¢AÔ˜k.ŠbRt0b{q›¿ZNOi»DKˆK-›O¾kmS[à¾r5«uË¦§¨âS¶wOÚîû€×­¬g‹²^ãŸÿóÇÿûö¿;³ø¡q§”ğß3­¥’Â«Dà×®éÓŞ5 ¦@İÎ€÷ n†ØP”ÖæZ8c9UP2Ã‘RÀµÑ€a„Ñä n¦»‰‚Õ”3n î€mxP8`÷3 ¨VÆH®jp@ü•x ß#­,n*¬-şxúÕÅ¿{1×W2Ôc^aùéøNZ¹—yy„&]<µ÷q²ÖÃm,Á“|R—öª5ÏmâÇÂä_fı¹üKgÃ]ÉIF{5k3kY3á,ü×”¬S%»VÂ\¡ÅŠZğºÇë®æìy-*â™A™ãk5! ŸïŸä–Sg–¬®q×ŞéÌé] ›Ô¹O»éN)‡Â8w Š¡¨î¯ãƒØä!<Q=Vğ/“Mdc/4Ì'îÏ^²°“{“U‡WúYÓÆĞ®ô‘À«ÌO"iÓµ
-}Ó+·]ÜÜÓÎ Ò¦„fN¦(CÆ
-!çƒÿ§¦ÜµÅ«AçÍ¬xMcùÀ+µ~Ô÷”Ãï*‡ŞWÙ  É Äæñß&7ÇOÌ¤lƒmÅdc‘µÌ¦7Wí![*ÇøßŒt„äXN"§
-×z$»˜ÀP‹
-wÃš`>rö™œŸbÛL!²g m0Ê8éjóU\ò_Ë.^vŸƒ û×Éïÿµğä…7X^é¥CâØŸ‘¸û¬?·Ö±I>¬i‡}lTI¶‰}ê¶ìw=wçhÚÙj3gy*òÕ4kŸŞ²û{²k£4‡
-ÇL¢C›ö}¦”Üÿ­Úm#«öîZëº·¯Æö4\¡ö0DK^n)öà1Í«§XE9öİîo .Y²]w<»Z’Leßº© ;Ã^«4GUÊ>³Y›–ã¢ó{¢¤cé@±wÜ¡”9`%/ŞdĞ±Ãñ“øÁ
-Y»jÖ¶uBlÛÆXüúfÉå°0Ô õGÉ·3‰P¿n¹¡ ÷±®Qï¼÷nÔÇ­[Fšfè¨‰Š Ş;AÖg‡ü`ˆŠàê1 &ı«¬Ç@~ç}î¡N w{NV)¼MÇë¹#›†õ¬úûão&w	#û“;ÀªÌ@ŸT‡‡‘HU½:ÍGŒÒtô‘Êª:ö/²i%í²åh.s	«ç»Õ“à•Û9ñæ#!¯“9ŞİPÂŠ*ÙñRs\"™_ƒN^ÅY¯ÕÌ´o‡S¿úk$«y4´ab®Ä1©û•”5¹âùpãÃƒ×á…Ê#ˆ•œV%^IFbøµ™‘ëÊ«l70ŞfFƒä-5h4¦QXc0›Ä‚p6Q€3J†ó.éçñëT9Ïoì˜Ó z›r¼c­=t•ÕeÚ£©  
-&TÕi¢™ç%MÂ‡¨4h¡Œs¡ŞcsÜã< s åDıŒ¨ÍÌxıÜÔáj°
-uñfjO„òhÖöyoİ¥¹¹%­4‡ş­æb¥P§ôSÙ%-¡;¿˜sû½ñ£ñ·ã+Œ§‚'wÆĞ]3n‹dØöåc]º1ş&iŠÃ8påÇEª<W*ıV*±©4d äÛ’—ådÌ€ó½Æú,!3¶,m/ø0"‹ƒH5Ê²8Jµ¬yFà—q0TB•’İÉ6-Ù>Ë£`TA„]äXãMVsü+«=3¹®3ìYğ€Õj_%<^:yÖj\¾šßIa{wJ4€¥zævÆ	z.m'š…½òµÎ<R`ı +ü|6¹éA.Ì­ç«4¥y¤ä~ÎF?:¢,ÁYêÙñ¤·—^.ğ9¼æË,âTP}U'neäiÊŞ<Ä0 eÀ¦Ğ1Mèiö¾Jƒ¦oâ™r®ŠÃb‡7A0$ûĞÈ<â×CPÈq^ùàUu´-ùçïşDxv1î,ØhO¨£%	!7$Á‰½4EØ”‰¾r¡è¢/_X:9Iğ@³¹Ãff®1JoMÒÜÍqÍ|"ÕÅXi¡æ¦cOåh5A©JF=!Js	¤$”fæ,¾cÄŸoƒ¼)¯J2`¦Ír,˜)lŠZ˜a¡•†é‹ìª™ASfLm"†Ji¢Qñi§£zËP017’áJåö,9&“†UÕÔ«Ü<"”Ôºš’’kúnè@Ê;_é7Î‹Mi1£ec¨çTÕÕàT~ÛXu¹+RJI E•àÚUE3^	õ~Ë÷]jyÆŸ¥º$1d™*8‰vv¥Êå)¾‘è&~ÉÄ¦ü¤ê¹4ËX’-*Ña‘¬µe•~zJ?¼`şÜDËcü™¹Ê'VúLGùeLñ2ÕÿLAfË…yJSc¸lÌ=ğÊÉ°y®oÙ—£‘şâ½3(MŠ‹)Hs9ÊÆ8íløL„ä\€øtYô|‰Ÿ-ÊJÙŒS &ÏBSÔãhWc<ö-àâ&
-s\`øùÅ{f5™âGç-+88Í'Ê¦å
-SøÖØ¥•>Êd›ÛªS³ûø|"„I8eZ—¡@|YĞ˜€{	3v¨u€yR µêˆfP6~2sÌhu‰z=Ç}EpŠŸ¥.¨1@ˆù.qc^Æ$,óÈ¸ñhü·ÉõcF…+öÛ‚.û9 Âq2˜…ÊwU&ƒÉß­éÍ0“Èz±p§1×–vŠ²° óÊb±s@í‚!±Úq”ìfâ…æTçfi"9m˜¨	CÂAi'Ö¯—HñoœÎSŸ»SñÉáÒy†=@ƒ‘KšÊ“©¼áWóä¢aBÏø‹¹’¤?ŒUê@wÃ GÏn2‘a–Z#÷iä»BşgüI·­.‚¬Êcv>s™-I@*éÔXú8Ù^ÂqÅHµ°¦HQªsUhÍPk–3ôJØTIJÙp¢éhnNÚ§ÙÏu?Ğë™˜‰ãò}«†ÓHÈ‘§ÙIËHTeSØ?´æ“Ynèiôv
-mô/4Šw6Tc¬/ìŒíÜœVÿ:…ÎÕW$,3Q´j0£”İ.ßÛÊıê+ôyYıKY„$%“E¾dè0¹1Ş/Ù¤Ë,>%¯iyÉÑYl4â»È)SïVgì›öÕ¹{–÷RcõäÖä&ZCÉ,¿ıØÜÛ‡Köx¬æÈêú=–=wï˜ñR—ĞYõ¸(1	Lœ‘¬D>ª”‰Ú­¼L$£¨s¢N'²bú8÷¼ wôÎ†c¡£í’ÎaÃL²J‚ntù£QªBÿªXªb~S˜eª>GÛü£8Ûè½É”óhš:7‰*Óù±W%#½ŠİSĞ³6Ò3–7—h`¹,xr¿djG.Ñ{wÎXnoÃòƒr'cH^Î®)Qö\Dšûãoât“€8ûcâ$¥ŸÃF|›½Pû©L‘=ñ8T!z9 ,1KÊÕØrlêÜŠ„~ÿÌ÷7@Ò{¸h•wÄÔ™Ïs‘TUµ­î¾Ë¢š€)CÃ:²ÍïZ8ÃE¸5ÈN wñU­¯c)AÁD9ø£æHú]_İ…zÕ¯¹ÿjíÀïšZ÷PwµæùşâÙ
-5Ò ĞÅª–øjhõSy1~œ­KÁâ".V#áQ§¬4÷I‹İDôÌR>­—z¾!º°+OÄU$s
-ÿ¶L%,J›Ã$‘SK‹Y«øX¥úL0$¡uõ¾şBh;Muœòf+ĞF1ïq7Ka«Õ°[xàª<ŞçX”€·î¿@gùü0Ô~#4×:"_zü¬ĞQOãQs>,ˆAëË)Ú|{*fHÁôÌ—s=À£…!;…Kb7YÖ¾¯XÖõÿbÄ¸ö—·Gø©T,JJÑõ"™‘ƒé‘ÙÌ'ŸäÇ+e\C!¾`@$ilÖP}ØˆÕõGÑø¦§Én˜—ôG)I`­>i’¶ÉäL>™Ü!Àâ!4ß0§^|AàÏmàïâQü Şq|Ÿ±‘ŸÅu¦î¿ì6I¼Ó?‡ÿ
-DêÄajÓÌ³Ó}<Jkğ1‡ddT¿Æ's’Æ—ÜA=\OŸ4Á™jîğ0)XòQYPà,+w²ùÆ¨Ji’;ªE'¤‘C˜mbZ×¹"å@ŠÅêa’_?«åÉøÏ0}ûˆşCw2Gé©ú„­¦k/yl:!n’šE‚W-Cèøü™XâFd6€EBİdG:Áë[¸œ&Ÿ¨ÑûS´÷1;¢¤şûD~Xû€cõcFµŸàû3,{Ÿqø³`®_\)wbáí6|÷Œgâ¸Ÿ@%T¨Ï¡?“òCÇä§\Sı2àòÀ	«‘y0İÌn$Dş ëzBŸo2¶ö>'ÅÁ¾É6|€%¾Æ“ËğÀÂ(u²c°ŸŒïóÛëŒö§=a˜ı÷ä¥t¡Oùí×X4¦á¬‹ÂÇKêKÜpÆ»ÍOÙ4eÃ“×§9c|) !õzé‰ REußG¼•yÆ æ³ù.YümŸeë!f/wíÜŠÚúÓ“%I.¶³‹jå×‡Õ}w„éûıajÆ€/ø«qYÇ“Ky^w4ÖæÚL‘.ùú6Acaş‹ğ?)+º$¢j;Ğõ£ €¼Òz¡|íóZÖ—w ÈÆri“œ{C8d”¶e¢ ^Z&¦Î¶Y`ÌøüÅJù@bğù\ãæØL'ƒŒr*Ë¶€r‚5_&ù¼©6š¶+O%ºs8y
-çs9ƒsº8•~¥§oıìÍ‚,eFÀò4(š'sÑ4Š­:9	#Ëm–ìÛÃ õ¤¢şù)ÛT'auF®ª?z…rØ[\®£@>­/i1xYÖÔúş€ª#˜Åz®¼:.f*¯˜3}ºøŞ<M[©4µ„Üÿ„A]*SïÃöìñ_P|S&º×ykvf‹À>nø{t+|Õáÿ§ñ—qVäzX–…bÒÙïqdÅ[| ,êÜ|¥¥	Gİ°8,uIˆ*¸*Š_ùi+XÓØ–ZÔ¾Ï•ÔKí¯úÄ éi*I0Aæşs˜
-•Áäjÿ6;ôƒÈR†çwT~,L. „?œO÷<.¼S@äQ±A]ßøŸÕš}çu%êñn”Y­á¤ˆ +c&f¬âüufGî‹Âí3†è?Üø  `‡TY82.HHj¢MX k$´*ŸÎHØ]và&tö:KÒõ„OÕ}Ø›AÿŸåÏÕF¢§H‹Z°äÀÜXúŸİ4È,Ä-~Lz¢LŞgÉ(xı¨JHÕmØDrtfzàîJ
-*‚i|Ow·~F46‡}Ì˜¦3uª­÷Ü>ÿëˆº+?VÔ¦K–m`şD´rj}¶óÌFrFLÄÍÅé\¥eB[Ö$¤êQ	œE8íõ%6AY–äCxP+Mıß‹İÀ¸K{æÀÔˆí«57Ò‡Åª¦]Ó/»€ÚX›²BÇ¡bT­2R(Ón*<{ÖZÍ6!‘Ñó‡;LÑÄkşï2ùÓäğï/‚M×6ƒw‡„?¯ùóJ—™ëæø+$5¥+›ö¬©›åª:~Ÿ¾âf÷]'á~ƒÚç=$j¾8¥2¯VÉŸ9&ow¨À7‹˜èl3¯¦[âú±%ò!ªå¥À™¶±‘JÉ²¯$Ó7:Ê•›oÒb\,¥4Iäá‰v=·­Ä„ıkƒNÎ<Hçá"Ckƒ^şíÈ
-¨Ê¹®°XS-"W`²¡~Î`.õG|Z©Ú!x¸IÇvØÉ:BÜwìõĞ]q’§srˆfüXÔñ{>jøÉĞw°Šê¨0oP6„UŠ¬ÉùY­wq1Ÿ¥‘å¸áEß¶\¼Îit•xkä^{n8!t†Uà„ï©‡É.ïñÇIÄb?¤ŸW¯³tÚ1&G]Àı3lĞpuW¾çe¤Üè«ò!`IÛ—G½ ErL°ØfüŠ—äHúÔ
-Vw³ßø€‡û^”EĞğ7™k–âï­;Á€y]‹oÏm#Ï0pàñä¾~®—ìuöE98ÅR{¬nŸ½ÎÛ‰‡ç³€ÇWğWZ5ï)TÊkIñIYg¯øç¶{Ô­Ã‡g­È:A’âpç½bgTV<eÈ…?€Õy–_Úo‘M’bÔlh§Á\u˜#W×·8Ü`$h;Å%-—LT¤@—8=t< Y£•­ğ“­Öìb^ı8¡¬$vèÜwCo9PúŸÇ
-]nUØ£LFrK­˜´Q{Jï>»•4ÁZ[]¦ğ(^ÖÆ”®Ë.rBaYj>4x£ìpd– TÈZÈòÍåöë¼ÓZëQÜQÏkĞQZFÙ¥—±Šñ÷2÷\ Kç¨wW)*ÅP–ÖªßX[jmö¯fHµÃ-Vº´ï»0kC £ M†GÜ9²ºçí,“PŞ’nĞ=UUrúÂ…NŸ½xş®œ~ë2?±¢ÎóÅaZÆø°*	ØqEéhØÉLÎuø9_(PŸÜy¾€²lÿêæ´IôË"dYUåª0~LTy~9LgYtWÕ•T#-ğrùï°KÚÃ˜V„#¡
-¹Å3ïÅ×*iÔÄMD“·Uç Rš×Ã8‡”?Å
-èâõ¦Á’äŠÍ›°ÙiÛJª[aé÷•Uà_—äß’uEú²4Y~¡²ôø¼+2„´åõ)ğµ	MÄ5‚:GS.9-]ço’<Íº¬¥ç‘%ÉA‡û:}ŠV6ºÓaâòìbL"ô£ó~ˆÛ›øT'À—%5Ñ„d‰ı¹h‚Ú©İ˜~6ÙÁ%ñÆ]r–iæÌp¨e*¤Æ··y€O·¢™èŸm¡ÚÍJÕšXfAdîê	’|¹X+YB…ÊÖ›²Qmùï‡&0È­H]}>¡„JÖs‚A© =ßÊ	å³|—S­ìÄ¬ñş°:9QÅºr!(y¯8Z¦¡?éæX&¯Ëäõ-“`™œõ·¼£-”©Æe˜Ég†‰Ey…µ.œ¦Bpäj¤ËÖ&Í0£DHÜJ×æ~DÔ(ÏˆE‰ `÷8Yn÷ÈéXËEOT‹¿M¤éXÊVøÌ©ÀÓ63
-×RŠÂ·q–n:=É`¦
-CS† ‰‹Gw& ÛN¤ÿ¼ BWªŒ–•*£µ¹ÅÖU"óLÓ«D»¨ÚŠ½cÃ¡ã‰(”ùsòT¢k¿m¢Ã”ÛŠ .ŒBW¼Lÿrƒ™W0êîqÍ_a¨Â½ñW@:4é·3,ÉûEO,aßßâhr‰±S;×©¾,XƒHÒJäù¨YôQ¢WÜ*Xp´~à:¨ğşæ#İn`B–?!K—›3.õDÎRçæsîNå‰œ8gÃZX"™I#ğ#V—§÷g€dz¶è‹»Ë´ƒ`Wò
-7ÙÍá)Æñã’öÇŸcDŒWS­-©c²Ò³4¦„ö£,Qg·gÆTŒZŠ#5Æ	!(sCŒ?åfÕÛão™£|õÆ#a`úƒ|Æ5¤ã@öù‰4“›I H<ÌÌ7dŸ;yúùKiPö ×ÚL“0WÔ}˜ø™@mÃL“·ÆÆôQ‡M W¬--ï'§•|Ì]Gš|‡e¸›&»Î«­Œ8ˆÓÃa Ë“²">r^ZT¹øyÁè(£a>+õ-İÑ~Ó²q8ÏuÜî8Ëæğ1‹Ã‘OR3‚¦ZúË:ª_­¦Ï ˜©DsQ¶f0ÌT¢9NÇ{}az¸Èp}+uBn€ÄüÖgß~iöO×Õn½ğ\—j‡àáî %µ`£KÏ™Ñ°b_`Z\åè&,À¯¯¹<wÆ±a2İcôğÄ¾OY¬«ó³„¤cÄè·Øˆ‹ÃãAìu:—*,d(nEÌı0§À=O0DM˜ëÅÖìBı*–X[î€ÉËK¨İÃdüä=‹—EIæ{Ó¬¶èKÒõ·YAŸòİøQfÆïåŒø„QÒM·³Îã-¢5^aìR<š¡;ÚpĞğ¿öŸ¾?¸Ê~?aÆƒß]‚Åæ¾‡¾	+d>Ñq`ÉóŞÅ‘9C×AÕF;yeû£®Âïğ,°°ˆç[-ù£İ¥//ZÛ—s…Z¯Ñf®¿ˆ{¢Fx¾ì
-YL¿ŞêSêbw“—o[è-&kÖg¯_Q&ì¾ë^ñ±Ø
-A'ş&ñ[ˆ‰ìÌO_Û{í5îò@lºn$ÈúÈãYS`ï†yC8Æ6Ä<Áce}#…gOá×ÿ  ÿÿ ¨‘U
+  {isLoggedIn && userRole === "church" && (
+    <button
+      onClick={() => setActiveSection("inquiries")}
+      className="fixed bottom-6 left-6 z-50 w-14 h-14 bg-coptic-gold text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all group"
+      title="Ø¥Ø±Ø³Ø§Ù„ Ø§Ø³ØªÙØ³Ø§Ø± Ø£Ùˆ Ø´ÙƒÙˆÙ‰"
+    >
+      <MessageSquare size={24} />
+      <span className="absolute right-full mr-3 bg-slate-800 text-white text-[10px] font-black px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+        Ø¥Ø±Ø³Ø§Ù„ Ø§Ø³ØªÙØ³Ø§Ø± Ø£Ùˆ Ø´ÙƒÙˆÙ‰
+      </span>
+    </button>
+  )}
+
+  <OrderDetailsModal />
+  <AdminBulkRegister
+    isOpen={isAdminBulkRegisterOpen}
+    onClose={() => setIsAdminBulkRegisterOpen(false)}
+    publicChurches={publicChurches}
+    dynamicLevels={dynamicLevels}
+    onSuccess={handleBulkRegisterSuccess}
+    activeYear={activeYear}
+  />
+  <DeleteScheduleModal />
+<DeleteConfirmationModal />
+  <ExportColumnSelector
+    isOpen={isPdfModalOpen}
+    onClose={() => setIsPdfModalOpen(false)}
+    columns={pdfColumns}
+    title={pdfTitle}
+    onConfirm={(cols) => {
+      exportToExcel(pdfData, pdfTitle);
+    }}
+  />
+    </div>
+  );
+}
+
+export default AppComponent;
