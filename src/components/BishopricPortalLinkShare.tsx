@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useNotificationBubble } from '../context/NotificationContext';
 
-export const PUBLIC_PORTAL_URL = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/portal';
+export const PUBLIC_PORTAL_URL = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/bishopric-exam';
 export const PUBLIC_BASE_URL = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/';
 export const BISHOPRIC_EXAM_PUBLIC_URL = PUBLIC_PORTAL_URL;
 
