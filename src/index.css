@@ -2,6 +2,15 @@
 @import "tailwindcss";
 
 @font-face {
+  font-family: 'CopticAbraam';
+  src: url('/src/assets/fonts/ABRAAM_0.ttf') format('truetype'),
+       url('./assets/fonts/ABRAAM_0.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
   font-family: 'Abraam';
   src: url('./assets/fonts/ABRAAM_0.ttf') format('truetype');
   font-weight: normal;
@@ -65,9 +74,11 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
+  .coptic-font,
+  .coptic-font *,
   .coptic-text,
   .coptic-text * {
-    font-family: 'AbraamFont', sans-serif !important;
+    font-family: 'CopticAbraam', 'AbraamFont', sans-serif !important;
   }
   .glass {
     @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-xl;

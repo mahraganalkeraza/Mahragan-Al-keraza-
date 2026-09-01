@@ -649,9 +649,25 @@ export const fetchBishopricExamResults = async (
   try {
     let query = supabase
       .from('bishopric_exam_results')
-      .select('*')
-      .order('completed_at', { ascending: false })
-      .range(0, 99999);
+      .select(`
+        id,
+        exam_code,
+        student_code,
+        student_name,
+        church_name,
+        stage,
+        score,
+        max_score,
+        excellence_points,
+        max_excellence_points,
+        excellence_unlocked,
+        status,
+        answers,
+        excellence_answers,
+        excellence_categories,
+        submitted_at
+      `)
+      .order('submitted_at', { ascending: false });
 
     if (churchName && churchName.trim()) {
       const cleanChurch = churchName.trim();
@@ -660,14 +676,30 @@ export const fetchBishopricExamResults = async (
 
     const { data, error } = await query;
     if (error) {
-      console.warn('Error fetching bishopric_exam_results:', error.message);
+      console.error("Error fetching results:", error.message);
       // Fallback in case of subtle church naming variation
       if (churchName) {
         const { data: allData, error: allErr } = await supabase
           .from('bishopric_exam_results')
-          .select('*')
-          .order('completed_at', { ascending: false })
-          .range(0, 99999);
+          .select(`
+            id,
+            exam_code,
+            student_code,
+            student_name,
+            church_name,
+            stage,
+            score,
+            max_score,
+            excellence_points,
+            max_excellence_points,
+            excellence_unlocked,
+            status,
+            answers,
+            excellence_answers,
+            excellence_categories,
+            submitted_at
+          `)
+          .order('submitted_at', { ascending: false });
         
         if (!allErr && allData) {
           return allData.filter(r => isChurchMatch(String(r.church_name || '').trim(), churchName.trim()));
@@ -892,8 +924,8 @@ export const parseGranularScores = (
     id: result.id,
     exam_code: result.exam_code || result.student_code || '',
     student_name: result.student_name || '',
-    church_name: result.church_name || '',
-    stage: result.stage || '',
+    church_name: result.church_name || (result as any).church || '',
+    stage: result.stage || (result as any).grade || '',
     subject_name: result.subject_name || 'امتحان الأسقفية',
     completed_at: result.completed_at || result.submitted_at || (result as any).created_at,
     submitted_at: result.submitted_at || result.completed_at,

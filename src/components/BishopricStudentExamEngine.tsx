@@ -380,6 +380,21 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
   const currentQ = activeQuestions[currentQuestionIdx] || activeQuestions[0];
 
+  // Helper check for Coptic stages (e.g., stage or subject includes "قبطي", "م1", or "م2")
+  const selectedStage = student?.stage || (currentQ ? currentQ.stage : '');
+  const isCopticStage = useMemo(() => {
+    const stageStr = String(selectedStage || '').toLowerCase();
+    const subjectStr = String(currentQ?.subject_name || '').toLowerCase();
+    return (
+      stageStr.includes('قبطي') ||
+      stageStr.includes('م1') ||
+      stageStr.includes('م2') ||
+      subjectStr.includes('قبطي') ||
+      subjectStr.includes('م1') ||
+      subjectStr.includes('م2')
+    );
+  }, [selectedStage, currentQ?.subject_name]);
+
   const handleSelectOption = (option: string) => {
     if (!currentQ) return;
     const qKey = currentQ.id || `q_${currentQ.question_text}`;
@@ -771,7 +786,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           )}
 
           {/* Question Card */}
-          <div className={`p-6 md:p-8 rounded-3xl border shadow-lg space-y-6 transition-all ${
+          <div className={`p-6 md:p-8 rounded-3xl border shadow-lg space-y-6 transition-all question-container ${isCopticStage ? 'coptic-font' : ''} ${
             currentQ.is_excellence
               ? 'bg-gradient-to-br from-amber-50/70 via-white to-amber-50/30 border-amber-300 ring-2 ring-amber-300/50'
               : 'bg-white border-slate-200'
@@ -792,7 +807,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                   )}
                 </div>
 
-                <h3 className="text-base md:text-xl font-black text-slate-900 leading-relaxed pt-2">
+                <h3 className={`text-base md:text-xl font-black text-slate-900 leading-relaxed pt-2 ${isCopticStage ? 'coptic-font' : ''}`}>
                   {currentQ.question_text}
                 </h3>
 
@@ -814,7 +829,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
             </div>
 
             {/* Options List */}
-            <div className="space-y-3">
+            <div className={`space-y-3 options-grid ${isCopticStage ? 'coptic-font' : ''}`}>
               {currentQ.options.map((opt, optIdx) => {
                 const qKey = currentQ.id || `q_${currentQ.question_text}`;
                 const isSelected = selectedAnswers[qKey] === opt;
@@ -822,7 +837,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                   <button
                     key={optIdx}
                     onClick={() => handleSelectOption(opt)}
-                    className={`w-full p-4 rounded-2xl border text-right transition-all flex items-center justify-between gap-3 cursor-pointer ${
+                    className={`w-full p-4 rounded-2xl border text-right transition-all flex items-center justify-between gap-3 cursor-pointer option-btn ${isCopticStage ? 'coptic-font' : ''} ${
                       isSelected
                         ? currentQ.is_excellence
                           ? 'bg-amber-100/90 border-amber-600 text-amber-950 font-black ring-2 ring-amber-500/40 shadow-md'
@@ -838,7 +853,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                       }`}>
                         {String.fromCharCode(65 + optIdx)}
                       </span>
-                      <span className="text-sm md:text-base leading-relaxed">{opt}</span>
+                      <span className={`text-sm md:text-base leading-relaxed ${isCopticStage ? 'coptic-font' : ''}`}>{opt}</span>
                     </div>
 
                     {isSelected && (
