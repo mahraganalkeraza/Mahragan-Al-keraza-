@@ -28,7 +28,8 @@ import {
   saveBishopricExamConfig,
   syncBishopricRecordsToSupabase,
   normalizeArabic,
-  PUBLIC_BASE_URL
+  PUBLIC_BASE_URL,
+  PUBLIC_PORTAL_URL
 } from '../utils/bishopricExamStorage';
 import PaginationComponent from './Pagination';
 import { AdminBishopricQuestionsManager } from './AdminBishopricQuestionsManager';
@@ -62,7 +63,7 @@ export const AdminBishopricExamCodesManager: React.FC = () => {
     try {
       const data = await fetchBishopricExamConfig();
       setConfig(data);
-      const defaultPublicUrl = `${PUBLIC_BASE_URL}?view=bishopric-exam`;
+      const defaultPublicUrl = PUBLIC_PORTAL_URL;
       setPortalUrlInput(data.portalUrl || defaultPublicUrl);
     } catch (err) {
       console.error('Failed to load Bishopric Exam Config:', err);

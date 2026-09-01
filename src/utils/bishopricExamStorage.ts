@@ -66,7 +66,8 @@ export const BISHOPRIC_ALLOWED_STAGES = [
 
 const LOCAL_STORAGE_CONFIG_KEY = 'bishopric_exam_config_data';
 export const PUBLIC_BASE_URL = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/';
-const DEFAULT_PORTAL_URL = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/?view=bishopric-exam';
+export const PUBLIC_PORTAL_URL = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/portal';
+export const DEFAULT_PORTAL_URL = PUBLIC_PORTAL_URL;
 
 // Arabic normalization helper
 export const normalizeArabic = (str: any): string => {

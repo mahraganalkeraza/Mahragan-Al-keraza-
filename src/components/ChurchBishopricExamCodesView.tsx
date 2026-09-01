@@ -29,7 +29,8 @@ import {
   fetchChurchBishopricRecordsFromDb,
   fetchBishopricExamResults,
   normalizeArabic,
-  PUBLIC_BASE_URL
+  PUBLIC_BASE_URL,
+  PUBLIC_PORTAL_URL
 } from '../utils/bishopricExamStorage';
 import PaginationComponent from './Pagination';
 import { BishopricStudentExamEngine } from './BishopricStudentExamEngine';
@@ -41,7 +42,7 @@ interface ChurchBishopricExamCodesViewProps {
 export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesViewProps> = ({ churchName }) => {
   const [records, setRecords] = useState<BishopricExamRecord[]>([]);
   const [results, setResults] = useState<BishopricExamResult[]>([]);
-  const [portalUrl, setPortalUrl] = useState<string>(() => `${PUBLIC_BASE_URL}?view=bishopric-exam`);
+  const [portalUrl, setPortalUrl] = useState<string>(() => PUBLIC_PORTAL_URL);
   const [isLoading, setIsLoading] = useState(true);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -62,7 +63,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
         if (r.exam_code && r.exam_code !== '-') {
           try {
             const cleanCode = r.exam_code.trim();
-            const targetUrl = `${PUBLIC_BASE_URL}?view=bishopric-exam&code=${encodeURIComponent(cleanCode)}`;
+            const targetUrl = `${PUBLIC_PORTAL_URL}?code=${encodeURIComponent(cleanCode)}`;
             const dataUrl = await QRCode.toDataURL(targetUrl, {
               width: 150,
               margin: 1,
@@ -91,7 +92,7 @@ export const ChurchBishopricExamCodesView: React.FC<ChurchBishopricExamCodesView
       if (cfg.portalUrl && cfg.portalUrl.trim() && cfg.portalUrl !== 'https://') {
         setPortalUrl(cfg.portalUrl.trim());
       } else {
-        setPortalUrl(`${PUBLIC_BASE_URL}?view=bishopric-exam`);
+        setPortalUrl(PUBLIC_PORTAL_URL);
       }
 
       // 2. Fetch records strictly from bishopric_exam_codes table for this church

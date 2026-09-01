@@ -1149,3 +1149,6 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
 export const BishopricExamModule = BishopricStudentExamEngine;
 
+
+
+export default BishopricStudentExamEngine;
