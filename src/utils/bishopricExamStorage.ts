@@ -36,10 +36,14 @@ export interface BishopricExamResult {
   stage: string;
   subject_name?: string;
   category?: string;
-  total_score: number;
+  total_score?: number;
   score?: number;
   max_score: number;
   percentage: number;
+  score_darasi?: number;
+  score_mahfoozat?: number;
+  score_coptic?: number;
+  grand_total_score?: number;
   excellence_points?: number; // نقاط سؤال التميز
   max_excellence_points?: number;
   excellence_unlocked?: boolean;
@@ -661,6 +665,11 @@ export const fetchBishopricExamResults = async (
         total_score,
         percentage,
         max_score,
+        score_darasi,
+        score_mahfoozat,
+        score_coptic,
+        grand_total_score,
+        category,
         excellence_points,
         max_excellence_points,
         excellence_unlocked,
@@ -695,6 +704,11 @@ export const fetchBishopricExamResults = async (
             total_score,
             percentage,
             max_score,
+            score_darasi,
+            score_mahfoozat,
+            score_coptic,
+            grand_total_score,
+            category,
             excellence_points,
             max_excellence_points,
             excellence_unlocked,
@@ -872,6 +886,19 @@ export const parseGranularScores = (
   }
 
   // 4. Handle fallback if no questions were matched or legacy single score
+  if (result.score_darasi !== undefined && result.score_darasi !== null) {
+    curriculum.score = Number(result.score_darasi);
+    if (curriculum.maxScore === 0) curriculum.maxScore = 15;
+  }
+  if (result.score_mahfoozat !== undefined && result.score_mahfoozat !== null) {
+    hymns.score = Number(result.score_mahfoozat);
+    if (hymns.maxScore === 0) hymns.maxScore = 15;
+  }
+  if (result.score_coptic !== undefined && result.score_coptic !== null) {
+    coptic1.score = Number(result.score_coptic);
+    if (coptic1.maxScore === 0) coptic1.maxScore = 15;
+  }
+
   const totalStandardCalculated = curriculum.score + hymns.score + coptic1.score + coptic2.score;
   const totalExcellenceCalculated = curriculum.excellence + hymns.excellence + coptic1.excellence + coptic2.excellence;
 
@@ -915,7 +942,9 @@ export const parseGranularScores = (
   coptic1.total = coptic1.score + coptic1.excellence;
   coptic2.total = coptic2.score + coptic2.excellence;
 
-  const grandTotal = totalStandardScore + totalExcellencePoints;
+  const grandTotal = result.grand_total_score !== undefined && result.grand_total_score !== null
+    ? Number(result.grand_total_score)
+    : (totalStandardScore + totalExcellencePoints);
   const maxScore = Number(result.max_score || (curriculum.maxScore + hymns.maxScore + coptic1.maxScore + coptic2.maxScore) || totalStandardScore);
   const maxExcellencePoints = Number(result.max_excellence_points || (curriculum.maxExcellence + hymns.maxExcellence + coptic1.maxExcellence + coptic2.maxExcellence) || totalExcellencePoints);
 
@@ -1055,6 +1084,10 @@ export const handleSubmitBishopricExam = async (
     excellence_unlocked?: boolean;
     excellence_categories?: string[];
     excellence_answers?: Record<string, any>;
+    score_darasi?: number;
+    score_mahfoozat?: number;
+    score_coptic?: number;
+    grand_total_score?: number;
   }
 ) => {
   setIsLoadingSpinnerVisible(true);
@@ -1090,7 +1123,6 @@ export const handleSubmitBishopricExam = async (
       exam_code: cleanCode,
       answers: userAnswers,
       score: standardScore,
-      total_score: standardScore,
       excellence_points: excellencePoints, // Saved as a separate column
       submitted_at: nowIso,
       completed_at: nowIso,
@@ -1103,6 +1135,10 @@ export const handleSubmitBishopricExam = async (
       if (metadata.stage) payload.stage = metadata.stage;
       if (metadata.subject_name) payload.subject_name = metadata.subject_name;
       if (metadata.category) payload.category = metadata.category;
+      if (metadata.score_darasi !== undefined) payload.score_darasi = metadata.score_darasi;
+      if (metadata.score_mahfoozat !== undefined) payload.score_mahfoozat = metadata.score_mahfoozat;
+      if (metadata.score_coptic !== undefined) payload.score_coptic = metadata.score_coptic;
+      if (metadata.grand_total_score !== undefined) payload.grand_total_score = metadata.grand_total_score;
       if (metadata.max_score !== undefined) {
         payload.max_score = metadata.max_score;
         payload.percentage = metadata.max_score > 0 

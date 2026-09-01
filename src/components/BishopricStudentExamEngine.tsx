@@ -590,6 +590,10 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       let totalExcellencePoints = 0;
       let totalMaxExcellencePoints = 0;
 
+      let scoreDarasi = 0;
+      let scoreMahfoozat = 0;
+      let scoreCoptic = 0;
+
       rawQuestions.forEach((q) => {
         const qCat = normalizeCategoryType(q.subject_name);
         if (updatedCompleted.includes(qCat)) {
@@ -607,11 +611,19 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
             totalMaxScore += qScore;
             if (isCorrect) {
               totalScore += qScore;
+              if (qCat === 'curriculum') {
+                scoreDarasi += qScore;
+              } else if (qCat === 'hymns') {
+                scoreMahfoozat += qScore;
+              } else if (qCat === 'coptic1' || qCat === 'coptic2') {
+                scoreCoptic += qScore;
+              }
             }
           }
         }
       });
 
+      const grandTotalScore = scoreDarasi + scoreMahfoozat + scoreCoptic;
       const overallPercentage = totalMaxScore > 0 
         ? Number(((totalScore / totalMaxScore) * 100).toFixed(1)) 
         : 0;
@@ -625,7 +637,10 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
         stage: student.stage,
         subject_name: 'امتحان الأسقفية',
         category: categoryString,
-        total_score: totalScore,
+        score_darasi: scoreDarasi,
+        score_mahfoozat: scoreMahfoozat,
+        score_coptic: scoreCoptic,
+        grand_total_score: grandTotalScore,
         score: totalScore,
         max_score: totalMaxScore,
         percentage: overallPercentage,
@@ -671,7 +686,11 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           max_excellence_points: totalMaxExcellencePoints,
           excellence_unlocked: mergedExcCats.length > 0,
           excellence_categories: mergedExcCats,
-          excellence_answers: mergedExcAnswers
+          excellence_answers: mergedExcAnswers,
+          score_darasi: scoreDarasi,
+          score_mahfoozat: scoreMahfoozat,
+          score_coptic: scoreCoptic,
+          grand_total_score: grandTotalScore
         }
       );
 
