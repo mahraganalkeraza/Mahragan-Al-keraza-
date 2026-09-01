@@ -712,6 +712,29 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     }
   };
 
+  // Hardcode Exact Redirection URL for "العودة للمنصة" (Back to Platform) Button
+  const handleReturnToPlatform = () => {
+    // 1. Clear current active exam states
+    setActiveCategory(null);
+    setSelectedAnswers({});
+    setStudent(null);
+    setStep('login');
+
+    if (onClose) {
+      try {
+        onClose();
+      } catch (e) {
+        console.error('onClose error:', e);
+      }
+    }
+
+    // 2. Direct hardcoded redirection to the exact hash URL
+    window.location.href = 'https://mahraganalkeraza.github.io/Mahragan-Al-keraza-/#/bishopric-exam';
+    
+    // Fallback to force hash reload if already on the page
+    window.location.hash = '#/bishopric-exam';
+  };
+
   // Format time (MM:SS)
   const formatTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
@@ -1482,14 +1505,12 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
             >
               الرجوع للوحة المسابقات
             </button>
-            {onClose && (
-              <button
-                onClick={onClose}
-                className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs md:text-sm font-black transition-all border border-slate-200 cursor-pointer"
-              >
-                العودة للمنصة
-              </button>
-            )}
+            <button
+              onClick={handleReturnToPlatform}
+              className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-2xl text-xs md:text-sm font-black transition-all border border-slate-200 cursor-pointer"
+            >
+              العودة للمنصة
+            </button>
           </div>
         </div>
       )}
