@@ -2,9 +2,18 @@
 @import "tailwindcss";
 
 @font-face {
+  font-family: 'AbraamCoptic';
+  src: url('/fonts/ABRAAM_0.ttf') format('truetype'),
+       url('/src/assets/fonts/ABRAAM_0.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
   font-family: 'CopticAbraam';
-  src: url('/src/assets/fonts/ABRAAM_0.ttf') format('truetype'),
-       url('./assets/fonts/ABRAAM_0.ttf') format('truetype');
+  src: url('/fonts/ABRAAM_0.ttf') format('truetype'),
+       url('/src/assets/fonts/ABRAAM_0.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
   font-display: swap;
@@ -12,14 +21,16 @@
 
 @font-face {
   font-family: 'Abraam';
-  src: url('./assets/fonts/ABRAAM_0.ttf') format('truetype');
+  src: url('/fonts/ABRAAM_0.ttf') format('truetype'),
+       url('/src/assets/fonts/ABRAAM_0.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
 }
 
 @font-face {
   font-family: 'AbraamFont';
-  src: url('./assets/fonts/ABRAAM_0.ttf') format('truetype');
+  src: url('/fonts/ABRAAM_0.ttf') format('truetype'),
+       url('/src/assets/fonts/ABRAAM_0.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
 }
@@ -78,7 +89,9 @@
   .coptic-font *,
   .coptic-text,
   .coptic-text * {
-    font-family: 'CopticAbraam', 'AbraamFont', sans-serif !important;
+    font-family: 'AbraamCoptic', 'CopticAbraam', 'AbraamFont', sans-serif !important;
+    letter-spacing: 0px;
+    direction: ltr !important;
   }
   .glass {
     @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-xl;

@@ -24,7 +24,9 @@ import {
   Printer,
   RefreshCw,
   Star,
-  Trophy
+  Trophy,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { 
   BishopricExamRecord, 
@@ -38,6 +40,7 @@ import {
   submitBishopricExamResult,
   updateLocalCacheCodeStatus
 } from '../utils/bishopricExamStorage';
+import { getPreloadedCopticQuestions } from '../data/localScreeningQuestions';
 import { useNotificationBubble } from '../context/NotificationContext';
 
 interface BishopricStudentExamEngineProps {
@@ -318,18 +321,35 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   const loadQuestionsForStudent = async (studentData: BishopricExamRecord) => {
     setIsLoadingQuestions(true);
     try {
-      const qList = await fetchBishopricQuestions(studentData.stage);
+      let qList = await fetchBishopricQuestions(studentData.stage);
+
+      // Integrate preloaded Coptic questions for Nursery & Grades 1-2
+      const preloadedCoptic = getPreloadedCopticQuestions(studentData.stage, studentData.exam_code);
+      if (preloadedCoptic.length > 0) {
+        const existingTexts = new Set(qList.map(q => q.question_text.trim()));
+        const uniquePreloaded = preloadedCoptic.filter(q => !existingTexts.has(q.question_text.trim()));
+        if (uniquePreloaded.length > 0) {
+          qList = [...qList, ...uniquePreloaded];
+        }
+      }
+
       setRawQuestions(qList);
       setStep('preview');
     } catch (err) {
       console.error('Error fetching questions for student:', err);
-      const qErr = 'تعذر تحميل أسئلة الامتحان. يرجى إعادة المحاولة.';
-      setAuthError(qErr);
-      showBubble({
-        type: 'error',
-        title: 'خطأ تحميل الأسئلة',
-        message: qErr
-      });
+      const preloadedCoptic = getPreloadedCopticQuestions(studentData.stage, studentData.exam_code);
+      if (preloadedCoptic.length > 0) {
+        setRawQuestions(preloadedCoptic);
+        setStep('preview');
+      } else {
+        const qErr = 'تعذر تحميل أسئلة الامتحان. يرجى إعادة المحاولة.';
+        setAuthError(qErr);
+        showBubble({
+          type: 'error',
+          title: 'خطأ تحميل الأسئلة',
+          message: qErr
+        });
+      }
     } finally {
       setIsLoadingQuestions(false);
     }
@@ -385,15 +405,46 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   const isCopticStage = useMemo(() => {
     const stageStr = String(selectedStage || '').toLowerCase();
     const subjectStr = String(currentQ?.subject_name || '').toLowerCase();
+    const examCodeStr = String(student?.exam_code || initialExamCode || '').toLowerCase();
     return (
       stageStr.includes('قبطي') ||
       stageStr.includes('م1') ||
       stageStr.includes('م2') ||
       subjectStr.includes('قبطي') ||
       subjectStr.includes('م1') ||
-      subjectStr.includes('م2')
+      subjectStr.includes('م2') ||
+      examCodeStr.includes('قبطي')
     );
-  }, [selectedStage, currentQ?.subject_name]);
+  }, [selectedStage, currentQ?.subject_name, student?.exam_code, initialExamCode]);
+
+  // Speech Handler Helper Function for letter / text pronunciation
+  const playAudioPronunciation = (textToSpeak: string) => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        // Stop any ongoing speech
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        const hasEnglishLetters = /[a-zA-Z]/.test(textToSpeak);
+        utterance.lang = hasEnglishLetters ? 'en-US' : 'ar-EG';
+        utterance.rate = 0.8; // Clear, slightly slower speed for children
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.warn("Speech Synthesis error:", err);
+      }
+    } else {
+      console.warn("Speech Synthesis is not supported in this browser.");
+    }
+  };
+
+  // Auto-play letter pronunciation if current question requires it
+  useEffect(() => {
+    if (step === 'exam' && currentQ) {
+      const qAny = currentQ as any;
+      if (qAny.shouldAutoPlay || qAny.autoPlay) {
+        playAudioPronunciation(qAny.letterToPronounce || currentQ.question_text);
+      }
+    }
+  }, [currentQuestionIdx, step, currentQ]);
 
   const handleSelectOption = (option: string) => {
     if (!currentQ) return;
@@ -786,7 +837,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           )}
 
           {/* Question Card */}
-          <div className={`p-6 md:p-8 rounded-3xl border shadow-lg space-y-6 transition-all question-container ${isCopticStage ? 'coptic-font' : ''} ${
+          <div className={`p-6 md:p-8 rounded-3xl border shadow-lg space-y-6 transition-all question-container ${isCopticStage ? 'coptic-font coptic-text' : ''} ${
             currentQ.is_excellence
               ? 'bg-gradient-to-br from-amber-50/70 via-white to-amber-50/30 border-amber-300 ring-2 ring-amber-300/50'
               : 'bg-white border-slate-200'
@@ -807,9 +858,20 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                   )}
                 </div>
 
-                <h3 className={`text-base md:text-xl font-black text-slate-900 leading-relaxed pt-2 ${isCopticStage ? 'coptic-font' : ''}`}>
-                  {currentQ.question_text}
-                </h3>
+                <div className="flex items-center gap-3 pt-2">
+                  <h3 className={`text-base md:text-xl font-black text-slate-900 leading-relaxed ${isCopticStage ? 'coptic-font coptic-text' : ''}`}>
+                    {currentQ.question_text}
+                  </h3>
+
+                  <button
+                    type="button"
+                    onClick={() => playAudioPronunciation((currentQ as any).letterToPronounce || currentQ.question_text)}
+                    className="p-2.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full transition-all duration-200 shadow-sm shrink-0 flex items-center justify-center cursor-pointer hover:scale-105"
+                    title="استمع لنطق الحرف أو السؤال"
+                  >
+                    <Volume2 size={20} />
+                  </button>
+                </div>
 
                 {currentQ.is_excellence && (
                   <p className="text-xs font-bold text-amber-800 flex items-center gap-1 mt-1">
@@ -829,7 +891,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
             </div>
 
             {/* Options List */}
-            <div className={`space-y-3 options-grid ${isCopticStage ? 'coptic-font' : ''}`}>
+            <div className={`space-y-3 options-grid ${isCopticStage ? 'coptic-font coptic-text' : ''}`}>
               {currentQ.options.map((opt, optIdx) => {
                 const qKey = currentQ.id || `q_${currentQ.question_text}`;
                 const isSelected = selectedAnswers[qKey] === opt;
@@ -837,7 +899,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                   <button
                     key={optIdx}
                     onClick={() => handleSelectOption(opt)}
-                    className={`w-full p-4 rounded-2xl border text-right transition-all flex items-center justify-between gap-3 cursor-pointer option-btn ${isCopticStage ? 'coptic-font' : ''} ${
+                    className={`w-full p-4 rounded-2xl border text-right transition-all flex items-center justify-between gap-3 cursor-pointer option-btn ${isCopticStage ? 'coptic-font coptic-text' : ''} ${
                       isSelected
                         ? currentQ.is_excellence
                           ? 'bg-amber-100/90 border-amber-600 text-amber-950 font-black ring-2 ring-amber-500/40 shadow-md'
@@ -853,12 +915,26 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                       }`}>
                         {String.fromCharCode(65 + optIdx)}
                       </span>
-                      <span className={`text-sm md:text-base leading-relaxed ${isCopticStage ? 'coptic-font' : ''}`}>{opt}</span>
+                      <span className={`text-sm md:text-base leading-relaxed ${isCopticStage ? 'coptic-font coptic-text' : ''}`}>{opt}</span>
                     </div>
 
-                    {isSelected && (
-                      <CheckCircle2 size={20} className={currentQ.is_excellence ? 'text-amber-600 shrink-0' : 'text-indigo-600 shrink-0'} />
-                    )}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          playAudioPronunciation(opt);
+                        }}
+                        className="p-1.5 bg-white hover:bg-blue-100 text-slate-500 hover:text-blue-700 rounded-lg transition-all border border-slate-200 shrink-0"
+                        title="استمع لنطق الخيار"
+                      >
+                        <Volume2 size={16} />
+                      </button>
+
+                      {isSelected && (
+                        <CheckCircle2 size={20} className={currentQ.is_excellence ? 'text-amber-600 shrink-0' : 'text-indigo-600 shrink-0'} />
+                      )}
+                    </div>
                   </button>
                 );
               })}
