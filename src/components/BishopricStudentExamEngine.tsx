@@ -374,7 +374,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       await loadQuestionsForStudent(res.student);
     } catch (err) {
       console.error('Code verification error:', err);
-      const networkErrorMsg = 'حدث خطأ في الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.';
+      const networkErrorMsg = 'حدث خطأ في الاتصال ، يرجى المحاولة مرة أخرى.';
       setAuthError(networkErrorMsg);
       showBubble({
         type: 'error',
@@ -422,7 +422,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           student_name: student.student_name,
           church_name: student.church_name,
           stage: student.stage,
-          subject_name: 'امتحان الأسقفية الإلكتروني',
+          subject_name: 'امتحان الأسقفية الOnline',
           percentage: '100',
           total_score: completedCategories.length * 15,
           max_score: completedCategories.length * 15,
