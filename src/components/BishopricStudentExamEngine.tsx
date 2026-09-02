@@ -214,11 +214,15 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       }
     });
 
-    setUnlockedExcellenceCategories(prev => {
-      // Keep existing unlocked if they satisfied or preserve them
-      const combined = Array.from(new Set([...prev, ...newlyUnlocked]));
-      return combined;
-    });
+    if (newlyUnlocked.length > 0) {
+      setUnlockedExcellenceCategories(prev => {
+        // Keep existing unlocked if they satisfied or preserve them
+        const combined = Array.from(new Set([...prev, ...newlyUnlocked]));
+        const isSame = combined.length === prev.length && combined.every((val, i) => val === prev[i]);
+        if (isSame) return prev;
+        return combined;
+      });
+    }
   }, [selectedAnswers, step, standardQuestions, excellenceQuestions]);
 
   // Session Auto-Recovery: Save progress to localStorage during exam

@@ -73,25 +73,28 @@ import {
   Receipt
 } from 'lucide-react';
 import QuickActionsHub from './components/QuickActionsHub';
-import { ExamBuilder, LiveExamGateway } from './components/ExamEngine';
-import { ExamModelsDashboard } from './components/ExamModelsDashboard';
-import { ResultsViewer } from './components/ResultsViewer';
 import PaginationComponent from './components/Pagination';
 import Notification from './components/Notification';
-import OmrGenerator from './components/OmrGenerator';
 import { downloadStudentQRCode } from './utils/qrCodeGenerator';
-import { ExamLoginPortal } from './components/ExamLoginPortal';
-import { TemplateExcelExporter } from './components/TemplateExcelExporter';
-import AdminDisplayGate from './components/AdminDisplayGate';
 import ChurchInquiryForm from './components/ChurchInquiryForm';
-import AdminInquiriesViewer from './components/AdminInquiriesViewer';
 import { ChurchQualificationFeesCard } from './components/ChurchQualificationFeesCard';
 import { ChurchOnlineExamsView } from './components/ChurchOnlineExamsView';
-import { BishopricStudentExamEngine } from './components/BishopricStudentExamEngine';
-import { PublicBishopricExamPortal } from './components/PublicBishopricExamPortal';
-import { AdminQualificationFeesViewer } from './components/AdminQualificationFeesViewer';
-import { AdminBishopricQuestionsManager } from './components/AdminBishopricQuestionsManager';
-import { QualificationGapAnalysisChart } from './components/QualificationGapAnalysisChart';
+
+// React Lazy Loaded Components to prevent excessive initial JS bundle size and out-of-memory webview crashes on mobile
+const ExamBuilder = React.lazy(() => import('./components/ExamEngine').then(m => ({ default: m.ExamBuilder })));
+const LiveExamGateway = React.lazy(() => import('./components/ExamEngine').then(m => ({ default: m.LiveExamGateway })));
+const ExamModelsDashboard = React.lazy(() => import('./components/ExamModelsDashboard').then(m => ({ default: m.ExamModelsDashboard })));
+const ResultsViewer = React.lazy(() => import('./components/ResultsViewer').then(m => ({ default: m.ResultsViewer })));
+const OmrGenerator = React.lazy(() => import('./components/OmrGenerator'));
+const ExamLoginPortal = React.lazy(() => import('./components/ExamLoginPortal').then(m => ({ default: m.ExamLoginPortal })));
+const TemplateExcelExporter = React.lazy(() => import('./components/TemplateExcelExporter').then(m => ({ default: m.TemplateExcelExporter })));
+const AdminDisplayGate = React.lazy(() => import('./components/AdminDisplayGate'));
+const AdminInquiriesViewer = React.lazy(() => import('./components/AdminInquiriesViewer'));
+const BishopricStudentExamEngine = React.lazy(() => import('./components/BishopricStudentExamEngine').then(m => ({ default: m.BishopricStudentExamEngine })));
+const PublicBishopricExamPortal = React.lazy(() => import('./components/PublicBishopricExamPortal').then(m => ({ default: m.PublicBishopricExamPortal })));
+const AdminQualificationFeesViewer = React.lazy(() => import('./components/AdminQualificationFeesViewer').then(m => ({ default: m.AdminQualificationFeesViewer })));
+const AdminBishopricQuestionsManager = React.lazy(() => import('./components/AdminBishopricQuestionsManager').then(m => ({ default: m.AdminBishopricQuestionsManager })));
+const QualificationGapAnalysisChart = React.lazy(() => import('./components/QualificationGapAnalysisChart').then(m => ({ default: m.QualificationGapAnalysisChart })));
 import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
 import { setupForceRefreshListener } from './utils/forceRefreshManager';
 import { supabase } from './lib/supabaseClient';
@@ -125,7 +128,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import WidgetErrorBoundary from './components/WidgetErrorBoundary';
 
 
-import UserManagement from './components/UserManagement';
+const UserManagement = React.lazy(() => import('./components/UserManagement'));
 import { 
   Inquiry, 
   Order, 
@@ -153,9 +156,10 @@ import {
 
 import { generateMasterExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/newExcelExport';
 import { generateShortId } from './lib/utils';
-import DynamicAdminSettings from './components/DynamicAdminSettings';
-import AdminBulkRegister from './components/AdminBulkRegister';
-import ExportColumnSelector, { ColumnDefinition } from './components/ExportColumnSelector';
+import type { ColumnDefinition } from './components/ExportColumnSelector';
+const DynamicAdminSettings = React.lazy(() => import('./components/DynamicAdminSettings'));
+const AdminBulkRegister = React.lazy(() => import('./components/AdminBulkRegister'));
+const ExportColumnSelector = React.lazy(() => import('./components/ExportColumnSelector'));
 import { printDataTable } from './utils/printHelper';
 // @ts-ignore
 import logo from './by-logo.jpeg';
@@ -10794,4 +10798,20 @@ function AppComponent() {
   );
 }
 
-export default AppComponent;
+function App() {
+  return (
+    <ErrorBoundary>
+      <React.Suspense fallback={
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-8 text-center" dir="rtl">
+          <div className="w-16 h-16 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin mb-6"></div>
+          <h3 className="text-xl font-black text-slate-800 mb-2">جاري تحميل مساحة العمل...</h3>
+          <p className="text-slate-500 font-bold">يرجى الانتظار لحين تحميل عناصر النظام بأمان.</p>
+        </div>
+      }>
+        <AppComponent />
+      </React.Suspense>
+    </ErrorBoundary>
+  );
+}
+
+export default App;

@@ -6,11 +6,17 @@ import { NotificationProvider } from './context/NotificationContext';
 import './index.css';
 
 // كود إجباري لتحديث المتصفح تلقائياً عند نزول نسخة جديدة
-const CURRENT_VERSION = "v1.2.1-security-lock"; // المبرمج يغير الرقم ده مع كل رفعة
-
-if (localStorage.getItem("app_version") !== CURRENT_VERSION) {
-  localStorage.setItem("app_version", CURRENT_VERSION);
-  window.location.reload(); // بيعمل ريفريش إجباري للمتصفح ويمسح الكاش تلقائياً
+try {
+  const CURRENT_VERSION = "v1.2.1-security-lock"; // المبرمج يغير الرقم ده مع كل رفعة
+  const hasReloadedInSession = sessionStorage.getItem("app_version_reloaded_this_session");
+  
+  if (localStorage.getItem("app_version") !== CURRENT_VERSION && !hasReloadedInSession) {
+    localStorage.setItem("app_version", CURRENT_VERSION);
+    sessionStorage.setItem("app_version_reloaded_this_session", "true");
+    window.location.reload(); // بيعمل ريفريش إجباري للمتصفح ويمسح الكاش تلقائياً
+  }
+} catch (e) {
+  console.warn("Storage access failed, skipping auto-reload version check:", e);
 }
 
 if ('serviceWorker' in navigator) {
