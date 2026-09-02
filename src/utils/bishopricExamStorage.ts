@@ -62,6 +62,7 @@ export interface GranularCategoryScore {
   excellence: number;   // Excellence points earned
   maxExcellence: number;// Excellence max points
   total: number;        // score + excellence
+  participated: boolean;// Whether student participated in this competition
 }
 
 export interface GranularExamResult {
@@ -84,6 +85,7 @@ export interface GranularExamResult {
   maxScore: number;
   maxExcellencePoints: number;
   percentage: number;
+  attemptedCategoriesCount?: number;
 }
 
 export interface BishopricExamConfig {
@@ -781,10 +783,10 @@ export const parseGranularScores = (
   result: BishopricExamResult,
   questions: BishopricExamQuestion[] = []
 ): GranularExamResult => {
-  const curriculum: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0 };
-  const hymns: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0 };
-  const coptic1: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0 };
-  const coptic2: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0 };
+  const curriculum: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0, participated: false };
+  const hymns: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0, participated: false };
+  const coptic1: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0, participated: false };
+  const coptic2: GranularCategoryScore = { score: 0, maxScore: 0, excellence: 0, maxExcellence: 0, total: 0, participated: false };
 
   const getTarget = (catType: 'curriculum' | 'hymns' | 'coptic1' | 'coptic2' | 'other') => {
     switch (catType) {
@@ -833,6 +835,34 @@ export const parseGranularScores = (
     categoryScores = {};
   }
 
+  // Check completed categories markers if explicitly stored
+  const completedCatsList: string[] = [];
+  if (Array.isArray((studentAnswers as any)?._completed_categories)) {
+    completedCatsList.push(...(studentAnswers as any)._completed_categories);
+  }
+  if (Array.isArray((result as any)?.completed_categories)) {
+    completedCatsList.push(...(result as any).completed_categories);
+  }
+  if (typeof (result as any)?.category === 'string') {
+    completedCatsList.push(...(result as any).category.split(',').map((s: string) => s.trim()));
+  }
+  if (typeof (result as any)?.subject_name === 'string' && (result as any).subject_name !== 'امتحان الأسقفية') {
+    completedCatsList.push(...(result as any).subject_name.split(',').map((s: string) => s.trim()));
+  }
+
+  // Tag participated from completedCatsList
+  completedCatsList.forEach(c => {
+    const norm = normalizeCategoryType(c);
+    const target = getTarget(norm);
+    if (target) target.participated = true;
+  });
+
+  // Check if answers has nested category keys
+  if (studentAnswers?.curriculum) curriculum.participated = true;
+  if (studentAnswers?.hymns) hymns.participated = true;
+  if (studentAnswers?.coptic1 || studentAnswers?.coptic) coptic1.participated = true;
+  if (studentAnswers?.coptic2) coptic2.participated = true;
+
   const normResultStage = normalizeArabic(result?.stage || (result as any)?.grade_name || (result as any)?.grade || '');
 
   // Filter stage questions if available, otherwise match against whole questions pool
@@ -867,6 +897,11 @@ export const parseGranularScores = (
         studentAns = studentAnswers[String(idx)];
       }
 
+      const hasAnsweredThisQ = studentAns !== undefined && studentAns !== null && String(studentAns).trim() !== '';
+      if (hasAnsweredThisQ) {
+        target.participated = true;
+      }
+
       const qScore = Number(q.score) || 1;
       const isCorrect = studentAns !== undefined && studentAns !== null && 
         String(studentAns).trim().toLowerCase() === String(q.correct_answer || '').trim().toLowerCase();
@@ -891,6 +926,7 @@ export const parseGranularScores = (
       const catType = normalizeCategoryType(catName);
       const target = getTarget(catType);
       if (target && val) {
+        target.participated = true;
         const pts = Number(val.score) || 1;
         if (val.is_correct) {
           if (target.excellence === 0) {
@@ -910,6 +946,7 @@ export const parseGranularScores = (
       const catType = normalizeCategoryType(catName);
       const target = getTarget(catType);
       if (target) {
+        target.participated = true;
         if (typeof val === 'number') {
           target.score = val;
         } else if (val && typeof val === 'object') {
@@ -920,31 +957,29 @@ export const parseGranularScores = (
     });
   }
 
-  // 4. Handle fallback if no questions were matched or legacy single score
+  // 4. Handle fallback if explicit subject score columns exist
   if ((result as any)?.score_darasi !== undefined && (result as any)?.score_darasi !== null) {
     curriculum.score = Number((result as any).score_darasi);
+    curriculum.participated = true;
     if (curriculum.maxScore === 0) curriculum.maxScore = 15;
   }
   if ((result as any)?.score_mahfoozat !== undefined && (result as any)?.score_mahfoozat !== null) {
     hymns.score = Number((result as any).score_mahfoozat);
+    hymns.participated = true;
     if (hymns.maxScore === 0) hymns.maxScore = 15;
   }
   if ((result as any)?.score_coptic !== undefined && (result as any)?.score_coptic !== null) {
     coptic1.score = Number((result as any).score_coptic);
+    coptic1.participated = true;
     if (coptic1.maxScore === 0) coptic1.maxScore = 15;
   }
   if ((result as any)?.score_coptic2 !== undefined && (result as any)?.score_coptic2 !== null) {
     coptic2.score = Number((result as any).score_coptic2);
+    coptic2.participated = true;
     if (coptic2.maxScore === 0) coptic2.maxScore = 15;
   }
 
-  const totalStandardCalculated = curriculum.score + hymns.score + coptic1.score + coptic2.score;
-  const totalExcellenceCalculated = curriculum.excellence + hymns.excellence + coptic1.excellence + coptic2.excellence;
-
-  let totalStandardScore = totalStandardCalculated;
-  let totalExcellencePoints = totalExcellenceCalculated;
-
-  // Fallback for standard score if not broken down by questions
+  // Fallback for single standard score if not broken down by questions
   const rawStandardScore = Number(
     (result as any)?.total_score !== undefined 
       ? (result as any).total_score 
@@ -955,14 +990,22 @@ export const parseGranularScores = (
               : ((result as any)?.grade_score || 0)))
   );
 
+  const totalStandardCalculated = curriculum.score + hymns.score + coptic1.score + coptic2.score;
+  const totalExcellenceCalculated = curriculum.excellence + hymns.excellence + coptic1.excellence + coptic2.excellence;
+
+  let totalStandardScore = totalStandardCalculated;
+  let totalExcellencePoints = totalExcellenceCalculated;
+
   if (totalStandardScore === 0 && rawStandardScore > 0) {
     const catType = normalizeCategoryType((result as any)?.subject_name || (result as any)?.category || '');
     const target = getTarget(catType);
     if (target) {
       target.score = rawStandardScore;
+      target.participated = true;
       target.maxScore = Number((result as any)?.max_score || rawStandardScore);
     } else {
       curriculum.score = rawStandardScore;
+      curriculum.participated = true;
       curriculum.maxScore = Number((result as any)?.max_score || rawStandardScore);
     }
     totalStandardScore = rawStandardScore;
@@ -983,39 +1026,62 @@ export const parseGranularScores = (
       const target = getTarget(catType);
       if (target) {
         target.excellence = rawExcellence;
+        target.participated = true;
         if (target.maxExcellence === 0) target.maxExcellence = rawExcellence;
       } else {
         curriculum.excellence = rawExcellence;
+        curriculum.participated = true;
         if (curriculum.maxExcellence === 0) curriculum.maxExcellence = rawExcellence;
       }
     } else {
       curriculum.excellence = rawExcellence;
+      curriculum.participated = true;
       if (curriculum.maxExcellence === 0) curriculum.maxExcellence = rawExcellence;
     }
     totalExcellencePoints = rawExcellence;
   }
 
+  // Ensure at least one category is marked participated if any score/submission exists
+  const participatedCategories = [curriculum, hymns, coptic1, coptic2].filter(c => c.participated);
+  if (participatedCategories.length === 0) {
+    // Default to curriculum if record has answers or submission
+    curriculum.participated = true;
+    if (curriculum.maxScore === 0) curriculum.maxScore = 15;
+  }
+
+  // Calculate totals per category
   curriculum.total = curriculum.score + curriculum.excellence;
   hymns.total = hymns.score + hymns.excellence;
   coptic1.total = coptic1.score + coptic1.excellence;
   coptic2.total = coptic2.score + coptic2.excellence;
 
+  const attemptedCategoriesCount = [curriculum, hymns, coptic1, coptic2].filter(c => c.participated).length;
+
   const grandTotal = (result as any)?.grand_total_score !== undefined && (result as any)?.grand_total_score !== null
     ? Number((result as any).grand_total_score)
     : (totalStandardScore + totalExcellencePoints);
 
-  const calculatedMaxStandard = (curriculum.maxScore + hymns.maxScore + coptic1.maxScore + coptic2.maxScore);
-  const maxScore = Number((result as any)?.max_score || (calculatedMaxStandard > 0 ? calculatedMaxStandard : (totalStandardScore > 0 ? totalStandardScore : 50)));
+  // Dynamic max score calculation: sum of maxScores of ONLY the participated categories
+  const calculatedDynamicMaxStandard = [curriculum, hymns, coptic1, coptic2]
+    .filter(c => c.participated)
+    .reduce((sum, c) => sum + (c.maxScore > 0 ? c.maxScore : 15), 0);
 
-  const calculatedMaxExcellence = (curriculum.maxExcellence + hymns.maxExcellence + coptic1.maxExcellence + coptic2.maxExcellence);
-  const maxExcellencePoints = Number((result as any)?.max_excellence_points || (calculatedMaxExcellence > 0 ? calculatedMaxExcellence : totalExcellencePoints));
+  const maxScore = Number((result as any)?.max_score || (calculatedDynamicMaxStandard > 0 ? calculatedDynamicMaxStandard : (totalStandardScore > 0 ? totalStandardScore : 15)));
 
+  const calculatedDynamicMaxExcellence = [curriculum, hymns, coptic1, coptic2]
+    .filter(c => c.participated)
+    .reduce((sum, c) => sum + c.maxExcellence, 0);
+
+  const maxExcellencePoints = Number((result as any)?.max_excellence_points || (calculatedDynamicMaxExcellence > 0 ? calculatedDynamicMaxExcellence : totalExcellencePoints));
+
+  // Dynamic Percentage based on participated categories max score
   let percentage = 0;
-  if ((result as any)?.percentage !== undefined && (result as any)?.percentage !== null) {
+  if (maxScore > 0) {
+    percentage = Number(((totalStandardScore / maxScore) * 100).toFixed(1));
+    if (percentage > 100 && totalExcellencePoints === 0) percentage = 100;
+  } else if ((result as any)?.percentage !== undefined && (result as any)?.percentage !== null) {
     const rawPct = String((result as any).percentage).replace('%', '').trim();
     percentage = Number(rawPct) || 0;
-  } else if (maxScore > 0) {
-    percentage = Number(((totalStandardScore / maxScore) * 100).toFixed(1));
   } else if (grandTotal > 0) {
     percentage = 100;
   }
@@ -1056,7 +1122,8 @@ export const parseGranularScores = (
     grandTotal,
     maxScore,
     maxExcellencePoints,
-    percentage
+    percentage,
+    attemptedCategoriesCount
   };
 };
 

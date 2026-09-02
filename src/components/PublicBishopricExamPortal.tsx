@@ -46,7 +46,7 @@ export const PublicBishopricExamPortal: React.FC<PublicBishopricExamPortalProps>
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-bold hidden sm:block">
-              أسقفية الشباب • مهرجان الكرازة المرقسية
+               مغاغة والعدوة • مهرجان الكرازة المرقسية
             </p>
           </div>
         </div>
@@ -54,7 +54,7 @@ export const PublicBishopricExamPortal: React.FC<PublicBishopricExamPortalProps>
         <div className="flex items-center gap-3">
           <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold">
             <ShieldCheck size={14} />
-            <span>بوابة الطلاب العامة (Public Portal)</span>
+            <span>منصةالأونلاين الخاصة بالأسقفية</span>
           </div>
 
           <button
@@ -80,7 +80,7 @@ export const PublicBishopricExamPortal: React.FC<PublicBishopricExamPortalProps>
 
       {/* Footer */}
       <footer className="w-full py-4 px-6 text-center text-xs text-slate-500 font-bold border-t border-slate-800/60 bg-slate-950/60">
-        <span>الدخول متاح لجميع المتسابقين الحاصلين على كود الامتحان المركزي • أسقفية الشباب 2026</span>
+        <span>الدخول متاح لجميع المتسابقين الحاصلين على كود الامتحان •  مغاغة والعدوة </span>
       </footer>
     </div>
   );

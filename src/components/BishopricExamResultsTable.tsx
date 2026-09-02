@@ -294,16 +294,17 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
             exam_code: extractedCode,
             answers: fallbackAnswers
           },
-          curriculum: { score: rawScore, excellence: 0, total: rawScore, maxScore: 50, maxExcellence: 0 },
-          hymns: { score: 0, excellence: 0, total: 0, maxScore: 0, maxExcellence: 0 },
-          coptic1: { score: 0, excellence: 0, total: 0, maxScore: 0, maxExcellence: 0 },
-          coptic2: { score: 0, excellence: 0, total: 0, maxScore: 0, maxExcellence: 0 },
+          curriculum: { participated: true, score: rawScore, excellence: 0, total: rawScore, maxScore: 50, maxExcellence: 0 },
+          hymns: { participated: false, score: 0, excellence: 0, total: 0, maxScore: 0, maxExcellence: 0 },
+          coptic1: { participated: false, score: 0, excellence: 0, total: 0, maxScore: 0, maxExcellence: 0 },
+          coptic2: { participated: false, score: 0, excellence: 0, total: 0, maxScore: 0, maxExcellence: 0 },
           totalStandardScore: rawScore,
           totalExcellencePoints: Number((r as any)?.excellence_points || 0),
           grandTotal: rawScore + Number((r as any)?.excellence_points || 0),
           maxScore: Number((r as any)?.max_score || 50),
           maxExcellencePoints: Number((r as any)?.max_excellence_points || 0),
-          percentage: Number((r as any)?.percentage || 0)
+          percentage: Number((r as any)?.percentage || 0),
+          attemptedCategoriesCount: 1
         };
       }
     });
@@ -935,9 +936,11 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
 
                     {/* 1. دراسي (Curriculum Score) */}
                     <td className="p-2.5 text-center border-l border-slate-100 font-bold text-slate-800">
-                      {row.curriculum.score > 0 || row.curriculum.maxScore > 0 
-                        ? row.curriculum.score 
-                        : (row.totalStandardScore > 0 && !row.hymns.score && !row.coptic1.score && !row.coptic2.score ? row.totalStandardScore : '-')}
+                      {row.curriculum.participated ? (
+                        <span className="font-black text-slate-900">{row.curriculum.score}</span>
+                      ) : (
+                        <span className="text-slate-400 font-normal text-[11px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60">غير مشترك</span>
+                      )}
                     </td>
 
                     {/* 1. تميز دراسي (Curriculum Excellence) */}
@@ -953,7 +956,11 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
 
                     {/* 2. محفوظات (Hymns Score) */}
                     <td className="p-2.5 text-center border-l border-slate-100 font-bold text-slate-800">
-                      {row.hymns.score > 0 || row.hymns.maxScore > 0 ? row.hymns.score : '-'}
+                      {row.hymns.participated ? (
+                        <span className="font-black text-slate-900">{row.hymns.score}</span>
+                      ) : (
+                        <span className="text-slate-400 font-normal text-[11px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60">غير مشترك</span>
+                      )}
                     </td>
 
                     {/* 2. تميز محفوظات (Hymns Excellence) */}
@@ -969,7 +976,11 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
 
                     {/* 3. قبطي م1 (Coptic L1 Score) */}
                     <td className="p-2.5 text-center border-l border-slate-100 font-bold text-slate-800">
-                      {row.coptic1.score > 0 || row.coptic1.maxScore > 0 ? row.coptic1.score : '-'}
+                      {row.coptic1.participated ? (
+                        <span className="font-black text-slate-900">{row.coptic1.score}</span>
+                      ) : (
+                        <span className="text-slate-400 font-normal text-[11px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60">غير مشترك</span>
+                      )}
                     </td>
 
                     {/* 3. تميز قبطي م1 (Coptic L1 Excellence) */}
@@ -985,7 +996,11 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
 
                     {/* 4. قبطي م2 (Coptic L2 Score) */}
                     <td className="p-2.5 text-center border-l border-slate-100 font-bold text-slate-800">
-                      {row.coptic2.score > 0 || row.coptic2.maxScore > 0 ? row.coptic2.score : '-'}
+                      {row.coptic2.participated ? (
+                        <span className="font-black text-slate-900">{row.coptic2.score}</span>
+                      ) : (
+                        <span className="text-slate-400 font-normal text-[11px] bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60">غير مشترك</span>
+                      )}
                     </td>
 
                     {/* 4. تميز قبطي م2 (Coptic L2 Excellence) */}
@@ -1116,44 +1131,112 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
               {/* Category Scores Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {/* Curriculum */}
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl text-center">
-                  <p className="text-xs font-black text-slate-700">المنهج الدراسي</p>
-                  <p className="text-base font-black text-slate-900 mt-1">{selectedResultForDetails.curriculum.score} درجة</p>
+                <div className={`border p-3.5 rounded-2xl text-center flex flex-col justify-between ${
+                  selectedResultForDetails.curriculum.participated
+                    ? 'bg-slate-50/90 border-indigo-200'
+                    : 'bg-slate-50/40 border-slate-200 opacity-80'
+                }`}>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-black text-slate-800">المنهج الدراسي</p>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        selectedResultForDetails.curriculum.participated 
+                          ? 'bg-emerald-100 text-emerald-800' 
+                          : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {selectedResultForDetails.curriculum.participated ? 'مشترك ✅' : 'غير مشترك'}
+                      </span>
+                    </div>
+                    <p className="text-base font-black text-slate-900 mt-1">
+                      {selectedResultForDetails.curriculum.participated ? `${selectedResultForDetails.curriculum.score} درجة` : '-'}
+                    </p>
+                  </div>
                   {selectedResultForDetails.curriculum.excellence > 0 && (
-                    <span className="inline-block mt-1 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                    <span className="inline-block mt-2 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
                       +{selectedResultForDetails.curriculum.excellence} تميز 🌟
                     </span>
                   )}
                 </div>
 
                 {/* Hymns */}
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl text-center">
-                  <p className="text-xs font-black text-slate-700">الألحان والمحفوظات</p>
-                  <p className="text-base font-black text-slate-900 mt-1">{selectedResultForDetails.hymns.score} درجة</p>
+                <div className={`border p-3.5 rounded-2xl text-center flex flex-col justify-between ${
+                  selectedResultForDetails.hymns.participated
+                    ? 'bg-slate-50/90 border-indigo-200'
+                    : 'bg-slate-50/40 border-slate-200 opacity-80'
+                }`}>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-black text-slate-800">الألحان والمحفوظات</p>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        selectedResultForDetails.hymns.participated 
+                          ? 'bg-emerald-100 text-emerald-800' 
+                          : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {selectedResultForDetails.hymns.participated ? 'مشترك ✅' : 'غير مشترك'}
+                      </span>
+                    </div>
+                    <p className="text-base font-black text-slate-900 mt-1">
+                      {selectedResultForDetails.hymns.participated ? `${selectedResultForDetails.hymns.score} درجة` : '-'}
+                    </p>
+                  </div>
                   {selectedResultForDetails.hymns.excellence > 0 && (
-                    <span className="inline-block mt-1 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                    <span className="inline-block mt-2 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
                       +{selectedResultForDetails.hymns.excellence} تميز 🌟
                     </span>
                   )}
                 </div>
 
                 {/* Coptic L1 */}
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl text-center">
-                  <p className="text-xs font-black text-slate-700">اللغة القبطية (م1)</p>
-                  <p className="text-base font-black text-slate-900 mt-1">{selectedResultForDetails.coptic1.score} درجة</p>
+                <div className={`border p-3.5 rounded-2xl text-center flex flex-col justify-between ${
+                  selectedResultForDetails.coptic1.participated
+                    ? 'bg-slate-50/90 border-indigo-200'
+                    : 'bg-slate-50/40 border-slate-200 opacity-80'
+                }`}>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-black text-slate-800">اللغة القبطية (م1)</p>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        selectedResultForDetails.coptic1.participated 
+                          ? 'bg-emerald-100 text-emerald-800' 
+                          : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {selectedResultForDetails.coptic1.participated ? 'مشترك ✅' : 'غير مشترك'}
+                      </span>
+                    </div>
+                    <p className="text-base font-black text-slate-900 mt-1">
+                      {selectedResultForDetails.coptic1.participated ? `${selectedResultForDetails.coptic1.score} درجة` : '-'}
+                    </p>
+                  </div>
                   {selectedResultForDetails.coptic1.excellence > 0 && (
-                    <span className="inline-block mt-1 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                    <span className="inline-block mt-2 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
                       +{selectedResultForDetails.coptic1.excellence} تميز 🌟
                     </span>
                   )}
                 </div>
 
                 {/* Coptic L2 */}
-                <div className="bg-slate-50 border border-slate-200 p-3 rounded-2xl text-center">
-                  <p className="text-xs font-black text-slate-700">اللغة القبطية (م2)</p>
-                  <p className="text-base font-black text-slate-900 mt-1">{selectedResultForDetails.coptic2.score} درجة</p>
+                <div className={`border p-3.5 rounded-2xl text-center flex flex-col justify-between ${
+                  selectedResultForDetails.coptic2.participated
+                    ? 'bg-slate-50/90 border-indigo-200'
+                    : 'bg-slate-50/40 border-slate-200 opacity-80'
+                }`}>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-black text-slate-800">اللغة القبطية (م2)</p>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                        selectedResultForDetails.coptic2.participated 
+                          ? 'bg-emerald-100 text-emerald-800' 
+                          : 'bg-slate-200 text-slate-600'
+                      }`}>
+                        {selectedResultForDetails.coptic2.participated ? 'مشترك ✅' : 'غير مشترك'}
+                      </span>
+                    </div>
+                    <p className="text-base font-black text-slate-900 mt-1">
+                      {selectedResultForDetails.coptic2.participated ? `${selectedResultForDetails.coptic2.score} درجة` : '-'}
+                    </p>
+                  </div>
                   {selectedResultForDetails.coptic2.excellence > 0 && (
-                    <span className="inline-block mt-1 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                    <span className="inline-block mt-2 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
                       +{selectedResultForDetails.coptic2.excellence} تميز 🌟
                     </span>
                   )}
@@ -1161,17 +1244,30 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
               </div>
 
               {/* Total Card */}
-              <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl flex items-center justify-between">
+              <div className="bg-indigo-50/90 border border-indigo-200 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-black text-indigo-900">المجموع الكلي النهائي المعتمد</p>
+                  <p className="text-xs font-black text-indigo-950">المجموع الكلي النهائي المعتمد (للمسابقات المشترك بها)</p>
                   <p className="text-[11px] font-bold text-indigo-700 mt-0.5">
-                    الدرجات الأساسية: {selectedResultForDetails.totalStandardScore} / {selectedResultForDetails.maxScore || 50} + نقاط التميز الإضافية: {selectedResultForDetails.totalExcellencePoints}
+                    الدرجات الأساسية: <span className="font-black">{selectedResultForDetails.totalStandardScore} / {selectedResultForDetails.maxScore}</span>
+                    {selectedResultForDetails.totalExcellencePoints > 0 && (
+                      <span className="mr-2 text-amber-800 font-black">+ نقاط التميز: {selectedResultForDetails.totalExcellencePoints} 🌟</span>
+                    )}
+                    <span className="mr-2 text-indigo-900 font-black">({selectedResultForDetails.percentage}%)</span>
                   </p>
                 </div>
-                <div className="text-left">
-                  <span className="text-3xl font-black text-indigo-950 font-mono">
-                    {selectedResultForDetails.grandTotal}
-                  </span>
+                <div className="flex items-center gap-3">
+                  <div className="bg-white px-4 py-2 rounded-xl border border-indigo-200 text-center">
+                    <span className="text-[10px] text-slate-400 font-black block">النسبة المئوية</span>
+                    <span className="text-xl font-black text-indigo-600 font-mono">
+                      {selectedResultForDetails.percentage}%
+                    </span>
+                  </div>
+                  <div className="bg-indigo-600 text-white px-5 py-2 rounded-xl text-center shadow-xs">
+                    <span className="text-[10px] text-indigo-200 font-black block">المجموع النهائي</span>
+                    <span className="text-2xl font-black font-mono">
+                      {selectedResultForDetails.grandTotal}
+                    </span>
+                  </div>
                 </div>
               </div>
 

@@ -37,7 +37,8 @@ import {
   handleSubmitBishopricExam,
   submitBishopricExamResult,
   updateLocalCacheCodeStatus,
-  normalizeCategoryType
+  normalizeCategoryType,
+  parseGranularScores
 } from '../utils/bishopricExamStorage';
 import { supabase } from '../utils/supabaseClient';
 import { useNotificationBubble } from '../context/NotificationContext';
@@ -377,6 +378,43 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       setIsLoadingQuestions(false);
     }
   };
+
+  // Open Student Grade Statement (بيان الدرجات) immediately after completing ANY individual competition
+  const handleViewGradeStatement = async () => {
+    if (!student) return;
+    try {
+      const { data, error } = await supabase
+        .from('bishopric_exam_results')
+        .select('*')
+        .or(`student_code.ilike.${student.exam_code.trim()},exam_code.ilike.${student.exam_code.trim()}`);
+
+      if (data && data.length > 0) {
+        setFinalResult(data[0]);
+      } else {
+        setFinalResult({
+          student_name: student.student_name,
+          church_name: student.church_name,
+          stage: student.stage,
+          subject_name: 'امتحان الأسقفية الإلكتروني',
+          percentage: '100',
+          total_score: completedCategories.length * 15,
+          max_score: completedCategories.length * 15,
+          exam_code: student.exam_code,
+          completed_at: new Date().toISOString()
+        } as any);
+      }
+      setStep('submitted');
+    } catch (err) {
+      console.error('Error fetching student statement:', err);
+      setStep('submitted');
+    }
+  };
+
+  // Compute Granular Scores for the student grade statement view
+  const granularResult = useMemo(() => {
+    if (!finalResult) return null;
+    return parseGranularScores(finalResult, rawQuestions);
+  }, [finalResult, rawQuestions]);
 
   // Dynamic categories detection based on loaded stage questions
   const availableCategoriesForStage = useMemo(() => {
@@ -972,17 +1010,17 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
               return (
                 <div
                   key={cat.id}
-                  onClick={() => !isCompleted && handleSelectCategory(cat.id)}
-                  className={`bg-white rounded-3xl p-6 border transition-all relative overflow-hidden flex flex-col justify-between min-h-[180px] ${
+                  onClick={() => isCompleted ? handleViewGradeStatement() : handleSelectCategory(cat.id)}
+                  className={`bg-white rounded-3xl p-6 border transition-all relative overflow-hidden flex flex-col justify-between min-h-[180px] cursor-pointer ${
                     isCompleted
-                      ? 'border-emerald-200 bg-emerald-50/10 cursor-not-allowed opacity-85 shadow-sm'
-                      : 'border-slate-200 hover:border-indigo-500 hover:shadow-xl cursor-pointer hover:-translate-y-1'
+                      ? 'border-emerald-300 bg-emerald-50/20 hover:border-emerald-500 hover:shadow-lg hover:-translate-y-1'
+                      : 'border-slate-200 hover:border-indigo-500 hover:shadow-xl hover:-translate-y-1'
                   }`}
                 >
                   {/* Decorative corner icon for completed */}
                   {isCompleted && (
-                    <div className="absolute top-0 left-0 w-16 h-16 bg-emerald-500 text-white flex items-center justify-center rounded-br-3xl">
-                      <CheckCircle2 size={24} />
+                    <div className="absolute top-0 left-0 w-14 h-14 bg-emerald-500 text-white flex items-center justify-center rounded-br-2xl shadow-xs">
+                      <CheckCircle2 size={22} />
                     </div>
                   )}
 
@@ -992,7 +1030,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                         ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
                         : 'bg-indigo-50 text-indigo-800 border border-indigo-100'
                     }`}>
-                      {isCompleted ? 'تم الإرسال بنجاح' : 'جاهز للبدء'}
+                      {isCompleted ? 'تم الإرسال بنجاح ✅' : 'جاهز للبدء'}
                     </span>
                     <h3 className="text-xl font-black text-slate-900 pt-1">{cat.title}</h3>
                     <p className="text-xs text-slate-500 font-bold leading-relaxed">{cat.subtitle}</p>
@@ -1001,11 +1039,11 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
                   <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
                     <span className="text-[11px] font-black text-slate-400">امتحان ٢٠٢٦</span>
                     <span className={`text-xs font-black flex items-center gap-1 ${
-                      isCompleted ? 'text-emerald-700' : 'text-indigo-600'
+                      isCompleted ? 'text-emerald-700 font-bold' : 'text-indigo-600 font-bold'
                     }`}>
                       {isCompleted ? (
                         <>
-                          <span>عرض الشهادة</span>
+                          <span>عرض بيان الدرجات</span>
                           <Award size={14} />
                         </>
                       ) : (
@@ -1021,36 +1059,27 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
             })}
           </div>
 
-          {/* Overall certificate section if all categories are completed */}
-          {completedCategories.length === availableCategoriesForStage.length && (
-            <div className="bg-gradient-to-r from-emerald-50 via-teal-50/20 to-indigo-50/20 p-6 md:p-8 rounded-3xl border-2 border-emerald-400 text-center space-y-4 max-w-xl mx-auto shadow-md">
-              <Award className="mx-auto text-emerald-600 animate-bounce" size={48} />
-              <div className="space-y-1">
-                <h3 className="text-xl font-black text-slate-900">لقد أتممت كافة مسابقات المهرجان الإلكترونية!</h3>
-                <p className="text-xs text-slate-600 font-bold">
-                  نهنئك يا <span className="text-indigo-700 font-black">{student.student_name}</span> على أدائك المتميز في كافة الفروع المطلوبة. تم تسجيل ومزامنة نتائجك بأمان.
+          {/* Grade Statement / Certificate Section (Active immediately after completing ANY individual competition) */}
+          {completedCategories.length >= 1 && (
+            <div className="bg-gradient-to-r from-emerald-50 via-teal-50/30 to-indigo-50/30 p-6 md:p-8 rounded-3xl border-2 border-emerald-400 text-center space-y-4 max-w-xl mx-auto shadow-md">
+              <Award className="mx-auto text-emerald-600 animate-bounce" size={44} />
+              <div className="space-y-1.5">
+                <h3 className="text-xl font-black text-slate-900">
+                  {completedCategories.length === availableCategoriesForStage.length
+                    ? '🎉 لقد أتممت كافة مسابقات المهرجان الإلكترونية!'
+                    : `تم تسجيل إجاباتك في (${completedCategories.length} من ${availableCategoriesForStage.length}) مسابقات بنجاح`}
+                </h3>
+                <p className="text-xs text-slate-600 font-bold leading-relaxed">
+                  نهنئك يا <span className="text-indigo-700 font-black">{student.student_name}</span>. يمكنك الاطلاع على بيان الدرجات المعتمد للمسابقات التي أتممتها وطباعة كشف النتيجة في أي وقت.
                 </p>
               </div>
               <div className="flex justify-center gap-3 pt-2">
                 <button
-                  onClick={() => {
-                    setFinalResult({
-                      student_name: student.student_name,
-                      church_name: student.church_name,
-                      stage: student.stage,
-                      subject_name: 'امتحان الأسقفية الكلي',
-                      percentage: '100', // temporary mock percentage for full completion certificate
-                      total_score: completedCategories.length,
-                      max_score: availableCategoriesForStage.length,
-                      exam_code: student.exam_code,
-                      completed_at: new Date().toISOString()
-                    } as any);
-                    setStep('submitted');
-                  }}
-                  className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                  onClick={handleViewGradeStatement}
+                  className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs md:text-sm font-black transition-all shadow-md shadow-emerald-600/20 flex items-center gap-2 cursor-pointer hover:scale-[1.02]"
                 >
-                  <Award size={16} />
-                  <span>عرض إشعار النتيجة والتقدير</span>
+                  <Award size={18} />
+                  <span>عرض بيان درجات الطالب (كشف النتيجة الرسمي)</span>
                 </button>
               </div>
             </div>
@@ -1499,95 +1528,206 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
         </div>
       )}
 
-      {/* STEP 4: SUBMITTED / RESULT CERTIFICATE */}
+      {/* STEP 4: SUBMITTED / OFFICIAL GRADE STATEMENT & CERTIFICATE */}
       {step === 'submitted' && finalResult && (
-        <div className="bg-white rounded-3xl p-8 md:p-10 border border-slate-200 shadow-2xl text-center space-y-6">
-          <div className="w-20 h-20 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-3xl mx-auto flex items-center justify-center shadow-inner">
-            <Award size={44} className="text-emerald-600 animate-bounce" />
+        <div className="bg-white rounded-3xl p-6 md:p-10 border border-slate-200 shadow-2xl text-center space-y-6 max-w-3xl mx-auto animate-fade-in print:p-0 print:border-none print:shadow-none">
+          {/* Header Banner */}
+          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+            <div className="text-right">
+              <span className="text-[11px] font-black text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                أسقفية الشباب • مهرجان الكرازة
+              </span>
+              <h2 className="text-xl md:text-2xl font-black text-slate-900 mt-1">بيان درجات الطالب والتقدير العام</h2>
+            </div>
+            <div className="w-14 h-14 bg-emerald-50 border border-emerald-200 text-emerald-600 rounded-2xl flex items-center justify-center shadow-xs">
+              <Award size={32} className="text-emerald-600 animate-bounce" />
+            </div>
           </div>
 
-          <div>
-            <div className="inline-flex items-center gap-1 px-4 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-black mb-2">
-              <CheckCircle2 size={14} /> تم تسجيل النتيجة وتأكيد الامتحان بنجاح
+          {/* Student Info Card */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-right">
+            <div>
+              <span className="text-[10px] text-slate-400 font-bold block">اسم الطالب</span>
+              <span className="text-xs font-black text-slate-900 block truncate">{finalResult.student_name}</span>
             </div>
-            <h2 className="text-2xl md:text-3xl font-black text-slate-900">
-              {finalResult.student_name}
-            </h2>
-            <p className="text-xs md:text-sm text-slate-500 font-bold mt-1">
-              كنيسة: {finalResult.church_name} • المرحلة: {finalResult.stage}
-            </p>
+            <div>
+              <span className="text-[10px] text-slate-400 font-bold block">الكنيسة</span>
+              <span className="text-xs font-black text-slate-800 block truncate">{finalResult.church_name}</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-400 font-bold block">المرحلة الدراسية</span>
+              <span className="text-xs font-black text-indigo-700 block truncate">{finalResult.stage}</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-400 font-bold block">كود الامتحان</span>
+              <span className="text-xs font-mono font-black text-slate-800 block">{finalResult.exam_code}</span>
+            </div>
           </div>
+
+          {/* Subject Breakdown Cards (Curriculum, Hymns, Coptic 1, Coptic 2) */}
+          {granularResult && (
+            <div className="space-y-2 text-right">
+              <h4 className="text-xs font-black text-slate-700">تفاصيل درجات المسابقات:</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {/* 1. Curriculum */}
+                <div className={`p-3.5 rounded-2xl border flex flex-col justify-between text-center ${
+                  granularResult.curriculum.participated 
+                    ? 'bg-indigo-50/40 border-indigo-200' 
+                    : 'bg-slate-50 border-slate-200 opacity-70'
+                }`}>
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-800">المنهج الدراسي</p>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full inline-block ${
+                      granularResult.curriculum.participated ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {granularResult.curriculum.participated ? 'مشترك ✅' : 'غير مشترك'}
+                    </span>
+                    <p className="text-base font-black text-slate-900 mt-1">
+                      {granularResult.curriculum.participated ? `${granularResult.curriculum.score} / ${granularResult.curriculum.maxScore || 15}` : '-'}
+                    </p>
+                  </div>
+                  {granularResult.curriculum.excellence > 0 && (
+                    <span className="inline-block mt-2 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                      +{granularResult.curriculum.excellence} تميز 🌟
+                    </span>
+                  )}
+                </div>
+
+                {/* 2. Hymns */}
+                <div className={`p-3.5 rounded-2xl border flex flex-col justify-between text-center ${
+                  granularResult.hymns.participated 
+                    ? 'bg-indigo-50/40 border-indigo-200' 
+                    : 'bg-slate-50 border-slate-200 opacity-70'
+                }`}>
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-800">الألحان والمحفوظات</p>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full inline-block ${
+                      granularResult.hymns.participated ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {granularResult.hymns.participated ? 'مشترك ✅' : 'غير مشترك'}
+                    </span>
+                    <p className="text-base font-black text-slate-900 mt-1">
+                      {granularResult.hymns.participated ? `${granularResult.hymns.score} / ${granularResult.hymns.maxScore || 15}` : '-'}
+                    </p>
+                  </div>
+                  {granularResult.hymns.excellence > 0 && (
+                    <span className="inline-block mt-2 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                      +{granularResult.hymns.excellence} تميز 🌟
+                    </span>
+                  )}
+                </div>
+
+                {/* 3. Coptic 1 */}
+                <div className={`p-3.5 rounded-2xl border flex flex-col justify-between text-center ${
+                  granularResult.coptic1.participated 
+                    ? 'bg-indigo-50/40 border-indigo-200' 
+                    : 'bg-slate-50 border-slate-200 opacity-70'
+                }`}>
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-800">اللغة القبطية (م1)</p>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full inline-block ${
+                      granularResult.coptic1.participated ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {granularResult.coptic1.participated ? 'مشترك ✅' : 'غير مشترك'}
+                    </span>
+                    <p className="text-base font-black text-slate-900 mt-1">
+                      {granularResult.coptic1.participated ? `${granularResult.coptic1.score} / ${granularResult.coptic1.maxScore || 15}` : '-'}
+                    </p>
+                  </div>
+                  {granularResult.coptic1.excellence > 0 && (
+                    <span className="inline-block mt-2 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                      +{granularResult.coptic1.excellence} تميز 🌟
+                    </span>
+                  )}
+                </div>
+
+                {/* 4. Coptic 2 */}
+                <div className={`p-3.5 rounded-2xl border flex flex-col justify-between text-center ${
+                  granularResult.coptic2.participated 
+                    ? 'bg-indigo-50/40 border-indigo-200' 
+                    : 'bg-slate-50 border-slate-200 opacity-70'
+                }`}>
+                  <div className="space-y-1">
+                    <p className="text-xs font-black text-slate-800">اللغة القبطية (م2)</p>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full inline-block ${
+                      granularResult.coptic2.participated ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {granularResult.coptic2.participated ? 'مشترك ✅' : 'غير مشترك'}
+                    </span>
+                    <p className="text-base font-black text-slate-900 mt-1">
+                      {granularResult.coptic2.participated ? `${granularResult.coptic2.score} / ${granularResult.coptic2.maxScore || 15}` : '-'}
+                    </p>
+                  </div>
+                  {granularResult.coptic2.excellence > 0 && (
+                    <span className="inline-block mt-2 text-[10px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                      +{granularResult.coptic2.excellence} تميز 🌟
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Excellence Bonus Medal Banner if earned */}
-          {Number(finalResult.excellence_points) > 0 && (
-            <div className="p-4 bg-gradient-to-r from-amber-500/20 via-amber-100 to-yellow-100 border-2 border-amber-400 rounded-3xl text-center space-y-1 max-w-sm mx-auto shadow-sm">
+          {((granularResult?.totalExcellencePoints ?? Number(finalResult.excellence_points)) > 0) && (
+            <div className="p-4 bg-gradient-to-r from-amber-500/20 via-amber-100 to-yellow-100 border-2 border-amber-400 rounded-3xl text-center space-y-1 max-w-md mx-auto shadow-sm">
               <div className="flex items-center justify-center gap-1.5 text-amber-900 font-black text-sm">
                 <Trophy size={18} className="text-amber-600 animate-pulse" />
                 <span>وسام التميز والتفوق لحسم المراكز الأولى</span>
               </div>
               <p className="text-xs font-bold text-amber-800">
-                أحسنت صنعاً! حصلت على <strong className="text-amber-950 font-black text-sm">+{finalResult.excellence_points}</strong> نقاط إضافية في سؤال التميز 🌟
+                أحسنت صنعاً! حصلت على <strong className="text-amber-950 font-black text-sm">+{granularResult?.totalExcellencePoints ?? finalResult.excellence_points}</strong> نقاط إضافية في سؤال التميز 🌟
               </p>
             </div>
           )}
 
-          {/* Grade Badge */}
+          {/* Dynamic Grade & Total Card */}
           {(() => {
-            const grade = getGradeInfo(Number(finalResult.percentage) || 0);
+            const pct = (granularResult?.percentage ?? Number(finalResult.percentage)) || 0;
+            const grade = getGradeInfo(pct);
+            const standardScore = granularResult?.totalStandardScore ?? finalResult.total_score;
+            const maxScore = granularResult?.maxScore ?? finalResult.max_score;
+            const grandTotal = granularResult?.grandTotal ?? finalResult.grand_total_score ?? standardScore;
+
             return (
-              <div className={`p-6 rounded-3xl border ${grade.color} max-w-sm mx-auto space-y-2`}>
-                <span className="text-xs font-black uppercase tracking-wider block opacity-80">التقييم العام</span>
-                <span className="text-2xl font-black block">{grade.title}</span>
-                <div className="flex items-center justify-center gap-6 pt-3 border-t border-current/20">
+              <div className={`p-6 rounded-3xl border ${grade.color} space-y-3`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black uppercase tracking-wider block opacity-80">التقييم العام المعتمد</span>
+                  <span className="text-xl md:text-2xl font-black">{grade.title}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-3 pt-3 border-t border-current/20 text-center">
                   <div>
-                    <span className="text-[10px] font-bold block opacity-70">الدرجة الأساسية</span>
-                    <span className="text-xl font-black">{finalResult.total_score} / {finalResult.max_score}</span>
+                    <span className="text-[10px] font-bold block opacity-75">الدرجة الأساسية</span>
+                    <span className="text-lg md:text-xl font-black font-mono">{standardScore} / {maxScore}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] font-bold block opacity-70">النسبة المئوية</span>
-                    <span className="text-xl font-black">{finalResult.percentage}%</span>
+                    <span className="text-[10px] font-bold block opacity-75">النسبة المئوية</span>
+                    <span className="text-lg md:text-xl font-black font-mono">{pct}%</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold block opacity-75">المجموع بالتميز</span>
+                    <span className="text-lg md:text-xl font-black font-mono">{grandTotal}</span>
                   </div>
                 </div>
               </div>
             );
           })()}
 
-          {/* Details Card */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 max-w-md mx-auto text-xs font-bold text-slate-600 space-y-1.5">
-            <div className="flex justify-between">
-              <span>كود الامتحان:</span>
-              <code className="font-mono text-indigo-700 font-black">{finalResult.exam_code}</code>
-            </div>
-            <div className="flex justify-between">
-              <span>نقاط التميز الإضافية:</span>
-              <span className="text-amber-700 font-black">
-                {finalResult.excellence_points ? `+${finalResult.excellence_points} نقطة` : 'لا توجد'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>وقت وتاريخ التسليم:</span>
-              <span className="text-slate-800">{finalResult.completed_at ? new Date(finalResult.completed_at).toLocaleString('ar-EG') : '-'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>المادة:</span>
-              <span className="text-slate-800">{finalResult.subject_name}</span>
-            </div>
-          </div>
-
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-4 border-t border-slate-100">
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-4 border-t border-slate-100 print:hidden">
             <button
               onClick={() => window.print()}
               className="px-5 py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-2xl text-xs md:text-sm font-black transition-all flex items-center gap-2 cursor-pointer"
             >
               <Printer size={16} />
-              <span>طباعة إشعار النتيجة</span>
+              <span>طباعة بيان الدرجات</span>
             </button>
             <button
               onClick={() => setStep('dashboard')}
-              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs md:text-sm font-black transition-all shadow-md shadow-indigo-600/20 cursor-pointer"
+              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-xs md:text-sm font-black transition-all shadow-md shadow-indigo-600/20 cursor-pointer flex items-center gap-1.5"
             >
-              الرجوع للوحة المسابقات
+              <RotateCcw size={16} />
+              <span>الرجوع للوحة المسابقات</span>
             </button>
             <button
               onClick={handleReturnToPlatform}
