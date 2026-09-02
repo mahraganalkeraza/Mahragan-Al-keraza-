@@ -332,7 +332,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
     }
 
     if (platformState.isBishopricExamDisabled) {
-      const closedMsg = 'منصة امتحانات الأسقفية مغلقة حالياً بقرار إداري مركزي. يرجى مراجعة الخادم المسؤول أو المحاولة لاحقاً.';
+      const closedMsg = 'منصة امتحانات الأسقفية مغلقة حاليًا.';
       setAuthError(closedMsg);
       showBubble({
         type: 'warning',
