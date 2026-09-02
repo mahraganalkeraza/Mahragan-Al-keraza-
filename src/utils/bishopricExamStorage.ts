@@ -654,31 +654,7 @@ export const fetchBishopricExamResults = async (
   try {
     let query = supabase
       .from('bishopric_exam_results')
-      .select(`
-        id,
-        exam_code,
-        student_code,
-        student_name,
-        church_name,
-        stage,
-        score,
-        total_score,
-        percentage,
-        max_score,
-        score_darasi,
-        score_mahfoozat,
-        score_coptic,
-        grand_total_score,
-        category,
-        excellence_points,
-        max_excellence_points,
-        excellence_unlocked,
-        status,
-        answers,
-        excellence_answers,
-        excellence_categories,
-        submitted_at
-      `)
+      .select('*')
       .order('submitted_at', { ascending: false });
 
     if (churchName && churchName.trim()) {
@@ -693,31 +669,7 @@ export const fetchBishopricExamResults = async (
       if (churchName) {
         const { data: allData, error: allErr } = await supabase
           .from('bishopric_exam_results')
-          .select(`
-            id,
-            exam_code,
-            student_code,
-            student_name,
-            church_name,
-            stage,
-            score,
-            total_score,
-            percentage,
-            max_score,
-            score_darasi,
-            score_mahfoozat,
-            score_coptic,
-            grand_total_score,
-            category,
-            excellence_points,
-            max_excellence_points,
-            excellence_unlocked,
-            status,
-            answers,
-            excellence_answers,
-            excellence_categories,
-            submitted_at
-          `)
+          .select('*')
           .order('submitted_at', { ascending: false });
         
         if (!allErr && allData) {
@@ -735,24 +687,58 @@ export const fetchBishopricExamResults = async (
 };
 
 /**
- * Fetch a specific student's result by exam_code
+ * Fetch a specific student's result by exam_code / coupon_code (case- & space-insensitive)
  */
 export const fetchBishopricStudentResult = async (
   exam_code: string
 ): Promise<BishopricExamResult | null> => {
   if (!exam_code || !exam_code.trim()) return null;
+  const cleanCode = exam_code.trim();
+  const lowerCode = cleanCode.toLowerCase();
+  const strippedCode = lowerCode.replace(/[\s\-_#]/g, '');
+
   try {
+    // 1. First attempt flexible ILIKE lookup across common coupon/code column names
     const { data, error } = await supabase
       .from('bishopric_exam_results')
       .select('*')
-      .eq('exam_code', exam_code.trim())
+      .or(`exam_code.ilike.${cleanCode},student_code.ilike.${cleanCode},coupon_code.ilike.${cleanCode},code.ilike.${cleanCode}`)
       .maybeSingle();
 
-    if (error) {
-      console.warn('Error querying student result:', error.message);
-      return null;
+    if (!error && data) {
+      return data;
     }
-    return data;
+
+    // 2. Comprehensive fallback: fetch all results and match candidate codes in memory
+    const { data: allData, error: allErr } = await supabase
+      .from('bishopric_exam_results')
+      .select('*');
+
+    if (!allErr && allData && allData.length > 0) {
+      const matched = (allData as any[]).find(r => {
+        const candidates = [
+          r.exam_code,
+          r.coupon_code,
+          r.code,
+          r.student_code,
+          r.ticket_code,
+          r.access_code,
+          r.user_code
+        ].filter(Boolean).map(c => String(c).trim().toLowerCase());
+
+        return candidates.some(c => {
+          const strippedC = c.replace(/[\s\-_#]/g, '');
+          return c === lowerCode ||
+                 c.includes(lowerCode) ||
+                 lowerCode.includes(c) ||
+                 (strippedCode.length > 0 && (strippedC === strippedCode || strippedC.includes(strippedCode) || strippedCode.includes(strippedC)));
+        });
+      });
+
+      if (matched) return matched;
+    }
+
+    return null;
   } catch (err) {
     console.error('Fetch student result error:', err);
     return null;
@@ -810,31 +796,80 @@ export const parseGranularScores = (
     }
   };
 
-  const studentAnswers = result.answers || {};
-  const normResultStage = normalizeArabic(result.stage || '');
+  // Safe Answers Extraction: Do NOT run JSON.parse on answers if it is already an object
+  let studentAnswers: Record<string, any> = {};
+  try {
+    if (typeof (result as any)?.answers === 'string') {
+      studentAnswers = JSON.parse((result as any).answers);
+    } else if ((result as any)?.answers && typeof (result as any).answers === 'object') {
+      studentAnswers = (result as any).answers;
+    }
+  } catch (err) {
+    console.warn("Error parsing student answers JSON:", err);
+    studentAnswers = {};
+  }
+
+  // Safe Excellence Answers Extraction
+  let excellenceAnswers: Record<string, any> = {};
+  try {
+    if (typeof (result as any)?.excellence_answers === 'string') {
+      excellenceAnswers = JSON.parse((result as any).excellence_answers);
+    } else if ((result as any)?.excellence_answers && typeof (result as any).excellence_answers === 'object') {
+      excellenceAnswers = (result as any).excellence_answers;
+    }
+  } catch (err) {
+    excellenceAnswers = {};
+  }
+
+  // Safe Category Scores Extraction
+  let categoryScores: Record<string, any> = {};
+  try {
+    if (typeof (result as any)?.category_scores === 'string') {
+      categoryScores = JSON.parse((result as any).category_scores);
+    } else if ((result as any)?.category_scores && typeof (result as any).category_scores === 'object') {
+      categoryScores = (result as any).category_scores;
+    }
+  } catch (err) {
+    categoryScores = {};
+  }
+
+  const normResultStage = normalizeArabic(result?.stage || (result as any)?.grade_name || (result as any)?.grade || '');
 
   // Filter stage questions if available, otherwise match against whole questions pool
-  const stageQuestions = questions.length > 0
-    ? questions.filter(q => !normResultStage || normalizeArabic(q.stage || '') === normResultStage)
+  const stageQuestions = Array.isArray(questions) && questions.length > 0
+    ? questions.filter(q => !normResultStage || normalizeArabic(q?.stage || '') === normResultStage)
     : [];
-  const activeQuestions = stageQuestions.length > 0 ? stageQuestions : questions;
+  const activeQuestions = stageQuestions.length > 0 ? stageQuestions : (Array.isArray(questions) ? questions : []);
 
   // 1. Process standard & excellence question answers by matching questions bank
-  if (activeQuestions.length > 0 && typeof studentAnswers === 'object' && Object.keys(studentAnswers).length > 0) {
-    activeQuestions.forEach(q => {
+  if (activeQuestions.length > 0 && studentAnswers && typeof studentAnswers === 'object' && Object.keys(studentAnswers).length > 0) {
+    activeQuestions.forEach((q, idx) => {
+      if (!q) return;
       const catType = normalizeCategoryType(q.subject_name);
       const target = getTarget(catType);
       if (!target) return;
 
       const qKey = q.id || `q_${q.question_text}`;
-      const studentAns = studentAnswers[q.id] !== undefined
-        ? studentAnswers[q.id]
-        : (studentAnswers[qKey] !== undefined
-            ? studentAnswers[qKey]
-            : (studentAnswers[`q_${q.question_text}`] !== undefined ? studentAnswers[`q_${q.question_text}`] : undefined));
+      let studentAns = studentAnswers[q.id];
+      if (studentAns === undefined && q.id) {
+        studentAns = studentAnswers[String(q.id).trim()];
+      }
+      if (studentAns === undefined && qKey) {
+        studentAns = studentAnswers[qKey];
+      }
+      if (studentAns === undefined && q.question_text) {
+        studentAns = studentAnswers[`q_${q.question_text}`] ?? studentAnswers[q.question_text];
+      }
+      if (studentAns === undefined && studentAnswers[idx] !== undefined) {
+        studentAns = studentAnswers[idx];
+      }
+      if (studentAns === undefined && studentAnswers[String(idx)] !== undefined) {
+        studentAns = studentAnswers[String(idx)];
+      }
 
       const qScore = Number(q.score) || 1;
-      const isCorrect = studentAns !== undefined && studentAns !== null && String(studentAns).trim() === String(q.correct_answer || '').trim();
+      const isCorrect = studentAns !== undefined && studentAns !== null && 
+        String(studentAns).trim().toLowerCase() === String(q.correct_answer || '').trim().toLowerCase();
 
       if (q.is_excellence) {
         target.maxExcellence += qScore;
@@ -851,8 +886,8 @@ export const parseGranularScores = (
   }
 
   // 2. Process excellence_answers if stored explicitly in result
-  if (result.excellence_answers && typeof result.excellence_answers === 'object') {
-    Object.entries(result.excellence_answers).forEach(([catName, val]: [string, any]) => {
+  if (excellenceAnswers && typeof excellenceAnswers === 'object') {
+    Object.entries(excellenceAnswers).forEach(([catName, val]: [string, any]) => {
       const catType = normalizeCategoryType(catName);
       const target = getTarget(catType);
       if (target && val) {
@@ -870,8 +905,8 @@ export const parseGranularScores = (
   }
 
   // 3. Process category_scores if pre-stored as an object in the result record
-  if (result.category_scores && typeof result.category_scores === 'object') {
-    Object.entries(result.category_scores).forEach(([catName, val]: [string, any]) => {
+  if (categoryScores && typeof categoryScores === 'object') {
+    Object.entries(categoryScores).forEach(([catName, val]: [string, any]) => {
       const catType = normalizeCategoryType(catName);
       const target = getTarget(catType);
       if (target) {
@@ -886,17 +921,21 @@ export const parseGranularScores = (
   }
 
   // 4. Handle fallback if no questions were matched or legacy single score
-  if (result.score_darasi !== undefined && result.score_darasi !== null) {
-    curriculum.score = Number(result.score_darasi);
+  if ((result as any)?.score_darasi !== undefined && (result as any)?.score_darasi !== null) {
+    curriculum.score = Number((result as any).score_darasi);
     if (curriculum.maxScore === 0) curriculum.maxScore = 15;
   }
-  if (result.score_mahfoozat !== undefined && result.score_mahfoozat !== null) {
-    hymns.score = Number(result.score_mahfoozat);
+  if ((result as any)?.score_mahfoozat !== undefined && (result as any)?.score_mahfoozat !== null) {
+    hymns.score = Number((result as any).score_mahfoozat);
     if (hymns.maxScore === 0) hymns.maxScore = 15;
   }
-  if (result.score_coptic !== undefined && result.score_coptic !== null) {
-    coptic1.score = Number(result.score_coptic);
+  if ((result as any)?.score_coptic !== undefined && (result as any)?.score_coptic !== null) {
+    coptic1.score = Number((result as any).score_coptic);
     if (coptic1.maxScore === 0) coptic1.maxScore = 15;
+  }
+  if ((result as any)?.score_coptic2 !== undefined && (result as any)?.score_coptic2 !== null) {
+    coptic2.score = Number((result as any).score_coptic2);
+    if (coptic2.maxScore === 0) coptic2.maxScore = 15;
   }
 
   const totalStandardCalculated = curriculum.score + hymns.score + coptic1.score + coptic2.score;
@@ -906,33 +945,52 @@ export const parseGranularScores = (
   let totalExcellencePoints = totalExcellenceCalculated;
 
   // Fallback for standard score if not broken down by questions
-  const rawStandardScore = Number(result.total_score !== undefined ? result.total_score : (result.score || 0));
+  const rawStandardScore = Number(
+    (result as any)?.total_score !== undefined 
+      ? (result as any).total_score 
+      : ((result as any)?.score !== undefined
+          ? (result as any).score
+          : ((result as any)?.final_score !== undefined
+              ? (result as any).final_score
+              : ((result as any)?.grade_score || 0)))
+  );
+
   if (totalStandardScore === 0 && rawStandardScore > 0) {
-    const catType = normalizeCategoryType(result.subject_name || '');
+    const catType = normalizeCategoryType((result as any)?.subject_name || (result as any)?.category || '');
     const target = getTarget(catType);
     if (target) {
       target.score = rawStandardScore;
-      target.maxScore = Number(result.max_score || rawStandardScore);
+      target.maxScore = Number((result as any)?.max_score || rawStandardScore);
     } else {
       curriculum.score = rawStandardScore;
-      curriculum.maxScore = Number(result.max_score || rawStandardScore);
+      curriculum.maxScore = Number((result as any)?.max_score || rawStandardScore);
     }
     totalStandardScore = rawStandardScore;
   }
 
   // Fallback for excellence points if not broken down
-  const rawExcellence = Number(result.excellence_points || 0);
+  const rawExcellence = Number(
+    (result as any)?.excellence_points !== undefined 
+      ? (result as any).excellence_points 
+      : ((result as any)?.excellence_score !== undefined 
+          ? (result as any).excellence_score 
+          : ((result as any)?.tamayoz_score || 0))
+  );
+
   if (totalExcellencePoints === 0 && rawExcellence > 0) {
-    if (Array.isArray(result.excellence_categories) && result.excellence_categories.length > 0) {
-      const catType = normalizeCategoryType(result.excellence_categories[0]);
+    if (Array.isArray((result as any)?.excellence_categories) && (result as any).excellence_categories.length > 0) {
+      const catType = normalizeCategoryType((result as any).excellence_categories[0]);
       const target = getTarget(catType);
       if (target) {
         target.excellence = rawExcellence;
+        if (target.maxExcellence === 0) target.maxExcellence = rawExcellence;
       } else {
         curriculum.excellence = rawExcellence;
+        if (curriculum.maxExcellence === 0) curriculum.maxExcellence = rawExcellence;
       }
     } else {
       curriculum.excellence = rawExcellence;
+      if (curriculum.maxExcellence === 0) curriculum.maxExcellence = rawExcellence;
     }
     totalExcellencePoints = rawExcellence;
   }
@@ -942,28 +1000,53 @@ export const parseGranularScores = (
   coptic1.total = coptic1.score + coptic1.excellence;
   coptic2.total = coptic2.score + coptic2.excellence;
 
-  const grandTotal = result.grand_total_score !== undefined && result.grand_total_score !== null
-    ? Number(result.grand_total_score)
+  const grandTotal = (result as any)?.grand_total_score !== undefined && (result as any)?.grand_total_score !== null
+    ? Number((result as any).grand_total_score)
     : (totalStandardScore + totalExcellencePoints);
-  const maxScore = Number(result.max_score || (curriculum.maxScore + hymns.maxScore + coptic1.maxScore + coptic2.maxScore) || totalStandardScore);
-  const maxExcellencePoints = Number(result.max_excellence_points || (curriculum.maxExcellence + hymns.maxExcellence + coptic1.maxExcellence + coptic2.maxExcellence) || totalExcellencePoints);
 
-  const percentage = Number(
-    result.percentage !== undefined
-      ? result.percentage
-      : (maxScore > 0 ? ((totalStandardScore / maxScore) * 100).toFixed(1) : 0)
-  );
+  const calculatedMaxStandard = (curriculum.maxScore + hymns.maxScore + coptic1.maxScore + coptic2.maxScore);
+  const maxScore = Number((result as any)?.max_score || (calculatedMaxStandard > 0 ? calculatedMaxStandard : (totalStandardScore > 0 ? totalStandardScore : 50)));
+
+  const calculatedMaxExcellence = (curriculum.maxExcellence + hymns.maxExcellence + coptic1.maxExcellence + coptic2.maxExcellence);
+  const maxExcellencePoints = Number((result as any)?.max_excellence_points || (calculatedMaxExcellence > 0 ? calculatedMaxExcellence : totalExcellencePoints));
+
+  let percentage = 0;
+  if ((result as any)?.percentage !== undefined && (result as any)?.percentage !== null) {
+    const rawPct = String((result as any).percentage).replace('%', '').trim();
+    percentage = Number(rawPct) || 0;
+  } else if (maxScore > 0) {
+    percentage = Number(((totalStandardScore / maxScore) * 100).toFixed(1));
+  } else if (grandTotal > 0) {
+    percentage = 100;
+  }
+
+  const extractedCode = (
+    (result as any)?.exam_code || 
+    (result as any)?.coupon_code || 
+    (result as any)?.coupon || 
+    (result as any)?.code || 
+    (result as any)?.student_code || 
+    (result as any)?.ticket_code || 
+    (result as any)?.access_code || 
+    (result as any)?.user_code || 
+    ''
+  ).toString().trim();
 
   return {
-    id: result.id,
-    exam_code: result.exam_code || result.student_code || '',
-    student_name: result.student_name || '',
-    church_name: result.church_name || (result as any).church || '',
-    stage: result.stage || (result as any).grade || '',
-    subject_name: result.subject_name || 'امتحان الأسقفية',
-    completed_at: result.completed_at || result.submitted_at || (result as any).created_at,
-    submitted_at: result.submitted_at || result.completed_at,
-    raw: result,
+    id: (result as any)?.id || Math.random().toString(),
+    exam_code: extractedCode,
+    student_name: (result as any)?.student_name || (result as any)?.full_name || (result as any)?.name || 'بدون اسم',
+    church_name: (result as any)?.church_name || (result as any)?.church || 'غير محدد',
+    stage: (result as any)?.stage || (result as any)?.grade_name || (result as any)?.grade || 'غير محدد',
+    subject_name: (result as any)?.subject_name || 'امتحان الأسقفية',
+    completed_at: (result as any)?.completed_at || (result as any)?.submitted_at || (result as any)?.created_at,
+    submitted_at: (result as any)?.submitted_at || (result as any)?.completed_at,
+    raw: {
+      ...result,
+      exam_code: extractedCode,
+      answers: studentAnswers,
+      excellence_answers: excellenceAnswers
+    },
     curriculum,
     hymns,
     coptic1,

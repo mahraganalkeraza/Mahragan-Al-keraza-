@@ -10804,8 +10804,8 @@ function App() {
       <React.Suspense fallback={
         <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-8 text-center" dir="rtl">
           <div className="w-16 h-16 border-4 border-[#D4AF37] border-t-transparent rounded-full animate-spin mb-6"></div>
-          <h3 className="text-xl font-black text-slate-800 mb-2">جاري تحميل مساحة العمل...</h3>
-          <p className="text-slate-500 font-bold">يرجى الانتظار لحين تحميل عناصر النظام بأمان.</p>
+          <h3 className="text-xl font-black text-slate-800 mb-2">جاري تحميل الصفحة...</h3>
+          <p className="text-slate-500 font-bold">برجاء الانتظار.</p>
         </div>
       }>
         <AppComponent />

@@ -99,6 +99,12 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   const [finalResult, setFinalResult] = useState<BishopricExamResult | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
+  const [showMinimalCoupon, setShowMinimalCoupon] = useState(false);
+  const [currentCouponData, setCurrentCouponData] = useState<{
+    categoryTitle: string;
+    questions: { studentScore: number; maxScore: number }[];
+  } | null>(null);
+
   // Separation of Standard vs Excellence questions
   const { standardQuestions, excellenceQuestions } = useMemo(() => {
     const std: BishopricExamQuestion[] = [];
@@ -705,6 +711,24 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           localStorage.removeItem(`bishopric_exam_progress_${student.exam_code.trim()}_${activeCategory}`);
         } catch (e) {}
         
+        const categoryTitle = availableCategoriesForStage.find(c => c.id === activeCategory)?.title || activeCategory;
+        const couponQuestions = standardQuestions.map((q) => {
+          const qScore = Number(q.score) || 1;
+          const qKey = q.id || `q_${q.question_text}`;
+          const studentAns = selectedAnswers[qKey];
+          const isCorrect = studentAns !== undefined && studentAns !== null && String(studentAns).trim() === String(q.correct_answer || '').trim();
+          return {
+            studentScore: isCorrect ? qScore : 0,
+            maxScore: qScore
+          };
+        });
+
+        setCurrentCouponData({
+          categoryTitle,
+          questions: couponQuestions
+        });
+        setShowMinimalCoupon(true);
+
         setIsSubmitting(false);
         setCompletedCategories(updatedCompleted);
         setActiveCategory(null);
@@ -783,8 +807,45 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
   return (
     <div className="max-w-3xl mx-auto font-arabic text-right animate-fade-in" dir="rtl">
-      {/* Header Close button if provided */}
-      {onClose && (
+      {showMinimalCoupon && currentCouponData ? (
+        <div className="max-w-md mx-auto bg-white p-6 rounded-2xl shadow-xl border-2 border-blue-600 my-8 dir-rtl">
+          <h2 className="text-xl font-black text-center text-blue-900 mb-4 border-b pb-2">
+            📋 كوبون النتيجة - {currentCouponData.categoryTitle}
+          </h2>
+
+          {/* Question Breakdown Grid */}
+          <div className="space-y-2 mb-6 max-h-80 overflow-y-auto pr-1">
+            {currentCouponData.questions.map((q, idx) => (
+              <div 
+                key={idx} 
+                className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-200"
+              >
+                <span className="font-bold text-gray-800">سؤال {idx + 1}</span>
+                <span className="font-black text-lg text-blue-700">
+                  {q.studentScore} / {q.maxScore}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Action Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowMinimalCoupon(false);
+              setCurrentCouponData(null);
+              setActiveCategory(null); // Return to category selection cards
+              setStep('dashboard');
+            }}
+            className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer"
+          >
+            متابعة المسابقات المتبقية ←
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Header Close button if provided */}
+          {onClose && (
         <div className="flex items-center justify-between mb-4">
           <button
             onClick={onClose}
@@ -1536,6 +1597,8 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
             </button>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
