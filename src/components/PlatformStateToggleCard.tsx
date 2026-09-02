@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Power, 
-  ShieldCheck, 
-  ShieldAlert, 
   RefreshCw, 
   Radio, 
   CheckCircle2, 
@@ -14,7 +12,7 @@ import {
 } from 'lucide-react';
 import { 
   fetchPlatformState, 
-  updatePlatformState, 
+  updateBishopricExamDisabled,
   subscribeToPlatformState,
   PlatformState 
 } from '../utils/platformSettings';
@@ -28,19 +26,15 @@ interface PlatformStateToggleCardProps {
 }
 
 export const PlatformStateToggleCard: React.FC<PlatformStateToggleCardProps> = ({
-  title = 'حالة منصة امتحانات الأسقفية والمنظومة المركزية',
-  description = 'التحكم الفوري في فتح أو إغلاق المنصة وبوابة الامتحانات للطلاب وجميع الكنائس (مربوط بالصف id=1 في system_settings)',
+  title = 'حالة منصة امتحانات الأسقفية',
+  description = 'التحكم الفوري في فتح أو إغلاق منصة وبوابة امتحانات الأسقفية للطلاب وجميع الكنائس (مربوط بالعمود is_bishopric_exam_disabled في الصف id=1)',
   className = '',
   compact = false,
   onStateChange
 }) => {
   const [platformState, setPlatformState] = useState<PlatformState>({
-    isOpen: true,
-    content: 1,
-    isExamLocked: false,
-    isRegistrationLocked: false,
-    isSiteDisabled: false,
-    isBookOrdersLocked: false
+    isBishopricExamDisabled: false,
+    isOpen: true
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -62,12 +56,14 @@ export const PlatformStateToggleCard: React.FC<PlatformStateToggleCardProps> = (
   useEffect(() => {
     loadState();
 
-    // Supabase Realtime active subscription
+    // Supabase Realtime active subscription on system_settings
     const unsubscribe = subscribeToPlatformState((newState) => {
       setPlatformState(newState);
       if (onStateChange) onStateChange(newState.isOpen);
       setFeedback({
-        text: newState.isOpen ? 'تم تحديث الحالة فورياً: المنصة مفتوحة الآن ✅' : 'تم تحديث الحالة فورياً: المنصة مغلقة الآن 🔒',
+        text: newState.isOpen 
+          ? 'تم تحديث الحالة لحظياً: منصة امتحانات الأسقفية مفتوحة الآن ✅' 
+          : 'تم تحديث الحالة لحظياً: منصة امتحانات الأسقفية مغلقة الآن 🔒',
         type: 'info'
       });
       setTimeout(() => setFeedback(null), 4000);
@@ -78,39 +74,37 @@ export const PlatformStateToggleCard: React.FC<PlatformStateToggleCardProps> = (
     };
   }, []);
 
-  const handleToggle = async (targetState: boolean) => {
+  const handleToggle = async (targetOpen: boolean) => {
     if (isUpdating) return;
 
-    const previousState = platformState.isOpen;
+    const previousDisabled = platformState.isBishopricExamDisabled;
+    const targetDisabled = !targetOpen;
+
     // Optimistic UI update
     setPlatformState(prev => ({
       ...prev,
-      isOpen: targetState,
-      content: targetState ? 1 : 0,
-      isSiteDisabled: !targetState,
-      isExamLocked: !targetState
+      isBishopricExamDisabled: targetDisabled,
+      isOpen: targetOpen
     }));
     setIsUpdating(true);
     setFeedback(null);
 
-    const res = await updatePlatformState(targetState);
+    const res = await updateBishopricExamDisabled(targetDisabled);
 
     if (res.success) {
       setFeedback({
-        text: targetState 
-          ? 'تم فتح وتفعيل المنصة بنجاح (content = 1) ✅' 
-          : 'تم إغلاق وتعطيل المنصة بنجاح (content = 0) 🔒',
+        text: targetOpen 
+          ? 'تم فتح وتفعيل منصة امتحانات الأسقفية بنجاح (is_bishopric_exam_disabled = false) ✅' 
+          : 'تم إغلاق وتعطيل منصة امتحانات الأسقفية بنجاح (is_bishopric_exam_disabled = true) 🔒',
         type: 'success'
       });
-      if (onStateChange) onStateChange(targetState);
+      if (onStateChange) onStateChange(targetOpen);
     } else {
       // Revert optimistic change
       setPlatformState(prev => ({
         ...prev,
-        isOpen: previousState,
-        content: previousState ? 1 : 0,
-        isSiteDisabled: !previousState,
-        isExamLocked: !previousState
+        isBishopricExamDisabled: previousDisabled,
+        isOpen: !previousDisabled
       }));
       setFeedback({
         text: `فشل في حفظ التعديل: ${res.error || 'خطأ غير معروف'}`,
@@ -144,16 +138,16 @@ export const PlatformStateToggleCard: React.FC<PlatformStateToggleCardProps> = (
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-black text-slate-800">حالة المنصة:</span>
+                <span className="text-xs font-black text-slate-800">حالة امتحانات الأسقفية:</span>
                 <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-black ${
                   isOpen ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                 }`}>
                   <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`} />
-                  {isOpen ? 'مفتوحة ومفعلة (content = 1)' : 'مغلقة ومعطلة (content = 0)'}
+                  {isOpen ? 'مفتوحة (is_bishopric_exam_disabled = false)' : 'مغلقة (is_bishopric_exam_disabled = true)'}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 font-bold mt-0.5">
-                {isOpen ? 'متاحة للامتحان والدخول لجميع الطلاب' : 'محظورة ومغلقة بقرار الإدارة'}
+                {isOpen ? 'متاحة لدخول وامتحان جميع الطلاب' : 'محظورة ومغلقة بقرار إدارة الأسقفية'}
               </p>
             </div>
           </div>
@@ -174,7 +168,7 @@ export const PlatformStateToggleCard: React.FC<PlatformStateToggleCardProps> = (
               ) : (
                 <Power size={14} />
               )}
-              <span>{isOpen ? 'إغلاق المنصة 🔒' : 'فتح وتفعيل المنصة ✅'}</span>
+              <span>{isOpen ? 'إغلاق منصة الأسقفية 🔒' : 'فتح منصة الأسقفية ✅'}</span>
             </button>
           </div>
         </div>
@@ -216,7 +210,7 @@ export const PlatformStateToggleCard: React.FC<PlatformStateToggleCardProps> = (
                   : 'bg-rose-100 text-rose-800 border border-rose-200'
               }`}>
                 <span className={`w-2.5 h-2.5 rounded-full ${isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                {isOpen ? 'المنصة مفتوحة (content = 1)' : 'المنصة مغلقة (content = 0)'}
+                {isOpen ? 'منصة الأسقفية مفتوحة (false)' : 'منصة الأسقفية مغلقة (true)'}
               </span>
 
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
@@ -241,7 +235,7 @@ export const PlatformStateToggleCard: React.FC<PlatformStateToggleCardProps> = (
         {/* Master Toggle Action Switch */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto shrink-0">
           <button
-            id="btn-toggle-platform-state-master"
+            id="btn-toggle-bishopric-exam-master"
             type="button"
             disabled={isUpdating || isLoading}
             onClick={() => handleToggle(!isOpen)}
@@ -256,7 +250,7 @@ export const PlatformStateToggleCard: React.FC<PlatformStateToggleCardProps> = (
             ) : (
               <Power size={18} />
             )}
-            <span>{isOpen ? 'إغلاق المنصة المركزية (تعطيل) 🔒' : 'فتح وتفعيل المنصة الآن (تمكين) ✅'}</span>
+            <span>{isOpen ? 'إغلاق منصة امتحانات الأسقفية 🔒' : 'فتح وتفعيل منصة امتحانات الأسقفية ✅'}</span>
           </button>
 
           <button
@@ -297,14 +291,14 @@ export const PlatformStateToggleCard: React.FC<PlatformStateToggleCardProps> = (
           </span>
           <span className="text-slate-300">|</span>
           <span>
-            القيمة الحالية بالجدول (content): <code className="px-1.5 py-0.5 bg-slate-100 rounded text-indigo-700 font-mono font-bold">{platformState.content}</code>
+            حقل الجدول: <code className="px-1.5 py-0.5 bg-slate-100 rounded text-indigo-700 font-mono font-bold">is_bishopric_exam_disabled = {String(platformState.isBishopricExamDisabled)}</code>
           </span>
         </div>
 
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-500' : 'bg-rose-500'}`} />
           <span className={isOpen ? 'text-emerald-700 font-black' : 'text-rose-700 font-black'}>
-            {isOpen ? 'الامتحانات واستمارات التسجيل متاحة للجميع' : 'المنصة معطلة وتظهر شاشة الصيانة'}
+            {isOpen ? 'بوابة امتحانات الأسقفية متاحة لدخول الطلاب' : 'بوابة امتحانات الأسقفية مغلقة ومحظورة'}
           </span>
         </div>
       </div>

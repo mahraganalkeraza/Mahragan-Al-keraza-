@@ -87,13 +87,8 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
   // Platform master state from system_settings row id = 1
   const [platformState, setPlatformState] = useState<PlatformState>({
-    isOpen: true,
-    content: 1,
-    isSiteDisabled: false,
-    isExamLocked: false,
-    isRegistrationLocked: false,
-    isBookOrdersLocked: false,
-    updatedAt: new Date().toISOString()
+    isBishopricExamDisabled: false,
+    isOpen: true
   });
 
   useEffect(() => {
@@ -335,6 +330,18 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
       });
       return;
     }
+
+    if (platformState.isBishopricExamDisabled) {
+      const closedMsg = 'منصة امتحانات الأسقفية مغلقة حالياً بقرار إداري مركزي. يرجى مراجعة الخادم المسؤول أو المحاولة لاحقاً.';
+      setAuthError(closedMsg);
+      showBubble({
+        type: 'warning',
+        title: 'المنصة مغلقة 🔒',
+        message: closedMsg
+      });
+      return;
+    }
+
     if (isVerifying) return; // حماية من الضغط المتكرر ومنع الـ Loop
 
     setIsVerifying(true);

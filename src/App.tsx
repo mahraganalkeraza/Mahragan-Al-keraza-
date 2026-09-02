@@ -98,7 +98,7 @@ const QualificationGapAnalysisChart = React.lazy(() => import('./components/Qual
 const PlatformStateToggleCard = React.lazy(() => import('./components/PlatformStateToggleCard').then(m => ({ default: m.PlatformStateToggleCard })));
 import { getDailyExamToken, validateHourlyExamToken } from './utils/dailyToken';
 import { setupForceRefreshListener } from './utils/forceRefreshManager';
-import { isPlatformOpenFromContent, subscribeToPlatformState } from './utils/platformSettings';
+import { subscribeToPlatformState } from './utils/platformSettings';
 import { supabase } from './lib/supabaseClient';
 import { getCustomActivities } from './utils/activitiesService';
 import { getDeviceFingerprint } from './lib/deviceTracking';
@@ -1160,36 +1160,12 @@ function AppComponent() {
       try {
         const { data: globalRow } = await supabase.from('system_settings').select('*').eq('id', 1).maybeSingle();
         if (globalRow) {
-          const rawContent = globalRow.content;
-          const isOpen = isPlatformOpenFromContent(rawContent, globalRow.is_site_disabled);
-          const contentNum = isOpen ? 1 : 0;
-
           setGlobalSettings({
             is_exam_locked: !!globalRow.is_exam_locked,
             is_registration_locked: !!globalRow.is_registration_locked,
             is_book_orders_locked: !!globalRow.is_book_orders_locked,
-            is_site_disabled: !isOpen || !!globalRow.is_site_disabled,
-            is_platform_open: isOpen,
-            content: contentNum
-          });
-        } else {
-          const defaultGlobal = {
-            id: 1,
-            content: 1,
-            is_exam_locked: false,
-            is_registration_locked: false,
-            is_book_orders_locked: false,
-            is_site_disabled: false,
-            updated_at: new Date().toISOString()
-          };
-          await supabase.from('system_settings').upsert(defaultGlobal);
-          setGlobalSettings({
-            is_exam_locked: false,
-            is_registration_locked: false,
-            is_book_orders_locked: false,
-            is_site_disabled: false,
-            is_platform_open: true,
-            content: 1
+            is_site_disabled: !!globalRow.is_site_disabled,
+            is_bishopric_exam_disabled: !!globalRow.is_bishopric_exam_disabled
           });
         }
       } catch (e) {
@@ -1756,15 +1732,13 @@ function AppComponent() {
     is_registration_locked: boolean;
     is_book_orders_locked: boolean;
     is_site_disabled: boolean;
-    is_platform_open: boolean;
-    content: number | string;
+    is_bishopric_exam_disabled: boolean;
   }>({
     is_exam_locked: false,
     is_registration_locked: false,
     is_book_orders_locked: false,
     is_site_disabled: false,
-    is_platform_open: true,
-    content: 1
+    is_bishopric_exam_disabled: false
   });
 
   // Active Realtime subscription on system_settings (row id = 1)
@@ -1772,12 +1746,7 @@ function AppComponent() {
     const unsubscribe = subscribeToPlatformState((state) => {
       setGlobalSettings(prev => ({
         ...prev,
-        is_platform_open: state.isOpen,
-        content: state.content,
-        is_site_disabled: state.isSiteDisabled,
-        is_exam_locked: state.isExamLocked,
-        is_registration_locked: state.isRegistrationLocked,
-        is_book_orders_locked: state.isBookOrdersLocked
+        is_bishopric_exam_disabled: state.isBishopricExamDisabled
       }));
     });
 
@@ -3355,39 +3324,19 @@ function AppComponent() {
 
   const handleGlobalToggle = async (field: string, newValue: boolean) => {
     // Optimistic UI state update
-    setGlobalSettings(prev => {
-      const updated = { ...prev, [field]: newValue };
-      if (field === 'is_site_disabled') {
-        updated.is_platform_open = !newValue;
-        updated.content = newValue ? 0 : 1;
-      } else if (field === 'is_platform_open') {
-        updated.is_platform_open = newValue;
-        updated.content = newValue ? 1 : 0;
-        updated.is_site_disabled = !newValue;
-      }
-      return updated;
-    });
+    setGlobalSettings(prev => ({ ...prev, [field]: newValue }));
     
     const nowIso = new Date().toISOString();
     const updatePayload: Record<string, any> = { 
       [field]: newValue,
       updated_at: nowIso
     };
-
-    if (field === 'is_site_disabled') {
-      updatePayload.content = newValue ? 0 : 1;
-      updatePayload.is_exam_locked = newValue;
-    } else if (field === 'is_platform_open') {
-      updatePayload.content = newValue ? 1 : 0;
-      updatePayload.is_site_disabled = !newValue;
-      updatePayload.is_exam_locked = !newValue;
-    }
     
-    // As required by the spec: trigger an .update() on the master row with id 1
+    // Updates the single master configuration row (id = 1)
     const { error } = await supabase
       .from('system_settings')
       .update(updatePayload)
-      .eq('id', 1); // Updates the single master configuration row (id = 1)
+      .eq('id', 1);
       
     if (error) {
       // rollback state
@@ -8670,20 +8619,20 @@ function AppComponent() {
                     <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-between">
                       <div className="mb-4">
                         <div className="flex items-center justify-between">
-                          <h5 className="text-lg font-black text-slate-800 flex items-center gap-2">🛡️ قفل / فتح الموقع والمنصة بالكامل</h5>
+                          <h5 className="text-lg font-black text-slate-800 flex items-center gap-2">🛡️ قفل / فتح الموقع بالكامل</h5>
                           <span className={`px-2.5 py-0.5 rounded-full text-xs font-black ${
-                            Number(globalSettings.content) === 1 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                            !globalSettings.is_site_disabled ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                           }`}>
-                            content = {globalSettings.content ?? (globalSettings.is_site_disabled ? 0 : 1)}
+                            {!globalSettings.is_site_disabled ? 'مفتوح' : 'مغلق'}
                           </span>
                         </div>
-                        <p className="text-sm text-slate-500 font-bold mt-1">يتحكم في تمكين أو تعطيل الدخول لكافة المشتركين والطلاب (تحديث مباشر للصف id=1)</p>
+                        <p className="text-sm text-slate-500 font-bold mt-1">يتحكم في تمكين أو تعطيل الدخول لكافة مستخدمي الموقع (الصف id=1)</p>
                       </div>
                       <button 
                         onClick={() => handleGlobalToggle('is_site_disabled', !globalSettings.is_site_disabled)}
                         className={`px-8 py-3.5 rounded-xl font-black text-white transition-all shadow-lg w-full flex items-center justify-center gap-2 cursor-pointer ${globalSettings.is_site_disabled ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-500 hover:bg-emerald-600'}`}
                       >
-                        {globalSettings.is_site_disabled ? 'الموقع مغلق بالكامل (content = 0) 🔒' : 'الموقع مفتوح ومستقر للجميع (content = 1) ✅'}
+                        {globalSettings.is_site_disabled ? 'الموقع مغلق بالكامل 🔒' : 'الموقع مفتوح ومستقر للجميع ✅'}
                       </button>
                     </div>
 
