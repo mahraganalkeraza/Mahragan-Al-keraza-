@@ -893,7 +893,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
             <span>العودة للقائمة الرئيسية</span>
           </button>
           <div className="text-xs font-black text-indigo-700 flex items-center gap-1">
-            <Sparkles size={14} /> بوابة امتحانات الأسقفية المركزية 2026
+            <Sparkles size={14} /> منصة امتحانات الأسقفية
           </div>
         </div>
       )}
@@ -907,10 +907,10 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
           <div>
             <h2 className="text-2xl font-black text-slate-900 mb-2">
-              تسجيل دخول امتحان الأسقفية الإلكتروني
+              تسجيل دخول امتحان الأسقفية
             </h2>
             <p className="text-xs md:text-sm text-slate-500 font-bold max-w-md mx-auto leading-relaxed">
-              أدخل كود الامتحان المخصص لك من كنيستك لبدء الاختبار الإلكتروني المعتمد لأسقفية الشباب
+              أدخل كود الامتحان المخصص لك من كنيستك لبدء الامتحان
             </p>
           </div>
 
@@ -919,7 +919,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
               <Key size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="أدخل كود امتحان الأسقفية (مثال: BISHOP-1234)"
+                placeholder="أدخل كود امتحان الأسقفية (مثال:025 M1234567890)"
                 value={examCodeInput}
                 onChange={(e) => {
                   setExamCodeInput(e.target.value);
@@ -997,7 +997,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
 
           {/* Subtitle / Call to Action */}
           <div className="text-center sm:text-right">
-            <h4 className="text-lg font-black text-slate-800">اختر أحد مسابقات المرحلة الدراسية التالية:</h4>
+            <h4 className="text-lg font-black text-slate-800">اختر أحد مسابقات المرحلة التالية:</h4>
             <p className="text-xs text-slate-500 font-bold mt-1">
               تنبيه: يمكنك أداء كل مسابقة مرة واحدة فقط. سيتم قفل المسابقة بمجرد إرسال الإجابات.
             </p>
