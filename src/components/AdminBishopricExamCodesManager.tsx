@@ -35,6 +35,7 @@ import PaginationComponent from './Pagination';
 import { AdminBishopricQuestionsManager } from './AdminBishopricQuestionsManager';
 import { BishopricChurchCodesExporter } from './BishopricChurchCodesExporter';
 import { BishopricPortalLinkShare } from './BishopricPortalLinkShare';
+import { PlatformStateToggleCard } from './PlatformStateToggleCard';
 
 export const AdminBishopricExamCodesManager: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'codes' | 'questions'>('codes');
@@ -306,6 +307,9 @@ export const AdminBishopricExamCodesManager: React.FC = () => {
         </div>
       ) : (
         <>
+          {/* Master Platform State Toggle Card (id = 1 / content = 1 or 0) */}
+          <PlatformStateToggleCard />
+
           {/* Dynamic Link Display & One-Click Copy Section */}
           <BishopricPortalLinkShare />
 

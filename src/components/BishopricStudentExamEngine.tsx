@@ -42,6 +42,7 @@ import {
 } from '../utils/bishopricExamStorage';
 import { supabase } from '../utils/supabaseClient';
 import { useNotificationBubble } from '../context/NotificationContext';
+import { fetchPlatformState, subscribeToPlatformState, PlatformState } from '../utils/platformSettings';
 
 interface BishopricStudentExamEngineProps {
   initialExamCode?: string;
@@ -83,6 +84,25 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
   const [authError, setAuthError] = useState<string | null>(null);
   const [student, setStudent] = useState<BishopricExamRecord | null>(null);
   const [previousResult, setPreviousResult] = useState<BishopricExamResult | null>(null);
+
+  // Platform master state from system_settings row id = 1
+  const [platformState, setPlatformState] = useState<PlatformState>({
+    isOpen: true,
+    content: 1,
+    isSiteDisabled: false,
+    isExamLocked: false,
+    isRegistrationLocked: false,
+    isBookOrdersLocked: false,
+    updatedAt: new Date().toISOString()
+  });
+
+  useEffect(() => {
+    fetchPlatformState().then(setPlatformState);
+    const unsubscribe = subscribeToPlatformState((state) => {
+      setPlatformState(state);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Raw Questions loaded from database
   const [rawQuestions, setRawQuestions] = useState<BishopricExamQuestion[]>([]);
@@ -915,6 +935,18 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
           </div>
 
           <div className="max-w-md mx-auto space-y-4">
+            {!platformState.isOpen && (
+              <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl text-amber-900 text-xs md:text-sm font-black flex items-start gap-3 text-right shadow-sm animate-pulse">
+                <AlertCircle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-extrabold text-amber-900 mb-0.5">⚠️ منصة الامتحانات مغلقة حالياً</div>
+                  <div className="text-amber-700 font-bold text-xs leading-relaxed">
+                    منصة امتحانات الأسقفية مغلقة بقرار إداري. سيتم فتح إمكانية الدخول فور تفعيلها من قبل الإدارة المركزية.
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="relative">
               <Key size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
