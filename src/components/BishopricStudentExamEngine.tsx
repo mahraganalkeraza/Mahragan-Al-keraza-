@@ -937,7 +937,7 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
               تسجيل دخول امتحان الأسقفية
             </h2>
             <p className="text-xs md:text-sm text-slate-500 font-bold max-w-md mx-auto leading-relaxed">
-              أدخل كود الامتحان المخصص لك من كنيستك لبدء الامتحان
+              أدخل كود الامتحان
             </p>
           </div>
 
@@ -946,9 +946,9 @@ export const BishopricStudentExamEngine: React.FC<BishopricStudentExamEngineProp
               <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl text-amber-900 text-xs md:text-sm font-black flex items-start gap-3 text-right shadow-sm animate-pulse">
                 <AlertCircle size={20} className="text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-extrabold text-amber-900 mb-0.5">⚠️ منصة الامتحانات مغلقة حالياً</div>
+                  <div className="font-extrabold text-amber-900 mb-0.5">⚠️ منصة الامتحانات مغلقة حاليًا</div>
                   <div className="text-amber-700 font-bold text-xs leading-relaxed">
-                    منصة امتحانات الأسقفية مغلقة بقرار إداري. سيتم فتح إمكانية الدخول فور تفعيلها من قبل الإدارة المركزية.
+                    منصة امتحانات الأسقفية مغلقة.
                   </div>
                 </div>
               </div>
