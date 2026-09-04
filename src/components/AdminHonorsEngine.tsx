@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { Result } from '../types';
+import { STAGE_ORDER } from '../constants';
 import { Save, Download, Award, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -111,7 +112,8 @@ export const AdminHonorsEngine: React.FC<{
       if (sysFeesSnap.data?.config_data && typeof sysFeesSnap.data.config_data === 'object') {
         setStageFees(prev => ({ ...prev, ...sysFeesSnap.data.config_data }));
       }
-      setSystemStages(stagesSnap.data?.map(d => d.stage_name).filter(Boolean) as string[] || []);
+      const fetchedStages = stagesSnap.data?.map(d => d.stage_name).filter(Boolean) as string[];
+      setSystemStages(fetchedStages && fetchedStages.length > 0 ? fetchedStages : STAGE_ORDER.slice(0, 16));
       
       const dbSubjects = bankSnap.data?.map(d => d.name).filter(Boolean) as string[] || [];
       const coreSubjects = ['دراسي', 'محفوظات', 'قبطي مستوى أول', 'قبطي مستوى ثاني'];

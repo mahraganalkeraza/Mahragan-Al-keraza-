@@ -3,6 +3,7 @@ import { supabase } from '../utils/supabaseClient';
 import { useSmartExam, Question } from '../hooks/useSmartExam';
 import { BulkModelExporter } from './BulkModelExporter';
 import { useNotificationBubble } from '../context/NotificationContext';
+import { STAGE_ORDER } from '../constants';
 import { 
   BookOpen, 
   Settings, 
@@ -46,14 +47,19 @@ export const ExamModelsDashboard: React.FC = () => {
           .from('stage_competitions')
           .select('stage_name');
         
-        if (!error && data) {
+        if (!error && data && data.length > 0) {
           // استخراج المراحل بدون تكرار
           const uniqueStages = Array.from(new Set(data.map((item: any) => item.stage_name).filter(Boolean))) as string[];
           setStages(uniqueStages);
           if (uniqueStages.length > 0) setSelectedStage(uniqueStages[0]);
+        } else {
+          setStages(STAGE_ORDER.slice(0, 16));
+          setSelectedStage(STAGE_ORDER[0]);
         }
-      } catch (err) {
-        console.error("Error loading stages:", err);
+      } catch (err: any) {
+        console.warn("Notice loading stages (using fallback):", err?.message || err);
+        setStages(STAGE_ORDER.slice(0, 16));
+        setSelectedStage(STAGE_ORDER[0]);
       } finally {
         setIsLoadingMeta(false);
       }

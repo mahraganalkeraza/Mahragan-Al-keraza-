@@ -153,7 +153,8 @@ import {
   CHURCH_CREDENTIALS,
   STAGE_ORDER,
   sortStages,
-  CURRENT_YEAR
+  CURRENT_YEAR,
+  DEFAULT_STAGES_CONFIG
   } from './constants';
 
 import { generateMasterExcel, downloadMasterTemplate, exportOnlineResultsExcel } from './services/newExcelExport';
@@ -625,7 +626,16 @@ function AppComponent() {
   }, []);
   
   const [userProfile, setUserProfile] = useState<any>(initialProfile);
-  const [dynamicLevels, setDynamicLevels] = useState<any[]>([]);
+  const [dynamicLevels, setDynamicLevels] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_dynamic_levels');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+    return DEFAULT_STAGES_CONFIG;
+  });
   const [activityStages, setActivityStages] = useState<any[]>([]);
   const [allActivityStages, setAllActivityStages] = useState<any[]>([]);
   const [availableActivities, setAvailableActivities] = useState<string[]>([]);
@@ -1066,24 +1076,73 @@ function AppComponent() {
     // Fetch Stages and Competitions from Supabase
     const fetchStagesAndCompetitions = async () => {
       try {
-        const { data: stagesData, error: stagesError } = await supabase
-          .from('stage_competitions')
-          .select('*');
-        
-        if (stagesError) throw stagesError;
+        let stagesData: any[] | null = null;
+        let lastError: any = null;
 
-        if (stagesData) {
-          const allStages = stagesData.map(l => ({
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const { data, error } = await supabase
+              .from('stage_competitions')
+              .select('*');
+
+            if (!error && data && data.length > 0) {
+              stagesData = data;
+              lastError = null;
+              break;
+            }
+            lastError = error;
+          } catch (callErr) {
+            lastError = callErr;
+          }
+
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 600 * attempt));
+          }
+        }
+
+        if (stagesData && stagesData.length > 0) {
+          const allStages = stagesData.map((l: any) => ({
             id: l.id,
             name: l.stage_name,
             comps: l.allowed_competitions || [],
             stage_type: l.stage_type || 'مهرجان'
           }));
           
-          setDynamicLevels(allStages.filter(s => s.stage_type === 'مهرجان' || !s.stage_type).sort((a: any, b: any) => sortStages(a.name, b.name)));
+          const sorted = allStages
+            .filter((s: any) => s.stage_type === 'مهرجان' || !s.stage_type)
+            .sort((a: any, b: any) => sortStages(a.name, b.name));
+
+          setDynamicLevels(sorted);
+          try {
+            localStorage.setItem('cached_dynamic_levels', JSON.stringify(sorted));
+          } catch (_) {}
+        } else {
+          if (lastError) {
+            console.warn("Notice: Could not refresh stages from Supabase (using cached/default stages):", lastError?.message || lastError);
+          }
+          try {
+            const cached = localStorage.getItem('cached_dynamic_levels');
+            if (cached) {
+              setDynamicLevels(JSON.parse(cached));
+            } else {
+              setDynamicLevels(DEFAULT_STAGES_CONFIG);
+            }
+          } catch (_) {
+            setDynamicLevels(DEFAULT_STAGES_CONFIG);
+          }
         }
-      } catch (err) {
-        console.error("Error fetching stages from Supabase:", err);
+      } catch (err: any) {
+        console.warn("Notice: Fetch stages exception (using fallback):", err?.message || err);
+        try {
+          const cached = localStorage.getItem('cached_dynamic_levels');
+          if (cached) {
+            setDynamicLevels(JSON.parse(cached));
+          } else {
+            setDynamicLevels(DEFAULT_STAGES_CONFIG);
+          }
+        } catch (_) {
+          setDynamicLevels(DEFAULT_STAGES_CONFIG);
+        }
       }
     };
     fetchStagesAndCompetitions();
@@ -1091,23 +1150,49 @@ function AppComponent() {
     // Fetch Hymn Stages and Activity Stages dynamically from their respective new tables
     const fetchHymnAndActivityStages = async () => {
       try {
-        const { data: actData, error: actErr } = await supabase
-          .from('activity_stages')
-          .select('id, activity_type, stage_name, form_type')
-          .order('stage_name', { ascending: true });
+        let actData: any[] | null = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const { data, error } = await supabase
+              .from('activity_stages')
+              .select('id, activity_type, stage_name, form_type')
+              .order('stage_name', { ascending: true });
 
-        if (!actErr && actData) {
+            if (!error && data && data.length > 0) {
+              actData = data;
+              break;
+            }
+          } catch (_) {}
+
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 600 * attempt));
+          }
+        }
+
+        if (actData && actData.length > 0) {
           setAllActivityStages(actData);
+          try {
+            localStorage.setItem('cached_activity_stages', JSON.stringify(actData));
+          } catch (_) {}
           const uniqueTypes = Array.from(new Set(actData.map((item: any) => item.activity_type))).filter(Boolean) as string[];
           if (!uniqueTypes.includes('ألحان')) {
             uniqueTypes.push('ألحان');
           }
           setAvailableActivities(uniqueTypes);
-        } else if (actErr) {
-          console.error("Error fetching activity stages:", actErr);
+        } else {
+          try {
+            const cached = localStorage.getItem('cached_activity_stages');
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              setAllActivityStages(parsed);
+              const uniqueTypes = Array.from(new Set(parsed.map((item: any) => item.activity_type))).filter(Boolean) as string[];
+              if (!uniqueTypes.includes('ألحان')) uniqueTypes.push('ألحان');
+              setAvailableActivities(uniqueTypes);
+            }
+          } catch (_) {}
         }
-      } catch (err) {
-        console.error("Error in fetchHymnAndActivityStages:", err);
+      } catch (err: any) {
+        console.warn("Notice in fetchHymnAndActivityStages:", err?.message || err);
       }
     };
     fetchHymnAndActivityStages();
@@ -4689,25 +4774,52 @@ function AppComponent() {
     setIsTeamsLoading(true);
 
     try {
-      let queryBuilder = supabase.from('activity_teams').select('id, team_name, stage_name, church_name, created_at, members_number, activity_type', { count: 'exact' });
-      
-      if (userRole === 'admin') {
-        if (globalChurchFilter !== 'الكل') {
-          queryBuilder = queryBuilder.eq('church_name', globalChurchFilter);
+      const getQuery = (withCount = true) => {
+        let q = supabase.from('activity_teams').select('id, team_name, stage_name, church_name, created_at, members_number, activity_type', withCount ? { count: 'exact' } : {});
+        
+        if (userRole === 'admin') {
+          if (globalChurchFilter !== 'الكل') {
+            q = q.eq('church_name', globalChurchFilter);
+          }
+        } else {
+          q = q.eq('church_name', churchName);
         }
-      } else {
-        queryBuilder = queryBuilder.eq('church_name', churchName);
+
+        if (search) {
+          q = q.ilike('team_name', `%${search}%`);
+        }
+
+        return q.order('created_at', { ascending: false }).range(0, 4999);
+      };
+
+      let responseData: any = null;
+      let lastFetchErr: any = null;
+
+      // Retry up to 3 attempts with backoff
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const res = await getQuery(attempt === 1);
+          if (!res.error && res.data) {
+            responseData = res;
+            lastFetchErr = null;
+            break;
+          }
+          lastFetchErr = res.error;
+        } catch (callErr: any) {
+          lastFetchErr = callErr;
+        }
+
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 500 * attempt));
+        }
       }
 
-      if (search) {
-        queryBuilder = queryBuilder.ilike('team_name', `%${search}%`);
+      if (lastFetchErr && !responseData?.data) {
+        throw lastFetchErr;
       }
 
-      const { data, count, error } = await queryBuilder
-        .order('created_at', { ascending: false })
-        .range(0, 4999);
-
-      if (error) throw error;
+      const data = responseData?.data || [];
+      const count = responseData?.count ?? null;
 
       const mappedData = (data || []).map((row: any) => {
         const isIndividual = row.stage_name && row.stage_name.includes('فردي');
@@ -4731,6 +4843,9 @@ function AppComponent() {
       });
 
       setActivityTeams(mappedData);
+      try {
+        localStorage.setItem('fallback_activity_teams', JSON.stringify(mappedData));
+      } catch (_) {}
       
       if (count !== null) setTotalTeamsCount(count);
       setIsTeamsEnd(true);
@@ -4738,7 +4853,7 @@ function AppComponent() {
       setTeamPageCount(1);
       
     } catch (err: any) { 
-      console.error("Supabase load teams error: ", err?.message || err); 
+      console.warn("Supabase load teams notice (using fallback): ", err?.message || err); 
       // FALLBACK: Load from local storage if Supabase fails (e.g. Failed to fetch)
       try {
         const saved = localStorage.getItem('fallback_activity_teams');
@@ -4750,7 +4865,7 @@ function AppComponent() {
           }
         }
       } catch (storageErr) {
-        console.error("Error reading fallback activity teams from localStorage:", storageErr);
+        console.warn("Error reading fallback activity teams from localStorage:", storageErr);
       }
     } finally { 
       setIsTeamsLoading(false); 

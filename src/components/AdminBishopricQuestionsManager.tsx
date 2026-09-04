@@ -26,6 +26,7 @@ import {
   deleteBishopricQuestion,
   normalizeArabic
 } from '../utils/bishopricExamStorage';
+import { STAGE_ORDER } from '../constants';
 
 // قائمة المسابقات الثابتة
 const competitionOptions = [
@@ -37,7 +38,16 @@ const competitionOptions = [
 
 export const AdminBishopricQuestionsManager: React.FC = () => {
   const [questions, setQuestions] = useState<BishopricExamQuestion[]>([]);
-  const [stageOptions, setStageOptions] = useState<string[]>([]);
+  const [stageOptions, setStageOptions] = useState<string[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_bishopric_stages');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (_) {}
+    return STAGE_ORDER.slice(0, 16);
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingStages, setIsLoadingStages] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -58,17 +68,55 @@ export const AdminBishopricQuestionsManager: React.FC = () => {
     const fetchStages = async () => {
       setIsLoadingStages(true);
       try {
-        const { data, error } = await supabase
-          .from('stage_competitions')
-          .select('stage_name');
-        
-        if (!error && data) {
-          // استخراج المراحل بدون تكرار
-          const uniqueStages = Array.from(new Set(data.map((item: any) => item.stage_name).filter(Boolean))) as string[];
-          setStageOptions(uniqueStages);
+        let stagesData: any[] | null = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const { data, error } = await supabase
+              .from('stage_competitions')
+              .select('stage_name');
+            
+            if (!error && data && data.length > 0) {
+              stagesData = data;
+              break;
+            }
+          } catch (_) {}
+
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 600 * attempt));
+          }
         }
-      } catch (err) {
-        console.error('Error fetching stages from Supabase:', err);
+
+        if (stagesData && stagesData.length > 0) {
+          // استخراج المراحل بدون تكرار
+          const uniqueStages = Array.from(new Set(stagesData.map((item: any) => item.stage_name).filter(Boolean))) as string[];
+          setStageOptions(uniqueStages);
+          try {
+            localStorage.setItem('cached_bishopric_stages', JSON.stringify(uniqueStages));
+          } catch (_) {}
+        } else {
+          try {
+            const cached = localStorage.getItem('cached_bishopric_stages');
+            if (cached) {
+              setStageOptions(JSON.parse(cached));
+            } else {
+              setStageOptions(STAGE_ORDER.slice(0, 16));
+            }
+          } catch (_) {
+            setStageOptions(STAGE_ORDER.slice(0, 16));
+          }
+        }
+      } catch (err: any) {
+        console.warn('Notice fetching stages from Supabase (using fallback):', err?.message || err);
+        try {
+          const cached = localStorage.getItem('cached_bishopric_stages');
+          if (cached) {
+            setStageOptions(JSON.parse(cached));
+          } else {
+            setStageOptions(STAGE_ORDER.slice(0, 16));
+          }
+        } catch (_) {
+          setStageOptions(STAGE_ORDER.slice(0, 16));
+        }
       } finally {
         setIsLoadingStages(false);
       }
