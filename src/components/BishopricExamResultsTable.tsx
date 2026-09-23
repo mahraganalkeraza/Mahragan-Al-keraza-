@@ -97,10 +97,118 @@ export interface FlatBishopricExamResult {
   submittedAt?: string;
   completedAt?: string;
 
+  // Dynamic Excellence Point Distribution (Runtime Calculated)
+  dynamic_score_darasi?: number;
+  dynamic_score_mahfoozat?: number;
+  dynamic_score_coptic?: number;
+  bonus_darasi?: number;
+  bonus_mahfoozat?: number;
+  bonus_coptic?: number;
+  calculated_grand_total?: number;
+  excellence_distributed_to?: string;
+
   // JSON/Extra fallback
   answers?: any;
   raw?: any;
 }
+
+/**
+ * Dynamic Excellence Point Distribution Logic
+ * Strictly enforces:
+ * 1. excellencePoints parsed cleanly from row.excellence_points / excellencePoints (handling '+' sign)
+ * 2. Base subject scores: scoreDarasi, scoreMahfoozat, scoreCoptic
+ * 3. A subject ONLY qualifies for excellence points if its base score is 50 (Full Score).
+ * 4. Each qualified subject can receive a MAXIMUM of 5 bonus points from excellencePoints pool.
+ * 5. Sequential Allocation Order:
+ *    - Step 1 (الدراسي - score_darasi): if scoreDarasi === 50, bonusDarasi = Math.min(5, Remaining Pool), Pool -= bonusDarasi
+ *    - Step 2 (المحفوظات والألحان - score_mahfoozat): if scoreMahfoozat === 50, bonusMahfoozat = Math.min(5, Remaining Pool), Pool -= bonusMahfoozat
+ *    - Step 3 (القبطي - score_coptic): if scoreCoptic === 50, bonusCoptic = Math.min(5, Remaining Pool), Pool -= bonusCoptic
+ * 6. Final grand total: calculatedGrandTotal = displayedScoreDarasi + displayedScoreMahfoozat + displayedScoreCoptic
+ */
+export interface DynamicExcellenceDistribution {
+  darasi: number;
+  mahfoozat: number;
+  coptic: number;
+  bonusDarasi: number;
+  bonusMahfoozat: number;
+  bonusCoptic: number;
+  baseDarasi: number;
+  baseMahfoozat: number;
+  baseCoptic: number;
+  baseScore: number;
+  excellencePoints: number;
+  remainingPool: number;
+  calculatedGrandTotal: number;
+  distributedTo: string;
+}
+
+export const calculateDynamicExcellenceDistribution = (row: any): DynamicExcellenceDistribution => {
+  // 1. Parse excellencePoints safely, removing any '+' prefix
+  const rawExcellence = row?.excellence_points ?? row?.excellencePoints ?? 0;
+  const excellencePoints = Number(String(rawExcellence || 0).replace(/\+/g, '').trim()) || 0;
+
+  // 2. Read base subject scores
+  const baseDarasi = Number(row?.score_darasi ?? row?.scoreDarasi ?? 0) || 0;
+  const baseMahfoozat = Number(row?.score_mahfoozat ?? row?.scoreMahfoozat ?? 0) || 0;
+  const baseCoptic = Number(row?.score_coptic ?? row?.scoreCoptic ?? 0) || 0;
+
+  const rawBase = Number(row?.score ?? row?.total_score ?? row?.totalScore ?? (baseDarasi + baseMahfoozat + baseCoptic));
+  const baseScore = isNaN(rawBase) ? (baseDarasi + baseMahfoozat + baseCoptic) : rawBase;
+
+  // 3. Sequential Allocation Order with Remaining Points Pool
+  let remainingPool = excellencePoints;
+
+  // Step 1: الدراسي (score_darasi) - ONLY if baseDarasi === 50
+  let bonusDarasi = 0;
+  if (baseDarasi === 50 && remainingPool > 0) {
+    bonusDarasi = Math.min(5, remainingPool);
+    remainingPool -= bonusDarasi;
+  }
+  const displayedScoreDarasi = baseDarasi + bonusDarasi;
+
+  // Step 2: المحفوظات والألحان (score_mahfoozat) - ONLY if baseMahfoozat === 50
+  let bonusMahfoozat = 0;
+  if (baseMahfoozat === 50 && remainingPool > 0) {
+    bonusMahfoozat = Math.min(5, remainingPool);
+    remainingPool -= bonusMahfoozat;
+  }
+  const displayedScoreMahfoozat = baseMahfoozat + bonusMahfoozat;
+
+  // Step 3: القبطي (score_coptic) - ONLY if baseCoptic === 50
+  let bonusCoptic = 0;
+  if (baseCoptic === 50 && remainingPool > 0) {
+    bonusCoptic = Math.min(5, remainingPool);
+    remainingPool -= bonusCoptic;
+  }
+  const displayedScoreCoptic = baseCoptic + bonusCoptic;
+
+  // 4. Recalculate Grand Total
+  const calculatedGrandTotal = displayedScoreDarasi + displayedScoreMahfoozat + displayedScoreCoptic;
+
+  // Summary of where points were distributed
+  const distributedParts: string[] = [];
+  if (bonusDarasi > 0) distributedParts.push(`دراسي (+${bonusDarasi})`);
+  if (bonusMahfoozat > 0) distributedParts.push(`محفوظات (+${bonusMahfoozat})`);
+  if (bonusCoptic > 0) distributedParts.push(`قبطي (+${bonusCoptic})`);
+  const distributedTo = distributedParts.length > 0 ? distributedParts.join('، ') : 'لم يتم التوزيع (تتطلب الدرجة 50)';
+
+  return {
+    darasi: displayedScoreDarasi,
+    mahfoozat: displayedScoreMahfoozat,
+    coptic: displayedScoreCoptic,
+    bonusDarasi,
+    bonusMahfoozat,
+    bonusCoptic,
+    baseDarasi,
+    baseMahfoozat,
+    baseCoptic,
+    baseScore,
+    excellencePoints,
+    remainingPool,
+    calculatedGrandTotal,
+    distributedTo
+  };
+};
 
 /**
  * Flexible header normalizer for CSV columns
@@ -235,6 +343,19 @@ export const parseCSVToBishopricResults = (rawRows: any[]): FlatBishopricExamRes
       const completedAt = String(getVal('completed_at', 'completedAt', 'تاريخ التسليم', 'تاريخ_الانتهاء') || getVal('submitted_at', 'submittedAt', 'تاريخ الإرسال') || '');
       const submittedAt = String(getVal('submitted_at', 'submittedAt', 'تاريخ الإرسال') || completedAt || '');
 
+      // Dynamic Excellence Point Distribution
+      const dynamicCalc = calculateDynamicExcellenceDistribution({
+        excellence_points: excellencePoints,
+        score_darasi: scoreDarasi,
+        score_mahfoozat: scoreMahfoozat,
+        score_coptic: scoreCoptic,
+        score: score,
+        subject_name: subjectName,
+        category: category
+      });
+
+      const effectiveGrandTotal = dynamicCalc.calculatedGrandTotal > 0 ? dynamicCalc.calculatedGrandTotal : grandTotalScore;
+
       return {
         id,
         student_name: studentName,
@@ -260,6 +381,16 @@ export const parseCSVToBishopricResults = (rawRows: any[]): FlatBishopricExamRes
         max_score: maxScore,
         maxScore: maxScore,
 
+        // Dynamically Distributed Scores
+        dynamic_score_darasi: dynamicCalc.darasi,
+        dynamic_score_mahfoozat: dynamicCalc.mahfoozat,
+        dynamic_score_coptic: dynamicCalc.coptic,
+        bonus_darasi: dynamicCalc.bonusDarasi,
+        bonus_mahfoozat: dynamicCalc.bonusMahfoozat,
+        bonus_coptic: dynamicCalc.bonusCoptic,
+        calculated_grand_total: effectiveGrandTotal,
+        excellence_distributed_to: dynamicCalc.distributedTo,
+
         excellence_points: excellencePoints,
         excellencePoints: excellencePoints,
         max_excellence_points: maxExcellencePoints,
@@ -271,8 +402,8 @@ export const parseCSVToBishopricResults = (rawRows: any[]): FlatBishopricExamRes
         excellence_answers: excellenceAnswers,
         excellenceAnswers: excellenceAnswers,
 
-        grand_total_score: grandTotalScore,
-        grandTotalScore: grandTotalScore,
+        grand_total_score: effectiveGrandTotal,
+        grandTotalScore: effectiveGrandTotal,
         percentage,
         status,
         submitted_at: submittedAt,
@@ -517,6 +648,19 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
           const submittedAt = String(row.submitted_at || row.completed_at || row.created_at || '');
           const completedAt = String(row.completed_at || row.submitted_at || row.created_at || '');
 
+          // Dynamic Excellence Point Distribution
+          const dynamicCalc = calculateDynamicExcellenceDistribution({
+            excellence_points: excellencePoints,
+            score_darasi: scoreDarasi,
+            score_mahfoozat: scoreMahfoozat,
+            score_coptic: scoreCoptic,
+            score: score,
+            subject_name: subjectName,
+            category: category
+          });
+
+          const effectiveGrandTotal = dynamicCalc.calculatedGrandTotal > 0 ? dynamicCalc.calculatedGrandTotal : grandTotalScore;
+
           return {
             id: String(row.id || `row_${idx}_${Date.now()}`),
             student_name: studentName,
@@ -533,13 +677,23 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
             score: score,
             max_score: maxScore,
 
+            // Dynamically Distributed Scores
+            dynamic_score_darasi: dynamicCalc.darasi,
+            dynamic_score_mahfoozat: dynamicCalc.mahfoozat,
+            dynamic_score_coptic: dynamicCalc.coptic,
+            bonus_darasi: dynamicCalc.bonusDarasi,
+            bonus_mahfoozat: dynamicCalc.bonusMahfoozat,
+            bonus_coptic: dynamicCalc.bonusCoptic,
+            calculated_grand_total: effectiveGrandTotal,
+            excellence_distributed_to: dynamicCalc.distributedTo,
+
             excellence_points: excellencePoints,
             max_excellence_points: maxExcellencePoints,
             excellence_unlocked: excellenceUnlocked,
             excellence_categories: excellenceCategories,
             excellence_answers: row.excellence_answers,
 
-            grand_total_score: grandTotalScore,
+            grand_total_score: effectiveGrandTotal,
             percentage: percentage,
             status: status,
             submitted_at: submittedAt,
@@ -833,10 +987,14 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
     let totalScoreSum = 0;
     let topGrandTotal = 0;
 
-    // Safe Numeric Parsing in Aggregations/Stats
+    // Safe Numeric Parsing in Aggregations/Stats with Dynamic Score Calculation
     listForStats.forEach((row: any) => {
-      const score = Number(row.grand_total_score || row.score || 0);
-      const excellence = Number(row.excellence_points || row.excellencePoints || 0);
+      const dynamicDist = calculateDynamicExcellenceDistribution(row);
+      const excellence = dynamicDist.excellencePoints;
+      const calculatedGrandTotal = dynamicDist.calculatedGrandTotal > 0 
+        ? dynamicDist.calculatedGrandTotal 
+        : Number(row.grand_total_score || row.score || 0);
+
       const maxScore = Number(row.max_score || row.maxScore || 45);
       const percentage = Number(row.percentage || 0);
 
@@ -846,12 +1004,11 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
 
       const effectivePct = percentage > 0
         ? percentage
-        : (maxScore > 0 ? (score / maxScore) * 100 : 0);
+        : (maxScore > 0 ? (calculatedGrandTotal / maxScore) * 100 : 0);
       totalScoreSum += effectivePct;
 
-      const grandTotal = Number(row.grand_total_score || row.grandTotalScore || (score + excellence));
-      if (grandTotal > topGrandTotal) {
-        topGrandTotal = grandTotal;
+      if (calculatedGrandTotal > topGrandTotal) {
+        topGrandTotal = calculatedGrandTotal;
       }
     });
 
@@ -1006,28 +1163,38 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
     }
   };
 
-  // Excel Export with Complete Column Breakdown
+  // Excel Export with Complete Column Breakdown and Dynamic Excellence Distribution
   const handleExportExcel = () => {
     if (filteredResults.length === 0) return;
 
-    const exportRows = filteredResults.map((r, idx) => ({
-      'م': idx + 1,
-      'كود الامتحان': r.exam_code,
-      'كود المتسابق': r.student_code || '-',
-      'اسم المتسابق': r.student_name,
-      'الكنيسة': r.church_name,
-      'المرحلة': r.stage,
-      'المسابقة': r.subject_name,
-      'درجة الدراسي': r.score_darasi,
-      'درجة المحفوظات': r.score_mahfoozat,
-      'درجة القبطي': r.score_coptic,
-      'مجموع المواد الأساسية': `${r.score} / ${r.max_score}`,
-      'نقاط التميز': r.excellence_points > 0 ? `+${r.excellence_points}` : '0',
-      'المجموع الكلي': r.grand_total_score,
-      'النسبة المئوية': `${r.percentage}%`,
-      'الحالة / التقدير': r.status,
-      'تاريخ التسليم': r.completed_at ? new Date(r.completed_at).toLocaleString('ar-EG') : '-'
-    }));
+    const exportRows = filteredResults.map((r, idx) => {
+      const dynamicDist = calculateDynamicExcellenceDistribution(r);
+      const effectiveGrandTotal = dynamicDist.calculatedGrandTotal > 0 ? dynamicDist.calculatedGrandTotal : r.grand_total_score;
+      const baseSubtotal = dynamicDist.baseDarasi + dynamicDist.baseMahfoozat + dynamicDist.baseCoptic;
+
+      return {
+        'م': idx + 1,
+        'كود الامتحان': r.exam_code,
+        'كود المتسابق': r.student_code || '-',
+        'اسم المتسابق': r.student_name,
+        'الكنيسة': r.church_name,
+        'المرحلة': r.stage,
+        'المسابقة': r.subject_name,
+        'درجة الدراسي (النهائية)': dynamicDist.darasi,
+        'بونص دراسي': dynamicDist.bonusDarasi > 0 ? `+${dynamicDist.bonusDarasi}` : '0',
+        'درجة المحفوظات (النهائية)': dynamicDist.mahfoozat,
+        'بونص محفوظات': dynamicDist.bonusMahfoozat > 0 ? `+${dynamicDist.bonusMahfoozat}` : '0',
+        'درجة القبطي (النهائية)': dynamicDist.coptic,
+        'بونص قبطي': dynamicDist.bonusCoptic > 0 ? `+${dynamicDist.bonusCoptic}` : '0',
+        'مجموع المواد الأساسية (قبل التميز)': `${baseSubtotal} / ${r.max_score}`,
+        'نقاط التميز الإجمالية': r.excellence_points > 0 ? `+${r.excellence_points}` : '0',
+        'حالة توزيع التميز': dynamicDist.distributedTo,
+        'المجموع الكلي النهائي': effectiveGrandTotal,
+        'النسبة المئوية': `${r.percentage}%`,
+        'الحالة / التقدير': r.status,
+        'تاريخ التسليم': r.completed_at ? new Date(r.completed_at).toLocaleString('ar-EG') : '-'
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet(exportRows);
     const wb = XLSX.utils.book_new();
@@ -1610,17 +1777,56 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
 
                     {/* Score Darasi */}
                     <td className="p-2.5 text-center font-mono font-bold text-sky-900 border-l border-slate-100 bg-sky-50/30">
-                      {row.score_darasi}
+                      {(() => {
+                        const dynamicDist = calculateDynamicExcellenceDistribution(row);
+                        const hasBonus = dynamicDist.bonusDarasi > 0;
+                        return (
+                          <div className="flex flex-col items-center justify-center">
+                            <span className="text-sm font-black">{dynamicDist.darasi}</span>
+                            {hasBonus && (
+                              <span className="text-[9px] font-bold text-sky-700 bg-sky-100/90 px-1 py-0.2 rounded border border-sky-200 mt-0.5" title={`الدرجة الأساسية (50) + بونص التميز (${dynamicDist.bonusDarasi})`}>
+                                50 + {dynamicDist.bonusDarasi}🌟
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Score Mahfoozat */}
                     <td className="p-2.5 text-center font-mono font-bold text-emerald-900 border-l border-slate-100 bg-emerald-50/30">
-                      {row.score_mahfoozat}
+                      {(() => {
+                        const dynamicDist = calculateDynamicExcellenceDistribution(row);
+                        const hasBonus = dynamicDist.bonusMahfoozat > 0;
+                        return (
+                          <div className="flex flex-col items-center justify-center">
+                            <span className="text-sm font-black">{dynamicDist.mahfoozat}</span>
+                            {hasBonus && (
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/90 px-1 py-0.2 rounded border border-emerald-200 mt-0.5" title={`الدرجة الأساسية (50) + بونص التميز (${dynamicDist.bonusMahfoozat})`}>
+                                50 + {dynamicDist.bonusMahfoozat}🌟
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Score Coptic */}
                     <td className="p-2.5 text-center font-mono font-bold text-amber-900 border-l border-slate-100 bg-amber-50/30">
-                      {row.score_coptic}
+                      {(() => {
+                        const dynamicDist = calculateDynamicExcellenceDistribution(row);
+                        const hasBonus = dynamicDist.bonusCoptic > 0;
+                        return (
+                          <div className="flex flex-col items-center justify-center">
+                            <span className="text-sm font-black">{dynamicDist.coptic}</span>
+                            {hasBonus && (
+                              <span className="text-[9px] font-bold text-amber-700 bg-amber-100/90 px-1 py-0.2 rounded border border-amber-200 mt-0.5" title={`الدرجة الأساسية (50) + بونص التميز (${dynamicDist.bonusCoptic})`}>
+                                50 + {dynamicDist.bonusCoptic}🌟
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Main Total Score */}
@@ -1632,9 +1838,14 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
                     {/* Excellence Points */}
                     <td className="p-2.5 text-center border-l border-slate-100 bg-amber-50/30">
                       {row.excellence_points > 0 ? (
-                        <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-xs">
-                          +{row.excellence_points} 🌟
-                        </span>
+                        <div className="flex flex-col items-center justify-center gap-0.5">
+                          <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-xs">
+                            +{row.excellence_points} 🌟
+                          </span>
+                          <span className="text-[9px] text-amber-800 font-bold max-w-[110px] truncate" title={calculateDynamicExcellenceDistribution(row).distributedTo}>
+                            {calculateDynamicExcellenceDistribution(row).distributedTo}
+                          </span>
+                        </div>
                       ) : (
                         <span className="text-slate-300 font-normal">0</span>
                       )}
@@ -1642,9 +1853,26 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
 
                     {/* Grand Total Score */}
                     <td className="p-2.5 text-center border-l border-slate-100 bg-indigo-50/40">
-                      <span className="font-mono font-black text-indigo-950 text-xs px-2 py-0.5 rounded-lg bg-indigo-100/70 border border-indigo-200">
-                        {row.grand_total_score}
-                      </span>
+                      {(() => {
+                        const dynamicDist = calculateDynamicExcellenceDistribution(row);
+                        const effectiveGrandTotal = dynamicDist.calculatedGrandTotal > 0 
+                          ? dynamicDist.calculatedGrandTotal 
+                          : Number(row.grand_total_score || row.score || 0);
+                        const totalBonus = dynamicDist.bonusDarasi + dynamicDist.bonusMahfoozat + dynamicDist.bonusCoptic;
+
+                        return (
+                          <div className="flex flex-col items-center justify-center">
+                            <span className="font-mono font-black text-indigo-950 text-xs px-2 py-0.5 rounded-lg bg-indigo-100/70 border border-indigo-200">
+                              {effectiveGrandTotal}
+                            </span>
+                            {totalBonus > 0 && (
+                              <span className="text-[9px] text-slate-500 mt-0.5 font-bold">
+                                {dynamicDist.baseDarasi + dynamicDist.baseMahfoozat + dynamicDist.baseCoptic} + {totalBonus}🌟
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     {/* Percentage & Status */}
@@ -1799,116 +2027,189 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
                 </div>
               </div>
 
-              {/* Core Subject Breakdown */}
-              <div className="space-y-2">
-                <h5 className="text-xs font-black text-slate-700 flex items-center gap-1.5">
-                  <BookOpen size={15} className="text-indigo-600" />
-                  <span>تفصيل درجات المواد الأساسية (Core Subject Scores)</span>
-                </h5>
+              {/* Core Subject Breakdown with Dynamic Excellence Point Distribution */}
+              {(() => {
+                const dynamicDist = calculateDynamicExcellenceDistribution(selectedResultForDetails);
+                const totalBonusAwarded = dynamicDist.bonusDarasi + dynamicDist.bonusMahfoozat + dynamicDist.bonusCoptic;
 
-                <div className="grid grid-cols-3 gap-3">
-                  {/* Darasi */}
-                  <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200 text-center space-y-1">
-                    <span className="text-[11px] font-black text-sky-900 flex items-center justify-center gap-1">
-                      <BookOpen size={13} />
-                      <span>المحور الدراسي</span>
-                    </span>
-                    <div className="text-2xl font-black text-sky-950 font-mono">
-                      {selectedResultForDetails.score_darasi}
+                return (
+                  <div className="space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <h5 className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                        <BookOpen size={15} className="text-indigo-600" />
+                        <span>تفصيل درجات المواد الأساسية المعتمدة (شرط التميز: الحصول على 50 كاملة)</span>
+                      </h5>
+                      {totalBonusAwarded > 0 ? (
+                        <span className="text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full">
+                          تم إضافة {totalBonusAwarded} من نقاط التميز ({dynamicDist.distributedTo})
+                        </span>
+                      ) : dynamicDist.excellencePoints > 0 ? (
+                        <span className="text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 px-2 py-0.5 rounded-full">
+                          نقاط التميز (+{dynamicDist.excellencePoints}) بانتظار تحقيق الدرجة النهائية (50) بأحد المواد
+                        </span>
+                      ) : null}
                     </div>
-                    <span className="text-[10px] text-sky-700 font-bold block">درجة دراسي</span>
-                  </div>
 
-                  {/* Mahfoozat */}
-                  <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-center space-y-1">
-                    <span className="text-[11px] font-black text-emerald-900 flex items-center justify-center gap-1">
-                      <Bookmark size={13} />
-                      <span>المحفوظات</span>
-                    </span>
-                    <div className="text-2xl font-black text-emerald-950 font-mono">
-                      {selectedResultForDetails.score_mahfoozat}
+                    <div className="grid grid-cols-3 gap-3">
+                      {/* Darasi */}
+                      <div className="p-3.5 rounded-2xl bg-sky-50/70 border border-sky-200 text-center space-y-1">
+                        <span className="text-[11px] font-black text-sky-900 flex items-center justify-center gap-1">
+                          <BookOpen size={13} />
+                          <span>المحور الدراسي</span>
+                        </span>
+                        <div className="text-2xl font-black text-sky-950 font-mono">
+                          {dynamicDist.darasi}
+                        </div>
+                        <div className="text-[10px] text-sky-700 font-bold block">
+                          {dynamicDist.bonusDarasi > 0 ? (
+                            <span className="inline-block bg-sky-100 px-1.5 py-0.5 rounded border border-sky-200">
+                              الأساسي: 50 + {dynamicDist.bonusDarasi} تميز 🌟
+                            </span>
+                          ) : (
+                            <span>الدرجة الأساسية: {dynamicDist.baseDarasi}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Mahfoozat */}
+                      <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-center space-y-1">
+                        <span className="text-[11px] font-black text-emerald-900 flex items-center justify-center gap-1">
+                          <Bookmark size={13} />
+                          <span>المحفوظات والألحان</span>
+                        </span>
+                        <div className="text-2xl font-black text-emerald-950 font-mono">
+                          {dynamicDist.mahfoozat}
+                        </div>
+                        <div className="text-[10px] text-emerald-700 font-bold block">
+                          {dynamicDist.bonusMahfoozat > 0 ? (
+                            <span className="inline-block bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-200">
+                              الأساسي: 50 + {dynamicDist.bonusMahfoozat} تميز 🌟
+                            </span>
+                          ) : (
+                            <span>الدرجة الأساسية: {dynamicDist.baseMahfoozat}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Coptic */}
+                      <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 text-center space-y-1">
+                        <span className="text-[11px] font-black text-amber-900 flex items-center justify-center gap-1">
+                          <Languages size={13} />
+                          <span>اللغة القبطية</span>
+                        </span>
+                        <div className="text-2xl font-black text-amber-950 font-mono">
+                          {dynamicDist.coptic}
+                        </div>
+                        <div className="text-[10px] text-amber-700 font-bold block">
+                          {dynamicDist.bonusCoptic > 0 ? (
+                            <span className="inline-block bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
+                              الأساسي: 50 + {dynamicDist.bonusCoptic} تميز 🌟
+                            </span>
+                          ) : (
+                            <span>الدرجة الأساسية: {dynamicDist.baseCoptic}</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-[10px] text-emerald-700 font-bold block">درجة محفوظات</span>
-                  </div>
 
-                  {/* Coptic */}
-                  <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 text-center space-y-1">
-                    <span className="text-[11px] font-black text-amber-900 flex items-center justify-center gap-1">
-                      <Languages size={13} />
-                      <span>اللغة القبطية</span>
-                    </span>
-                    <div className="text-2xl font-black text-amber-950 font-mono">
-                      {selectedResultForDetails.score_coptic}
+                    {/* Subtotal */}
+                    <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between text-xs font-black text-slate-800">
+                      <span>مجموع المواد الأساسية (قبل التميز):</span>
+                      <span className="font-mono text-indigo-950 text-sm">
+                        {dynamicDist.baseDarasi + dynamicDist.baseMahfoozat + dynamicDist.baseCoptic} / {selectedResultForDetails.max_score}
+                      </span>
                     </div>
-                    <span className="text-[10px] text-amber-700 font-bold block">درجة قبطي</span>
                   </div>
-                </div>
-
-                {/* Subtotal */}
-                <div className="p-3 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-between text-xs font-black text-slate-800">
-                  <span>مجموع المواد الأساسية:</span>
-                  <span className="font-mono text-indigo-950 text-sm">
-                    {selectedResultForDetails.score} / {selectedResultForDetails.max_score}
-                  </span>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* Excellence Track Card */}
-              <div className="bg-amber-50/80 border border-amber-200 p-4 rounded-2xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <h5 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
-                    <Sparkles size={15} className="text-amber-600" />
-                    <span>مسار التميز الإضافي (Excellence Track)</span>
-                  </h5>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                    selectedResultForDetails.excellence_unlocked 
-                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' 
-                      : 'bg-slate-200 text-slate-700'
-                  }`}>
-                    {selectedResultForDetails.excellence_unlocked ? 'تم فتح مسار التميز ✅' : 'لم يفتح المسار'}
-                  </span>
-                </div>
+              {(() => {
+                const dynamicDist = calculateDynamicExcellenceDistribution(selectedResultForDetails);
+                const totalBonusAwarded = dynamicDist.bonusDarasi + dynamicDist.bonusMahfoozat + dynamicDist.bonusCoptic;
 
-                <div className="flex items-center justify-between pt-1">
-                  <p className="text-xs font-bold text-amber-900">
-                    نقاط التميز المكتسبة المعتمدة:
-                  </p>
-                  <span className="font-mono font-black text-lg text-amber-950 bg-white px-3 py-1 rounded-xl border border-amber-200 shadow-xs">
-                    +{selectedResultForDetails.excellence_points} 🌟
-                  </span>
-                </div>
+                return (
+                  <div className="bg-amber-50/80 border border-amber-200 p-4 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                        <Sparkles size={15} className="text-amber-600" />
+                        <span>مسار التميز الإضافي (Excellence Track)</span>
+                      </h5>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                        selectedResultForDetails.excellence_unlocked 
+                          ? 'bg-emerald-100 text-emerald-900 border border-emerald-300' 
+                          : 'bg-slate-200 text-slate-700'
+                      }`}>
+                        {selectedResultForDetails.excellence_unlocked ? 'تم فتح مسار التميز ✅' : 'لم يفتح المسار'}
+                      </span>
+                    </div>
 
-                {selectedResultForDetails.excellence_categories && selectedResultForDetails.excellence_categories.length > 0 && (
-                  <div className="text-[11px] text-amber-800 pt-1 font-bold">
-                    <span>فئات التميز المنجزة: </span>
-                    <span className="font-black">{selectedResultForDetails.excellence_categories.join('، ')}</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                      <div>
+                        <p className="text-xs font-bold text-amber-900">
+                          نقاط التميز المكتسبة المعتمدة:
+                        </p>
+                        <p className="text-[11px] text-amber-800 mt-0.5 font-bold">
+                          {totalBonusAwarded > 0 ? (
+                            <span>حالة التوزيع التتابعي: تم توزيع {totalBonusAwarded} نقطة على المواد المؤهلة ({dynamicDist.distributedTo})</span>
+                          ) : (
+                            <span>حالة التوزيع: يتطلب الحصول على الدرجة النهائية (50) في المادة لإضافة بونص التميز (حد أقصى 5 درجات لكل مادة)</span>
+                          )}
+                        </p>
+                      </div>
+                      <span className="font-mono font-black text-lg text-amber-950 bg-white px-3 py-1 rounded-xl border border-amber-200 shadow-xs w-fit">
+                        +{selectedResultForDetails.excellence_points} 🌟
+                      </span>
+                    </div>
+
+                    {selectedResultForDetails.excellence_categories && selectedResultForDetails.excellence_categories.length > 0 && (
+                      <div className="text-[11px] text-amber-800 pt-1 font-bold">
+                        <span>فئات التميز المنجزة: </span>
+                        <span className="font-black">{selectedResultForDetails.excellence_categories.join('، ')}</span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               {/* Final Totals Card */}
-              <div className="bg-linear-to-l from-indigo-900 to-slate-900 text-white p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md">
-                <div>
-                  <p className="text-xs font-bold text-indigo-200">التقييم العام المعتمد والنتيجة النهائية</p>
-                  <p className="text-xl font-black text-white mt-1">
-                    الحالة والتقدير: <span className="text-amber-300">{selectedResultForDetails.status}</span>
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="bg-white/10 px-4 py-2.5 rounded-xl border border-white/10 text-center">
-                    <span className="text-[10px] text-indigo-200 font-bold block">المجموع الكلي</span>
-                    <span className="text-2xl font-black text-white font-mono">
-                      {selectedResultForDetails.grand_total_score}
-                    </span>
+              {(() => {
+                const dynamicDist = calculateDynamicExcellenceDistribution(selectedResultForDetails);
+                const grandTotal = dynamicDist.calculatedGrandTotal > 0 
+                  ? dynamicDist.calculatedGrandTotal 
+                  : selectedResultForDetails.grand_total_score;
+                const totalBonusAwarded = dynamicDist.bonusDarasi + dynamicDist.bonusMahfoozat + dynamicDist.bonusCoptic;
+
+                return (
+                  <div className="bg-linear-to-l from-indigo-900 to-slate-900 text-white p-5 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-md">
+                    <div>
+                      <p className="text-xs font-bold text-indigo-200">التقييم العام المعتمد والنتيجة النهائية</p>
+                      <p className="text-xl font-black text-white mt-1">
+                        الحالة والتقدير: <span className="text-amber-300">{selectedResultForDetails.status}</span>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="bg-white/10 px-4 py-2.5 rounded-xl border border-white/10 text-center">
+                        <span className="text-[10px] text-indigo-200 font-bold block">المجموع الكلي النهائي</span>
+                        <span className="text-2xl font-black text-white font-mono">
+                          {grandTotal}
+                        </span>
+                        {totalBonusAwarded > 0 && (
+                          <span className="text-[9px] text-indigo-200 block mt-0.5">
+                            ({dynamicDist.baseDarasi + dynamicDist.baseMahfoozat + dynamicDist.baseCoptic} أساسي + {totalBonusAwarded} تميز)
+                          </span>
+                        )}
+                      </div>
+                      <div className="bg-amber-400 text-slate-950 px-4 py-2.5 rounded-xl text-center shadow-xs">
+                        <span className="text-[10px] text-slate-900 font-black block">النسبة المئوية</span>
+                        <span className="text-2xl font-black font-mono">
+                          {selectedResultForDetails.percentage}%
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="bg-amber-400 text-slate-950 px-4 py-2.5 rounded-xl text-center shadow-xs">
-                    <span className="text-[10px] text-slate-900 font-black block">النسبة المئوية</span>
-                    <span className="text-2xl font-black font-mono">
-                      {selectedResultForDetails.percentage}%
-                    </span>
-                  </div>
-                </div>
-              </div>
+                );
+              })()}
 
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 text-xs font-bold text-center">
                 تم استخراج هذا البيان مباشرة من قاعدة بيانات وسجلات كنترول أسقفية الشباب لعام 2026.
@@ -2012,26 +2313,41 @@ export const BishopricExamResultsTable: React.FC<BishopricExamResultsTableProps>
               </tr>
             </thead>
             <tbody>
-              {filteredResults.map((r, idx) => (
-                <tr key={idx} className="border-b border-slate-200 font-bold">
-                  <td className="p-1.5 border border-slate-300 text-center">{idx + 1}</td>
-                  <td className="p-1.5 border border-slate-300 font-mono font-black">{r.exam_code || 'بدون كود'}</td>
-                  <td className="p-1.5 border border-slate-300">{r.student_name}</td>
-                  <td className="p-1.5 border border-slate-300">{r.church_name}</td>
-                  <td className="p-1.5 border border-slate-300">{r.stage}</td>
-                  <td className="p-1.5 border border-slate-300 text-center font-mono">{r.score_darasi}</td>
-                  <td className="p-1.5 border border-slate-300 text-center font-mono">{r.score_mahfoozat}</td>
-                  <td className="p-1.5 border border-slate-300 text-center font-mono">{r.score_coptic}</td>
-                  <td className="p-1.5 border border-slate-300 text-center font-mono">{r.score} / {r.max_score}</td>
-                  <td className="p-1.5 border border-slate-300 text-center text-amber-800 font-mono">{r.excellence_points > 0 ? `+${r.excellence_points}` : '0'}</td>
-                  <td className="p-1.5 border border-slate-300 text-center font-black bg-indigo-50/50 font-mono">{r.grand_total_score}</td>
-                  <td className="p-1.5 border border-slate-300 text-center font-black">{r.percentage}%</td>
-                  <td className="p-1.5 border border-slate-300 text-center">{r.status}</td>
-                  <td className="p-1.5 border border-slate-300 text-center text-[9px]" dir="ltr">
-                    {r.completed_at ? new Date(r.completed_at).toLocaleDateString('ar-EG') : '-'}
-                  </td>
-                </tr>
-              ))}
+              {filteredResults.map((r, idx) => {
+                const dynamicDist = calculateDynamicExcellenceDistribution(r);
+                const effectiveGrandTotal = dynamicDist.calculatedGrandTotal > 0 ? dynamicDist.calculatedGrandTotal : r.grand_total_score;
+                const baseSubtotal = dynamicDist.baseDarasi + dynamicDist.baseMahfoozat + dynamicDist.baseCoptic;
+
+                return (
+                  <tr key={idx} className="border-b border-slate-200 font-bold">
+                    <td className="p-1.5 border border-slate-300 text-center">{idx + 1}</td>
+                    <td className="p-1.5 border border-slate-300 font-mono font-black">{r.exam_code || 'بدون كود'}</td>
+                    <td className="p-1.5 border border-slate-300">{r.student_name}</td>
+                    <td className="p-1.5 border border-slate-300">{r.church_name}</td>
+                    <td className="p-1.5 border border-slate-300">{r.stage}</td>
+                    <td className="p-1.5 border border-slate-300 text-center font-mono">
+                      {dynamicDist.darasi}
+                      {dynamicDist.bonusDarasi > 0 && ` (+${dynamicDist.bonusDarasi})`}
+                    </td>
+                    <td className="p-1.5 border border-slate-300 text-center font-mono">
+                      {dynamicDist.mahfoozat}
+                      {dynamicDist.bonusMahfoozat > 0 && ` (+${dynamicDist.bonusMahfoozat})`}
+                    </td>
+                    <td className="p-1.5 border border-slate-300 text-center font-mono">
+                      {dynamicDist.coptic}
+                      {dynamicDist.bonusCoptic > 0 && ` (+${dynamicDist.bonusCoptic})`}
+                    </td>
+                    <td className="p-1.5 border border-slate-300 text-center font-mono">{baseSubtotal} / {r.max_score}</td>
+                    <td className="p-1.5 border border-slate-300 text-center text-amber-800 font-mono">{r.excellence_points > 0 ? `+${r.excellence_points}` : '0'}</td>
+                    <td className="p-1.5 border border-slate-300 text-center font-black bg-indigo-50/50 font-mono">{effectiveGrandTotal}</td>
+                    <td className="p-1.5 border border-slate-300 text-center font-black">{r.percentage}%</td>
+                    <td className="p-1.5 border border-slate-300 text-center">{r.status}</td>
+                    <td className="p-1.5 border border-slate-300 text-center text-[9px]" dir="ltr">
+                      {r.completed_at ? new Date(r.completed_at).toLocaleDateString('ar-EG') : '-'}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
